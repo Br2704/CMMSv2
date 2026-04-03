@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Offline | TamOptiX CMMS Platform</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        background: radial-gradient(circle at top, #e6f7f6 0%, #f8fafc 55%, #eef2f7 100%);
+        color: #0f172a;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      .panel {
+        width: min(560px, 100%);
+        border: 1px solid #d7e0ea;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        padding: 24px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 24px;
+        line-height: 1.2;
+      }
+      p {
+        margin: 0;
+        color: #475569;
+        line-height: 1.5;
+      }
+      .tips {
+        margin-top: 16px;
+        padding: 12px;
+        border-radius: 12px;
+        background: #f1f5f9;
+        font-size: 14px;
+        color: #334155;
+      }
+      .actions {
+        margin-top: 18px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      button {
+        min-height: 44px;
+        border-radius: 10px;
+        border: 1px solid #0f766e;
+        background: #009f9f;
+        color: #ffffff;
+        padding: 0 16px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.secondary {
+        border-color: #cbd5e1;
+        background: #ffffff;
+        color: #0f172a;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="panel">
+      <h1>You are offline</h1>
+      <p>The CMMS app could not reach the network. Cached pages may still be available once connection resumes.</p>
+      <div class="tips">
+        Last connected page data may remain in local cache. Reopen the page after reconnecting to sync updates.
+      </div>
+      <div class="actions">
+        <button type="button" onclick="window.location.reload()">Try Again</button>
+        <button type="button" class="secondary" onclick="window.history.back()">Go Back</button>
+      </div>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cmms-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cmms
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - cmms_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cmms"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: node:20-alpine
+    container_name: cmms-backend
+    restart: unless-stopped
+    working_dir: /app
+    command: >
+      sh -c "npm install &&
+             npm run migration:run &&
+             npm run dev"
+    env_file:
+      - backend/.env
+    environment:
+      DB_TYPE: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: cmms
+      DB_SSL: "false"
+      PORT: 3001
+      FRONTEND_URL: http://10.169.152.102:5173
+      CORS_ORIGINS: http://localhost:5173,http://localhost:4173,http://10.169.152.102:5173,http://10.169.152.102:4173
+      NODE_ENV: development
+      TS_NODE_TRANSPILE_ONLY: "true"
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: node:20-alpine
+    container_name: cmms-frontend
+    restart: unless-stopped
+    profiles: ["ui"]
+    working_dir: /app
+    command: >
+      sh -c "npm install &&
+             npm run dev -- --host 0.0.0.0 --port 5173"
+    environment:
+      VITE_API_URL: http://10.169.152.102:3001/api
+      VITE_PROXY_TARGET: http://backend:3001
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      backend:
+        condition: service_started
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: cmms-pgadmin
+    restart: unless-stopped
+    profiles: ["tools"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@cmms.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  cmms_postgres_data:

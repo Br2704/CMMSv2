@@ -1,0 +1,248 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react-swc";
+import path from "path";
+import { componentTagger } from "lovable-tagger";
+import { VitePWA } from "vite-plugin-pwa";
+
+const proxyTarget = (process.env.VITE_PROXY_TARGET || "http://127.0.0.1:3001").replace(/\/+$/, "");
+
+export default defineConfig(({ mode }) => ({
+  server: {
+    host: "::",
+    port: 8080,
+    strictPort: false,
+    proxy: {
+      "/api": {
+        target: proxyTarget,
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+    hmr: {
+      overlay: false,
+    },
+  },
+  plugins: [
+    react(),
+    mode === "development" && componentTagger(),
+    VitePWA({
+      registerType: "autoUpdate",
+      includeAssets: ["favicon.ico", "icons/*.png"],
+      manifest: {
+        name: "TamOptiX CMMS Platform",
+        short_name: "TamOptiX",
+        description: "Industrial CMMS Platform",
+        start_url: "/",
+        display: "standalone",
+        background_color: "#ffffff",
+        theme_color: "#0f172a",
+        orientation: "any",
+        icons: [
+          {
+            src: "/icons/icon-72x72.png",
+            sizes: "72x72",
+            type: "image/png",
+            purpose: "maskable any"
+          },
+          {
+            src: "/icons/icon-96x96.png",
+            sizes: "96x96",
+            type: "image/png",
+            purpose: "maskable any"
+          },
+          {
+            src: "/icons/icon-128x128.png",
+            sizes: "128x128",
+            type: "image/png",
+            purpose: "maskable any"
+          },
+          {
+            src: "/icons/icon-144x144.png",
+            sizes: "144x144",
+            type: "image/png",
+            purpose: "maskable any"
+          },
+          {
+            src: "/icons/icon-152x152.png",
+            sizes: "152x152",
+            type: "image/png",
+            purpose: "maskable any"
+          },
+          {
+            src: "/icons/icon-192x192.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "maskable any"
+          },
+          {
+            src: "/icons/icon-384x384.png",
+            sizes: "384x384",
+            type: "image/png",
+            purpose: "maskable any"
+          },
+          {
+            src: "/icons/icon-512x512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable any"
+          }
+        ],
+        categories: ["business", "productivity", "utilities"],
+        shortcuts: [
+          {
+            name: "Dashboard",
+            short_name: "Dashboard",
+            url: "/",
+            icons: [{ src: "/icons/icon-96x96.png", sizes: "96x96" }]
+          },
+          {
+            name: "Work Orders",
+            short_name: "Work Orders",
+            url: "/work-orders",
+            icons: [{ src: "/icons/icon-96x96.png", sizes: "96x96" }]
+          }
+        ]
+      },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2,webmanifest}"],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "app-shell-pages",
+              networkTimeoutSeconds: 4,
+              cacheableResponse: {
+                statuses: [200],
+              },
+              expiration: {
+                maxEntries: 30,
+                maxAgeSeconds: 60 * 60 * 24 * 7,
+              },
+            },
+          },
+          {
+            urlPattern: ({ request, url }) => request.destination === "image" || url.pathname.startsWith("/icons/"),
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "app-icons-images",
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+              expiration: {
+                maxEntries: 120,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+            },
+          },
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith("/api/branding/logo"),
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "branding-logo-assets",
+              networkTimeoutSeconds: 3,
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+              expiration: {
+                maxEntries: 20,
+                maxAgeSeconds: 60 * 60 * 24,
+              },
+            },
+          },
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith("/api/branding/manifest"),
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "branding-manifests",
+              networkTimeoutSeconds: 3,
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60,
+              },
+            },
+          },
+          {
+            urlPattern: ({ url, request }) =>
+              request.method === "GET" &&
+              !url.pathname.endsWith("/stream") &&
+              (url.pathname.startsWith("/api/assets") ||
+                url.pathname.startsWith("/api/work-orders") ||
+                url.pathname.startsWith("/api/pm-schedules") ||
+                url.pathname.startsWith("/api/calibration") ||
+                url.pathname.startsWith("/api/amc") ||
+                url.pathname.startsWith("/api/notifications")),
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "cmms-mobile-api-cache",
+              networkTimeoutSeconds: 4,
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+              expiration: {
+                maxEntries: 150,
+                maxAgeSeconds: 60 * 60 * 24,
+              },
+            },
+          },
+          {
+            urlPattern: ({ url, request }) =>
+              request.method === "POST" &&
+              (url.pathname.startsWith("/api/work-orders") ||
+                url.pathname.startsWith("/api/pm-schedules") ||
+                url.pathname.startsWith("/api/calibration") ||
+                url.pathname.startsWith("/api/amc")),
+            handler: "NetworkOnly",
+            options: {
+              backgroundSync: {
+                name: "cmms-background-updates",
+                options: {
+                  maxRetentionTime: 24 * 60,
+                },
+              },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts-cache",
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "gstatic-fonts-cache",
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+        ],
+      },
+    }),
+  ].filter(Boolean),
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+}));

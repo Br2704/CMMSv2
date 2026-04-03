@@ -1,0 +1,149 @@
+import { Column, Entity, JoinColumn, ManyToOne, VersionColumn } from 'typeorm';
+import { DATETIME_COLUMN_TYPE, TimestampedUuidEntity } from './common';
+import { AssetEntity } from './asset.entity';
+import { PlantEntity } from './plant.entity';
+import { UserEntity } from './user.entity';
+import { VendorEntity } from './vendor.entity';
+
+@Entity('work_orders')
+export class WorkOrderEntity extends TimestampedUuidEntity {
+  @Column({ name: 'wo_number', type: 'varchar', unique: true })
+  woNumber!: string;
+
+  @Column({ name: 'asset_id', type: 'uuid' })
+  assetId!: string;
+
+  @Column({ type: 'varchar' })
+  category!: string;
+
+  @Column({ type: 'varchar', default: 'MEDIUM' })
+  priority!: string;
+
+  @Column({ type: 'varchar', default: 'RAISED' })
+  status!: string;
+
+  @Column({ name: 'problem_description', type: 'text' })
+  problemDescription!: string;
+
+  @Column({ name: 'raised_by', type: 'uuid', nullable: true })
+  raisedBy!: string | null;
+
+  @Column({ name: 'assigned_to', type: 'uuid', nullable: true })
+  assignedTo!: string | null;
+
+  @Column({ name: 'opened_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  openedAt!: Date | null;
+
+  @Column({ name: 'closed_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  closedAt!: Date | null;
+
+  @Column({ name: 'started_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  startedAt!: Date | null;
+
+  @Column({ name: 'resolved_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  resolvedAt!: Date | null;
+
+  @Column({ name: 'downtime_start_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  downtimeStartAt!: Date | null;
+
+  @Column({ name: 'downtime_end_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  downtimeEndAt!: Date | null;
+
+  @Column({ name: 'is_failure_event', type: 'boolean', default: false })
+  isFailureEvent!: boolean;
+
+  @Column({ name: 'root_cause', type: 'text', nullable: true })
+  rootCause!: string | null;
+
+  @Column({ name: 'action_taken', type: 'text', nullable: true })
+  actionTaken!: string | null;
+
+  @Column({ name: 'downtime_minutes', type: 'int', default: 0 })
+  downtimeMinutes!: number;
+
+  @Column({ name: 'operator_fault', type: 'boolean', default: false })
+  operatorFault!: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  remarks!: string | null;
+
+  @Column({ name: 'plant_id', type: 'uuid', nullable: true })
+  plantId!: string | null;
+
+  @Column({ name: 'wo_type', type: 'varchar', default: 'BREAKDOWN' })
+  woType!: string;
+
+  @Column({ name: 'reported_location', type: 'varchar', nullable: true })
+  reportedLocation!: string | null;
+
+  @Column({ name: 'failure_code', type: 'varchar', nullable: true })
+  failureCode!: string | null;
+
+  @Column({ name: 'sub_category', type: 'varchar', nullable: true })
+  subCategory!: string | null;
+
+  @Column({ name: 'labor_hours', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  laborHours!: string;
+
+  @Column({ name: 'estimated_cost', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  estimatedCost!: string;
+
+  @Column({ name: 'actual_cost', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  actualCost!: string;
+
+  @Column({ name: 'vendor_id', type: 'uuid', nullable: true })
+  vendorId!: string | null;
+
+  @Column({ name: 'warranty_claim', type: 'boolean', default: false })
+  warrantyClaim!: boolean;
+
+  @Column({ name: 'safety_related', type: 'boolean', default: false })
+  safetyRelated!: boolean;
+
+  @Column({ name: 'parts_replaced', type: 'text', nullable: true })
+  partsReplaced!: string | null;
+
+  @Column({ name: 'spare_consumption', type: 'simple-json', nullable: true })
+  spareConsumption!: Array<Record<string, unknown>> | null;
+
+  @Column({ type: 'simple-json', nullable: true })
+  attachments!: Array<Record<string, unknown>> | null;
+
+  @Column({ name: 'voice_notes', type: 'simple-json', nullable: true })
+  voiceNotes!: Array<Record<string, unknown>> | null;
+
+  @Column({ name: 'safety_checklist', type: 'simple-json', nullable: true })
+  safetyChecklist!: Record<string, unknown> | null;
+
+  @Column({ name: 'technician_verification', type: 'simple-json', nullable: true })
+  technicianVerification!: Record<string, unknown> | null;
+
+  @Column({ name: 'follow_up_required', type: 'boolean', default: false })
+  followUpRequired!: boolean;
+
+  @Column({ name: 'follow_up_notes', type: 'text', nullable: true })
+  followUpNotes!: string | null;
+
+  @VersionColumn({ type: 'int', default: 1 })
+  version!: number;
+
+  @ManyToOne(() => AssetEntity, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'asset_id' })
+  asset!: AssetEntity;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'raised_by' })
+  raisedByUser!: UserEntity | null;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'assigned_to' })
+  assignedToUser!: UserEntity | null;
+
+  @ManyToOne(() => PlantEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'plant_id' })
+  plant!: PlantEntity | null;
+
+  @ManyToOne(() => VendorEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'vendor_id' })
+  vendor!: VendorEntity | null;
+}
