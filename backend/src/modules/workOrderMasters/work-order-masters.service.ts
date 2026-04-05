@@ -29,9 +29,8 @@ class WorkOrderMastersService extends CrudService {
   async list(query: ListQuery, auth: AuthContext): Promise<ListResult<GenericRecord>> {
     const extendedQuery = query as ListQuery & { optionType?: string; option_type?: string; type?: string };
     const scopedPlantIds = resolvePlantFilter(auth, query.plantId);
-    const targetPlantIds = scopedPlantIds ?? [];
-    if (targetPlantIds.length === 1) {
-      await ensureDefaultWorkOrderMasters(targetPlantIds);
+    if (scopedPlantIds && scopedPlantIds.length === 1) {
+      await ensureDefaultWorkOrderMasters(scopedPlantIds);
     }
 
     const page = Math.max(1, Number(query.page ?? 1) || 1);
@@ -49,11 +48,11 @@ class WorkOrderMastersService extends CrudService {
 
     const qb = AppDataSource.createQueryBuilder().select('t.*').from('work_order_masters', 't');
 
-    if (targetPlantIds) {
-      if (targetPlantIds.length === 0) {
+    if (scopedPlantIds) {
+      if (scopedPlantIds.length === 0) {
         return { items: [], total: 0 };
       }
-      qb.andWhere('t.plant_id IN (:...plantIds)', { plantIds: targetPlantIds });
+      qb.andWhere('t.plant_id IN (:...plantIds)', { plantIds: scopedPlantIds });
     }
 
     if (search) {

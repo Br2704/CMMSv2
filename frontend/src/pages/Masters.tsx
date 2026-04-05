@@ -19,7 +19,6 @@ import {
   Link2,
   Leaf,
   DoorOpen,
-  Settings2,
   Mail,
   ClipboardList,
 } from "lucide-react";
@@ -28,7 +27,7 @@ const masterPages = [
   {
     name: "Plant",
     description: "Manage plant locations and details",
-    href: "/root/plant",
+    href: "/masters/plant",
     icon: Factory,
     color: "bg-blue-500",
     moduleId: "masters.plant",
@@ -115,19 +114,11 @@ const masterPages = [
   },
   {
     name: "Gate Master",
-    description: "Manage gate locations and plant entry points",
+    description: "Manage gate locations and gate-wise entry template configuration",
     href: "/masters/gates",
     icon: DoorOpen,
     color: "bg-red-500",
     moduleId: "masters.gates",
-  },
-  {
-    name: "Gate Template Management",
-    description: "Configure gate entry templates, user types, and dynamic fields",
-    href: "/masters/gate-templates",
-    icon: Settings2,
-    color: "bg-rose-500",
-    moduleId: "masters.gate-templates",
   },
   {
     name: "Safety Config",

@@ -106,7 +106,7 @@ export default function TechnicianDashboard() {
           <Button size="sm" variant="ghost" className="h-11" onClick={() => navigate("/technician")}>Home</Button>
           <Button size="sm" variant="ghost" className="h-11" onClick={() => navigate("/scan/live")}>Scan</Button>
           <Button size="sm" variant="ghost" className="h-11" onClick={() => navigate("/work-orders")}>WOs</Button>
-          <Button size="sm" variant="ghost" className="h-11" onClick={() => navigate("/alerts")}>Alerts</Button>
+          <Button size="sm" variant="ghost" className="h-11" onClick={() => navigate("/preventive-maintenance")}>PM</Button>
         </div>
       </div>
     </div>

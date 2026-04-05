@@ -28,6 +28,7 @@ import {
 import { isAdmin, isIncharge, useAuthStore } from "@/store/auth.store";
 import { AlertTriangle, CheckCircle2, ClipboardCheck, Search, Wrench } from "lucide-react";
 import { toast } from "sonner";
+import { hoursToMinutes } from "@/lib/time";
 
 interface ReportFormState {
   visitScheduleId: string | null;
@@ -416,7 +417,7 @@ export default function AMC() {
             <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">AMC Compliance</p><p className="mt-2 text-2xl font-semibold">{dashboard?.amcCompliance || 0}%</p></div><CheckCircle2 className="h-6 w-6 text-emerald-600" /></div></CardContent></Card>
             <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Pending Visits</p><p className="mt-2 text-2xl font-semibold">{dashboard?.pendingVisits || 0}</p></div><ClipboardCheck className="h-6 w-6 text-amber-600" /></div></CardContent></Card>
             <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Missed Visits</p><p className="mt-2 text-2xl font-semibold">{dashboard?.missedVisits || 0}</p></div><AlertTriangle className="h-6 w-6 text-rose-600" /></div></CardContent></Card>
-            <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Coverage / Response</p><p className="mt-2 text-2xl font-semibold">{dashboard?.machineAmcCoverage || 0}% / {dashboard?.vendorResponseTimeHours || 0}h</p></div><Wrench className="h-6 w-6 text-primary" /></div></CardContent></Card>
+            <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Coverage / Response</p><p className="mt-2 text-2xl font-semibold">{dashboard?.machineAmcCoverage || 0}% / {hoursToMinutes(dashboard?.vendorResponseTimeHours)} min</p></div><Wrench className="h-6 w-6 text-primary" /></div></CardContent></Card>
           </div>
 
           <Card>

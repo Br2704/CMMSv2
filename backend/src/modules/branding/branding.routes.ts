@@ -14,12 +14,12 @@ const DEFAULT_BRANDING = {
   organizationName: null as string | null,
   organizationLogoUrl: null as string | null,
   organizationLogoAssetUrl: '/api/branding/logo',
-  organizationFaviconUrl: '/icons/icon-192x192.png' as string | null,
-  sidebarTitle: 'TamOptiX',
-  browserTitle: 'TamOptiX CMMS',
+  organizationFaviconUrl: '/icons/jkfenner-favicon.svg' as string | null,
+  sidebarTitle: 'JK Fenner',
+  browserTitle: 'JK Fenner CMMS',
   brandColor: DEFAULT_THEME_COLOR,
-  fallbackLogoUrl: '/icons/icon-512x512.png',
-  fallbackFaviconUrl: '/icons/icon-192x192.png',
+  fallbackLogoUrl: '/icons/jkfenner-logo.svg',
+  fallbackFaviconUrl: '/icons/jkfenner-favicon.svg',
   updatedAt: null as string | null,
 };
 
@@ -82,8 +82,12 @@ async function resolveOrganizationIdForUser(userId: string, authPlantIds: string
   return resolved.organizationId;
 }
 
-async function resolveBrandingForAuthUser(userId: string, authPlantIds: string[] = []): Promise<ResolvedOrganization> {
-  const organizationId = await resolveOrganizationIdForUser(userId, authPlantIds);
+async function resolveBrandingForAuthUser(input: {
+  userId: string;
+  authPlantIds?: string[];
+  organizationId?: string | null;
+}): Promise<ResolvedOrganization> {
+  const organizationId = input.organizationId ?? (await resolveOrganizationIdForUser(input.userId, input.authPlantIds ?? []));
   const brandingMeta = await getBrandingVersion();
   if (!organizationId) {
     return { organization: null, version: brandingMeta.version, updatedAt: brandingMeta.updatedAt };
@@ -215,7 +219,11 @@ brandingRouter.get('/branding/favicon', async (req, res, next) => {
 
 brandingRouter.get('/branding/me', requireAuth, async (req, res, next) => {
   try {
-    const { organization, version, updatedAt } = await resolveBrandingForAuthUser(req.auth!.userId, req.auth?.plantIds ?? []);
+    const { organization, version, updatedAt } = await resolveBrandingForAuthUser({
+      userId: req.auth!.userId,
+      authPlantIds: req.auth?.plantIds ?? [],
+      organizationId: req.auth?.organizationId ?? null,
+    });
     const etag = `"branding-${version}"`;
     res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
     res.setHeader('ETag', etag);
@@ -266,13 +274,13 @@ brandingRouter.get('/branding/manifest', async (req, res, next) => {
     const { organization, version } = parsedQuery.success
       ? await resolveBrandingForLogoRequest({ organizationId: parsedQuery.data.organizationId ?? null })
       : await resolveBrandingForLogoRequest();
-    const organizationName = organization?.name || 'TamOptiX';
+    const organizationName = organization?.name || 'JK Fenner';
     const themeColor = normalizeThemeColor(organization?.brandColor);
     const hasOrganizationFavicon = Boolean(organization?.faviconUrl?.trim());
     const manifest = {
       id: '/',
-      name: organization ? `${organizationName} CMMS` : 'TamOptiX CMMS',
-      short_name: organization ? organizationName : 'TamOptiX',
+      name: organization ? `${organizationName} CMMS` : 'JK Fenner CMMS',
+      short_name: organization ? `${organizationName} CMMS` : 'JK Fenner CMMS',
       description: 'Industrial CMMS Platform',
       start_url: '/',
       display: 'standalone',

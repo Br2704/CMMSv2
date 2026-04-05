@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { AlertTriangle, Camera, Download, DoorOpen, Loader2, LogIn, LogOut, QrCode, ShieldAlert, Truck, UserCheck, Users } from "lucide-react";
+import { AlertTriangle, Camera, Download, DoorOpen, FileScan, Loader2, LogIn, LogOut, QrCode, ShieldAlert, Truck, UserCheck, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,13 +10,17 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { subscribeGateSync } from "@/lib/gate-sync";
 import { useAuthStore } from "@/store/auth.store";
+import { listDepartments, type Department } from "@/api/departments";
+import { listModules, type MachineModule } from "@/api/modules";
+import { listProfiles, type UserProfile } from "@/api/users";
+import { createSmartVisitor, getVisitorInsights, type SmartVisitorCreateResponse, type VisitorInsights } from "@/api/visitorExperience";
 import {
   createGateEntry,
   downloadGateReport,
@@ -66,6 +70,29 @@ function defaultSummary(): GateDashboardSummary {
   };
 }
 
+function defaultVisitorInsights(): VisitorInsights {
+  return {
+    pendingApprovals: 0,
+    approvedToday: 0,
+    rejectedToday: 0,
+    activeVisitors: 0,
+    navigationEnabled: 0,
+    requestsToday: 0,
+    liveTracked: 0,
+    visitorsPerEmployee: [],
+  };
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === "object" && "message" in error) {
+    const candidate = (error as { message?: unknown }).message;
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate;
+    }
+  }
+  return fallback;
+}
+
 async function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -74,6 +101,18 @@ async function fileToDataUrl(file: File) {
     reader.readAsDataURL(file);
   });
 }
+
+function toDateTimeLocalInput(value: Date) {
+  const timezoneOffsetMs = value.getTimezoneOffset() * 60_000;
+  return new Date(value.getTime() - timezoneOffsetMs).toISOString().slice(0, 16);
+}
+
+type CameraCaptureMode = "PHOTO" | "DOCUMENT";
+
+const visitorDurationOptions = [1, 2, 3, 4, 6, 8, 12, 24].map((hours) => ({
+  value: String(hours),
+  label: `${hours} hour${hours > 1 ? "s" : ""}`,
+}));
 
 export default function SecurityGate() {
   const { user } = useAuthStore();
@@ -87,6 +126,7 @@ export default function SecurityGate() {
   const [templateUsers, setTemplateUsers] = useState<GateTemplateUser[]>([]);
   const [entries, setEntries] = useState<GateEntry[]>([]);
   const [summary, setSummary] = useState<GateDashboardSummary>(defaultSummary());
+  const [visitorInsights, setVisitorInsights] = useState<VisitorInsights>(defaultVisitorInsights());
   const [selectedGateId, setSelectedGateId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({});
@@ -105,7 +145,39 @@ export default function SecurityGate() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [createdEntry, setCreatedEntry] = useState<GateEntry | null>(null);
   const [qrImage, setQrImage] = useState("");
+  const [employees, setEmployees] = useState<UserProfile[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [modules, setModules] = useState<MachineModule[]>([]);
+  const [creatingSmartVisitor, setCreatingSmartVisitor] = useState(false);
+  const [createdSmartVisitor, setCreatedSmartVisitor] = useState<SmartVisitorCreateResponse | null>(null);
+  const [smartVisitorForm, setSmartVisitorForm] = useState({
+    gateId: "",
+    departmentId: "",
+    moduleId: "",
+    personToMeetUserId: "",
+    visitorName: "",
+    visitorCompany: "",
+    visitorPhone: "",
+    purpose: "",
+    durationHours: "2",
+    idProofType: "",
+    idProofNumber: "",
+    vehicleNumber: "",
+    remarks: "",
+  });
+  const [cameraCaptureOpen, setCameraCaptureOpen] = useState(false);
+  const [cameraCaptureMode, setCameraCaptureMode] = useState<CameraCaptureMode>("PHOTO");
+  const [cameraCaptureField, setCameraCaptureField] = useState<GateTemplateField | null>(null);
+  const [cameraCaptureStatus, setCameraCaptureStatus] = useState<"idle" | "starting" | "ready">("idle");
+  const [cameraCaptureError, setCameraCaptureError] = useState("");
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const syncVersionRef = useRef<string | null>(null);
+
+  const selectedGateTemplates = useMemo(
+    () => templates.filter((template) => template.gateId === selectedGateId),
+    [selectedGateId, templates],
+  );
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) || null,
@@ -119,13 +191,12 @@ export default function SecurityGate() {
 
   const templateOptions = useMemo(
     () =>
-      templates
-        .filter((template) => !selectedGateId || template.gateId === selectedGateId)
+      selectedGateTemplates
         .map((template) => ({
           value: template.id,
           label: `${template.templateName} · ${template.visitorType.replace(/_/g, " ")}`,
         })),
-    [selectedGateId, templates],
+    [selectedGateTemplates],
   );
 
   const reportGateOptions = useMemo(
@@ -160,6 +231,33 @@ export default function SecurityGate() {
     [activityGateId, templates],
   );
 
+  const employeeOptions = useMemo(
+    () =>
+      employees
+        .filter((employee) => employee.isActive)
+        .map((employee) => ({
+          value: employee.userId,
+          label: `${employee.fullName} (${employee.userCode})`,
+        })),
+    [employees],
+  );
+
+  const departmentOptions = useMemo(
+    () => departments.map((department) => ({ value: department.id, label: `${department.code} - ${department.name}` })),
+    [departments],
+  );
+
+  const moduleOptions = useMemo(
+    () =>
+      modules
+        .filter((module) => !smartVisitorForm.departmentId || module.departmentId === smartVisitorForm.departmentId)
+        .map((module) => ({
+          value: module.id,
+          label: module.code ? `${module.code} - ${module.name}` : module.name,
+        })),
+    [modules, smartVisitorForm.departmentId],
+  );
+
   const groupedFields = useMemo(() => {
     const groups = new Map<string, GateTemplateField[]>();
     templateFields.forEach((field) => {
@@ -187,54 +285,74 @@ export default function SecurityGate() {
     });
   }, [entries, search, statusFilter, activityGateId, activityTemplateId]);
 
-  const loadDashboard = async () => {
-    const response = await getGateDashboardSummary({ plantId });
-    setSummary(response.data);
-  };
+  const loadDashboard = useCallback(async () => {
+    const [gateSummaryResponse, visitorInsightsResponse] = await Promise.all([
+      getGateDashboardSummary({ plantId }),
+      getVisitorInsights({ plantId }),
+    ]);
+    setSummary(gateSummaryResponse.data);
+    setVisitorInsights(visitorInsightsResponse.data);
+  }, [plantId]);
 
-  const loadEntries = async () => {
+  const loadEntries = useCallback(async () => {
     const response = await listGateEntries({
       page: 1,
       limit: 100,
       plantId,
     });
     setEntries(response.data);
-  };
+  }, [plantId]);
 
-  const loadMasterData = async () => {
-    const [gatesResponse, templatesResponse] = await Promise.all([
+  const loadMasterData = useCallback(async () => {
+    const [gatesResponse, templatesResponse, profilesResponse, departmentsResponse, modulesResponse] = await Promise.all([
       listGates({ page: 1, limit: 100, plantId }),
       listGateTemplates({ page: 1, limit: 100, plantId }),
+      listProfiles({ page: 1, limit: 300, plantId, includeInactive: false }),
+      listDepartments({ page: 1, limit: 300, plantId, includeInactive: false }),
+      listModules({ page: 1, limit: 400, plantId, includeInactive: false }),
     ]);
     setGates(gatesResponse.data);
     setTemplates(templatesResponse.data);
+    setDepartments(departmentsResponse.data);
+    setModules(modulesResponse.data);
 
-    if (!selectedGateId && gatesResponse.data.length > 0) {
-      setSelectedGateId(gatesResponse.data[0].id);
+    const employeeProfiles = profilesResponse.data.filter(
+      (profile) => !(profile.roles ?? []).some((role) => role.toUpperCase() === "VISITOR"),
+    );
+    setEmployees(employeeProfiles);
+
+    if (gatesResponse.data.length > 0) {
+      setSelectedGateId((current) => current || gatesResponse.data[0].id);
     }
-  };
 
-  const loadPage = async () => {
+    setSmartVisitorForm((current) => ({
+      ...current,
+      gateId: current.gateId || gatesResponse.data[0]?.id || "",
+      personToMeetUserId: current.personToMeetUserId || employeeProfiles[0]?.userId || "",
+    }));
+  }, [plantId]);
+
+  const loadPage = useCallback(async () => {
     setLoading(true);
     try {
       await Promise.all([loadMasterData(), loadEntries(), loadDashboard()]);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to load gate desk");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to load gate desk"));
     } finally {
       setLoading(false);
     }
-  };
+  }, [loadDashboard, loadEntries, loadMasterData]);
 
   useEffect(() => {
     void loadPage();
-  }, [plantId]);
+  }, [loadPage]);
 
   useEffect(() => {
     const unsubscribe = subscribeGateSync(() => {
       void loadPage();
     });
     return unsubscribe;
-  }, [plantId]);
+  }, [loadPage]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -252,7 +370,7 @@ export default function SecurityGate() {
       })();
     }, 5000);
     return () => window.clearInterval(interval);
-  }, [plantId]);
+  }, [loadPage, plantId]);
 
   useEffect(() => {
     if (!selectedTemplateId) {
@@ -271,8 +389,8 @@ export default function SecurityGate() {
         setTemplateFields(sorted);
         setFieldValues(Object.fromEntries(sorted.filter((field) => field.defaultValue !== null && field.defaultValue !== undefined && field.defaultValue !== "").map((field) => [field.fieldName, field.defaultValue])));
         setTemplateUsers(usersResponse.data);
-      } catch (error: any) {
-        toast.error(error?.message || "Failed to load template fields");
+      } catch (error: unknown) {
+        toast.error(getErrorMessage(error, "Failed to load template fields"));
       }
     })();
   }, [selectedTemplateId]);
@@ -283,6 +401,29 @@ export default function SecurityGate() {
       setSelectedGateId(template.gateId);
     }
   }, [selectedTemplateId, templates]);
+
+  useEffect(() => {
+    if (!selectedGateId) {
+      setSelectedTemplateId("");
+      setTemplateFields([]);
+      setTemplateUsers([]);
+      setFieldValues({});
+      return;
+    }
+
+    const scopedTemplates = templates.filter((template) => template.gateId === selectedGateId);
+    if (scopedTemplates.length === 0) {
+      setSelectedTemplateId("");
+      setTemplateFields([]);
+      setTemplateUsers([]);
+      setFieldValues({});
+      return;
+    }
+
+    if (!scopedTemplates.some((template) => template.id === selectedTemplateId)) {
+      setSelectedTemplateId(scopedTemplates[0].id);
+    }
+  }, [selectedGateId, selectedTemplateId, templates]);
 
   useEffect(() => {
     if (!createdEntry?.qrCodeValue) {
@@ -351,12 +492,132 @@ export default function SecurityGate() {
       handleFieldValueChange(fieldName, "");
       return;
     }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File size must be under 5MB");
+      return;
+    }
+
     try {
       const dataUrl = await fileToDataUrl(file);
       handleFieldValueChange(fieldName, dataUrl);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to read file");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to read file"));
     }
+  };
+
+  const stopCameraStream = useCallback(() => {
+    const stream = cameraStreamRef.current;
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+    }
+    cameraStreamRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!cameraCaptureOpen) {
+      setCameraCaptureStatus("idle");
+      setCameraCaptureError("");
+      stopCameraStream();
+      return;
+    }
+
+    let disposed = false;
+    setCameraCaptureStatus("starting");
+    setCameraCaptureError("");
+
+    const startCamera = async () => {
+      if (!window.isSecureContext && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+        throw new Error("Camera access needs HTTPS or localhost.");
+      }
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("This browser does not support camera access.");
+      }
+
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            facingMode: { ideal: "environment" },
+          },
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: true,
+        });
+      }
+
+      if (disposed) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      cameraStreamRef.current = stream;
+      const videoElement = cameraVideoRef.current;
+      if (videoElement) {
+        videoElement.srcObject = stream;
+        videoElement.muted = true;
+        videoElement.playsInline = true;
+        await videoElement.play().catch(() => undefined);
+      }
+      setCameraCaptureStatus("ready");
+    };
+
+    void startCamera().catch((error: unknown) => {
+      if (disposed) return;
+      setCameraCaptureStatus("idle");
+      setCameraCaptureError(getErrorMessage(error, "Unable to start camera. Ensure permission is granted and no other app uses it."));
+      stopCameraStream();
+    });
+
+    return () => {
+      disposed = true;
+      stopCameraStream();
+    };
+  }, [cameraCaptureOpen, stopCameraStream]);
+
+  const openFieldCameraCapture = (field: GateTemplateField, mode: CameraCaptureMode) => {
+    setCameraCaptureField(field);
+    setCameraCaptureMode(mode);
+    setCameraCaptureError("");
+    setCameraCaptureOpen(true);
+  };
+
+  const captureFieldFromCamera = () => {
+    if (!cameraCaptureField) {
+      toast.error("No template field selected for camera capture");
+      return;
+    }
+
+    const videoElement = cameraVideoRef.current;
+    if (!videoElement || videoElement.readyState < 2) {
+      toast.error("Camera feed is not ready yet");
+      return;
+    }
+
+    const width = videoElement.videoWidth || 1280;
+    const height = videoElement.videoHeight || 720;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      toast.error("Unable to capture image from camera");
+      return;
+    }
+
+    context.drawImage(videoElement, 0, 0, width, height);
+    const dataUrl = canvas.toDataURL("image/jpeg", cameraCaptureMode === "DOCUMENT" ? 0.95 : 0.9);
+    handleFieldValueChange(cameraCaptureField.fieldName, dataUrl);
+    toast.success(`${cameraCaptureField.fieldLabel} captured`);
+    setCameraCaptureOpen(false);
+    stopCameraStream();
   };
 
   const buildFieldPayload = (): GateEntryFieldValue[] =>
@@ -413,8 +674,8 @@ export default function SecurityGate() {
       setRemarks("");
       setCreatedEntry(response.data);
       await Promise.all([loadEntries(), loadDashboard()]);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to record entry");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to record entry"));
     } finally {
       setSubmitting(false);
     }
@@ -425,8 +686,8 @@ export default function SecurityGate() {
       await exitGateEntry(entry.id, { exitMethod: "MANUAL", remarks: "Exited at gate" });
       toast.success(`${entry.visitorName} checked out`);
       await Promise.all([loadEntries(), loadDashboard()]);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to update exit");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to update exit"));
     }
   };
 
@@ -435,8 +696,8 @@ export default function SecurityGate() {
       await exitGatePass(token, { exitMethod: "QR_SCAN", remarks: "QR exit scan" });
       toast.success("Exit recorded from QR pass");
       await Promise.all([loadEntries(), loadDashboard()]);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to process QR exit");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to process QR exit"));
     }
   };
 
@@ -458,8 +719,66 @@ export default function SecurityGate() {
       anchor.click();
       URL.revokeObjectURL(url);
       toast.success("Gate report downloaded");
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to download report");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to download report"));
+    }
+  };
+
+  const handleCreateSmartVisitor = async () => {
+    if (!plantId) {
+      toast.error("Plant context is missing for this user");
+      return;
+    }
+    if (!smartVisitorForm.gateId || !smartVisitorForm.personToMeetUserId || !smartVisitorForm.visitorName.trim() || !smartVisitorForm.purpose.trim()) {
+      toast.error("Gate, employee, visitor name and purpose are required");
+      return;
+    }
+
+    const durationHours = Number.parseInt(smartVisitorForm.durationHours, 10);
+    if (!Number.isFinite(durationHours) || durationHours < 1 || durationHours > 24) {
+      toast.error("Select visit duration between 1 and 24 hours");
+      return;
+    }
+
+    setCreatingSmartVisitor(true);
+    try {
+      const response = await createSmartVisitor({
+        gateId: smartVisitorForm.gateId,
+        plantId,
+        departmentId: smartVisitorForm.departmentId || null,
+        moduleId: smartVisitorForm.moduleId || null,
+        personToMeetUserId: smartVisitorForm.personToMeetUserId,
+        visitorName: smartVisitorForm.visitorName.trim(),
+        visitorCompany: smartVisitorForm.visitorCompany.trim() || null,
+        visitorPhone: smartVisitorForm.visitorPhone.trim() || null,
+        purpose: smartVisitorForm.purpose.trim(),
+        durationHours,
+        idProofType: smartVisitorForm.idProofType.trim() || null,
+        idProofNumber: smartVisitorForm.idProofNumber.trim() || null,
+        vehicleNumber: smartVisitorForm.vehicleNumber.trim() || null,
+        remarks: smartVisitorForm.remarks.trim() || null,
+      });
+
+      setCreatedSmartVisitor(response.data);
+      toast.success("Visitor session created and sent for approval");
+      setSmartVisitorForm((current) => ({
+        ...current,
+        visitorName: "",
+        visitorCompany: "",
+        visitorPhone: "",
+        purpose: "",
+        durationHours: "2",
+        idProofType: "",
+        idProofNumber: "",
+        vehicleNumber: "",
+        remarks: "",
+      }));
+
+      await Promise.all([loadEntries(), loadDashboard()]);
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to create smart visitor session"));
+    } finally {
+      setCreatingSmartVisitor(false);
     }
   };
 
@@ -510,9 +829,24 @@ export default function SecurityGate() {
     }
 
     if (field.fieldType === "PHOTO" || field.fieldType === "DOCUMENT" || field.fieldType === "SIGNATURE") {
+      const usesDocumentCapture = field.fieldType === "DOCUMENT";
+      const hasImagePreview = typeof value === "string" && value.startsWith("data:image");
+
       return (
         <div key={field.id} className="space-y-2">
           <Label>{label}{field.isRequired ? " *" : ""}</Label>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => openFieldCameraCapture(field, usesDocumentCapture ? "DOCUMENT" : "PHOTO")}
+            >
+              {usesDocumentCapture ? <FileScan className="h-3.5 w-3.5" /> : <Camera className="h-3.5 w-3.5" />}
+              {usesDocumentCapture ? "Open Camera Scanner" : "Capture from Camera"}
+            </Button>
+          </div>
           <Input
             type="file"
             accept={field.fieldType === "DOCUMENT" ? "*" : "image/*"}
@@ -520,7 +854,10 @@ export default function SecurityGate() {
             onChange={(event) => void handleFileFieldChange(field.fieldName, event.target.files?.[0] || null)}
           />
           {typeof value === "string" && value ? (
-            <p className="text-xs text-muted-foreground">File captured</p>
+            <p className="text-xs text-muted-foreground">Secure file captured and queued for entry submission.</p>
+          ) : null}
+          {hasImagePreview ? (
+            <img src={value} alt={`${field.fieldLabel} preview`} className="max-h-28 rounded-xl border border-border/70" />
           ) : null}
           {field.helpText ? <p className="text-xs text-muted-foreground">{field.helpText}</p> : null}
         </div>
@@ -581,29 +918,6 @@ export default function SecurityGate() {
         </div>
       </motion.div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        {[
-          { title: "Visitors Today", value: summary.visitorsToday, icon: Users, tone: "text-sky-600 bg-sky-500/10" },
-          { title: "Active Visitors", value: summary.activeVisitors, icon: UserCheck, tone: "text-emerald-600 bg-emerald-500/10" },
-          { title: "Vehicles Entered", value: summary.vehiclesEntered, icon: Truck, tone: "text-amber-600 bg-amber-500/10" },
-          { title: "Materials Inward", value: summary.materialsInward, icon: LogIn, tone: "text-violet-600 bg-violet-500/10" },
-          { title: "Materials Outward", value: summary.materialsOutward, icon: LogOut, tone: "text-rose-600 bg-rose-500/10" },
-          { title: "Transport CO2e", value: Number(summary.transportEmissionsKgCo2e || 0).toFixed(1), icon: ShieldAlert, tone: "text-slate-700 bg-slate-200/80" },
-        ].map((item) => (
-          <Card key={item.title} className="shadow-card">
-            <CardContent className="flex items-center gap-3 py-4">
-              <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${item.tone}`}>
-                <item.icon className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{item.value}</p>
-                <p className="text-xs text-muted-foreground">{item.title}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
       <Tabs defaultValue="desk" className="space-y-4">
         <TabsList className="grid h-auto w-full grid-cols-3">
           <TabsTrigger value="desk">Entry Desk</TabsTrigger>
@@ -652,6 +966,21 @@ export default function SecurityGate() {
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+
+                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                  <p className="text-sm font-semibold">Configured Entry Options for Selected Gate</p>
+                  {selectedGateTemplates.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {selectedGateTemplates.map((template) => (
+                        <Badge key={template.id} variant="outline">
+                          {template.visitorType.replace(/_/g, " ")} · {template.templateName}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground">No entry types configured for this gate in Gate Master.</p>
+                  )}
                 </div>
 
                 {selectedTemplate ? (
@@ -730,42 +1059,146 @@ export default function SecurityGate() {
               </CardContent>
             </Card>
 
-            <Card className="shadow-card">
-              <CardHeader>
-                <CardTitle className="text-lg">Gate Ops Highlights</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {visibleEntries.slice(0, 6).map((entry) => (
-                  <div key={entry.id} className="rounded-2xl border border-border/70 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold">{entry.visitorName}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {entry.gate?.gateName || "-"} · {entry.visitorType.replace(/_/g, " ")}
-                        </p>
-                      </div>
-                      <StatusBadge variant={entry.status === "IN" ? "active" : "default"} showDot>
-                        {entry.status}
-                      </StatusBadge>
+            <div className="space-y-4">
+              <Card className="shadow-card">
+                <CardHeader>
+                  <CardTitle className="text-lg">Approval-Based Visitor Access</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Gate</Label>
+                      <Select value={smartVisitorForm.gateId} onValueChange={(value) => setSmartVisitorForm((current) => ({ ...current, gateId: value }))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select gate" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {gateOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {entry.duplicateDetected ? <Badge variant="secondary">Duplicate</Badge> : null}
-                      {entry.blacklistAlert ? <Badge className="bg-red-500/10 text-red-600 hover:bg-red-500/10">Blacklist</Badge> : null}
-                      {entry.watchlistAlert ? <Badge className="bg-amber-500/10 text-amber-600 hover:bg-amber-500/10">Watchlist</Badge> : null}
-                      {entry.vehicleNumber ? <Badge variant="outline">{entry.vehicleNumber}</Badge> : null}
+
+                    <div className="space-y-2">
+                      <Label>Employee to Visit</Label>
+                      <Select value={smartVisitorForm.personToMeetUserId} onValueChange={(value) => setSmartVisitorForm((current) => ({ ...current, personToMeetUserId: value }))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select employee" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {employeeOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      Entry {format(new Date(entry.entryTime), "dd MMM yyyy, HH:mm")}
-                    </p>
                   </div>
-                ))}
-                {visibleEntries.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">
-                    No gate activity recorded yet.
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Department</Label>
+                      <Select value={smartVisitorForm.departmentId || "none"} onValueChange={(value) => setSmartVisitorForm((current) => ({ ...current, departmentId: value === "none" ? "" : value, moduleId: "" }))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Optional department" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {departmentOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Module</Label>
+                      <Select value={smartVisitorForm.moduleId || "none"} onValueChange={(value) => setSmartVisitorForm((current) => ({ ...current, moduleId: value === "none" ? "" : value }))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Optional module" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {moduleOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                ) : null}
-              </CardContent>
-            </Card>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Visitor Name</Label>
+                      <Input value={smartVisitorForm.visitorName} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorName: event.target.value }))} placeholder="Visitor full name" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Visitor Company</Label>
+                      <Input value={smartVisitorForm.visitorCompany} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorCompany: event.target.value }))} placeholder="Company" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Visitor Phone</Label>
+                      <Input value={smartVisitorForm.visitorPhone} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorPhone: event.target.value }))} placeholder="Phone number" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Vehicle Number</Label>
+                      <Input value={smartVisitorForm.vehicleNumber} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, vehicleNumber: event.target.value }))} placeholder="Optional vehicle" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Purpose</Label>
+                    <Textarea value={smartVisitorForm.purpose} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, purpose: event.target.value }))} rows={2} placeholder="Why is this visitor coming?" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Allowed Access Duration (Starts After Employee Approval)</Label>
+                    <Select value={smartVisitorForm.durationHours} onValueChange={(value) => setSmartVisitorForm((current) => ({ ...current, durationHours: value }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select duration" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {visitorDurationOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Access timer begins only after the host employee approves this visitor request.</p>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>ID Proof Type</Label>
+                      <Input value={smartVisitorForm.idProofType} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, idProofType: event.target.value }))} placeholder="Aadhaar / Passport / etc." />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>ID Proof Number</Label>
+                      <Input value={smartVisitorForm.idProofNumber} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, idProofNumber: event.target.value }))} placeholder="ID number" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Security Notes</Label>
+                    <Textarea value={smartVisitorForm.remarks} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, remarks: event.target.value }))} rows={2} placeholder="Optional note for approval flow" />
+                  </div>
+
+                  <Button className="w-full" onClick={() => void handleCreateSmartVisitor()} disabled={creatingSmartVisitor}>
+                    {creatingSmartVisitor ? "Creating Visitor Session..." : "Create Temporary Visitor + Approval Window"}
+                  </Button>
+
+                  {createdSmartVisitor ? (
+                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm">
+                      <p className="font-semibold text-emerald-700">Visitor Session Created</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Session: {createdSmartVisitor.session.id}</p>
+                      <p className="text-xs text-muted-foreground">QR Token: {createdSmartVisitor.visitorCredentials.qrToken}</p>
+                      <p className="text-xs text-muted-foreground">Login: {createdSmartVisitor.visitorCredentials.loginEmail}</p>
+                      <p className="text-xs text-muted-foreground">Temp Password: {createdSmartVisitor.visitorCredentials.temporaryPassword}</p>
+                      <p className="text-xs text-muted-foreground">Duration: {createdSmartVisitor.visitorCredentials.durationHours || smartVisitorForm.durationHours} hour(s), starts on approval.</p>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </TabsContent>
 
@@ -870,6 +1303,55 @@ export default function SecurityGate() {
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            {[
+              { title: "Visitors Today", value: summary.visitorsToday, icon: Users, tone: "text-sky-600 bg-sky-500/10" },
+              { title: "Active Visitors", value: summary.activeVisitors, icon: UserCheck, tone: "text-emerald-600 bg-emerald-500/10" },
+              { title: "Vehicles Entered", value: summary.vehiclesEntered, icon: Truck, tone: "text-amber-600 bg-amber-500/10" },
+              { title: "Materials Inward", value: summary.materialsInward, icon: LogIn, tone: "text-violet-600 bg-violet-500/10" },
+              { title: "Materials Outward", value: summary.materialsOutward, icon: LogOut, tone: "text-rose-600 bg-rose-500/10" },
+              { title: "Transport CO2e", value: Number(summary.transportEmissionsKgCo2e || 0).toFixed(1), icon: ShieldAlert, tone: "text-slate-700 bg-slate-200/80" },
+            ].map((item) => (
+              <Card key={item.title} className="shadow-card">
+                <CardContent className="flex items-center gap-3 py-4">
+                  <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${item.tone}`}>
+                    <item.icon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{item.value}</p>
+                    <p className="text-xs text-muted-foreground">{item.title}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              { title: "Pending Visitor Approvals", value: visitorInsights.pendingApprovals, icon: AlertTriangle, tone: "text-amber-600 bg-amber-500/10" },
+              { title: "Visitor Approvals Today", value: visitorInsights.approvedToday, icon: UserCheck, tone: "text-emerald-600 bg-emerald-500/10" },
+              { title: "Visitor Rejections Today", value: visitorInsights.rejectedToday, icon: ShieldAlert, tone: "text-rose-600 bg-rose-500/10" },
+              {
+                title: "Top Host Visits",
+                value: visitorInsights.visitorsPerEmployee[0]?.total || 0,
+                icon: Users,
+                tone: "text-slate-700 bg-slate-200/80",
+              },
+            ].map((item) => (
+              <Card key={item.title} className="shadow-card">
+                <CardContent className="flex items-center gap-3 py-4">
+                  <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${item.tone}`}>
+                    <item.icon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{item.value}</p>
+                    <p className="text-xs text-muted-foreground">{item.title}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
           <Card className="shadow-card">
             <CardHeader>
               <CardTitle className="text-lg">Gate Reports & Logs</CardTitle>
@@ -1004,6 +1486,39 @@ export default function SecurityGate() {
         description="Scan the visitor QR pass to record exit."
         onDecoded={(decoded) => void handleQrDecoded(decoded)}
       />
+
+      <Dialog open={cameraCaptureOpen} onOpenChange={setCameraCaptureOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {cameraCaptureMode === "DOCUMENT" ? <FileScan className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
+              {cameraCaptureMode === "DOCUMENT" ? "Scan Visitor Document" : "Capture Visitor Photo"}
+            </DialogTitle>
+            <DialogDescription>
+              Camera capture is enabled only on secure contexts (HTTPS/localhost). Captured image is stored locally until gate entry submission.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="overflow-hidden rounded-xl border border-border bg-black/90">
+              <video ref={cameraVideoRef} className="min-h-72 w-full object-cover" autoPlay muted playsInline />
+            </div>
+
+            {cameraCaptureStatus === "starting" ? <p className="text-xs text-muted-foreground">Starting secure camera stream...</p> : null}
+            {cameraCaptureStatus === "ready" ? <p className="text-xs text-muted-foreground">Camera ready. Align and capture the image.</p> : null}
+            {cameraCaptureError ? <p className="text-xs text-destructive">{cameraCaptureError}</p> : null}
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCameraCaptureOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={captureFieldFromCamera} disabled={cameraCaptureStatus !== "ready"}>
+              Capture
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!createdEntry} onOpenChange={(open) => { if (!open) setCreatedEntry(null); }}>
         <DialogContent className="max-w-md">

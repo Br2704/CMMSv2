@@ -57,9 +57,9 @@ function calculateMachineWiseMttrMinutes(workOrders: any[]): number {
 }
 
 // Machine-wise MTBF: average gap between failures per machine, then average across machines.
-function calculateMachineWiseMtbfHours(workOrders: any[]): number {
+function calculateMachineWiseMtbfMinutes(workOrders: any[]): number {
   const byAsset = groupWosByAsset(workOrders.filter((wo: any) => wo.status === "CLOSED" && wo.closed_at));
-  const perMachineMtbfHours: number[] = [];
+  const perMachineMtbfMinutes: number[] = [];
 
   Object.values(byAsset).forEach((rows) => {
     if (rows.length < 2) return;
@@ -71,14 +71,14 @@ function calculateMachineWiseMtbfHours(workOrders: any[]): number {
 
     const gaps: number[] = [];
     for (let index = 1; index < failures.length; index += 1) {
-      const gapHours = (failures[index].getTime() - failures[index - 1].getTime()) / (1000 * 60 * 60);
-      if (gapHours > 0) gaps.push(gapHours);
+      const gapMinutes = (failures[index].getTime() - failures[index - 1].getTime()) / (1000 * 60);
+      if (gapMinutes > 0) gaps.push(gapMinutes);
     }
     if (gaps.length === 0) return;
-    perMachineMtbfHours.push(average(gaps));
+    perMachineMtbfMinutes.push(average(gaps));
   });
 
-  return Math.round(average(perMachineMtbfHours));
+  return Math.round(average(perMachineMtbfMinutes));
 }
 
 export function useDashboardData(selectedPlantId?: string | null) {
@@ -244,7 +244,7 @@ export function useDashboardData(selectedPlantId?: string | null) {
   const activeVisitors = gateSummary.activeVisitors;
 
   const mttrAvg = useMemo(() => calculateMachineWiseMttrMinutes(filteredWOs), [filteredWOs]);
-  const mtbfAvg = useMemo(() => calculateMachineWiseMtbfHours(filteredWOs), [filteredWOs]);
+  const mtbfAvg = useMemo(() => calculateMachineWiseMtbfMinutes(filteredWOs), [filteredWOs]);
 
   // PM Compliance
   const completedPM = scopedPmSchedules.filter((pm: any) => pm.status === "COMPLETED").length;
@@ -344,7 +344,7 @@ export function useDashboardData(selectedPlantId?: string | null) {
         if (dates.length < 2) return;
         dates.sort((a, b) => a.getTime() - b.getTime());
         for (let j = 1; j < dates.length; j++) {
-          totalGap += (dates[j].getTime() - dates[j - 1].getTime()) / (1000 * 60 * 60);
+          totalGap += (dates[j].getTime() - dates[j - 1].getTime()) / (1000 * 60);
           gapCount++;
         }
       });

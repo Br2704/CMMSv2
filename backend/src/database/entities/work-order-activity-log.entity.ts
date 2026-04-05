@@ -32,9 +32,6 @@ export class WorkOrderActivityLogEntity extends TimestampedUuidEntity {
   @Column({ type: 'simple-json', nullable: true })
   attachments!: Array<Record<string, unknown>> | null;
 
-  @Column({ name: 'voice_notes', type: 'simple-json', nullable: true })
-  voiceNotes!: Array<Record<string, unknown>> | null;
-
   @Column({ name: 'event_meta', type: 'simple-json', nullable: true })
   eventMeta!: Record<string, unknown> | null;
 

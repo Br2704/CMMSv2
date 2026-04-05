@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { format, formatDistanceToNow, subHours } from "date-fns";
 import {
-  Plus, Search, Eye, MoreHorizontal, Play, CheckCircle, Loader2,
-  ClipboardList, Clock, CheckSquare, AlertTriangle, Send, Wrench, ScanLine, Camera, Video, Mic, Square
+  Plus, Search, Eye, MoreHorizontal, Play, CheckCircle, Loader2, RefreshCw,
+  ClipboardList, Clock, CheckSquare, AlertTriangle, Send, Wrench
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -23,8 +23,8 @@ import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared
 import { SpareUsageEditor, type SpareUsageDraft } from "@/components/spares/SpareUsageEditor";
 import { useAuthStore, isAdmin, isIncharge, isSuperAdmin } from "@/store/auth.store";
 import { dbClient } from "@/api/dbClient";
+import { getStoredAccessToken } from "@/api/http";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createNotification } from "@/hooks/useNotifications";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { PageShell } from "@/components/layout/PageShell";
@@ -37,13 +37,20 @@ import { getAsset, listAssets } from "@/api/assets";
 import { listSpareItems, type SpareItem } from "@/api/inventory";
 import { listWorkOrderMasters, type WorkOrderMaster, type WorkOrderMasterOptionType } from "@/api/workOrderMasters";
 import { listWorkOrderTeamMappings, type WorkOrderTeamMapping } from "@/api/workOrderTeamMappings";
-import { createWorkOrder, updateWorkOrder } from "@/api/workorders";
-import { getFallbackWorkOrderOptions, humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
+import {
+  approveWorkOrder,
+  createWorkOrder,
+  rejectWorkOrder,
+  startWorkOrder,
+  submitWorkOrderForApproval,
+} from "@/api/workorders";
+import { humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { parseQrContent } from "@/mobile/qr";
 import { resolveQrToken } from "@/api/qr";
-import { compressImage, fileToDataUrl } from "@/mobile/media";
-import { executeOrQueueMutation } from "@/mobile/offlineSync";
+import { compressImage } from "@/mobile/media";
+import { hoursToMinutes } from "@/lib/time";
+import { broadcastWorkOrderSync, subscribeWorkOrderSync } from "@/lib/work-order-sync";
 
 const INCHARGE_CATEGORY_MAP: Record<string, string> = {
   MECHANICAL_INCHARGE: "MECHANICAL",
@@ -52,6 +59,38 @@ const INCHARGE_CATEGORY_MAP: Record<string, string> = {
   TOOLCHANGE_INCHARGE: "TOOL_CHANGE",
   CALIBRATION_INCHARGE: "CALIBRATION",
 };
+
+interface PhotoAttachment {
+  name: string;
+  mime_type: string;
+  data_url: string;
+  captured_at: string;
+}
+
+interface CloseDraftSnapshot {
+  closeData?: typeof EMPTY_CLOSE_DATA;
+  closeSpareUsage?: SpareUsageDraft[];
+  closeAttachments?: PhotoAttachment[];
+}
+
+function normalizeDraftAttachments(input: unknown): PhotoAttachment[] {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    .map((item) => {
+      const dataUrl = typeof item.data_url === "string" ? item.data_url : "";
+      if (!dataUrl.startsWith("data:image/")) return null;
+
+      return {
+        name: typeof item.name === "string" && item.name.trim().length > 0 ? item.name : "photo",
+        mime_type: typeof item.mime_type === "string" && item.mime_type.startsWith("image/") ? item.mime_type : "image/jpeg",
+        data_url: dataUrl,
+        captured_at: typeof item.captured_at === "string" ? item.captured_at : new Date().toISOString(),
+      };
+    })
+    .filter((item): item is PhotoAttachment => Boolean(item));
+}
 
 function getInchargeCategories(roles: string[]): string[] {
   return roles.filter((r) => INCHARGE_CATEGORY_MAP[r]).map((r) => INCHARGE_CATEGORY_MAP[r]);
@@ -64,8 +103,6 @@ const PRIORITY_OPTIONS = [
   { value: "LOW", label: "Low" },
 ];
 
-const WORK_ORDER_OPTION_TYPES: WorkOrderMasterOptionType[] = ["CATEGORY", "WO_TYPE", "FAILURE_CODE"];
-
 const getInitialRaiseFormData = (plantId = "") => ({
   plant_id: plantId,
   department_id: "",
@@ -74,11 +111,9 @@ const getInitialRaiseFormData = (plantId = "") => ({
   category: "",
   priority: "",
   problem_description: "",
-  wo_type: "BREAKDOWN",
+  wo_type: "",
   failure_code: "",
   sub_category: "",
-  safety_related: false,
-  estimated_cost: "",
 });
 
 const EMPTY_CLOSE_DATA = {
@@ -93,7 +128,50 @@ const EMPTY_CLOSE_DATA = {
   warranty_claim: false,
   follow_up_required: false,
   follow_up_notes: "",
+  remarks: "",
 };
+
+const EMPTY_REVIEW_DATA = {
+  approve_comments: "",
+  reject_comments: "",
+};
+
+const CLOSE_DRAFT_STORAGE_KEY_PREFIX = "cmms:wo-close-draft:";
+
+function getCloseDraftStorageKey(workOrderId: string) {
+  return `${CLOSE_DRAFT_STORAGE_KEY_PREFIX}${workOrderId}`;
+}
+
+function getStatusVariant(status: string) {
+  if (status === "CLOSED") return "completed" as const;
+  if (status === "IN_PROGRESS") return "in_progress" as const;
+  if (status === "APPROVAL_PENDING") return "critical" as const;
+  if (status === "REJECTED") return "error" as const;
+  if (status === "OPENED") return "opened" as const;
+  if (status === "RAISED") return "warning" as const;
+  return "default" as const;
+}
+
+function safeReadCloseDraft(workOrderId: string) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(getCloseDraftStorageKey(workOrderId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CloseDraftSnapshot;
+    return {
+      closeData: parsed.closeData,
+      closeSpareUsage: parsed.closeSpareUsage,
+      closeAttachments: normalizeDraftAttachments(parsed.closeAttachments),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clearCloseDraft(workOrderId: string | null) {
+  if (!workOrderId || typeof window === "undefined") return;
+  window.localStorage.removeItem(getCloseDraftStorageKey(workOrderId));
+}
 
 function buildSpareUsagePayload(rows: SpareUsageDraft[], availableSpares: SpareItem[]) {
   const spareById = new Map(availableSpares.map((item) => [item.id, item]));
@@ -136,7 +214,7 @@ function getScopedWorkOrderOptions(
     .sort(sortWorkOrderMasters)
     .map((item) => ({ value: item.code, label: item.label }));
 
-  return scoped.length > 0 ? dedupeOptions(scoped) : getFallbackWorkOrderOptions(optionType);
+  return dedupeOptions(scoped);
 }
 
 function getUnionWorkOrderOptions(masters: WorkOrderMaster[], optionType: WorkOrderMasterOptionType) {
@@ -145,13 +223,13 @@ function getUnionWorkOrderOptions(masters: WorkOrderMaster[], optionType: WorkOr
     .sort(sortWorkOrderMasters)
     .map((item) => ({ value: item.code, label: item.label }));
 
-  return dedupeOptions(union.length > 0 ? union : getFallbackWorkOrderOptions(optionType));
+  return dedupeOptions(union);
 }
 
 export default function WorkOrders() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, session } = useAuthStore();
+  const { user, session, isLoading: authLoading, isAuthenticated } = useAuthStore();
   const queryClient = useQueryClient();
   const [raiseDateTime, setRaiseDateTime] = useState(() => new Date());
 
@@ -160,44 +238,105 @@ export default function WorkOrders() {
   const userIsIncharge = isIncharge(user);
   const inchargeCategories = useMemo(() => getInchargeCategories(user?.roles || []), [user?.roles]);
   const assetPrefillApplied = useRef<string | null>(null);
+  const activeTabInitializedRef = useRef(false);
   const assetIdFromQuery = searchParams.get("assetId");
+  const authEnabled = !authLoading && isAuthenticated && Boolean(getStoredAccessToken());
+  const workOrderRefetchInterval: number | false = authEnabled ? 15_000 : false;
 
-  const { data: allWorkOrders = [], isLoading } = useQuery({
-    queryKey: ["work_orders"],
+  const { data: allWorkOrders = [], isLoading, isFetching, refetch, dataUpdatedAt } = useQuery({
+    queryKey: ["work_orders", user?.authId || "anonymous"],
+    enabled: authEnabled,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: workOrderRefetchInterval,
+    refetchIntervalInBackground: true,
+    staleTime: 0,
+    retry: (failureCount: number, error: any) => {
+      const status = error?.status;
+      if (status === 401 || status === 403) return false;
+      return failureCount < 1;
+    },
     queryFn: async () => {
       const { data, error } = await dbClient
         .from("work_orders")
         .select("*, assets(id, code, name)")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(2000);
       if (error) throw error;
-      return data;
+      return data || [];
     },
   });
 
-  const myWorkOrders = useMemo(() => {
-    if (!user) return [];
-    return allWorkOrders.filter((wo: any) => wo.raised_by === user.authId);
-  }, [allWorkOrders, user]);
+  const actorIds = useMemo(
+    () =>
+      new Set(
+        [user?.authId, user?.id].filter((value): value is string => Boolean(value)),
+      ),
+    [user?.authId, user?.id],
+  );
+  const isOwnedByCurrentUser = (value: unknown) => typeof value === "string" && actorIds.has(value);
+
+  const assignedWorkOrders = useMemo(() => {
+    if (!user || actorIds.size === 0) return [];
+    return allWorkOrders.filter((wo: any) => isOwnedByCurrentUser(wo.assigned_to));
+  }, [actorIds, allWorkOrders, user]);
+
+  const raisedWorkOrders = useMemo(() => {
+    if (!user || actorIds.size === 0) return [];
+    return allWorkOrders.filter((wo: any) => isOwnedByCurrentUser(wo.raised_by));
+  }, [actorIds, allWorkOrders, user]);
 
   const inchargeWorkOrders = useMemo(() => {
     if (!userIsIncharge || inchargeCategories.length === 0) return [];
     return allWorkOrders.filter(
-      (wo: any) => inchargeCategories.includes(wo.category) && wo.raised_by !== user?.authId
+      (wo: any) => inchargeCategories.includes(wo.category) && !isOwnedByCurrentUser(wo.raised_by),
     );
-  }, [allWorkOrders, userIsIncharge, inchargeCategories, user]);
+  }, [allWorkOrders, inchargeCategories, userIsIncharge]);
 
-  const [activeTab, setActiveTab] = useState<"my" | "incharge" | "all">(userIsAdmin ? "all" : "my");
+  const approvalQueueWorkOrders = useMemo(() => {
+    return allWorkOrders.filter(
+      (wo: any) => wo.status === "APPROVAL_PENDING" && (userIsAdmin || isOwnedByCurrentUser(wo.raised_by)),
+    );
+  }, [allWorkOrders, userIsAdmin]);
+
+  const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "incharge" | "all" | "approval">("assigned");
+
+  useEffect(() => {
+    if (!authEnabled || activeTabInitializedRef.current) return;
+    setActiveTab(userIsAdmin ? "all" : userIsIncharge ? "incharge" : "assigned");
+    activeTabInitializedRef.current = true;
+  }, [authEnabled, userIsAdmin, userIsIncharge]);
+
+  useEffect(() => {
+    if (activeTab === "all" && !userIsAdmin) {
+      setActiveTab(userIsIncharge ? "incharge" : "assigned");
+      return;
+    }
+    if (activeTab === "incharge" && !userIsIncharge) {
+      setActiveTab(userIsAdmin ? "all" : "assigned");
+    }
+  }, [activeTab, userIsAdmin, userIsIncharge]);
 
   const displayedOrders = useMemo(() => {
-    if (userIsAdmin) {
-      if (activeTab === "my") return myWorkOrders;
-      return allWorkOrders;
-    }
+    if (activeTab === "assigned") return assignedWorkOrders;
+    if (activeTab === "raised") return raisedWorkOrders;
     if (userIsIncharge && activeTab === "incharge") return inchargeWorkOrders;
-    return myWorkOrders;
-  }, [activeTab, userIsAdmin, userIsIncharge, myWorkOrders, inchargeWorkOrders, allWorkOrders]);
+    if (activeTab === "approval") return approvalQueueWorkOrders;
+    if (userIsAdmin && activeTab === "all") return allWorkOrders;
+    return assignedWorkOrders;
+  }, [activeTab, allWorkOrders, approvalQueueWorkOrders, assignedWorkOrders, inchargeWorkOrders, raisedWorkOrders, userIsAdmin, userIsIncharge]);
 
-  const kpiSource = activeTab === "incharge" ? inchargeWorkOrders : activeTab === "all" ? allWorkOrders : myWorkOrders;
+  const kpiSource =
+    activeTab === "approval"
+      ? approvalQueueWorkOrders
+      : activeTab === "incharge"
+      ? inchargeWorkOrders
+      : activeTab === "all"
+        ? allWorkOrders
+        : activeTab === "raised"
+          ? raisedWorkOrders
+          : assignedWorkOrders;
   const now24h = subHours(new Date(), 24);
   const openWOs = kpiSource.filter((wo: any) => !["CLOSED"].includes(wo.status)).length;
   const closedLast24h = kpiSource.filter((wo: any) => wo.status === "CLOSED" && wo.closed_at && new Date(wo.closed_at) > now24h).length;
@@ -209,10 +348,22 @@ export default function WorkOrders() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
 
+  const myApprovalQueueCount = approvalQueueWorkOrders.length;
+
+  const lastSyncedLabel = dataUpdatedAt
+    ? formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true })
+    : "not synced yet";
+  const showWorkOrdersLoading = authLoading || (authEnabled && isLoading);
+
   const filtered = displayedOrders.filter((wo: any) => {
-    const matchesSearch = wo.wo_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      wo.assets?.name?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === "all" || wo.status === statusFilter;
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    const matchesSearch =
+      normalizedSearch.length === 0 ||
+      [wo.wo_number, wo.assets?.name, wo.assets?.code, wo.category, wo.status]
+        .filter((value): value is string => typeof value === "string")
+        .some((value) => value.toLowerCase().includes(normalizedSearch));
+    const effectiveStatusFilter = activeTab === "approval" ? "APPROVAL_PENDING" : statusFilter;
+    const matchesStatus = effectiveStatusFilter === "all" || wo.status === effectiveStatusFilter;
     const matchesCat = categoryFilter === "all" || wo.category === categoryFilter;
     const matchesType = typeFilter === "all" || wo.wo_type === typeFilter;
     return matchesSearch && matchesStatus && matchesCat && matchesType;
@@ -226,8 +377,10 @@ export default function WorkOrders() {
   const [isQrVerifyOpen, setIsQrVerifyOpen] = useState(false);
   const [verifyTargetWO, setVerifyTargetWO] = useState<any>(null);
   const [qrMismatchMessage, setQrMismatchMessage] = useState("");
-  const [verificationMethod, setVerificationMethod] = useState<"QR_SCAN" | "MANUAL_CONFIRMATION">("QR_SCAN");
+  const [verificationMethod, setVerificationMethod] = useState<"QR_SCAN" | "MANUAL_ENTRY">("QR_SCAN");
   const [verifiedAssetId, setVerifiedAssetId] = useState<string | null>(null);
+  const [isManualVerifyOpen, setIsManualVerifyOpen] = useState(false);
+  const [manualMachineCode, setManualMachineCode] = useState("");
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
   const [safetyChecklist, setSafetyChecklist] = useState({
     ppe_worn: false,
@@ -235,11 +388,16 @@ export default function WorkOrders() {
     safety_lock_applied: false,
     notes: "",
   });
-  const [photoAttachments, setPhotoAttachments] = useState<Array<Record<string, unknown>>>([]);
-  const [voiceNotes, setVoiceNotes] = useState<Array<Record<string, unknown>>>([]);
-  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
-  const voiceRecorderRef = useRef<MediaRecorder | null>(null);
-  const voiceStartRef = useRef<number>(0);
+  const [closeAttachments, setCloseAttachments] = useState<PhotoAttachment[]>([]);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [reviewTargetWO, setReviewTargetWO] = useState<any>(null);
+  const [reviewMode, setReviewMode] = useState<"approve" | "reject">("approve");
+  const [reviewData, setReviewData] = useState(() => ({ ...EMPTY_REVIEW_DATA }));
+  const [photoAttachments, setPhotoAttachments] = useState<PhotoAttachment[]>([]);
+  const raiseCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const raiseFileInputRef = useRef<HTMLInputElement | null>(null);
+  const closeCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const closeFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Raise form
   const [formData, setFormData] = useState(() => getInitialRaiseFormData(user?.plantId || ""));
@@ -292,15 +450,6 @@ export default function WorkOrders() {
   });
   const workOrderMasters = workOrderConfigData?.masters || [];
   const workOrderTeamMappings = workOrderConfigData?.mappings || [];
-  const fallbackWorkOrderLabels = useMemo(() => {
-    const map = new Map<string, string>();
-    WORK_ORDER_OPTION_TYPES.forEach((optionType) => {
-      getFallbackWorkOrderOptions(optionType).forEach((option) => {
-        map.set(`${optionType}:${option.value}`, option.label);
-      });
-    });
-    return map;
-  }, []);
   const masterWorkOrderLabels = useMemo(() => {
     const map = new Map<string, string>();
     workOrderMasters
@@ -329,7 +478,6 @@ export default function WorkOrders() {
     return (
       masterWorkOrderLabels.get(`${plantId || ""}:${optionType}:${normalizedCode}`) ||
       masterWorkOrderLabels.get(`*:${optionType}:${normalizedCode}`) ||
-      fallbackWorkOrderLabels.get(`${optionType}:${normalizedCode}`) ||
       humanizeWorkOrderCode(normalizedCode)
     );
   };
@@ -589,8 +737,8 @@ export default function WorkOrders() {
       department_id: prefetchedAsset.departmentId || "",
       module_id: prefetchedAsset.moduleId || "",
       asset_id: assetId,
-      wo_type: mode.includes("breakdown") ? "BREAKDOWN" : prev.wo_type,
-      category: mode.includes("breakdown") && !prev.category ? "MECHANICAL" : prev.category,
+      wo_type: prev.wo_type,
+      category: prev.category,
     }));
 
     if (mode.startsWith("create")) {
@@ -599,11 +747,19 @@ export default function WorkOrders() {
   }, [assetIdFromQuery, prefetchedAsset, searchParams, user?.plantId]);
 
   useEffect(() => {
-    if (!formData.wo_type) return;
-    if (plantWorkOrderTypeOptions.some((option) => option.value === formData.wo_type)) return;
+    const currentWoType = formData.wo_type;
+
+    if (plantWorkOrderTypeOptions.length === 0) {
+      if (!currentWoType) return;
+      setFormData((prev) => ({ ...prev, wo_type: "" }));
+      return;
+    }
+
+    if (currentWoType && plantWorkOrderTypeOptions.some((option) => option.value === currentWoType)) return;
+
     setFormData((prev) => ({
       ...prev,
-      wo_type: plantWorkOrderTypeOptions[0]?.value || "",
+      wo_type: plantWorkOrderTypeOptions[0].value,
     }));
   }, [formData.wo_type, plantWorkOrderTypeOptions]);
 
@@ -621,7 +777,7 @@ export default function WorkOrders() {
 
   // Open WO form
   const [openData, setOpenData] = useState({
-    assigned_to_notes: "", estimated_hours: "", initial_assessment: "",
+    assigned_to_notes: "", estimated_minutes: "", initial_assessment: "",
   });
 
   // Close WO form
@@ -668,11 +824,46 @@ export default function WorkOrders() {
     [closeAvailableSpares],
   );
 
+  useEffect(() => {
+    if (!isCloseFormOpen || !closingWOId || typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        getCloseDraftStorageKey(closingWOId),
+        JSON.stringify({
+          closeData,
+          closeSpareUsage,
+          closeAttachments,
+        }),
+      );
+    } catch {
+      // Ignore draft persistence failures when attachments exceed browser storage limits.
+    }
+  }, [closeAttachments, closeData, closeSpareUsage, closingWOId, isCloseFormOpen]);
+
+  useEffect(() => {
+    if (!authEnabled) return;
+
+    const unsubscribe = subscribeWorkOrderSync(() => {
+      void queryClient.invalidateQueries({ queryKey: ["work_orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["work_order_config_options"] });
+    });
+
+    return unsubscribe;
+  }, [authEnabled, queryClient]);
+
+  const triggerWorkOrderLiveSync = () => {
+    broadcastWorkOrderSync();
+    void queryClient.invalidateQueries({ queryKey: ["work_orders"] });
+    void queryClient.invalidateQueries({ queryKey: ["work_order_config_options"] });
+  };
+
   const handleView = (wo: any) => { setSelectedWO(wo); setIsViewOpen(true); };
   const handleAdd = () => {
     setFormData(getInitialRaiseFormData(userIsSuperAdmin ? "" : user?.plantId || ""));
     setPhotoAttachments([]);
-    setVoiceNotes([]);
     setIsFormOpen(true);
   };
 
@@ -680,8 +871,12 @@ export default function WorkOrders() {
     if (!file) return;
 
     try {
-      const isImage = file.type.startsWith("image/");
-      const dataUrl = isImage ? await compressImage(file) : await fileToDataUrl(file);
+      if (!file.type.startsWith("image/")) {
+        toast.error("Only image files are allowed");
+        return;
+      }
+
+      const dataUrl = await compressImage(file);
       setPhotoAttachments((prev) => [
         ...prev,
         {
@@ -691,55 +886,65 @@ export default function WorkOrders() {
           captured_at: new Date().toISOString(),
         },
       ]);
-      toast.success("Attachment added");
+      toast.success("Photo attached");
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to attach media");
+      toast.error(error instanceof Error ? error.message : "Failed to attach photo");
     }
   };
 
-  const startVoiceRecording = async () => {
+  const removeRaiseAttachment = (index: number) => {
+    setPhotoAttachments((current) => current.filter((_, entryIndex) => entryIndex !== index));
+  };
+
+  const handleCloseMediaAttachment = async (file: File | null) => {
+    if (!file) return;
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      const chunks: BlobPart[] = [];
-      voiceStartRef.current = Date.now();
+      if (!file.type.startsWith("image/")) {
+        toast.error("Only image files are allowed");
+        return;
+      }
 
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunks.push(event.data);
-      };
-
-      recorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: "audio/webm" });
-        const file = new File([blob], `voice-note-${Date.now()}.webm`, { type: "audio/webm" });
-        const dataUrl = await fileToDataUrl(file);
-        const durationSeconds = Math.max(1, Math.round((Date.now() - voiceStartRef.current) / 1000));
-        setVoiceNotes((prev) => [
-          ...prev,
-          {
-            name: file.name,
-            duration_seconds: durationSeconds,
-            data_url: dataUrl,
-            captured_at: new Date().toISOString(),
-          },
-        ]);
-        stream.getTracks().forEach((track) => track.stop());
-      };
-
-      voiceRecorderRef.current = recorder;
-      recorder.start();
-      setIsRecordingVoice(true);
-    } catch {
-      toast.error("Microphone access is required to record voice notes");
+      const dataUrl = await compressImage(file);
+      setCloseAttachments((prev) => [
+        ...prev,
+        {
+          name: file.name,
+          mime_type: file.type,
+          data_url: dataUrl,
+          captured_at: new Date().toISOString(),
+        },
+      ]);
+      toast.success("Closure photo attached");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to attach closure photo");
     }
   };
 
-  const stopVoiceRecording = () => {
-    const recorder = voiceRecorderRef.current;
-    if (!recorder) return;
-    recorder.stop();
-    voiceRecorderRef.current = null;
-    setIsRecordingVoice(false);
-    toast.success("Voice note captured");
+  const removeCloseAttachment = (index: number) => {
+    setCloseAttachments((current) => current.filter((_, entryIndex) => entryIndex !== index));
+  };
+
+  const openAttachmentPicker = (input: HTMLInputElement | null, source: "camera" | "files") => {
+    if (!input) return;
+
+    if (source === "camera") {
+      input.setAttribute("capture", "environment");
+    } else {
+      input.removeAttribute("capture");
+    }
+
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
+    try {
+      if (typeof pickerInput.showPicker === "function") {
+        pickerInput.showPicker();
+        return;
+      }
+    } catch {
+      // Fallback to click when showPicker is unavailable or blocked.
+    }
+
+    input.click();
   };
 
   const openQrVerification = (wo: any) => {
@@ -747,16 +952,37 @@ export default function WorkOrders() {
     setQrMismatchMessage("");
     setVerificationMethod("QR_SCAN");
     setVerifiedAssetId(null);
+    setManualMachineCode("");
+    setIsManualVerifyOpen(false);
     setSafetyChecklist({ ppe_worn: false, machine_isolated: false, safety_lock_applied: false, notes: "" });
     setIsQrVerifyOpen(true);
   };
 
-  const continueWithoutQrVerification = () => {
-    if (!verifyTargetWO) return;
+  const openManualVerification = () => {
     setIsQrVerifyOpen(false);
     setQrMismatchMessage("");
-    setVerificationMethod("MANUAL_CONFIRMATION");
+    setVerificationMethod("MANUAL_ENTRY");
     setVerifiedAssetId(null);
+    setManualMachineCode("");
+    setIsManualVerifyOpen(true);
+  };
+
+  const confirmManualVerification = () => {
+    if (!verifyTargetWO) return;
+    const manualCode = manualMachineCode.trim();
+    if (!manualCode) {
+      toast.error("Enter the assigned machine code to continue");
+      return;
+    }
+
+    const assignedCode = String(verifyTargetWO.assets?.code || "").trim();
+    if (assignedCode && assignedCode.toLowerCase() !== manualCode.toLowerCase()) {
+      setIsManualVerifyOpen(false);
+      setQrMismatchMessage(`Machine code does not match ${assignedCode}.`);
+      return;
+    }
+
+    setIsManualVerifyOpen(false);
     setIsSafetyOpen(true);
   };
 
@@ -792,29 +1018,35 @@ export default function WorkOrders() {
       toast.error("Confirm all safety checks before starting work");
       return;
     }
+    if (!openData.initial_assessment.trim()) {
+      toast.error("Initial assessment is required before work begins");
+      return;
+    }
 
     try {
-      await updateWorkOrder(verifyTargetWO.id, {
-        status: "IN_PROGRESS",
-        started_at: new Date().toISOString(),
-        technician_verification: {
-          verified_at: new Date().toISOString(),
-          method: verificationMethod,
-          ...(verifiedAssetId ? { scanned_asset_id: verifiedAssetId } : {}),
-        },
+      await startWorkOrder(verifyTargetWO.id, {
+        verification_method: verificationMethod,
+        scanned_asset_id: verificationMethod === "QR_SCAN" ? verifiedAssetId : null,
+        manual_machine_code: verificationMethod === "MANUAL_ENTRY" ? manualMachineCode.trim() : null,
+        initial_assessment: openData.initial_assessment.trim(),
+        assigned_to_notes: openData.assigned_to_notes.trim() || null,
+        estimated_time_minutes: Math.max(0, Number.parseInt(openData.estimated_minutes, 10) || 0),
         safety_checklist: {
           ...safetyChecklist,
           confirmed_at: new Date().toISOString(),
         },
       });
-      toast.success(
-        verificationMethod === "QR_SCAN" ? "Machine verified. Work started." : "Work started without QR verification.",
-      );
+      toast.success("Machine verified and work started");
       setIsSafetyOpen(false);
+      setIsManualVerifyOpen(false);
+      setIsQrVerifyOpen(false);
       setVerifyTargetWO(null);
       setVerificationMethod("QR_SCAN");
       setVerifiedAssetId(null);
-      queryClient.invalidateQueries({ queryKey: ["work_orders"] });
+      setManualMachineCode("");
+      setOpeningWOId(null);
+      setOpenData({ assigned_to_notes: "", estimated_minutes: "", initial_assessment: "" });
+      triggerWorkOrderLiveSync();
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Failed to start work");
     }
@@ -837,12 +1069,23 @@ export default function WorkOrders() {
       toast.error(`Required: ${missingFields.map((field) => field.label).join(", ")}`);
       return;
     }
+    if (!plantWorkOrderTypeOptions.some((option) => option.value === formData.wo_type)) {
+      toast.error("Select a valid work order type from Work Order Config Master");
+      return;
+    }
+    if (!routedCategoryOptions.some((option) => option.value === formData.category)) {
+      toast.error("Select a valid work order category from Work Order Config Master");
+      return;
+    }
+    if (formData.failure_code && !plantFailureCodeOptions.some((option) => option.value === formData.failure_code)) {
+      toast.error("Select a valid failure code from Work Order Config Master");
+      return;
+    }
     if (!raisedByUserId) {
       toast.error("Logged-in user details are missing. Please sign in again.");
       return;
     }
     try {
-      const trimmedEstimatedCost = formData.estimated_cost.trim();
       const normalizedLocation =
         (typeof (selectedAsset as any)?.location === "string" ? (selectedAsset as any).location.trim() : "") || null;
       const payload = {
@@ -853,124 +1096,72 @@ export default function WorkOrders() {
         wo_type: formData.wo_type,
         failure_code: formData.failure_code || null,
         sub_category: formData.sub_category || null,
-        safety_related: formData.safety_related,
         reported_location: normalizedLocation,
-        ...(trimmedEstimatedCost ? { estimated_cost: Number.parseFloat(trimmedEstimatedCost) || 0 } : {}),
         ...(photoAttachments.length > 0 ? { attachments: photoAttachments } : {}),
-        ...(voiceNotes.length > 0 ? { voice_notes: voiceNotes } : {}),
       };
 
-      if (!navigator.onLine) {
-        await executeOrQueueMutation({
-          url: "/work-orders",
-          method: "POST",
-          body: payload,
-        });
-        toast.success("Offline mode: work order queued and will auto-sync");
-      } else {
-        await createWorkOrder(payload);
-        toast.success("Work order raised successfully");
-      }
+      await createWorkOrder(payload);
+      toast.success("Work order raised successfully");
     } catch (error: any) {
       toast.error(error?.message || "Failed to raise work order");
       return;
     }
-    queryClient.invalidateQueries({ queryKey: ["work_orders"] });
+    triggerWorkOrderLiveSync();
     setIsFormOpen(false);
     setPhotoAttachments([]);
-    setVoiceNotes([]);
   };
 
   const openOpenForm = (woId: string) => {
     setOpeningWOId(woId);
-    setOpenData({ assigned_to_notes: "", estimated_hours: "", initial_assessment: "" });
+    setOpenData({ assigned_to_notes: "", estimated_minutes: "", initial_assessment: "" });
     setIsOpenFormOpen(true);
   };
 
   const handleOpenWO = async () => {
     if (!openingWOId) return;
     const wo = allWorkOrders.find((w: any) => w.id === openingWOId);
-    try {
-      const payload = {
-        status: "OPENED",
-        opened_at: new Date().toISOString(),
-        remarks: openData.initial_assessment || null,
-      };
-      if (!navigator.onLine) {
-        await executeOrQueueMutation({
-          url: `/work-orders/${openingWOId}`,
-          method: "PATCH",
-          body: payload,
-        });
-        toast.success("Offline mode: open action queued for sync");
-      } else {
-        await updateWorkOrder(openingWOId, payload);
-        toast.success("Work order opened");
-      }
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to open work order");
+    if (!wo) {
+      toast.error("Unable to load the selected work order");
       return;
     }
-    if (wo?.raised_by) {
-      createNotification({
-        userId: wo.raised_by, title: "Work Order Opened",
-        message: `${wo.wo_number} has been opened. Assessment: ${openData.initial_assessment || "N/A"}`,
-        type: "info", link: "/work-orders", woId: wo.id,
-      });
+    if (!openData.initial_assessment.trim()) {
+      toast.error("Initial assessment is required before opening the work order");
+      return;
     }
-    queryClient.invalidateQueries({ queryKey: ["work_orders"] });
     setIsOpenFormOpen(false);
-    setOpeningWOId(null);
-  };
-
-  const updateStatus = async (woId: string, newStatus: string) => {
-    const wo = allWorkOrders.find((w: any) => w.id === woId);
-    const updates: any = { status: newStatus };
-    if (newStatus === "OPENED") updates.opened_at = new Date().toISOString();
-    if (newStatus === "CLOSED") updates.closed_at = new Date().toISOString();
-    try {
-      if (!navigator.onLine) {
-        await executeOrQueueMutation({
-          url: `/work-orders/${woId}`,
-          method: "PATCH",
-          body: updates,
-        });
-        toast.success("Offline mode: status update queued");
-      } else {
-        await updateWorkOrder(woId, updates);
-        toast.success(`Work order ${newStatus.replace(/_/g, " ").toLowerCase()}`);
-      }
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to update work order");
-      return;
-    }
-    if (wo) {
-      if (newStatus === "IN_PROGRESS" && wo.raised_by) {
-        createNotification({ userId: wo.raised_by, title: "Work Order In Progress", message: `${wo.wo_number} is now being worked on`, type: "info", link: "/work-orders", woId: wo.id });
-      }
-      if (newStatus === "APPROVAL_PENDING" && wo.raised_by) {
-        createNotification({ userId: wo.raised_by, title: "Approval Required", message: `${wo.wo_number} is closed and waiting for your approval`, type: "critical", link: "/work-orders", woId: wo.id });
-      }
-    }
-    queryClient.invalidateQueries({ queryKey: ["work_orders"] });
-    queryClient.invalidateQueries({ queryKey: ["dashboard_metrics"] });
+    openQrVerification(wo);
   };
 
   const handleCloseWithDetails = async () => {
     if (!closingWOId) return;
-    const wo = allWorkOrders.find((w: any) => w.id === closingWOId);
     const spareConsumption = buildSpareUsagePayload(closeSpareUsage, closeAvailableSpares);
+    const issueDetails = closeData.root_cause.trim();
+    const workPerformed = closeData.action_taken.trim();
+    const remarks = closeData.remarks.trim();
+    const materialsUsed = closeData.parts_replaced.trim();
+    const laborMinutes = Number.parseInt(closeData.labor_hours, 10) || 0;
+
+    if (!issueDetails || !workPerformed || !remarks || laborMinutes <= 0 || (!materialsUsed && spareConsumption.length === 0) || closeAttachments.length === 0) {
+      toast.error("Issue details, work performed, time spent, materials used, closure attachments, and remarks are required");
+      return;
+    }
+    if (closeData.failure_code && !closeFailureCodeOptions.some((option) => option.value === closeData.failure_code)) {
+      toast.error("Select a valid failure code from Work Order Config Master");
+      return;
+    }
+
     try {
-      await updateWorkOrder(closingWOId, {
-        status: "CLOSED",
-        closed_at: new Date().toISOString(),
-        root_cause: closeData.root_cause || null,
-        action_taken: closeData.action_taken || null,
+      await submitWorkOrderForApproval(closingWOId, {
+        issue_details: issueDetails,
+        work_performed_description: workPerformed,
+        time_spent_minutes: laborMinutes,
         downtime_minutes: parseInt(closeData.downtime_minutes) || 0,
+        materials_used: materialsUsed || "Structured spare usage attached",
+        attachments: closeAttachments,
+        remarks,
         failure_code: closeData.failure_code || null,
-        labor_hours: parseFloat(closeData.labor_hours) || 0,
         actual_cost: parseFloat(closeData.actual_cost) || 0,
-        parts_replaced: closeData.parts_replaced || null,
+        parts_replaced: materialsUsed || null,
         spare_consumption: spareConsumption,
         operator_fault: closeData.operator_fault,
         warranty_claim: closeData.warranty_claim,
@@ -978,38 +1169,87 @@ export default function WorkOrders() {
         follow_up_notes: closeData.follow_up_notes || null,
       });
     } catch (error: any) {
-      toast.error(error?.message || "Failed to close work order");
+      toast.error(error?.message || "Failed to submit work order for approval");
       return;
     }
-    toast.success("Work order closed");
-    if (wo?.raised_by) {
-      createNotification({ userId: wo.raised_by, title: "Work Order Closed", message: `${wo.wo_number} has been closed. Root cause: ${closeData.root_cause || "N/A"}`, type: "success", link: "/work-orders", woId: wo.id });
-    }
-    queryClient.invalidateQueries({ queryKey: ["work_orders"] });
-    queryClient.invalidateQueries({ queryKey: ["dashboard_metrics"] });
-    queryClient.invalidateQueries({ queryKey: ["spare-maintenance-items"] });
+    toast.success("Work order submitted for approval");
+    triggerWorkOrderLiveSync();
+    void queryClient.invalidateQueries({ queryKey: ["dashboard_metrics"] });
+    void queryClient.invalidateQueries({ queryKey: ["spare-maintenance-items"] });
+    clearCloseDraft(closingWOId);
     setIsCloseFormOpen(false);
     setClosingWOId(null);
     setCloseData({ ...EMPTY_CLOSE_DATA });
     setCloseSpareUsage([]);
+    setCloseAttachments([]);
   };
 
   const openCloseForm = (woId: string) => {
+    const draft = safeReadCloseDraft(woId);
     setClosingWOId(woId);
-    setCloseData({ ...EMPTY_CLOSE_DATA });
-    setCloseSpareUsage([]);
+    setCloseData(draft?.closeData ? { ...EMPTY_CLOSE_DATA, ...draft.closeData } : { ...EMPTY_CLOSE_DATA });
+    setCloseSpareUsage(draft?.closeSpareUsage || []);
+    setCloseAttachments(draft?.closeAttachments || []);
     setIsCloseFormOpen(true);
   };
 
-  const canManageWO = (wo: any) => {
-    if (userIsAdmin) return true;
-    if (userIsIncharge && inchargeCategories.includes(wo.category)) return true;
-    return false;
+  const openReviewDialog = (wo: any, mode: "approve" | "reject") => {
+    setReviewTargetWO(wo);
+    setReviewMode(mode);
+    setReviewData({ ...EMPTY_REVIEW_DATA });
+    setIsReviewOpen(true);
   };
+
+  const handleReviewWorkOrder = async () => {
+    if (!reviewTargetWO) return;
+    try {
+      if (reviewMode === "approve") {
+        if (reviewRequiresComments && !reviewData.approve_comments.trim()) {
+          toast.error("Override comments are required for admin approval");
+          return;
+        }
+        await approveWorkOrder(reviewTargetWO.id, {
+          comments: reviewData.approve_comments.trim() || null,
+        });
+        toast.success("Work order approved");
+      } else {
+        if (!reviewData.reject_comments.trim()) {
+          toast.error("Rejection comments are required");
+          return;
+        }
+        await rejectWorkOrder(reviewTargetWO.id, {
+          comments: reviewData.reject_comments.trim(),
+        });
+        toast.success("Work order rejected");
+      }
+    } catch (error: any) {
+      toast.error(error?.message || `Failed to ${reviewMode} work order`);
+      return;
+    }
+
+    triggerWorkOrderLiveSync();
+    void queryClient.invalidateQueries({ queryKey: ["dashboard_metrics"] });
+    setIsReviewOpen(false);
+    setReviewTargetWO(null);
+    setReviewData({ ...EMPTY_REVIEW_DATA });
+  };
+
+  const canExecuteWO = (wo: any) => {
+    if (!user) return false;
+    if (isOwnedByCurrentUser(wo.assigned_to)) return true;
+    return !wo.assigned_to && isOwnedByCurrentUser(wo.raised_by);
+  };
+
+  const canReviewWO = (wo: any) => {
+    if (!user) return false;
+    return wo.status === "APPROVAL_PENDING" && (isOwnedByCurrentUser(wo.raised_by) || userIsAdmin);
+  };
+
+  const reviewRequiresComments = Boolean(reviewTargetWO && userIsAdmin && !isOwnedByCurrentUser(reviewTargetWO.raised_by));
 
   const kpiCards = [
     { label: "Open Work Orders", value: openWOs, icon: ClipboardList, color: "text-blue-500" },
-    { label: "Closed (24h)", value: closedLast24h, icon: CheckSquare, color: "text-green-500" },
+    { label: "Completed (24h)", value: closedLast24h, icon: CheckSquare, color: "text-green-500" },
     { label: "Pending Approval", value: pendingApproval, icon: AlertTriangle, color: "text-amber-500" },
     { label: "Total", value: totalWOs, icon: Clock, color: "text-primary" },
   ];
@@ -1024,23 +1264,27 @@ export default function WorkOrders() {
     { key: "asset", header: "Asset", render: (wo: any) => (<div><p className="font-medium">{wo.assets?.name || "-"}</p><p className="text-xs text-muted-foreground">{wo.assets?.code}</p></div>) },
     { key: "category", header: "Category", render: (wo: any) => resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id), hideOnMobile: true },
     { key: "priority", header: "Priority", render: (wo: any) => <StatusBadge variant={wo.priority === "CRITICAL" ? "critical" : wo.priority === "HIGH" ? "warning" : "default"}>{wo.priority}</StatusBadge> },
-    { key: "status", header: "Status", render: (wo: any) => <StatusBadge variant={wo.status === "CLOSED" ? "completed" : wo.status === "IN_PROGRESS" ? "in_progress" : wo.status === "RAISED" ? "warning" : wo.status === "APPROVAL_PENDING" ? "critical" : "default"}>{wo.status.replace(/_/g, " ")}</StatusBadge> },
+    { key: "status", header: "Status", render: (wo: any) => <StatusBadge status={wo.status} variant={getStatusVariant(wo.status)} /> },
     { key: "raised", header: "Raised", hideOnMobile: true, render: (wo: any) => (<div><p className="text-sm">{format(new Date(wo.created_at), "dd MMM yyyy")}</p><p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(wo.created_at), { addSuffix: true })}</p></div>) },
     { key: "actions", header: "Actions", className: "text-right", render: (wo: any) => (
       <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={() => handleView(wo)}><Eye className="mr-2 h-4 w-4" />View Details</DropdownMenuItem>
-          {canManageWO(wo) && (
+          {canExecuteWO(wo) && (
             <>
-              {wo.status === "RAISED" && <DropdownMenuItem onClick={() => openOpenForm(wo.id)}><Play className="mr-2 h-4 w-4" />Open & Assess</DropdownMenuItem>}
-              {wo.status === "OPENED" && <DropdownMenuItem onClick={() => openQrVerification(wo)}><ScanLine className="mr-2 h-4 w-4" />Scan Machine QR to Start Work</DropdownMenuItem>}
-              {wo.status === "IN_PROGRESS" && <DropdownMenuItem onClick={() => updateStatus(wo.id, "APPROVAL_PENDING")}><Send className="mr-2 h-4 w-4" />Send for Approval</DropdownMenuItem>}
-              {wo.status === "IN_PROGRESS" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><CheckCircle className="mr-2 h-4 w-4" />Close with Details</DropdownMenuItem>}
-              {wo.status === "APPROVAL_PENDING" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><CheckCircle className="mr-2 h-4 w-4" />Approve & Close</DropdownMenuItem>}
+              {(wo.status === "RAISED" || wo.status === "OPENED") && <DropdownMenuItem onClick={() => openOpenForm(wo.id)}><Play className="mr-2 h-4 w-4" />Open & Assess</DropdownMenuItem>}
+              {wo.status === "IN_PROGRESS" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Submit for Approval</DropdownMenuItem>}
+              {wo.status === "REJECTED" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Revise & Resubmit</DropdownMenuItem>}
             </>
           )}
-          {!canManageWO(wo) && wo.raised_by === user?.authId && wo.status === "APPROVAL_PENDING" && (
-            <DropdownMenuItem disabled className="text-muted-foreground">Awaiting Approval</DropdownMenuItem>
+          {canReviewWO(wo) && (
+            <>
+              <DropdownMenuItem onClick={() => openReviewDialog(wo, "approve")}><CheckCircle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Override Approve" : "Approve"}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openReviewDialog(wo, "reject")}><AlertTriangle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Override Reject" : "Reject"}</DropdownMenuItem>
+            </>
+          )}
+          {!canReviewWO(wo) && wo.status === "APPROVAL_PENDING" && (
+            <DropdownMenuItem disabled className="text-muted-foreground">Awaiting raiser approval</DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -1078,11 +1322,26 @@ export default function WorkOrders() {
         ))}
       </div>
 
-      {(userIsAdmin || userIsIncharge) && (
-        <div className="flex flex-wrap gap-2">
-          <Button variant={activeTab === "my" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("my")}>My Work Orders ({myWorkOrders.length})</Button>
+      {(userIsAdmin || userIsIncharge || Boolean(user)) && (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/70 bg-card/60 p-3 shadow-sm">
+          <Button variant={activeTab === "assigned" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("assigned")}>Assigned to Me ({assignedWorkOrders.length})</Button>
+          <Button variant={activeTab === "raised" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("raised")}>Raised by Me ({raisedWorkOrders.length})</Button>
           {userIsIncharge && <Button variant={activeTab === "incharge" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("incharge")}>{inchargeCategories.join(", ")} ({inchargeWorkOrders.length})</Button>}
           {userIsAdmin && <Button variant={activeTab === "all" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("all")}>All Work Orders ({allWorkOrders.length})</Button>}
+          <Button
+            variant={activeTab === "approval" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setActiveTab("approval")}
+          >
+            Approval Queue ({myApprovalQueueCount})
+          </Button>
+          <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+            <span>{isFetching ? "Syncing updates..." : `Last synced ${lastSyncedLabel}`}</span>
+            <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => void refetch()} disabled={isFetching || !authEnabled}>
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
         </div>
       )}
 
@@ -1100,8 +1359,8 @@ export default function WorkOrders() {
                 <SelectField label="" value={statusFilter} onChange={setStatusFilter} options={[
                   { value: "all", label: "All Status" },
                   { value: "RAISED", label: "Raised" }, { value: "OPENED", label: "Opened" },
-                  { value: "IN_PROGRESS", label: "In Progress" }, { value: "APPROVAL_PENDING", label: "Approval Pending" },
-                  { value: "CLOSED", label: "Closed" },
+                  { value: "IN_PROGRESS", label: "In Progress" }, { value: "APPROVAL_PENDING", label: "Submitted for Approval" },
+                  { value: "REJECTED", label: "Rejected" }, { value: "CLOSED", label: "Completed" },
                 ]} className="w-full sm:w-[160px] min-w-[140px] flex-shrink-0" />
                 <SelectField label="" value={categoryFilter} onChange={setCategoryFilter} options={[
                   { value: "all", label: "All Categories" }, ...filterCategoryOptions
@@ -1118,11 +1377,19 @@ export default function WorkOrders() {
       <Card className="shadow-card">
         <CardHeader className="pb-3">
           <CardTitle className="text-base sm:text-lg font-semibold">
-            {activeTab === "incharge" ? "Category Work Orders" : activeTab === "all" ? "All Work Orders" : "My Work Orders"} ({filtered.length})
+            {activeTab === "incharge"
+              ? "Category Work Orders"
+              : activeTab === "approval"
+                ? "Approval Queue"
+              : activeTab === "all"
+                ? "All Work Orders"
+                : activeTab === "raised"
+                  ? "Raised Work Orders"
+                  : "Assigned Work Orders"} ({filtered.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {showWorkOrdersLoading ? (
             <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
           ) : (
             <ResponsiveTable
@@ -1131,7 +1398,7 @@ export default function WorkOrders() {
               keyExtractor={(wo: any) => wo.id}
               mobileCard={(wo: any) => (
                 <MobileCard onView={() => handleView(wo)}>
-                  <MobileCardHeader title={wo.wo_number} subtitle={wo.assets?.name} badge={<StatusBadge variant={wo.status === "CLOSED" ? "completed" : wo.status === "APPROVAL_PENDING" ? "critical" : "warning"}>{wo.status.replace(/_/g, " ")}</StatusBadge>} />
+                  <MobileCardHeader title={wo.wo_number} subtitle={wo.assets?.name} badge={<StatusBadge status={wo.status} variant={getStatusVariant(wo.status)} />} />
                   <MobileCardRow label="Type" value={resolveWorkOrderLabel("WO_TYPE", wo.wo_type, wo.plant_id)} />
                   <MobileCardRow label="Category" value={resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id)} />
                   <MobileCardRow label="Priority" value={wo.priority} />
@@ -1240,8 +1507,15 @@ export default function WorkOrders() {
                 onChange={(value) => setFormData((prev) => ({ ...prev, wo_type: value }))}
                 options={plantWorkOrderTypeOptions}
                 placeholder="Select work order type"
+                disabled={plantWorkOrderTypeOptions.length === 0}
                 required
-                hint={isWorkOrderConfigLoading ? "Loading work order types..." : "Defines the maintenance workflow and expected urgency."}
+                hint={
+                  isWorkOrderConfigLoading
+                    ? "Loading work order types..."
+                    : plantWorkOrderTypeOptions.length === 0
+                      ? "No active work order types are configured for this plant. Update Work Order Config Master first."
+                      : "Defines the maintenance workflow and expected urgency."
+                }
               />
               <SelectField
                 label="Work Order Category"
@@ -1254,6 +1528,8 @@ export default function WorkOrders() {
                 hint={
                   !formData.department_id
                     ? "Choose the department first to see its configured work order categories."
+                    : routedCategoryOptions.length === 0
+                      ? "No active work order categories are configured for this plant. Update Work Order Config Master first."
                     : selectedRoutingRule
                       ? "This category is routed through the department-wise team mapping."
                       : routedMappingsForDepartment.length > 0
@@ -1278,79 +1554,173 @@ export default function WorkOrders() {
               <TextareaField label="Reported Problem" value={formData.problem_description} onChange={(v) => setFormData({ ...formData, problem_description: v })} placeholder="Describe the reported problem clearly..." className="sm:col-span-2" required />
               <SelectField label="Failure Code" value={formData.failure_code} onChange={(v) => setFormData({ ...formData, failure_code: v })} options={plantFailureCodeOptions} placeholder="Select if applicable" hint={isWorkOrderConfigLoading ? "Loading failure codes..." : "Optional classification for the reported issue."} />
               <InputField label="Sub-Category" value={formData.sub_category} onChange={(v) => setFormData({ ...formData, sub_category: v })} placeholder="e.g., Hydraulic System" />
-              <InputField label="Estimated Cost (₹)" value={formData.estimated_cost} onChange={(v) => setFormData({ ...formData, estimated_cost: v })} type="number" placeholder="0" />
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Attach Photo (compressed)</Label>
-                <Input type="file" accept="image/*" capture="environment" onChange={(event) => void handleMediaAttachment(event.target.files?.[0] || null)} />
+            <div className="mt-4 space-y-2">
+              <Label className="text-xs text-muted-foreground">Attach Photo (auto-compressed)</Label>
+              <input
+                ref={raiseCameraInputRef}
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                aria-label="Capture raise work order photo"
+                title="Capture raise work order photo"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] || null;
+                  void handleMediaAttachment(file);
+                  event.target.value = "";
+                }}
+              />
+              <input
+                ref={raiseFileInputRef}
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                aria-label="Select raise work order photo from files"
+                title="Select raise work order photo from files"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] || null;
+                  void handleMediaAttachment(file);
+                  event.target.value = "";
+                }}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    openAttachmentPicker(raiseCameraInputRef.current, "camera");
+                  }}
+                >
+                  Open Camera
+                </Button>
+                <Button type="button" variant="outline" onClick={() => openAttachmentPicker(raiseFileInputRef.current, "files")}>
+                  Select From Files
+                </Button>
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Attach Video</Label>
-                <Input type="file" accept="video/*" capture="environment" onChange={(event) => void handleMediaAttachment(event.target.files?.[0] || null)} />
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Button type="button" variant={isRecordingVoice ? "destructive" : "outline"} className="gap-2" onClick={isRecordingVoice ? stopVoiceRecording : () => void startVoiceRecording()}>
-                {isRecordingVoice ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                {isRecordingVoice ? "Stop Voice Note" : "Record Voice Note"}
-              </Button>
-              <p className="text-xs text-muted-foreground">Voice notes: {voiceNotes.length} | Media attachments: {photoAttachments.length}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center space-x-2 rounded-lg border border-border/70 px-3 py-2">
-              <Checkbox id="safety_related" checked={formData.safety_related} onCheckedChange={(c) => setFormData({ ...formData, safety_related: !!c })} />
-              <Label htmlFor="safety_related" className="text-sm">Safety Related</Label>
+              <p className="text-xs text-muted-foreground">Photos attached: {photoAttachments.length}</p>
+              {photoAttachments.length > 0 ? (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {photoAttachments.map((attachment, index) => (
+                    <div key={`${attachment.captured_at}-${index}`} className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
+                      <img src={attachment.data_url} alt={attachment.name || `Attachment ${index + 1}`} className="h-24 w-full object-cover" />
+                      <div className="flex items-center justify-between gap-2 p-2">
+                        <p className="truncate text-[11px] text-muted-foreground">{attachment.name || `Photo ${index + 1}`}</p>
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => removeRaiseAttachment(index)}>
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
       </FormDialog>
 
       {/* ===== OPEN WORK ORDER FORM ===== */}
-      <FormDialog open={isOpenFormOpen} onOpenChange={setIsOpenFormOpen} title="Open & Assess Work Order" description="Provide initial assessment before starting work" onSubmit={handleOpenWO} submitLabel="Open Work Order" size="lg">
+      <FormDialog open={isOpenFormOpen} onOpenChange={setIsOpenFormOpen} title="Open & Assess Work Order" description="Capture first assessment, then continue to machine verification and safety checks." onSubmit={handleOpenWO} submitLabel="Continue to Verification" size="lg">
         <div className="grid grid-cols-1 gap-4">
-          <TextareaField label="Initial Assessment" value={openData.initial_assessment} onChange={(v) => setOpenData({ ...openData, initial_assessment: v })} placeholder="What is your initial assessment of the problem? What do you observe?" />
-          <InputField label="Estimated Hours to Complete" value={openData.estimated_hours} onChange={(v) => setOpenData({ ...openData, estimated_hours: v })} type="number" placeholder="e.g., 4" />
+          <TextareaField label="Initial Assessment" value={openData.initial_assessment} onChange={(v) => setOpenData({ ...openData, initial_assessment: v })} placeholder="What is your initial assessment of the problem? What do you observe?" required />
+          <InputField label="Estimated Time to Complete (minutes)" value={openData.estimated_minutes} onChange={(v) => setOpenData({ ...openData, estimated_minutes: v })} type="number" placeholder="e.g., 120" />
           <TextareaField label="Notes / Special Instructions" value={openData.assigned_to_notes} onChange={(v) => setOpenData({ ...openData, assigned_to_notes: v })} placeholder="Any special instructions, safety precautions, or tools needed..." />
         </div>
       </FormDialog>
 
       {/* ===== CLOSE WORK ORDER FORM (Enhanced) ===== */}
-      <FormDialog open={isCloseFormOpen} onOpenChange={setIsCloseFormOpen} title="Close Work Order" description="Provide detailed closure information" onSubmit={handleCloseWithDetails} submitLabel="Close Work Order" size="xl">
+      <FormDialog open={isCloseFormOpen} onOpenChange={setIsCloseFormOpen} title="Close Work Order" description="Complete closure details, attach compressed photos, and submit for approval." onSubmit={handleCloseWithDetails} submitLabel="Submit for Approval" size="xl">
         <div className="space-y-6">
           <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
-            QR scan is optional for closure. You can complete the work order with the resolution details even when camera verification is not available.
+            Drafts auto-save while this form is open so technicians can resume incomplete closure details.
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Root Cause Analysis</h3>
+            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Issue & Work Summary</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <TextareaField label="Root Cause" value={closeData.root_cause} onChange={(v) => setCloseData({ ...closeData, root_cause: v })} placeholder="What was the root cause of the failure?" className="sm:col-span-2" />
-              <SelectField label="Failure Code" value={closeData.failure_code} onChange={(v) => setCloseData({ ...closeData, failure_code: v })} options={closeFailureCodeOptions} placeholder="Select failure code" hint="Uses the active failure codes configured for this work order's plant." />
-              <TextareaField label="Action Taken" value={closeData.action_taken} onChange={(v) => setCloseData({ ...closeData, action_taken: v })} placeholder="What corrective action was taken?" className="sm:col-span-2" />
+              <TextareaField label="Issue Details" value={closeData.root_cause} onChange={(v) => setCloseData({ ...closeData, root_cause: v })} placeholder="Describe the issue found during maintenance..." className="sm:col-span-2" required />
+              <SelectField label="Failure Code" value={closeData.failure_code} onChange={(v) => setCloseData({ ...closeData, failure_code: v })} options={closeFailureCodeOptions} placeholder="Select failure code" hint={closeFailureCodeOptions.length === 0 ? "No active failure codes are configured for this plant." : "Uses the active failure codes configured for this work order's plant."} />
+              <TextareaField label="Work Performed Description" value={closeData.action_taken} onChange={(v) => setCloseData({ ...closeData, action_taken: v })} placeholder="What corrective work was completed?" className="sm:col-span-2" required />
             </div>
           </div>
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground mb-3">Time & Cost</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <InputField label="Downtime (minutes)" value={closeData.downtime_minutes} onChange={(v) => setCloseData({ ...closeData, downtime_minutes: v })} type="number" />
-              <InputField label="Labor Hours" value={closeData.labor_hours} onChange={(v) => setCloseData({ ...closeData, labor_hours: v })} type="number" />
+              <InputField label="Time Spent (minutes)" value={closeData.labor_hours} onChange={(v) => setCloseData({ ...closeData, labor_hours: v })} type="number" />
               <InputField label="Actual Cost (₹)" value={closeData.actual_cost} onChange={(v) => setCloseData({ ...closeData, actual_cost: v })} type="number" />
             </div>
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Parts & Additional Info</h3>
+            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Materials, Photos & Remarks</h3>
             <div className="grid grid-cols-1 gap-4">
-              <TextareaField label="Parts Replaced / Spares Used" value={closeData.parts_replaced} onChange={(v) => setCloseData({ ...closeData, parts_replaced: v })} placeholder="List any parts replaced or spares consumed..." />
+              <TextareaField label="Materials Used" value={closeData.parts_replaced} onChange={(v) => setCloseData({ ...closeData, parts_replaced: v })} placeholder="List parts replaced, consumables used, or structured spares selected below..." required />
               <SpareUsageEditor
                 title="Structured Spare Usage"
-                description="Select the actual spares used for this work order. Stock will be reduced automatically when the work order is closed."
+                description="Select the actual spares used for this work order. Stock will be reduced automatically when approval is completed."
                 rows={closeSpareUsage}
                 onChange={setCloseSpareUsage}
                 options={closeSpareOptions}
               />
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Closure Photo (auto-compressed)</Label>
+                <input
+                  ref={closeCameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  aria-label="Capture closure photo"
+                  title="Capture closure photo"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] || null;
+                    void handleCloseMediaAttachment(file);
+                    event.target.value = "";
+                  }}
+                />
+                <input
+                  ref={closeFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  aria-label="Select closure photo from files"
+                  title="Select closure photo from files"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] || null;
+                    void handleCloseMediaAttachment(file);
+                    event.target.value = "";
+                  }}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      openAttachmentPicker(closeCameraInputRef.current, "camera");
+                    }}
+                  >
+                    Open Camera
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker(closeFileInputRef.current, "files")}>
+                    Select From Files
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Closure photos: {closeAttachments.length}</p>
+              {closeAttachments.length > 0 ? (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {closeAttachments.map((attachment, index) => (
+                    <div key={`${attachment.captured_at}-${index}`} className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
+                      <img src={attachment.data_url} alt={attachment.name || `Closure attachment ${index + 1}`} className="h-24 w-full object-cover" />
+                      <div className="flex items-center justify-between gap-2 p-2">
+                        <p className="truncate text-[11px] text-muted-foreground">{attachment.name || `Photo ${index + 1}`}</p>
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => removeCloseAttachment(index)}>
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <TextareaField label="Remarks" value={closeData.remarks} onChange={(v) => setCloseData({ ...closeData, remarks: v })} placeholder="Add final technician remarks for the raiser..." required />
             </div>
             <div className="flex flex-wrap items-center gap-6 mt-4">
               <div className="flex items-center space-x-2">
@@ -1377,18 +1747,36 @@ export default function WorkOrders() {
       <ViewDialog open={isViewOpen} onOpenChange={setIsViewOpen} title={selectedWO?.wo_number || ""} subtitle={selectedWO?.assets?.name}>
         {selectedWO && (
           <div className="space-y-6">
-            {selectedWO.status === "OPENED" ? (
-              <div className="flex justify-end">
-                <Button className="gap-2" onClick={() => openQrVerification(selectedWO)}>
-                  <ScanLine className="h-4 w-4" />
-                  Scan Machine QR to Start Work
+            <div className="flex flex-wrap justify-end gap-2">
+              {(selectedWO.status === "RAISED" || selectedWO.status === "OPENED") && canExecuteWO(selectedWO) ? (
+                <Button className="gap-2" onClick={() => openOpenForm(selectedWO.id)}>
+                  <Play className="h-4 w-4" />
+                  Open & Assess
                 </Button>
-              </div>
-            ) : null}
+              ) : null}
+              {(selectedWO.status === "IN_PROGRESS" || selectedWO.status === "REJECTED") && canExecuteWO(selectedWO) ? (
+                <Button className="gap-2" onClick={() => openCloseForm(selectedWO.id)}>
+                  <Send className="h-4 w-4" />
+                  {selectedWO.status === "REJECTED" ? "Revise & Resubmit" : "Submit for Approval"}
+                </Button>
+              ) : null}
+              {selectedWO.status === "APPROVAL_PENDING" && canReviewWO(selectedWO) ? (
+                <>
+                  <Button className="gap-2" onClick={() => openReviewDialog(selectedWO, "approve")}>
+                    <CheckCircle className="h-4 w-4" />
+                    Approve
+                  </Button>
+                  <Button variant="outline" className="gap-2" onClick={() => openReviewDialog(selectedWO, "reject")}>
+                    <AlertTriangle className="h-4 w-4" />
+                    Reject
+                  </Button>
+                </>
+              ) : null}
+            </div>
             <DetailSection title="Work Order">
               <DetailRow label="WO Number" value={selectedWO.wo_number} />
               <DetailRow label="Type" value={resolveWorkOrderLabel("WO_TYPE", selectedWO.wo_type, selectedWO.plant_id)} />
-              <DetailRow label="Status" value={<StatusBadge variant={selectedWO.status === "CLOSED" ? "completed" : "warning"}>{selectedWO.status?.replace(/_/g, " ")}</StatusBadge>} />
+              <DetailRow label="Status" value={<StatusBadge status={selectedWO.status} variant={getStatusVariant(selectedWO.status)} />} />
               <DetailRow label="Priority" value={<StatusBadge variant={selectedWO.priority === "CRITICAL" ? "critical" : selectedWO.priority === "HIGH" ? "warning" : "default"}>{selectedWO.priority}</StatusBadge>} />
               <DetailRow label="Category" value={resolveWorkOrderLabel("CATEGORY", selectedWO.category, selectedWO.plant_id)} />
               {selectedWO.sub_category && <DetailRow label="Sub-Category" value={selectedWO.sub_category} />}
@@ -1402,14 +1790,15 @@ export default function WorkOrders() {
             <DetailSection title="Problem & Resolution">
               <DetailRow label="Problem" value={selectedWO.problem_description} />
               {selectedWO.failure_code && <DetailRow label="Failure Code" value={resolveWorkOrderLabel("FAILURE_CODE", selectedWO.failure_code, selectedWO.plant_id)} />}
-              {selectedWO.root_cause && <DetailRow label="Root Cause" value={selectedWO.root_cause} />}
-              {selectedWO.action_taken && <DetailRow label="Action Taken" value={selectedWO.action_taken} />}
+              {selectedWO.technician_verification?.initial_assessment && <DetailRow label="Initial Assessment" value={selectedWO.technician_verification.initial_assessment} />}
+              {selectedWO.root_cause && <DetailRow label="Issue Details" value={selectedWO.root_cause} />}
+              {selectedWO.action_taken && <DetailRow label="Work Performed" value={selectedWO.action_taken} />}
               {selectedWO.parts_replaced && <DetailRow label="Parts Replaced" value={selectedWO.parts_replaced} />}
+              {selectedWO.approval_comments && <DetailRow label="Approval Comments" value={selectedWO.approval_comments} />}
             </DetailSection>
             <DetailSection title="Time & Cost">
               {selectedWO.downtime_minutes > 0 && <DetailRow label="Downtime" value={`${selectedWO.downtime_minutes} min`} />}
-              {selectedWO.labor_hours > 0 && <DetailRow label="Labor Hours" value={`${selectedWO.labor_hours} hrs`} />}
-              {selectedWO.estimated_cost > 0 && <DetailRow label="Estimated Cost" value={`₹${selectedWO.estimated_cost}`} />}
+              {hoursToMinutes(selectedWO.labor_hours) > 0 && <DetailRow label="Labor Time" value={`${hoursToMinutes(selectedWO.labor_hours)} min`} />}
               {selectedWO.actual_cost > 0 && <DetailRow label="Actual Cost" value={`₹${selectedWO.actual_cost}`} />}
             </DetailSection>
             <DetailSection title="Flags">
@@ -1421,7 +1810,10 @@ export default function WorkOrders() {
             <DetailSection title="Timeline">
               <DetailRow label="Raised" value={format(new Date(selectedWO.created_at), "dd MMM yyyy HH:mm")} />
               {selectedWO.opened_at && <DetailRow label="Opened" value={format(new Date(selectedWO.opened_at), "dd MMM yyyy HH:mm")} />}
-              {selectedWO.closed_at && <DetailRow label="Closed" value={format(new Date(selectedWO.closed_at), "dd MMM yyyy HH:mm")} />}
+              {selectedWO.started_at && <DetailRow label="Started" value={format(new Date(selectedWO.started_at), "dd MMM yyyy HH:mm")} />}
+              {selectedWO.submitted_for_approval_at && <DetailRow label="Submitted for Approval" value={format(new Date(selectedWO.submitted_for_approval_at), "dd MMM yyyy HH:mm")} />}
+              {selectedWO.rejected_at && <DetailRow label="Rejected" value={format(new Date(selectedWO.rejected_at), "dd MMM yyyy HH:mm")} />}
+              {selectedWO.closed_at && <DetailRow label="Completed" value={format(new Date(selectedWO.closed_at), "dd MMM yyyy HH:mm")} />}
               {selectedWO.remarks && <DetailRow label="Remarks" value={selectedWO.remarks} />}
             </DetailSection>
           </div>
@@ -1432,13 +1824,31 @@ export default function WorkOrders() {
         open={isQrVerifyOpen}
         onOpenChange={setIsQrVerifyOpen}
         title="Scan Machine QR to Start Work"
-        description="Scan the assigned machine QR before maintenance starts. If camera access is unavailable, you can continue without QR."
+        description="Scan the assigned machine QR before maintenance starts. If camera access is unavailable, switch to manual machine-code entry."
         onDecoded={(value) => {
           void handleQrDecodedForVerification(value);
         }}
-        secondaryActionLabel="Continue Without QR"
-        onSecondaryAction={continueWithoutQrVerification}
+        secondaryActionLabel="Enter Machine Code"
+        onSecondaryAction={openManualVerification}
       />
+
+      <FormDialog
+        open={isManualVerifyOpen}
+        onOpenChange={setIsManualVerifyOpen}
+        title="Manual Machine Verification"
+        description="Enter the assigned machine code exactly as printed on the machine or asset card."
+        onSubmit={confirmManualVerification}
+        submitLabel="Confirm Machine"
+        size="sm"
+      >
+        <InputField
+          label="Machine Code"
+          value={manualMachineCode}
+          onChange={setManualMachineCode}
+          placeholder={verifyTargetWO?.assets?.code || "Enter machine code"}
+          required
+        />
+      </FormDialog>
 
       {qrMismatchMessage ? (
         <FormDialog
@@ -1451,6 +1861,7 @@ export default function WorkOrders() {
           onSubmit={() => {
             setQrMismatchMessage("");
             setIsQrVerifyOpen(true);
+            setIsManualVerifyOpen(false);
           }}
           submitLabel="Rescan QR"
         >
@@ -1480,9 +1891,9 @@ export default function WorkOrders() {
         submitLabel="Confirm and Start Work"
       >
         <div className="space-y-4">
-          {verificationMethod === "MANUAL_CONFIRMATION" ? (
+          {verificationMethod === "MANUAL_ENTRY" ? (
             <div className="rounded-2xl border border-dashed border-amber-400/40 bg-amber-500/5 px-4 py-3 text-sm text-muted-foreground">
-              QR verification was skipped for this start. Safety confirmation is still required before work begins.
+              QR scanning was unavailable, so this work order is being verified through manual machine-code entry.
             </div>
           ) : null}
           <div className="flex items-center space-x-2">
@@ -1516,6 +1927,37 @@ export default function WorkOrders() {
             placeholder="Optional safety notes"
           />
         </div>
+      </FormDialog>
+
+      <FormDialog
+        open={isReviewOpen}
+        onOpenChange={setIsReviewOpen}
+        title={reviewMode === "approve" ? "Approve Work Order" : "Reject Work Order"}
+        description={
+          reviewMode === "approve"
+            ? reviewRequiresComments
+              ? "This is an admin override approval. Enter comments for the audit trail."
+              : "Review the technician submission and approve completion."
+            : reviewRequiresComments
+              ? "This is an admin override rejection. Enter comments for the audit trail."
+              : "Add rejection comments so the technician can revise and resubmit."
+        }
+        onSubmit={handleReviewWorkOrder}
+        submitLabel={reviewMode === "approve" ? "Approve" : "Reject"}
+        size="md"
+      >
+        <TextareaField
+          label={reviewMode === "approve" ? "Approval Comments" : "Rejection Comments"}
+          value={reviewMode === "approve" ? reviewData.approve_comments : reviewData.reject_comments}
+          onChange={(value) =>
+            setReviewData((current) => ({
+              ...current,
+              [reviewMode === "approve" ? "approve_comments" : "reject_comments"]: value,
+            }))
+          }
+          placeholder={reviewMode === "approve" ? "Optional comments for the technician or audit log" : "Explain what must be corrected before resubmission"}
+          required={reviewMode === "reject" || reviewRequiresComments}
+        />
       </FormDialog>
     </PageShell>
   );

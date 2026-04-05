@@ -155,6 +155,9 @@ async function handleUnauthorized(): Promise<void> {
   debugLog("handleUnauthorized:start");
   clearStoredAccessToken();
   clearStoredCsrfToken();
+  clearSessionBootstrapHint();
+  clearCookie(SESSION_COOKIE_NAME);
+  clearCookie("cmms_csrf_token");
 
   try {
     const { useAuthStore } = await import("@/store/auth.store");
@@ -191,6 +194,11 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
+const responseBodyCache = new Map<string, unknown>();
+
+function buildRequestCacheKey(method: string, url: string): string {
+  return `${method.toUpperCase()} ${url}`;
+}
 
 async function refreshAccessToken(): Promise<boolean> {
   if (refreshInFlight) {
@@ -209,6 +217,7 @@ async function refreshAccessToken(): Promise<boolean> {
           ...(getCsrfForRequest() ? { "X-CSRF-Token": getCsrfForRequest() as string } : {}),
         },
         credentials: "include",
+        cache: "no-store",
         body: JSON.stringify({}),
       });
       debugLog("response", { url: refreshUrl, status: response.status });
@@ -302,6 +311,8 @@ function withSafeLimit(path: string): string {
 
 export async function httpRequest<T>(path: string, init: RequestInit = {}, retry = true, limitRetry = true): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
+  const method = (init.method || "GET").toUpperCase();
+  const requestCacheKey = buildRequestCacheKey(method, url);
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
   if ((path === "/auth/refresh" || path === "/auth/logout") && getCsrfForRequest()) {
@@ -315,7 +326,7 @@ export async function httpRequest<T>(path: string, init: RequestInit = {}, retry
 
   debugLog("request", {
     url,
-    method: init.method || "GET",
+    method,
     hasAuthHeader: Boolean(accessToken),
     credentials: "include",
   });
@@ -324,6 +335,7 @@ export async function httpRequest<T>(path: string, init: RequestInit = {}, retry
     ...init,
     headers,
     credentials: "include",
+    cache: "no-store",
   });
   debugLog("response", { url, status: response.status });
 
@@ -333,6 +345,15 @@ export async function httpRequest<T>(path: string, init: RequestInit = {}, retry
       return httpRequest<T>(path, init, false, limitRetry);
     }
     await handleUnauthorized();
+  }
+
+  if (response.status === 304 && method === "GET") {
+    const cached = responseBodyCache.get(requestCacheKey);
+    if (cached !== undefined) {
+      debugLog("response-304-cache-hit", { url, method });
+      return cached as T;
+    }
+    debugLog("response-304-cache-miss", { url, method });
   }
 
   if (!response.ok) {
@@ -370,5 +391,13 @@ export async function httpRequest<T>(path: string, init: RequestInit = {}, retry
     throw new ApiError(response.status, message, payload);
   }
 
-  return parseResponse<T>(response);
+  const parsed = await parseResponse<T>(response);
+
+  if (method === "GET") {
+    responseBodyCache.set(requestCacheKey, parsed);
+  } else {
+    responseBodyCache.clear();
+  }
+
+  return parsed;
 }

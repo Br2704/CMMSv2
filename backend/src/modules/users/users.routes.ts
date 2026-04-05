@@ -70,12 +70,13 @@ usersRouter.use(requireAuth);
 const SYSTEM_ORG_ROLE_DEFINITIONS = [
   { key: 'SUPERADMIN', name: 'SUPERADMIN', isSystem: true },
   { key: 'ADMIN', name: 'ADMIN', isSystem: true },
+  { key: 'SECURITY', name: 'SECURITY', isSystem: true },
   { key: 'VENDOR', name: 'VENDOR', isSystem: true },
   { key: 'VISITOR', name: 'VISITOR', isSystem: true },
   { key: 'USER', name: 'USER', isSystem: true },
 ] as const;
 
-const SYSTEM_CATALOG_ROLE_KEYS = new Set(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'USER', 'VENDOR', 'VISITOR']);
+const SYSTEM_CATALOG_ROLE_KEYS = new Set(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'USER', 'SECURITY', 'VENDOR', 'VISITOR']);
 
 function normalizeRoleInput(role: string) {
   return normalizeRoleName(role.trim());

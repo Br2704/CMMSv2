@@ -11,6 +11,7 @@ import { getPrimaryRoleKey, rolePrecedence } from '../utils/policy';
 import { fail } from '../utils/apiResponse';
 import { recordSecurityEvent } from '../utils/securityEvents';
 import { resolveUserOrganizationScope } from '../utils/userOrganization';
+import { applySystemRolePermissionPolicy } from '../utils/systemRolePermissionPolicy';
 
 const ROOT_GOVERNANCE_MODULES = new Set(['ORGANIZATIONS', 'PLANTS', 'USERS', 'ROLE_ACCESS', 'MASTERS', 'MODULES']);
 
@@ -45,7 +46,7 @@ function buildFallbackPermissionsForRole(role: string): Record<string, string[]>
   }
   if (normalized === 'ADMIN') {
     const map = Object.fromEntries(RBAC_MODULE_KEYS.map((moduleKey) => [moduleKey, allActions])) as Record<string, string[]>;
-    map.PLANTS = ['READ'];
+    delete map.PLANTS;
     delete map.ROLE_ACCESS;
     delete map.BENCHMARKING;
     map.ORGANIZATIONS = ['READ'];
@@ -89,15 +90,15 @@ function buildFallbackPermissionsForRole(role: string): Record<string, string[]>
     return fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'REPORTS', 'NOTIFICATIONS'], readOnly);
   }
   if (normalized === 'VENDOR') {
-    return fromModules(['AMC', 'NOTIFICATIONS'], readOnly);
+    return fromModules(['AMC'], readOnly);
   }
   if (normalized === 'VISITOR') {
-    return fromModules(['DASHBOARD', 'GATES', 'NOTIFICATIONS'], readOnly);
+    return {};
   }
-  if (normalized === 'SECURITY_USER') {
+  if (normalized === 'SECURITY_USER' || normalized === 'SECURITY') {
     return {
-      ...fromModules(['DASHBOARD', 'GATES', 'NOTIFICATIONS', 'REPORTS'], readOnly),
-      GATES: ['READ', 'CREATE', 'UPDATE', 'EXPORT'],
+      ...fromModules(['GATES'], readOnly),
+      GATES: ['READ'],
     };
   }
   if (normalized === 'USER') {
@@ -338,8 +339,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       delete permissionMap.ROLE_ACCESS;
     }
 
-    if (!effectiveRoles.includes('SUPERADMIN') && effectiveRoles.some((role) => isAdminRole(role))) {
-      permissionMap.PLANTS = ['READ'];
+    if (!effectiveRoles.includes('SUPERADMIN') && effectiveRoles.some((role) => normalizeRole(role) === 'ADMIN')) {
+      delete permissionMap.PLANTS;
       delete permissionMap.ROLE_ACCESS;
       if (roleKey === 'ADMIN') {
         permissionMap.ORGANIZATIONS = ['READ'];
@@ -348,10 +349,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
     if (!isRootAdmin && !isSuperAdmin) {
       delete permissionMap.ROLE_ACCESS;
-    }
-
-    if (!isRootAdmin) {
-      mergePermissionActions(permissionMap, 'PLANTS', ['READ']);
     }
 
     if (!isRootAdmin && plantIds.length > 0) {
@@ -363,6 +360,10 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       if (esgAssignments.length > 0) {
         mergePermissionActions(permissionMap, 'ESG', ['READ', 'UPDATE']);
       }
+    }
+
+    if (!isRootAdmin) {
+      permissionMap = applySystemRolePermissionPolicy(roleKey, permissionMap);
     }
 
     if (isRootAdmin) {

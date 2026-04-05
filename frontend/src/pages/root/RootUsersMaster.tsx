@@ -25,6 +25,7 @@ import { DataTableShell } from "@/components/layout/DataTableShell";
 import { FormGrid } from "@/components/layout/FormGrid";
 import { EmptyState } from "@/components/app-shell/EmptyState";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
+import { invalidatePermissionsCache } from "@/hooks/usePermissions";
 import { initializeAuthState, isRootAdmin, useAuthStore } from "@/store/auth.store";
 import { useBrandingStore } from "@/store/branding.store";
 
@@ -76,7 +77,9 @@ function getErrorStatus(error: unknown) {
 }
 
 function normalizeRoleKey(role: string) {
-  return role.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const normalized = role.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (normalized === "SECURITY_USER") return "SECURITY";
+  return normalized;
 }
 
 function formatRoleLabel(role: string, fallbackName?: string | null) {
@@ -586,6 +589,7 @@ export default function RootUsersMaster() {
       });
 
       setViewUser((current) => (current?.id === savedUser.id ? savedUser : current));
+      invalidatePermissionsCache();
       setIsUserFormOpen(false);
       const updatedCurrentSessionUser = savedUser.id === user?.authId;
       if (updatedCurrentSessionUser) {
@@ -612,6 +616,7 @@ export default function RootUsersMaster() {
       toast.success("User deleted permanently");
       setIsDeleteOpen(false);
       setUserToDelete(null);
+      invalidatePermissionsCache();
       await fetchRootAdmins();
       if (selectedOrganization) {
         await fetchOrganizationUsers(selectedOrganization.id, usersSearch);

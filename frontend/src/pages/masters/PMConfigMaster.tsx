@@ -60,6 +60,7 @@ type LinkFormState = {
   startDate: string;
   assignedTeamId: string;
   responsibleUserId: string;
+  checklistTasksOverride: string;
   isActive: boolean;
 };
 
@@ -90,6 +91,7 @@ const emptyLinkForm = (plantId: string): LinkFormState => ({
   startDate: todayIsoDateTime(),
   assignedTeamId: "",
   responsibleUserId: "",
+  checklistTasksOverride: "",
   isActive: true,
 });
 
@@ -109,6 +111,21 @@ function linesToArray(value: string) {
 
 function formatFrequency(type: string, value: number) {
   return `Every ${value} ${type.toLowerCase()}${value > 1 ? "s" : ""}`;
+}
+
+function resolveDisciplineBucket(value: string | null | undefined): "MECHANICAL" | "ELECTRICAL" | null {
+  const normalized = (value || "").trim().toUpperCase();
+  if (!normalized) return null;
+  if (normalized.includes("MECHAN") || normalized === "M") return "MECHANICAL";
+  if (normalized.includes("ELECT") || normalized === "E") return "ELECTRICAL";
+  return null;
+}
+
+function formatDisciplineLabel(value: string | null | undefined) {
+  const bucket = resolveDisciplineBucket(value);
+  if (bucket === "MECHANICAL") return "Mechanical";
+  if (bucket === "ELECTRICAL") return "Electrical";
+  return value?.trim() || "General";
 }
 
 export default function PMConfigMaster() {
@@ -191,17 +208,45 @@ export default function PMConfigMaster() {
     [plants],
   );
   const templateOptions = useMemo(
-    () => templates.filter((item) => item.isActive).map((item) => ({ value: item.id, label: item.templateName })),
+    () =>
+      templates
+        .filter((item) => item.isActive)
+        .map((item) => ({
+          value: item.id,
+          label: `${item.templateName} (${item.maintenanceType} | ${formatDisciplineLabel(item.discipline)})`,
+        })),
     [templates],
-  );
-  const teamOptions = useMemo(
-    () => teams.filter((item) => item.isActive).map((item) => ({ value: item.id, label: item.teamName })),
-    [teams],
   );
   const userOptions = useMemo(
     () => users.map((item) => ({ value: item.userId, label: `${item.fullName} (${item.userCode})` })),
     [users],
   );
+
+  const selectedLinkTemplate = useMemo(
+    () => templates.find((item) => item.id === linkForm.templateId) || null,
+    [linkForm.templateId, templates],
+  );
+
+  const selectedTemplateDiscipline = useMemo(
+    () => resolveDisciplineBucket(selectedLinkTemplate?.discipline),
+    [selectedLinkTemplate?.discipline],
+  );
+
+  const teamOptions = useMemo(() => {
+    const filtered = teams.filter((item) => {
+      if (!item.isActive) return false;
+      if (linkForm.plantId && item.plantId !== linkForm.plantId) return false;
+      if (selectedTemplateDiscipline) {
+        return resolveDisciplineBucket(item.discipline) === selectedTemplateDiscipline;
+      }
+      return true;
+    });
+
+    return filtered.map((item) => ({
+      value: item.id,
+      label: `${item.teamName} (${formatDisciplineLabel(item.discipline)})`,
+    }));
+  }, [linkForm.plantId, selectedTemplateDiscipline, teams]);
 
   const departmentsForPlant = useMemo(
     () => departments.filter((item) => item.plantId === linkForm.plantId),
@@ -216,6 +261,13 @@ export default function PMConfigMaster() {
       }),
     [assets, linkForm.departmentId, linkForm.plantId],
   );
+
+  useEffect(() => {
+    if (!linkForm.assignedTeamId) return;
+    const validSelection = teamOptions.some((option) => option.value === linkForm.assignedTeamId);
+    if (validSelection) return;
+    setLinkForm((current) => ({ ...current, assignedTeamId: "" }));
+  }, [linkForm.assignedTeamId, teamOptions]);
 
   const estimatedNextDue = useMemo(() => {
     const template = templates.find((item) => item.id === linkForm.templateId);
@@ -301,6 +353,7 @@ export default function PMConfigMaster() {
       startDate: new Date(link.startDate).toISOString().slice(0, 16),
       assignedTeamId: link.assignedTeamId || "",
       responsibleUserId: link.responsibleUserId || "",
+      checklistTasksOverride: (link.checklistTasksOverride || []).join("\n"),
       isActive: link.isActive,
     });
     setIsLinkFormOpen(true);
@@ -347,6 +400,10 @@ export default function PMConfigMaster() {
       toast.error("Template, plant, machine, and start date are required");
       return;
     }
+    if (!linkForm.assignedTeamId) {
+      toast.error("Assigned maintenance team is required");
+      return;
+    }
     setSaving(true);
     const payload: PMAssetLinkPayload = {
       templateId: linkForm.templateId,
@@ -354,8 +411,9 @@ export default function PMConfigMaster() {
       departmentId: linkForm.departmentId || null,
       assetId: linkForm.assetId,
       startDate: new Date(linkForm.startDate).toISOString(),
-      assignedTeamId: linkForm.assignedTeamId || null,
+      assignedTeamId: linkForm.assignedTeamId,
       responsibleUserId: linkForm.responsibleUserId || null,
+      checklistTasksOverride: linesToArray(linkForm.checklistTasksOverride),
       isActive: linkForm.isActive,
     };
     try {
@@ -416,9 +474,29 @@ export default function PMConfigMaster() {
 
   const linkColumns = [
     { key: "asset", header: "Linked Asset", render: (item: PMAssetLink) => <div><p className="font-medium">{item.asset?.code || "-"}</p><p className="text-xs text-muted-foreground">{item.asset?.name || "Machine not found"}</p></div> },
-    { key: "template", header: "Template", render: (item: PMAssetLink) => <div><p>{item.template?.templateName || "-"}</p><p className="text-xs text-muted-foreground">{item.template?.maintenanceType || "-"}</p></div> },
+    {
+      key: "template",
+      header: "Template",
+      render: (item: PMAssetLink) => (
+        <div>
+          <p>{item.template?.templateName || "-"}</p>
+          <p className="text-xs text-muted-foreground">
+            {item.template?.maintenanceType || "-"} | {formatDisciplineLabel(item.template?.discipline || null)}
+          </p>
+        </div>
+      ),
+    },
     { key: "nextDue", header: "Next Due", render: (item: PMAssetLink) => new Date(item.nextDueDate).toLocaleString() },
     { key: "team", header: "Assigned Team", render: (item: PMAssetLink) => item.assignedTeam?.teamName || "-", hideOnMobile: true },
+    {
+      key: "checklist",
+      header: "Machine Checklist",
+      render: (item: PMAssetLink) =>
+        item.checklistTasksOverride.length > 0
+          ? `${item.checklistTasksOverride.length} override task(s)`
+          : "Uses template checklist",
+      hideOnMobile: true,
+    },
     { key: "user", header: "Responsible User", render: (item: PMAssetLink) => item.responsibleUser?.fullName || "-", hideOnMobile: true },
     {
       key: "actions",
@@ -511,6 +589,7 @@ export default function PMConfigMaster() {
                       <MobileCardHeader title={item.asset?.code || "Machine"} subtitle={item.template?.templateName || "-"} badge={<StatusBadge variant="warning">Due {new Date(item.nextDueDate).toLocaleDateString()}</StatusBadge>} />
                       <MobileCardRow label="Machine" value={item.asset?.name || "-"} />
                       <MobileCardRow label="Assigned Team" value={item.assignedTeam?.teamName || "-"} />
+                      <MobileCardRow label="Checklist" value={item.checklistTasksOverride.length > 0 ? `${item.checklistTasksOverride.length} override task(s)` : "Template checklist"} />
                       <MobileCardRow label="Responsible User" value={item.responsibleUser?.fullName || "-"} />
                     </MobileCard>
                   )}
@@ -565,7 +644,15 @@ export default function PMConfigMaster() {
             <Input type="datetime-local" value={linkForm.startDate} onChange={(event) => setLinkForm((current) => ({ ...current, startDate: event.target.value }))} />
           </div>
           <InputField label="Next Due Date" value={estimatedNextDue} onChange={() => {}} disabled placeholder="Auto calculated from template frequency" />
-          <SelectField label="Assigned Team" value={linkForm.assignedTeamId} onChange={(value) => setLinkForm((current) => ({ ...current, assignedTeamId: value }))} options={teamOptions} placeholder="Select team" />
+          <SelectField
+            label="Assigned Team"
+            value={linkForm.assignedTeamId}
+            onChange={(value) => setLinkForm((current) => ({ ...current, assignedTeamId: value }))}
+            options={teamOptions}
+            placeholder={selectedTemplateDiscipline ? `Select ${selectedTemplateDiscipline.toLowerCase()} team` : "Select team"}
+            required
+            hint={selectedTemplateDiscipline ? `Only ${selectedTemplateDiscipline.toLowerCase()} maintenance teams are shown for this template.` : "Select the maintenance team that should execute this machine checklist."}
+          />
           <SelectField label="Responsible User" value={linkForm.responsibleUserId} onChange={(value) => setLinkForm((current) => ({ ...current, responsibleUserId: value }))} options={userOptions} placeholder="Select responsible user" />
           <div className="flex items-end"><SwitchField label="Active Link" checked={linkForm.isActive} onChange={(checked) => setLinkForm((current) => ({ ...current, isActive: checked }))} /></div>
           <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
@@ -573,6 +660,13 @@ export default function PMConfigMaster() {
             <p className="mt-1">The backend will calculate `next_due_date` automatically using the selected template frequency and start date.</p>
           </div>
         </FormGrid>
+        <TextareaField
+          label="Machine Checklist Override"
+          value={linkForm.checklistTasksOverride}
+          onChange={(value) => setLinkForm((current) => ({ ...current, checklistTasksOverride: value }))}
+          placeholder={"Use template checklist when left blank.\nInspect machine coupling alignment\nVerify insulation resistance values\nCheck vibration trend values"}
+          hint="Use one line per task to customize PM/PD checklist for this specific machine and team."
+        />
       </FormDialog>
 
       <DeleteConfirmDialog

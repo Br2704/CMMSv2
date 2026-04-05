@@ -43,13 +43,13 @@ function getDefaultSnapshot(): BrandingSnapshot {
   return {
     organizationId: null,
     organizationName: null,
-    sidebarTitle: "TamOptiX",
+    sidebarTitle: "JK Fenner",
     logoUrl: null,
-    logoAssetUrl: buildBrandingLogoUrl(null, null, 192),
-    faviconUrl: "/icons/icon-192x192.png",
-    fallbackLogoUrl: "/icons/icon-512x512.png",
-    fallbackFaviconUrl: "/icons/icon-192x192.png",
-    browserTitle: "TamOptiX CMMS",
+    logoAssetUrl: "/icons/jkfenner-logo.svg",
+    faviconUrl: "/icons/jkfenner-favicon.svg",
+    fallbackLogoUrl: "/icons/jkfenner-logo.svg",
+    fallbackFaviconUrl: "/icons/jkfenner-favicon.svg",
+    browserTitle: "JK Fenner CMMS",
     brandColor: "#0f172a",
     updatedAt: null,
   };
@@ -78,6 +78,27 @@ function applyDefaultFallback(set: (partial: Partial<BrandingState>) => void) {
   const fallback = getDefaultSnapshot();
   persistSnapshot(fallback);
   set({ ...fallback, loading: false });
+}
+
+function applyForbiddenFallback(get: () => BrandingState, set: (partial: Partial<BrandingState>) => void) {
+  const fallback = getDefaultSnapshot();
+  const current = get();
+  const snapshot: BrandingSnapshot = {
+    organizationId: current.organizationId ?? fallback.organizationId,
+    organizationName: current.organizationName ?? fallback.organizationName,
+    sidebarTitle: current.sidebarTitle ?? current.organizationName ?? fallback.sidebarTitle,
+    logoUrl: current.logoUrl ?? fallback.logoUrl,
+    logoAssetUrl: current.logoAssetUrl ?? buildBrandingLogoUrl(current.organizationId ?? null, current.version, 192),
+    faviconUrl: current.faviconUrl ?? fallback.faviconUrl,
+    fallbackLogoUrl: current.fallbackLogoUrl ?? fallback.fallbackLogoUrl,
+    fallbackFaviconUrl: current.fallbackFaviconUrl ?? fallback.fallbackFaviconUrl,
+    browserTitle: current.browserTitle ?? (current.organizationName ? `${current.organizationName} CMMS` : fallback.browserTitle),
+    brandColor: current.brandColor ?? fallback.brandColor,
+    updatedAt: current.updatedAt ?? fallback.updatedAt,
+  };
+
+  persistSnapshot(snapshot);
+  set({ ...snapshot, loading: false });
 }
 
 const initialSnapshot = getStoredAccessToken() ? readCachedSnapshot() : getDefaultSnapshot();
@@ -119,16 +140,24 @@ export const useBrandingStore = create<BrandingState>((set, get) => ({
     try {
       const response = await getBrandingMe();
       const payload = response.data;
+      const current = get();
+      const preserveSeededOrganization = !payload.organizationId && Boolean(current.organizationId);
       const snapshot: BrandingSnapshot = {
-        organizationId: payload.organizationId || null,
-        organizationName: payload.organizationName || null,
-        sidebarTitle: payload.sidebarTitle || payload.organizationName || null,
-        logoUrl: payload.organizationLogoUrl || null,
-        logoAssetUrl: payload.organizationLogoAssetUrl || buildBrandingLogoUrl(payload.organizationId || null, get().version, 192),
-        faviconUrl: payload.organizationFaviconUrl || null,
+        organizationId: preserveSeededOrganization ? current.organizationId : (payload.organizationId || null),
+        organizationName: preserveSeededOrganization ? current.organizationName : (payload.organizationName || null),
+        sidebarTitle: preserveSeededOrganization
+          ? (current.sidebarTitle || current.organizationName)
+          : (payload.sidebarTitle || payload.organizationName || null),
+        logoUrl: preserveSeededOrganization ? current.logoUrl : (payload.organizationLogoUrl || null),
+        logoAssetUrl: preserveSeededOrganization
+          ? (current.logoAssetUrl || buildBrandingLogoUrl(current.organizationId || null, current.version, 192))
+          : (payload.organizationLogoAssetUrl || buildBrandingLogoUrl(payload.organizationId || null, current.version, 192)),
+        faviconUrl: preserveSeededOrganization ? current.faviconUrl : (payload.organizationFaviconUrl || null),
         fallbackLogoUrl: payload.fallbackLogoUrl || null,
-        fallbackFaviconUrl: payload.fallbackFaviconUrl || payload.fallbackLogoUrl || "/icons/icon-192x192.png",
-        browserTitle: payload.browserTitle || null,
+        fallbackFaviconUrl: payload.fallbackFaviconUrl || payload.fallbackLogoUrl || "/icons/jkfenner-favicon.svg",
+        browserTitle: preserveSeededOrganization
+          ? (current.browserTitle || (current.organizationName ? `${current.organizationName} CMMS` : null))
+          : (payload.browserTitle || null),
         brandColor: payload.brandColor || "#0f172a",
         updatedAt: payload.updatedAt || null,
       };
@@ -141,7 +170,8 @@ export const useBrandingStore = create<BrandingState>((set, get) => ({
         return;
       }
       if (error instanceof ApiError && error.status === 403) {
-        applyDefaultFallback(set);
+        get().stopWatcher();
+        applyForbiddenFallback(get, set);
         return;
       }
       set({ loading: false });
@@ -168,7 +198,8 @@ export const useBrandingStore = create<BrandingState>((set, get) => ({
         return;
       }
       if (error instanceof ApiError && error.status === 403) {
-        applyDefaultFallback(set);
+        get().stopWatcher();
+        applyForbiddenFallback(get, set);
       }
     }
   },

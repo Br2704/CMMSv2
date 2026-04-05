@@ -53,6 +53,8 @@ const ACTION_META: Record<AppPermissionAction, { label: string; hint: string }> 
   EXPORT: { label: "Export", hint: "Download exports from this page." },
 };
 
+const SYSTEM_USER_BLOCKED_MODULES = new Set(["PLANTS", "ORGANIZATIONS", "ROLE_ACCESS", "MODULES", "DEPARTMENTS", "USERS", "VENDORS", "SHIFTS"]);
+
 type SyncState = "idle" | "saving" | "saved" | "error";
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -98,6 +100,83 @@ function writePageActions(input: OrgRolePermissionMap, page: AppPageDefinition, 
     next[key] = sanitized;
   });
   return next;
+}
+
+function normalizeRoleKeyForPolicy(roleKey: string) {
+  const normalized = roleKey
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (normalized === "SUPER_ADMIN") return "SUPERADMIN";
+  if (normalized === "SECURITY_USER") return "SECURITY";
+  return normalized;
+}
+
+function buildFullAccessMapFromCatalog(seed: OrgRolePermissionMap) {
+  const keys = new Set<string>(Object.keys(seed));
+  NON_ROOT_APP_PAGES.forEach((page) => {
+    pagePermissionKeys(page).forEach((key) => keys.add(key));
+  });
+  return Object.fromEntries(Array.from(keys).map((key) => [key, [...APP_PERMISSION_ACTIONS]])) as OrgRolePermissionMap;
+}
+
+function applySystemRolePolicy(roleKey: string, input: OrgRolePermissionMap) {
+  const normalizedRoleKey = normalizeRoleKeyForPolicy(roleKey);
+  const normalized = sanitizePermissionMap(input);
+
+  if (normalizedRoleKey === "SUPERADMIN") {
+    const next = buildFullAccessMapFromCatalog(normalized);
+    next.ORGANIZATIONS = ["READ"];
+    next.PLANTS = ["READ", "UPDATE"];
+    next["MASTERS.PLANT"] = ["READ", "UPDATE"];
+    return next;
+  }
+
+  if (normalizedRoleKey === "ADMIN") {
+    const next = buildFullAccessMapFromCatalog(normalized);
+    delete next.PLANTS;
+    delete next["MASTERS.PLANT"];
+    next.ORGANIZATIONS = ["READ"];
+    return next;
+  }
+
+  if (normalizedRoleKey === "VISITOR") {
+    return {};
+  }
+
+  if (normalizedRoleKey === "VENDOR") {
+    const actions = normalizeActions(normalized.AMC);
+    return { AMC: actions.length > 0 ? actions : ["READ"] };
+  }
+
+  if (normalizedRoleKey === "SECURITY") {
+    const actions = normalizeActions(normalized.GATES);
+    return { GATES: actions.length > 0 ? actions : ["READ"] };
+  }
+
+  if (normalizedRoleKey === "USER") {
+    const filtered: OrgRolePermissionMap = {};
+    Object.entries(normalized).forEach(([moduleKey, actions]) => {
+      if (moduleKey === "MASTERS" || moduleKey.startsWith("MASTERS.")) return;
+      if (SYSTEM_USER_BLOCKED_MODULES.has(moduleKey)) return;
+      filtered[moduleKey] = actions;
+    });
+    return filtered;
+  }
+
+  return normalized;
+}
+
+function getSystemRolePolicyHint(roleKey: string): string | null {
+  const normalizedRoleKey = normalizeRoleKeyForPolicy(roleKey);
+  if (normalizedRoleKey === "SUPERADMIN") return "SUPERADMIN policy is fixed: full organization access across modules, with Plant Master limited to view and edit.";
+  if (normalizedRoleKey === "ADMIN") return "ADMIN policy is fixed: all modules except Plant Master.";
+  if (normalizedRoleKey === "USER") return "USER policy is enforced: governance/master module permissions are removed.";
+  if (normalizedRoleKey === "VENDOR") return "VENDOR policy is enforced: AMC-only access.";
+  if (normalizedRoleKey === "VISITOR") return "VISITOR policy is enforced: no page access.";
+  if (normalizedRoleKey === "SECURITY") return "SECURITY policy is enforced: gate-entry-only access.";
+  return null;
 }
 
 function buildRoleKey(value: string) {
@@ -176,7 +255,7 @@ export default function RootRoleAccessMaster() {
     }
   }, []);
 
-  const fetchRolePermissions = useCallback(async (orgId: string, roleId: string) => {
+  const fetchRolePermissions = useCallback(async (orgId: string, roleId: string, roleKey?: string) => {
     const requestId = ++permissionsRequestRef.current;
     setPermissionsLoading(true);
     didLoadPermissionsRef.current = false;
@@ -184,8 +263,9 @@ export default function RootRoleAccessMaster() {
       const response = await getOrgRolePermissions(orgId, roleId);
       if (requestId !== permissionsRequestRef.current) return;
       const normalized = sanitizePermissionMap(response.data || {});
-      setPermissionMap(normalized);
-      setPermissionInitial(normalized);
+      const effective = roleKey ? applySystemRolePolicy(roleKey, normalized) : normalized;
+      setPermissionMap(effective);
+      setPermissionInitial(effective);
       setSyncState("saved");
       setLastSyncedAt(new Date().toISOString());
     } catch (error) {
@@ -259,7 +339,7 @@ export default function RootRoleAccessMaster() {
       setLastSyncedAt(null);
       return;
     }
-    void fetchRolePermissions(selectedOrgId, selectedRole.id);
+    void fetchRolePermissions(selectedOrgId, selectedRole.id, selectedRole.key);
   }, [fetchRolePermissions, selectedOrgId, selectedRole]);
 
   useEffect(() => {
@@ -277,13 +357,14 @@ export default function RootRoleAccessMaster() {
     const timeoutId = window.setTimeout(() => {
       void (async () => {
         try {
-          const payload = sanitizePermissionMap(permissionMap);
+          const payload = selectedRole ? applySystemRolePolicy(selectedRole.key, sanitizePermissionMap(permissionMap)) : sanitizePermissionMap(permissionMap);
           const response = await saveOrgRolePermissions(selectedOrgId, selectedRole.id, payload);
           if (requestId !== autosaveRequestRef.current) return;
 
           const normalized = sanitizePermissionMap(response.data?.permissions || payload);
-          setPermissionMap(normalized);
-          setPermissionInitial(normalized);
+          const effective = selectedRole ? applySystemRolePolicy(selectedRole.key, normalized) : normalized;
+          setPermissionMap(effective);
+          setPermissionInitial(effective);
           setSyncState("saved");
           setLastSyncedAt(new Date().toISOString());
           invalidatePermissionsCache();
@@ -335,6 +416,7 @@ export default function RootRoleAccessMaster() {
       setSelectedRoleId(response.data.id);
       setRoleNameInput("");
       setIsCreateRoleOpen(false);
+      invalidatePermissionsCache();
       toast.success("Role created");
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to create role"));
@@ -357,6 +439,7 @@ export default function RootRoleAccessMaster() {
       await fetchRoles(selectedOrgId);
       setRoleNameInput("");
       setIsRenameRoleOpen(false);
+      invalidatePermissionsCache();
       toast.success("Role renamed");
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to rename role"));
@@ -373,6 +456,7 @@ export default function RootRoleAccessMaster() {
       await deleteOrgRole(selectedOrgId, selectedRole.id);
       setIsDeleteRoleOpen(false);
       await fetchRoles(selectedOrgId);
+      invalidatePermissionsCache();
       toast.success("Role deleted");
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to delete role"));
@@ -645,6 +729,12 @@ export default function RootRoleAccessMaster() {
                       </div>
                     ))}
                   </div>
+
+                  {selectedRole?.isSystem ? (
+                    <div className="rounded-2xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                      {getSystemRolePolicyHint(selectedRole.key) || "System role policy is enforced for this role."}
+                    </div>
+                  ) : null}
 
                   <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-3">
                     <p className="text-sm font-medium">Autosave</p>

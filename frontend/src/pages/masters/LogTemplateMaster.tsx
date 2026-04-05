@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,11 +29,14 @@ import {
   listLogTemplates,
   updateLogTemplate,
 } from "@/api/logs";
+import { listWorkOrderMasters } from "@/api/workOrderMasters";
 import { listUsers } from "@/api/users";
+import { humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
+import { subscribeWorkOrderSync } from "@/lib/work-order-sync";
 import { useAuthStore, isAdmin, isSuperAdmin } from "@/store/auth.store";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 
-const categoryOptions = [
+const fallbackCategoryOptions = [
   { value: "UTILITY", label: "Utility" },
   { value: "MECHANICAL", label: "Mechanical" },
   { value: "ELECTRICAL", label: "Electrical" },
@@ -99,7 +102,7 @@ interface UserOption {
 
 const emptyForm = {
   templateName: "",
-  category: "UTILITY",
+  category: "",
   description: "",
   frequency: "PER_SHIFT",
   reminderMinutesBefore: "15",
@@ -157,6 +160,7 @@ export default function LogTemplateMaster() {
   const [allUsers, setAllUsers] = useState<UserOption[]>([]);
   const [assignedRows, setAssignedRows] = useState<Array<{ id: string; userId: string }>>([]);
   const [viewFields, setViewFields] = useState<FieldRow[]>([]);
+  const [workOrderCategoryOptions, setWorkOrderCategoryOptions] = useState<Array<{ value: string; label: string }>>([]);
 
   const fetchTemplates = async () => {
     setLoading(true);
@@ -223,10 +227,64 @@ export default function LogTemplateMaster() {
     }
   };
 
+  const loadWorkOrderCategories = useCallback(async (plantId?: string) => {
+    if (!plantId) {
+      setWorkOrderCategoryOptions([]);
+      return;
+    }
+
+    const response = await listWorkOrderMasters({
+      page: 1,
+      limit: 500,
+      plantId,
+      includeInactive: false,
+      optionType: "CATEGORY",
+    });
+
+    const seenCodes = new Set<string>();
+    const options = (response.data || [])
+      .filter((item) => item.optionType === "CATEGORY" && item.isActive)
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label))
+      .map((item) => ({
+        value: normalizeWorkOrderCode(item.code),
+        label: item.label,
+      }))
+      .filter((item) => {
+        if (!item.value || seenCodes.has(item.value)) return false;
+        seenCodes.add(item.value);
+        return true;
+      });
+
+    setWorkOrderCategoryOptions(options);
+  }, []);
+
   useEffect(() => {
     void fetchPlants();
     void fetchUsers(defaultPlantId || undefined);
   }, []);
+
+  useEffect(() => {
+    const plantId = canSelectPlant ? formData.plantId || undefined : defaultPlantId || undefined;
+    if (!plantId) {
+      setWorkOrderCategoryOptions([]);
+      return;
+    }
+
+    void loadWorkOrderCategories(plantId).catch((error: any) => {
+      toast.error(error?.message || "Failed to load work order categories");
+      setWorkOrderCategoryOptions([]);
+    });
+  }, [canSelectPlant, defaultPlantId, formData.plantId, loadWorkOrderCategories]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeWorkOrderSync(() => {
+      const plantId = canSelectPlant ? formData.plantId || undefined : defaultPlantId || undefined;
+      if (!plantId) return;
+      void loadWorkOrderCategories(plantId);
+    });
+
+    return unsubscribe;
+  }, [canSelectPlant, defaultPlantId, formData.plantId, loadWorkOrderCategories]);
 
   useEffect(() => {
     void fetchTemplates();
@@ -240,8 +298,61 @@ export default function LogTemplateMaster() {
     void fetchAssets(plantId, formData.departmentId || undefined, formData.moduleId || undefined);
   }, [canSelectPlant, defaultPlantId, formData.plantId, formData.departmentId, formData.moduleId]);
 
+  const categoryLabelByCode = useMemo(() => {
+    const map = new Map<string, string>();
+    workOrderCategoryOptions.forEach((option) => {
+      map.set(normalizeWorkOrderCode(option.value), option.label);
+    });
+    return map;
+  }, [workOrderCategoryOptions]);
+
+  const resolveCategoryLabel = useCallback(
+    (categoryCode: string | null | undefined) => {
+      if (!categoryCode) return "-";
+      const normalizedCode = normalizeWorkOrderCode(categoryCode);
+      return categoryLabelByCode.get(normalizedCode) || humanizeWorkOrderCode(normalizedCode);
+    },
+    [categoryLabelByCode],
+  );
+
+  const categoryOptions = useMemo(() => {
+    const base = workOrderCategoryOptions.length > 0 ? workOrderCategoryOptions : fallbackCategoryOptions;
+    const merged = [...base];
+    const seen = new Set(base.map((option) => normalizeWorkOrderCode(option.value)));
+
+    templates.forEach((template) => {
+      const normalizedCategory = normalizeWorkOrderCode(template.category || "");
+      if (!normalizedCategory || seen.has(normalizedCategory)) return;
+      seen.add(normalizedCategory);
+      merged.push({
+        value: normalizedCategory,
+        label: resolveCategoryLabel(normalizedCategory),
+      });
+    });
+
+    return merged;
+  }, [resolveCategoryLabel, templates, workOrderCategoryOptions]);
+
+  useEffect(() => {
+    if (!formData.category && categoryOptions.length > 0) {
+      setFormData((current) => ({ ...current, category: categoryOptions[0].value }));
+      return;
+    }
+
+    if (!formData.category) return;
+    if (categoryOptions.some((option) => option.value === formData.category)) return;
+    if (categoryOptions.length === 0) return;
+    setFormData((current) => ({ ...current, category: categoryOptions[0].value }));
+  }, [categoryOptions, formData.category]);
+
+  useEffect(() => {
+    if (catFilter === "all") return;
+    if (categoryOptions.some((option) => option.value === catFilter)) return;
+    setCatFilter("all");
+  }, [catFilter, categoryOptions]);
+
   const filtered = useMemo(
-    () => templates.filter((template) => (catFilter === "all" ? true : template.category === catFilter)),
+    () => templates.filter((template) => (catFilter === "all" ? true : normalizeWorkOrderCode(template.category) === normalizeWorkOrderCode(catFilter))),
     [templates, catFilter],
   );
 
@@ -253,6 +364,10 @@ export default function LogTemplateMaster() {
   const handleSubmitTemplate = async () => {
     if (!formData.templateName.trim()) {
       toast.error("Template name is required");
+      return;
+    }
+    if (!formData.category.trim()) {
+      toast.error("Category is required");
       return;
     }
 
@@ -464,7 +579,7 @@ export default function LogTemplateMaster() {
         </div>
       ),
     },
-    { key: "category", header: "Category", render: (template: TemplateRow) => <StatusBadge variant="info" showDot={false}>{template.category}</StatusBadge> },
+    { key: "category", header: "Category", render: (template: TemplateRow) => <StatusBadge variant="info" showDot={false}>{resolveCategoryLabel(template.category)}</StatusBadge> },
     { key: "frequency", header: "Frequency", render: (template: TemplateRow) => template.frequency === "PER_SHIFT" ? "Shift" : template.frequency.replace(/_/g, " "), hideOnMobile: true },
     { key: "plant", header: "Plant", render: (template: TemplateRow) => getPlantName(template.plantId), hideOnMobile: true },
     {
@@ -499,7 +614,7 @@ export default function LogTemplateMaster() {
                 onClick={() => {
                   setFormData({
                     templateName: template.templateName,
-                    category: template.category,
+                    category: normalizeWorkOrderCode(template.category),
                     description: template.description || "",
                     frequency: template.frequency === "PER_SHIFT" ? "SHIFT" : template.frequency,
                     reminderMinutesBefore: String(template.reminderMinutesBefore),
@@ -577,7 +692,7 @@ export default function LogTemplateMaster() {
                   onEdit={canManage ? () => {
                     setFormData({
                       templateName: template.templateName,
-                      category: template.category,
+                      category: normalizeWorkOrderCode(template.category),
                       description: template.description || "",
                       frequency: template.frequency === "PER_SHIFT" ? "SHIFT" : template.frequency,
                       reminderMinutesBefore: String(template.reminderMinutesBefore),
@@ -593,7 +708,7 @@ export default function LogTemplateMaster() {
                   } : undefined}
                   onDelete={canManage ? () => { setSelected(template); setIsDeleteOpen(true); } : undefined}
                 >
-                  <MobileCardHeader title={template.templateName} subtitle={template.description || undefined} badge={<StatusBadge variant="info" showDot={false}>{template.category}</StatusBadge>} />
+                  <MobileCardHeader title={template.templateName} subtitle={template.description || undefined} badge={<StatusBadge variant="info" showDot={false}>{resolveCategoryLabel(template.category)}</StatusBadge>} />
                   <MobileCardRow label="Frequency" value={template.frequency.replace(/_/g, " ")} />
                   <MobileCardRow label="Fields" value={`${template.fieldCount} fields`} />
                   <MobileCardRow label="Assigned" value={`${template.assignedCount} users`} />
@@ -607,7 +722,7 @@ export default function LogTemplateMaster() {
       <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title={selected ? "Edit Template" : "Add Template"} description="Configure log template settings" onSubmit={handleSubmitTemplate} submitLabel={submitting ? "Saving..." : selected ? "Update" : "Create"} size="lg">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <InputField label="Template Name" value={formData.templateName} onChange={(value) => setFormData({ ...formData, templateName: value })} placeholder="Boiler Daily Log" required />
-          <SelectField label="Category" value={formData.category} onChange={(value) => setFormData({ ...formData, category: value })} options={categoryOptions} required />
+          <SelectField label="Category" value={formData.category} onChange={(value) => setFormData({ ...formData, category: value })} options={categoryOptions} required disabled={categoryOptions.length === 0} />
           <InputField label="Description" value={formData.description} onChange={(value) => setFormData({ ...formData, description: value })} placeholder="Daily boiler parameters log" />
           <SelectField label="Frequency" value={formData.frequency} onChange={(value) => setFormData({ ...formData, frequency: value })} options={frequencyOptions} required />
           <InputField label="Reminder Before (min)" value={formData.reminderMinutesBefore} onChange={(value) => setFormData({ ...formData, reminderMinutesBefore: value })} type="number" />
@@ -742,12 +857,12 @@ export default function LogTemplateMaster() {
         </DialogContent>
       </Dialog>
 
-      <ViewDialog open={isViewOpen} onOpenChange={setIsViewOpen} title={selected?.templateName || ""} subtitle={selected?.category}>
+      <ViewDialog open={isViewOpen} onOpenChange={setIsViewOpen} title={selected?.templateName || ""} subtitle={resolveCategoryLabel(selected?.category)}>
         {selected && (
           <div className="space-y-6">
             <DetailSection title="Template Info">
               <DetailRow label="Name" value={selected.templateName} />
-              <DetailRow label="Category" value={selected.category} />
+              <DetailRow label="Category" value={resolveCategoryLabel(selected.category)} />
               <DetailRow label="Frequency" value={selected.frequency === "PER_SHIFT" ? "Shift" : selected.frequency.replace(/_/g, " ")} />
               <DetailRow label="Plant" value={getPlantName(selected.plantId)} />
               <DetailRow label="Department" value={getDepartmentName(selected.departmentId)} />

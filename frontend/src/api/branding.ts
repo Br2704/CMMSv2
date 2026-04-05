@@ -72,3 +72,11 @@ export function buildBrandingLogoUrlByCode(organizationCode: string, version?: n
   if (version) params.set("v", String(version));
   return `/api/branding/logo?${params.toString()}`;
 }
+
+export function buildBrandingFaviconUrlByCode(organizationCode: string, version?: number | null, size = 192) {
+  const params = new URLSearchParams();
+  params.set("organizationCode", organizationCode);
+  params.set("size", size >= 512 ? "512" : "192");
+  if (version) params.set("v", String(version));
+  return `/api/branding/favicon?${params.toString()}`;
+}

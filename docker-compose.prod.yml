@@ -38,8 +38,8 @@ services:
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_SSL: "false"
-      FRONTEND_URL: ${APP_BASE_URL:-http://192.168.31.64}
-      CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://192.168.31.64,http://192.168.31.64:8080,http://localhost,http://localhost:8080,http://127.0.0.1,http://127.0.0.1:8080}
+      FRONTEND_URL: ${APP_BASE_URL:-http://localhost:8080}
+      CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost,http://localhost:8080,http://127.0.0.1,http://127.0.0.1:8080}
     ports:
       - "3001:3001"
     depends_on:

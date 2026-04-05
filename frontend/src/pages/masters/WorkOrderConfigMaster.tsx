@@ -24,7 +24,8 @@ import { listMaintenanceTeams, type MaintenanceTeam } from "@/api/maintenanceTea
 import { listPlants, type Plant } from "@/api/plants";
 import { createWorkOrderMaster, deleteWorkOrderMaster, listWorkOrderMasters, type WorkOrderMaster, type WorkOrderMasterOptionType, updateWorkOrderMaster } from "@/api/workOrderMasters";
 import { createWorkOrderTeamMapping, deleteWorkOrderTeamMapping, listWorkOrderTeamMappings, type WorkOrderTeamMapping, updateWorkOrderTeamMapping } from "@/api/workOrderTeamMappings";
-import { getFallbackWorkOrderOptions, humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
+import { humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
+import { broadcastWorkOrderSync } from "@/lib/work-order-sync";
 import { isAdmin, isSuperAdmin, useAuthStore } from "@/store/auth.store";
 
 type ConfigTab = "categories" | "types" | "failure-codes" | "routing";
@@ -143,17 +144,15 @@ export default function WorkOrderConfigMaster() {
   const teamOptions = useMemo(() => teams.filter((item) => item.isActive).sort((a, b) => a.teamName.localeCompare(b.teamName)).map((item) => ({ value: item.id, label: `${item.teamName} · ${item.discipline}` })), [teams]);
   const teamNameById = useMemo(() => Object.fromEntries(teams.map((item) => [item.id, item.teamName])) as Record<string, string>, [teams]);
   const departmentNameById = useMemo(() => Object.fromEntries(departments.map((item) => [item.id, `${item.code} - ${item.name}`])) as Record<string, string>, [departments]);
-  const fallbackLabelByCode = useMemo(() => Object.fromEntries([...getFallbackWorkOrderOptions("CATEGORY"), ...getFallbackWorkOrderOptions("WO_TYPE"), ...getFallbackWorkOrderOptions("FAILURE_CODE")].map((item) => [item.value, item.label])) as Record<string, string>, []);
   const labelByCode = useMemo(() => {
-    const map = { ...fallbackLabelByCode };
+    const map = {} as Record<string, string>;
     masters.forEach((item) => {
       map[item.code] = item.label;
     });
     return map;
-  }, [fallbackLabelByCode, masters]);
+  }, [masters]);
   const activeCategoryOptions = useMemo(() => {
-    const rows = masters.filter((item) => item.optionType === "CATEGORY" && item.isActive).map((item) => ({ value: item.code, label: item.label }));
-    return rows.length > 0 ? rows : getFallbackWorkOrderOptions("CATEGORY");
+    return masters.filter((item) => item.optionType === "CATEGORY" && item.isActive).map((item) => ({ value: item.code, label: item.label }));
   }, [masters]);
   const optionRows = useMemo(() => {
     if (activeTab === "routing") return [];
@@ -212,6 +211,7 @@ export default function WorkOrderConfigMaster() {
       if (isEditingOption && selectedOption) await updateWorkOrderMaster(selectedOption.id, payload);
       else await createWorkOrderMaster(payload);
       await reloadPlantData(plantId);
+      broadcastWorkOrderSync();
       setIsOptionFormOpen(false);
       toast.success(isEditingOption ? "Work order option updated" : "Work order option created");
     } catch (error: unknown) {
@@ -232,6 +232,7 @@ export default function WorkOrderConfigMaster() {
       if (isEditingMapping && selectedMapping) await updateWorkOrderTeamMapping(selectedMapping.id, payload);
       else await createWorkOrderTeamMapping(payload);
       await reloadPlantData(plantId);
+      broadcastWorkOrderSync();
       setIsMappingFormOpen(false);
       toast.success(isEditingMapping ? "Routing rule updated" : "Routing rule created");
     } catch (error: unknown) {
@@ -246,6 +247,7 @@ export default function WorkOrderConfigMaster() {
     try {
       await deleteWorkOrderMaster(selectedOption.id);
       setMasters((current) => current.filter((item) => item.id !== selectedOption.id));
+      broadcastWorkOrderSync();
       setIsOptionDeleteOpen(false);
       toast.success("Work order option deleted");
     } catch (error: unknown) {
@@ -260,6 +262,7 @@ export default function WorkOrderConfigMaster() {
     try {
       await deleteWorkOrderTeamMapping(selectedMapping.id);
       setMappings((current) => current.filter((item) => item.id !== selectedMapping.id));
+      broadcastWorkOrderSync();
       setIsMappingDeleteOpen(false);
       toast.success("Routing rule deleted");
     } catch (error: unknown) {

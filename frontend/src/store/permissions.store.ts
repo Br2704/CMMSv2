@@ -6,9 +6,11 @@ import { useAuthStore } from "@/store/auth.store";
 import { create } from "zustand";
 
 const PERMISSIONS_CACHE_TTL_MS = 60_000;
-const RBAC_WATCH_INTERVAL_MS = 20_000;
+const RBAC_WATCH_INTERVAL_MS = 8_000;
 const RBAC_REFRESH_DEBOUNCE_MS = 300;
 const RBAC_UPDATED_EVENT = "cmms:permissions-invalidated";
+const RBAC_UPDATED_STORAGE_KEY = "cmms:permissions-updated-at";
+const RBAC_UPDATED_BROADCAST_CHANNEL = "cmms:permissions-channel";
 const ENABLE_RBAC_VERSION_ENDPOINT =
   String(import.meta.env.VITE_ENABLE_RBAC_VERSION_ENDPOINT ?? "true").toLowerCase() !== "false";
 const isDev = import.meta.env.DEV;
@@ -18,6 +20,9 @@ let watcherSubscribers = 0;
 let initialVersionCheckDone = false;
 let focusHandler: (() => void) | null = null;
 let visibilityHandler: (() => void) | null = null;
+let invalidateHandler: (() => void) | null = null;
+let storageHandler: ((event: StorageEvent) => void) | null = null;
+let permissionsBroadcastChannel: BroadcastChannel | null = null;
 
 let permissionsFetchInFlight: Promise<void> | null = null;
 let lastPermissionsFetchAtMs = 0;
@@ -28,6 +33,31 @@ let lastPermissionsSnapshot = "";
 function debugLog(...args: unknown[]) {
   if (isDev) {
     console.log("[PERMISSIONS]", ...args);
+  }
+}
+
+function emitPermissionsInvalidationSignal() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new Event(RBAC_UPDATED_EVENT));
+
+  try {
+    window.localStorage.setItem(RBAC_UPDATED_STORAGE_KEY, String(Date.now()));
+  } catch {
+    // Ignore storage write failures in private/locked contexts.
+  }
+
+  try {
+    if (typeof BroadcastChannel !== "undefined") {
+      if (!permissionsBroadcastChannel) {
+        permissionsBroadcastChannel = new BroadcastChannel(RBAC_UPDATED_BROADCAST_CHANNEL);
+      }
+      permissionsBroadcastChannel.postMessage({ type: RBAC_UPDATED_EVENT, timestamp: Date.now() });
+    }
+  } catch {
+    // Ignore broadcast failures in restricted environments.
   }
 }
 
@@ -50,6 +80,7 @@ function normalizeRole(role: string): string {
   if (normalized === "ROOT_ADMIN" || normalized === "ROOTADMIN") return "ROOT_ADMIN";
   if (normalized === "PLANT_ADMIN" || normalized === "PLANTADMIN") return "ADMIN";
   if (normalized === "ORG_ADMIN" || normalized === "ORGANIZATION_ADMIN") return "ADMIN";
+  if (normalized === "SECURITY_USER") return "SECURITY";
   return normalized || "USER";
 }
 
@@ -64,6 +95,7 @@ function rolePrecedence(roleKey: string): number {
   if (normalized === "STORE_USER") return 125;
   if (normalized === "VIEWER") return 110;
   if (normalized === "VENDOR") return 105;
+  if (normalized === "SECURITY") return 102;
   return 100;
 }
 
@@ -78,17 +110,17 @@ function getPrimaryRole(roles: string[]): string {
 
 function allowedRoleTargetsForCreate(roleKey: string): string[] {
   const role = normalizeRole(roleKey);
-  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "VENDOR", "VISITOR", "USER"];
-  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "VENDOR", "VISITOR", "USER"];
-  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "USER", "VENDOR", "VISITOR"];
+  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "USER"];
+  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "USER"];
+  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "USER", "VENDOR", "VISITOR"];
   return [];
 }
 
 function allowedRoleTargetsForEdit(roleKey: string): string[] {
   const role = normalizeRole(roleKey);
-  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "VENDOR", "VISITOR", "USER"];
-  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "VENDOR", "VISITOR", "USER"];
-  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "USER", "VENDOR", "VISITOR"];
+  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "USER"];
+  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "USER"];
+  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "USER", "VENDOR", "VISITOR"];
   return [];
 }
 
@@ -133,6 +165,8 @@ function normalizePermissionsPayload(payload: PermissionsMeResponse, currentVers
       ? [fallbackPlantId]
       : [];
 
+  const hasGlobalPlantAccess = roleKey === "ROOT_ADMIN" || roleKey === "SUPERADMIN";
+
   return {
     ...payload,
     roleNames,
@@ -154,7 +188,7 @@ function normalizePermissionsPayload(payload: PermissionsMeResponse, currentVers
     kpis,
     kpiVisibility: payload.kpiVisibility ?? kpis,
     plantIds,
-    accessAllPlants: Boolean(payload.accessAllPlants),
+    accessAllPlants: Boolean(payload.accessAllPlants) || hasGlobalPlantAccess,
     rbacVersion: nextVersion,
   };
 }
@@ -471,6 +505,42 @@ export const usePermissionsStore = create<PermissionsStoreState>((set, get) => (
       };
       document.addEventListener("visibilitychange", visibilityHandler);
     }
+
+    if (!invalidateHandler) {
+      invalidateHandler = () => {
+        void get().fetchRbacVersion(true);
+        void get().fetchPermissionsMe(true);
+      };
+      window.addEventListener(RBAC_UPDATED_EVENT, invalidateHandler);
+    }
+
+    if (!storageHandler) {
+      storageHandler = (event: StorageEvent) => {
+        if (event.key !== RBAC_UPDATED_STORAGE_KEY || !event.newValue) {
+          return;
+        }
+        void get().fetchRbacVersion(true);
+        void get().fetchPermissionsMe(true);
+      };
+      window.addEventListener("storage", storageHandler);
+    }
+
+    if (typeof BroadcastChannel !== "undefined") {
+      try {
+        if (!permissionsBroadcastChannel) {
+          permissionsBroadcastChannel = new BroadcastChannel(RBAC_UPDATED_BROADCAST_CHANNEL);
+        }
+        permissionsBroadcastChannel.onmessage = (event: MessageEvent<{ type?: string }>) => {
+          if (event.data?.type !== RBAC_UPDATED_EVENT) {
+            return;
+          }
+          void get().fetchRbacVersion(true);
+          void get().fetchPermissionsMe(true);
+        };
+      } catch {
+        permissionsBroadcastChannel = null;
+      }
+    }
   },
 
   stopWatcher: () => {
@@ -497,11 +567,28 @@ export const usePermissionsStore = create<PermissionsStoreState>((set, get) => (
       document.removeEventListener("visibilitychange", visibilityHandler);
       visibilityHandler = null;
     }
+
+    if (invalidateHandler) {
+      window.removeEventListener(RBAC_UPDATED_EVENT, invalidateHandler);
+      invalidateHandler = null;
+    }
+
+    if (storageHandler) {
+      window.removeEventListener("storage", storageHandler);
+      storageHandler = null;
+    }
+
+    if (permissionsBroadcastChannel) {
+      permissionsBroadcastChannel.close();
+      permissionsBroadcastChannel = null;
+    }
   },
 
   invalidate: () => {
     lastPermissionsFetchAtMs = 0;
     set({ fetchedAt: null });
+    emitPermissionsInvalidationSignal();
+    void get().fetchRbacVersion(true);
     void get().fetchPermissionsMe(true);
   },
 
@@ -537,4 +624,8 @@ export const usePermissionsStore = create<PermissionsStoreState>((set, get) => (
 
 export function getPermissionsUpdatedEventName() {
   return RBAC_UPDATED_EVENT;
+}
+
+export function notifyPermissionsInvalidated() {
+  emitPermissionsInvalidationSignal();
 }

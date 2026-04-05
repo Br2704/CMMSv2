@@ -114,6 +114,7 @@ export function requirePermission(moduleId: string, action: string) {
 
     const normalizedRoles = req.auth.roles.map((role) => normalizeRoleName(role));
     const isSuperAdmin = normalizedRoles.some((role) => role === 'SUPERADMIN');
+    const isAdmin = normalizedRoles.some((role) => role === 'ADMIN');
     const isRootAdmin = normalizedRoles.some((role) => role === 'ROOT_ADMIN');
 
     const requestedAction = action.toUpperCase();
@@ -122,11 +123,11 @@ export function requirePermission(moduleId: string, action: string) {
 
     if (!isRootAdmin) {
       const organizationMutationDenied = requestedModule === 'ORGANIZATIONS' && requestedAction !== 'READ';
-      const roleAccessDenied = requestedModule === 'ROLE_ACCESS';
+      const roleAccessDenied = requestedModule === 'ROLE_ACCESS' && !(isSuperAdmin || isAdmin);
       const plantMutationDenied =
         requestedModule === 'PLANTS' &&
         requestedAction !== 'READ' &&
-        !(isSuperAdmin && requestedAction === 'UPDATE');
+        !(requestedAction === 'UPDATE' && (isSuperAdmin || isAdmin));
 
       if (organizationMutationDenied || roleAccessDenied || plantMutationDenied) {
         logger.warn(

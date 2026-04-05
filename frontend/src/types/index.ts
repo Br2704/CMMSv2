@@ -48,6 +48,7 @@ export type WorkOrderStatus =
   | 'IN_PROGRESS'
   | 'PARTIALLY_CLOSED'
   | 'APPROVAL_PENDING'
+  | 'REJECTED'
   | 'CLOSED';
 
 export type WorkOrderCategory = 

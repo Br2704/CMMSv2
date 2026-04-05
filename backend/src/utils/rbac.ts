@@ -55,6 +55,7 @@ const ROLE_ALIASES: Record<string, string> = {
   PLANTADMIN: 'ADMIN',
   ORG_ADMIN: 'ADMIN',
   ORGANIZATION_ADMIN: 'ADMIN',
+  SECURITY_USER: 'SECURITY',
 };
 
 const MODULE_ALIASES: Record<string, string> = {

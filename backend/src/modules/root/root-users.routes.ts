@@ -8,6 +8,7 @@ import { fail, ok } from '../../utils/apiResponse';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { hashPassword } from '../../utils/password';
 import { getPrimaryRoleKey } from '../../utils/policy';
+import { bumpOrgRbacVersion } from '../../utils/orgRbacVersion';
 import { ensureRoleCatalogEntry } from '../../utils/roleCatalog';
 import { normalizeRoleName } from '../../utils/rbac';
 import { isSafeImageValue } from '../../utils/fileValidation';
@@ -50,12 +51,13 @@ function normalizeRoleInput(role: string): 'SUPERADMIN' | 'ADMIN' | 'ROOT_ADMIN'
 const SYSTEM_ORG_ROLE_DEFINITIONS = [
   { key: 'SUPERADMIN', name: 'SUPERADMIN', isSystem: true },
   { key: 'ADMIN', name: 'ADMIN', isSystem: true },
+  { key: 'SECURITY', name: 'SECURITY', isSystem: true },
   { key: 'VENDOR', name: 'VENDOR', isSystem: true },
   { key: 'VISITOR', name: 'VISITOR', isSystem: true },
   { key: 'USER', name: 'USER', isSystem: true },
 ] as const;
 
-const SYSTEM_CATALOG_ROLE_KEYS = new Set(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'USER', 'VENDOR', 'VISITOR']);
+const SYSTEM_CATALOG_ROLE_KEYS = new Set(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'USER', 'SECURITY', 'VENDOR', 'VISITOR']);
 
 function getManagedRoleKey(roles: string[]): 'ROOT_ADMIN' | 'SUPERADMIN' | 'ADMIN' | null {
   const normalized = roles.map((role) => normalizeRoleInput(role));
@@ -494,6 +496,8 @@ rootUsersRouter.post('/root/users', async (req, res, next) => {
       };
     });
 
+    await bumpOrgRbacVersion(body.organizationId);
+
     res.status(201).json(ok(created, 'Root user created'));
   } catch (error) {
     next(error);
@@ -566,6 +570,8 @@ rootUsersRouter.patch('/root/users/:id', async (req, res, next) => {
       }
     }
 
+    const previousOrganizationId = user.organizationId;
+
     if (body.fullName !== undefined) user.fullName = body.fullName.trim();
     if (body.email !== undefined) user.email = body.email.toLowerCase();
     if (body.phone !== undefined) user.phone = body.phone ?? null;
@@ -624,6 +630,11 @@ rootUsersRouter.patch('/root/users/:id', async (req, res, next) => {
       }),
     );
 
+    await bumpOrgRbacVersion(nextOrganizationId);
+    if (previousOrganizationId && previousOrganizationId !== nextOrganizationId) {
+      await bumpOrgRbacVersion(previousOrganizationId);
+    }
+
     res.json(
       ok({
         id: user.id,
@@ -657,7 +668,13 @@ rootUsersRouter.delete('/root/users/:id', async (req, res, next) => {
       return;
     }
 
+    const organizationId = user.organizationId;
+
     await permanentlyDeleteManagedRootUser(user.id);
+
+    if (organizationId) {
+      await bumpOrgRbacVersion(organizationId);
+    }
 
     res.json(ok({ id: user.id, deleted: true }, 'Root user deleted permanently'));
   } catch (error) {

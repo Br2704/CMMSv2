@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
-import tamoptixLogo from "@/assets/tamoptix-logo.png";
+import { buildBrandingLogoUrlByCode } from "@/api/branding";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isRootAdmin, useAuthStore } from "@/store/auth.store";
 import { useBrandingStore } from "@/store/branding.store";
@@ -17,6 +17,7 @@ import {
   Gauge,
   LayoutDashboard,
   Leaf,
+  MapPinned,
   Menu,
   Package,
   PanelLeftClose,
@@ -49,6 +50,7 @@ const navigation: NavItem[] = [
   { title: "Reports", href: "/reports", icon: BarChart3, moduleId: "reports" },
   { title: "Security Center", href: "/security-center", icon: ShieldAlert, moduleId: "security-center" },
   { title: "Gate Entry", href: "/security-gate", icon: DoorOpen, moduleId: "security-gate" },
+  { title: "Visitor Experience", href: "/visitor-experience", icon: MapPinned, moduleId: "visitor-experience" },
   { title: "Logs", href: "/logs", icon: ScrollText, moduleId: "logs" },
   {
     title: "Masters",
@@ -68,7 +70,6 @@ const navigation: NavItem[] = [
       { title: "AMC Master", href: "/masters/amc-config", moduleId: "masters.amc-config" },
       { title: "ESG Master", href: "/masters/esg-config", moduleId: "masters.esg-config" },
       { title: "Gate Master", href: "/masters/gates", moduleId: "masters.gates" },
-      { title: "Gate Templates", href: "/masters/gate-templates", moduleId: "masters.gate-templates" },
       { title: "Safety Config", href: "/masters/safety-config", moduleId: "masters.safety-config" },
       { title: "Email Reports", href: "/masters/email-reports", moduleId: "masters.email-reports" },
       { title: "Log Templates", href: "/masters/log-templates", moduleId: "masters.log-templates" },
@@ -97,15 +98,13 @@ interface SidebarProps {
 export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
   const location = useLocation();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
-  const [logoBroken, setLogoBroken] = useState(false);
   const { user } = useAuthStore();
   const isRootUser = isRootAdmin(user);
   const brandingOrganizationName = useBrandingStore((state) => state.organizationName);
   const brandingSidebarTitle = useBrandingStore((state) => state.sidebarTitle);
-  const logoUrl = useBrandingStore((state) => state.logoUrl);
-  const logoAssetUrl = useBrandingStore((state) => state.logoAssetUrl);
   const { hasModuleAccess, loading } = usePermissions();
-  const organizationName = brandingOrganizationName || user?.organizationName || null;
+  const jkFennerLogoUrl = useMemo(() => buildBrandingLogoUrlByCode("JKF", null, 512), []);
+  const organizationName = user?.organizationName || brandingOrganizationName || null;
   const sidebarTitle = brandingSidebarTitle || user?.organizationName || null;
 
   const toggleExpand = (title: string) => {
@@ -117,10 +116,6 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
     if (href === "/") return location.pathname === "/";
     return location.pathname.startsWith(href);
   };
-
-  useEffect(() => {
-    setLogoBroken(false);
-  }, [logoAssetUrl, logoUrl]);
 
   const showNavSkeleton = !isRootUser && loading;
 
@@ -157,8 +152,8 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
     });
   }, [filteredNavigation, location.pathname]);
 
-  const resolvedLogo = !logoBroken ? logoAssetUrl || logoUrl || tamoptixLogo : tamoptixLogo;
-  const resolvedTitle = sidebarTitle || organizationName || "TamOptiX CMMS Platform";
+  const resolvedLogo = jkFennerLogoUrl;
+  const resolvedTitle = sidebarTitle || organizationName || "JK Fenner CMMS Platform";
   const homeHref = isRootUser ? "/root/dashboard" : "/";
   const collapseNavItems = isCollapsed && typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches;
   const handleNavItemClick = () => {
@@ -208,14 +203,17 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
             >
               <img
                 src={resolvedLogo}
-                alt={resolvedTitle}
+                alt="JK Fenner"
                 className="max-h-8 w-full object-contain"
-                onError={() => setLogoBroken(true)}
+                onError={(event) => {
+                  event.currentTarget.onerror = null;
+                  event.currentTarget.src = "/icons/jkfenner-logo.svg";
+                }}
               />
             </div>
             <div className={cn("min-w-0", isCollapsed && "lg:hidden")}>
               <p className="truncate text-sm font-semibold text-foreground">{organizationName || "Organization"}</p>
-              <p className="truncate text-xs text-muted-foreground">{sidebarTitle || "TamOptiX CMMS"}</p>
+              <p className="truncate text-xs text-muted-foreground">{sidebarTitle || "JK Fenner CMMS"}</p>
             </div>
           </Link>
 

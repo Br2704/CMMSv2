@@ -23,6 +23,40 @@ Run the production-style stack:
 docker compose -f docker-compose.prod.yml --profile proxy up --build -d
 ```
 
+## Access From Other Devices On Same Network
+
+Yes, Docker can expose this app on your LAN. Run the stack on your host machine, then open the host IP from another device connected to the same Wi-Fi/LAN.
+
+Get your host LAN IP (PowerShell):
+
+```powershell
+Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.PrefixOrigin -ne 'WellKnown' } | Select-Object -First 1 -ExpandProperty IPAddress
+```
+
+Production-style (recommended):
+
+```powershell
+$env:APP_BASE_URL = "http://<HOST_LAN_IP>"
+$env:APP_CORS_ORIGINS = "http://<HOST_LAN_IP>,http://<HOST_LAN_IP>:8080,http://localhost,http://localhost:8080,http://127.0.0.1,http://127.0.0.1:8080"
+docker compose -f docker-compose.prod.yml --profile proxy up --build -d
+```
+
+Open from another device:
+
+- http://<HOST_LAN_IP>
+
+Development with frontend in Docker:
+
+```powershell
+docker compose -f docker-compose.dev.yml --profile ui up --build -d
+```
+
+Open from another device:
+
+- http://<HOST_LAN_IP>:5173
+
+If access still fails, allow inbound TCP ports 80, 8080, 5173, and 3001 in Windows Firewall for private networks.
+
 Frontend validation:
 
 ```powershell

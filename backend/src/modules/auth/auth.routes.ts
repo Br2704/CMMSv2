@@ -848,31 +848,41 @@ authRouter.post('/auth/login', authLoginRateLimiter, validateRequest({ body: log
         mfaVerified: user.mfaEnabled,
       });
     }
-    await audit('auth.login', {
-      userId: user.id,
-      email: user.email,
-      module: 'AUTH',
-      statusCode: 200,
-      ipAddress: getClientIp(req),
-      userAgent: getUserAgent(req),
-    });
-    await recordSecurityEvent({
-      userId: user.id,
-      organizationId: me.organizationId ?? null,
-      plantId: me.plantId ?? null,
-      eventType: 'AUTH_LOGIN_SUCCESS',
-      severity: 'LOW',
-      module: 'AUTH',
-      action: 'LOGIN',
-      path: req.originalUrl,
-      message: `Successful login for ${normalizedEmail}`,
-      ipAddress: getClientIp(req),
-      userAgent: getUserAgent(req),
-      status: 'RESOLVED',
-      metadata: {
-        roles: me.roles,
-      },
-    });
+    try {
+      await audit('auth.login', {
+        userId: user.id,
+        email: user.email,
+        module: 'AUTH',
+        statusCode: 200,
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      });
+    } catch (error) {
+      logger.error({ error, route: 'POST /auth/login', userId: user.id }, 'Failed to persist auth login audit event; continuing login flow');
+    }
+
+    try {
+      await recordSecurityEvent({
+        userId: user.id,
+        organizationId: me.organizationId ?? null,
+        plantId: me.plantId ?? null,
+        eventType: 'AUTH_LOGIN_SUCCESS',
+        severity: 'LOW',
+        module: 'AUTH',
+        action: 'LOGIN',
+        path: req.originalUrl,
+        message: `Successful login for ${normalizedEmail}`,
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+        status: 'RESOLVED',
+        metadata: {
+          roles: me.roles,
+        },
+      });
+    } catch (error) {
+      logger.error({ error, route: 'POST /auth/login', userId: user.id }, 'Failed to persist auth login security event; continuing login flow');
+    }
+
     res.status(200).json(ok({ ...buildAuthTokenPayload(accessToken, csrfToken), ...me }, 'Login successful'));
   } catch (error) {
     logger.error(

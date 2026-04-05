@@ -28,6 +28,7 @@ import { listRoleCatalog } from "@/api/roles";
 import { useAuthStore, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { usePermissions } from "@/hooks/usePermissions";
+import { getPermissionsUpdatedEventName } from "@/store/permissions.store";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Toolbar } from "@/components/layout/Toolbar";
@@ -54,6 +55,7 @@ function normalizeRoleKey(role: string) {
   if (normalized === "PLANT_ADMIN" || normalized === "PLANTADMIN" || normalized === "ORG_ADMIN" || normalized === "ORGANIZATION_ADMIN") {
     return "ADMIN";
   }
+  if (normalized === "SECURITY_USER") return "SECURITY";
   return normalized;
 }
 
@@ -83,7 +85,7 @@ export default function UsersMaster() {
   const { user: currentUser } = useAuthStore();
   const currentIsSuperAdmin = isSuperAdmin(currentUser);
   const currentIsRootAdmin = isRootAdmin(currentUser);
-  const { allowedRoleTargetsForCreate, allowedRoleTargetsForEdit, can } = usePermissions();
+  const { allowedRoleTargetsForCreate, allowedRoleTargetsForEdit, can, rbacVersion } = usePermissions();
   const canCreateUsers = can("USERS", "create");
   const canUpdateUsers = can("USERS", "update");
   const canDeleteUsers = can("USERS", "delete");
@@ -207,6 +209,27 @@ export default function UsersMaster() {
     fetchRoles();
     fetchPlants(true);
   }, [fetchPlants, fetchRoles]);
+
+  useEffect(() => {
+    if (rbacVersion === null) return;
+    void fetchRoles();
+    void fetchUsersData();
+    void fetchDepartmentsData(canSelectPlant ? undefined : defaultPlantId, true);
+  }, [canSelectPlant, defaultPlantId, fetchDepartmentsData, fetchRoles, fetchUsersData, rbacVersion]);
+
+  useEffect(() => {
+    const eventName = getPermissionsUpdatedEventName();
+    const handlePermissionsUpdated = () => {
+      void fetchRoles();
+      void fetchUsersData();
+      void fetchDepartmentsData(canSelectPlant ? undefined : defaultPlantId, true);
+    };
+
+    window.addEventListener(eventName, handlePermissionsUpdated);
+    return () => {
+      window.removeEventListener(eventName, handlePermissionsUpdated);
+    };
+  }, [canSelectPlant, defaultPlantId, fetchDepartmentsData, fetchRoles, fetchUsersData]);
 
   useEffect(() => {
     fetchDepartmentsData(canSelectPlant ? undefined : defaultPlantId, true);

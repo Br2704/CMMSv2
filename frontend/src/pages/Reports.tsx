@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,16 +14,17 @@ import { toast } from "sonner";
 import { SelectField } from "@/components/shared/FormField";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dbClient } from "@/api/dbClient";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { downloadAdvancedReliabilityReport, getAdvancedReliabilityReport } from "@/api/reports";
 import { listWorkOrderMasters, type WorkOrderMaster } from "@/api/workOrderMasters";
-import { getFallbackWorkOrderOptions } from "@/config/work-order-masters";
+import { subscribeWorkOrderSync } from "@/lib/work-order-sync";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, LineChart, Line, AreaChart, Area
 } from "recharts";
 import { format, subDays, eachDayOfInterval, differenceInMinutes, parseISO } from "date-fns";
 import { KPICard } from "@/components/dashboard/KPICard";
+import { hoursToMinutes } from "@/lib/time";
 
 const COLORS = [
   "hsl(var(--primary))", "hsl(var(--chart-2))", "hsl(var(--chart-3))",
@@ -31,7 +32,7 @@ const COLORS = [
 ];
 
 function getMasterCodes(masters: WorkOrderMaster[], optionType: "CATEGORY" | "WO_TYPE") {
-  const codes = Array.from(
+  return Array.from(
     new Set(
       masters
         .filter((item) => item.optionType === optionType && item.isActive)
@@ -39,18 +40,18 @@ function getMasterCodes(masters: WorkOrderMaster[], optionType: "CATEGORY" | "WO
         .map((item) => item.code),
     ),
   );
-
-  if (codes.length > 0) {
-    return codes;
-  }
-
-  return getFallbackWorkOrderOptions(optionType).map((item) => item.value);
 }
 
 // Multi-select dropdown component
-function MultiSelect({ label, options, selected, onChange, icon: Icon }: {
-  label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void; icon?: any;
+function MultiSelect({ label, options, selected, onChange, icon: Icon, labels }: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+  icon?: any;
+  labels?: Record<string, string>;
 }) {
+  const getOptionLabel = (value: string) => labels?.[value] || value.replace(/_/g, " ");
   const toggle = (val: string) => {
     onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val]);
   };
@@ -71,7 +72,7 @@ function MultiSelect({ label, options, selected, onChange, icon: Icon }: {
           {options.map(opt => (
             <label key={opt} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent cursor-pointer text-sm">
               <Checkbox checked={selected.includes(opt)} onCheckedChange={() => toggle(opt)} />
-              <span>{opt.replace(/_/g, " ")}</span>
+              <span>{getOptionLabel(opt)}</span>
             </label>
           ))}
         </div>
@@ -87,7 +88,14 @@ function MultiSelect({ label, options, selected, onChange, icon: Icon }: {
 
 // Filter bar component for reuse
 function FilterBar({ filters, onReset }: {
-  filters: { label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void; icon?: any }[];
+  filters: {
+    label: string;
+    options: string[];
+    selected: string[];
+    onChange: (v: string[]) => void;
+    icon?: any;
+    labels?: Record<string, string>;
+  }[];
   onReset: () => void;
 }) {
   const hasActive = filters.some(f => f.selected.length > 0);
@@ -100,7 +108,7 @@ function FilterBar({ filters, onReset }: {
           </div>
           <div className="flex gap-2 flex-wrap">
             {filters.map(f => (
-              <MultiSelect key={f.label} label={f.label} options={f.options} selected={f.selected} onChange={f.onChange} icon={f.icon} />
+              <MultiSelect key={f.label} label={f.label} options={f.options} selected={f.selected} onChange={f.onChange} icon={f.icon} labels={f.labels} />
             ))}
             {hasActive && (
               <Button variant="ghost" size="sm" className="h-9 text-xs" onClick={onReset}>
@@ -113,7 +121,7 @@ function FilterBar({ filters, onReset }: {
           <div className="flex gap-1.5 flex-wrap mt-2">
             {filters.flatMap(f => f.selected.map(s => (
               <Badge key={`${f.label}-${s}`} variant="secondary" className="text-xs gap-1">
-                {f.label}: {s.replace(/_/g, " ")}
+                {f.label}: {f.labels?.[s] || s.replace(/_/g, " ")}
                 <X className="h-2.5 w-2.5 cursor-pointer" onClick={() => f.onChange(f.selected.filter(v => v !== s))} />
               </Badge>
             )))}
@@ -140,6 +148,7 @@ function downloadCSV(filename: string, headers: string[], rows: string[][]) {
 const esc = (v: string | null | undefined) => `"${(v || "").replace(/"/g, '""')}"`;
 
 export default function Reports() {
+  const queryClient = useQueryClient();
   const [dateRange, setDateRange] = useState("30");
 
   // MTTR filters
@@ -263,6 +272,14 @@ export default function Reports() {
     },
   });
 
+  useEffect(() => {
+    const unsubscribe = subscribeWorkOrderSync(() => {
+      void queryClient.invalidateQueries({ queryKey: ["report_work_order_masters"] });
+    });
+
+    return unsubscribe;
+  }, [queryClient]);
+
   // Option lists
   const deptNames = useMemo(() => departments.map((d: any) => d.name), [departments]);
   const deptIdMap = useMemo(() => {
@@ -284,8 +301,32 @@ export default function Reports() {
   });
 
   const categoryOptions = useMemo(() => getMasterCodes(workOrderMasters, "CATEGORY"), [workOrderMasters]);
-  const statusOptions = ["RAISED", "OPENED", "IN_PROGRESS", "PARTIALLY_CLOSED", "APPROVAL_PENDING", "CLOSED"];
+  const statusOptions = ["RAISED", "OPENED", "IN_PROGRESS", "PARTIALLY_CLOSED", "APPROVAL_PENDING", "REJECTED", "CLOSED"];
   const typeOptions = useMemo(() => getMasterCodes(workOrderMasters, "WO_TYPE"), [workOrderMasters]);
+  const categoryLabelMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    workOrderMasters
+      .filter((item) => item.optionType === "CATEGORY" && item.isActive)
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label))
+      .forEach((item) => {
+        if (!map[item.code]) {
+          map[item.code] = item.label;
+        }
+      });
+    return map;
+  }, [workOrderMasters]);
+  const typeLabelMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    workOrderMasters
+      .filter((item) => item.optionType === "WO_TYPE" && item.isActive)
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label))
+      .forEach((item) => {
+        if (!map[item.code]) {
+          map[item.code] = item.label;
+        }
+      });
+    return map;
+  }, [workOrderMasters]);
   const priorityOptions = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
   const safetyTypeOptions = useMemo(() => [...new Set(safetyIncidents.map((i: any) => i.incident_type))].filter((value): value is string => typeof value === "string" && value.length > 0), [safetyIncidents]);
   const safetySevOptions = useMemo(() => [...new Set(safetyIncidents.map((i: any) => i.severity))].filter((value): value is string => typeof value === "string" && value.length > 0), [safetyIncidents]);
@@ -389,7 +430,7 @@ export default function Reports() {
         const mins = differenceInMinutes(parseISO(wo.closed_at), parseISO(wo.opened_at));
         const key = groupKey === "dept" ? (wo.assets?.departments?.name || "Unknown") : (wo.category || "Unknown");
         if (!groups[key]) groups[key] = [];
-        groups[key].push(mins / 60);
+        groups[key].push(mins);
       }
     });
     return Object.entries(groups).map(([name, vals]) => ({
@@ -411,9 +452,9 @@ export default function Reports() {
       if (dates.length < 2) return;
       dates.sort((a, b) => a.getTime() - b.getTime());
       for (let i = 1; i < dates.length; i++) {
-        const hrs = differenceInMinutes(dates[i], dates[i - 1]) / 60;
+        const mins = differenceInMinutes(dates[i], dates[i - 1]);
         if (!deptMtbf[dept]) deptMtbf[dept] = [];
-        deptMtbf[dept].push(hrs);
+        deptMtbf[dept].push(mins);
       }
     });
     return Object.entries(deptMtbf).map(([name, vals]) => ({
@@ -453,7 +494,10 @@ export default function Reports() {
 
   const woTypeChart = useMemo(() => {
     const t: Record<string, number> = {};
-    woFiltered.forEach((wo: any) => { t[wo.wo_type || "BREAKDOWN"] = (t[wo.wo_type || "BREAKDOWN"] || 0) + 1; });
+    woFiltered.forEach((wo: any) => {
+      const typeCode = wo.wo_type || "UNSPECIFIED";
+      t[typeCode] = (t[typeCode] || 0) + 1;
+    });
     return Object.entries(t).map(([name, value]) => ({ name: name.replace(/_/g, " "), value }));
   }, [woFiltered]);
 
@@ -506,7 +550,7 @@ export default function Reports() {
     const total = safetyFiltered.length;
     const open = safetyFiltered.filter((i: any) => i.status === "OPEN").length;
     const investigating = safetyFiltered.filter((i: any) => i.status === "INVESTIGATING").length;
-    const lostTime = safetyFiltered.reduce((s: number, i: any) => s + (i.lost_time_hours || 0), 0);
+    const lostTime = hoursToMinutes(safetyFiltered.reduce((s: number, i: any) => s + (i.lost_time_hours || 0), 0));
     const peopleAffected = safetyFiltered.reduce((s: number, i: any) => s + (i.people_involved || 0), 0);
     const highSev = safetyFiltered.filter((i: any) => i.severity === "HIGH" || i.severity === "CRITICAL").length;
     const nearMiss = safetyFiltered.filter((i: any) => i.incident_type === "NEAR_MISS").length;
@@ -537,12 +581,12 @@ export default function Reports() {
     if (wos.length === 0) { toast.error("No work orders to export"); return; }
     downloadCSV(
       `work_orders_${format(new Date(), "yyyyMMdd")}.csv`,
-      ["WO Number", "Category", "Type", "Priority", "Status", "Asset", "Department", "Problem", "Root Cause", "Action Taken", "Downtime (min)", "Labor Hours", "Est. Cost", "Actual Cost", "Created", "Closed"],
+      ["WO Number", "Category", "Type", "Priority", "Status", "Asset", "Department", "Problem", "Root Cause", "Action Taken", "Downtime (min)", "Labor Minutes", "Actual Cost", "Created", "Closed"],
       wos.map((wo: any) => [
         wo.wo_number, wo.category, wo.wo_type || "", wo.priority, wo.status,
         esc(wo.assets?.name), esc(wo.assets?.departments?.name),
         esc(wo.problem_description), esc(wo.root_cause), esc(wo.action_taken),
-        wo.downtime_minutes || 0, wo.labor_hours || 0, wo.estimated_cost || 0, wo.actual_cost || 0,
+        wo.downtime_minutes || 0, hoursToMinutes(wo.labor_hours), wo.actual_cost || 0,
         wo.created_at ? format(parseISO(wo.created_at), "yyyy-MM-dd HH:mm") : "",
         wo.closed_at ? format(parseISO(wo.closed_at), "yyyy-MM-dd HH:mm") : "",
       ].map(String))
@@ -608,7 +652,7 @@ export default function Reports() {
                 <FilterBar
                   filters={[
                     { label: "Departments", options: deptNames, selected: selectedDepts, onChange: setSelectedDepts, icon: BarChart3 },
-                    { label: "Categories", options: categoryOptions, selected: selectedCategories, onChange: setSelectedCategories, icon: Wrench },
+                    { label: "Categories", options: categoryOptions, selected: selectedCategories, onChange: setSelectedCategories, icon: Wrench, labels: categoryLabelMap },
                   ]}
                   onReset={() => { setSelectedDepts([]); setSelectedCategories([]); }}
                 />
@@ -623,8 +667,8 @@ export default function Reports() {
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        <KPICard title="MTTR" value={`${advancedReliability.summary.mttrHours}h`} subtitle="mean repair" icon={Timer} variant="info" />
-                        <KPICard title="MTBF" value={`${advancedReliability.summary.mtbfHours}h`} subtitle="between failures" icon={TrendingUp} variant="success" />
+                        <KPICard title="MTTR" value={`${hoursToMinutes(advancedReliability.summary.mttrHours)} min`} subtitle="mean repair" icon={Timer} variant="info" />
+                        <KPICard title="MTBF" value={`${hoursToMinutes(advancedReliability.summary.mtbfHours)} min`} subtitle="between failures" icon={TrendingUp} variant="success" />
                         <KPICard title="Availability" value={`${advancedReliability.summary.availabilityPercent}%`} subtitle="operational" icon={Gauge} variant="primary" />
                       </div>
                       <div className="flex gap-2 flex-wrap">
@@ -663,7 +707,7 @@ export default function Reports() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <Card className="shadow-card">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2"><Timer className="h-4 w-4 text-primary" /> MTTR (hrs)</CardTitle>
+                      <CardTitle className="text-sm flex items-center gap-2"><Timer className="h-4 w-4 text-primary" /> MTTR (min)</CardTitle>
                       <p className="text-xs text-muted-foreground">Mean Time To Repair</p>
                     </CardHeader>
                     <CardContent>
@@ -673,8 +717,8 @@ export default function Reports() {
                             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                             <XAxis dataKey="name" className="text-xs" angle={-30} textAnchor="end" height={70} />
                             <YAxis className="text-xs" />
-                            <Tooltip formatter={(v: any) => [`${v} hrs`, "MTTR"]} />
-                            <Bar dataKey="mttr" fill="hsl(var(--primary))" name="MTTR (hrs)" radius={[4, 4, 0, 0]} />
+                            <Tooltip formatter={(v: any) => [`${v} min`, "MTTR"]} />
+                            <Bar dataKey="mttr" fill="hsl(var(--primary))" name="MTTR (min)" radius={[4, 4, 0, 0]} />
                           </BarChart>
                         </ResponsiveContainer>
                       ) : <p className="text-sm text-muted-foreground text-center py-10">No closed WO data with timestamps</p>}
@@ -683,7 +727,7 @@ export default function Reports() {
 
                   <Card className="shadow-card">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2"><TrendingUp className="h-4 w-4 text-chart-2" /> MTBF (hrs)</CardTitle>
+                      <CardTitle className="text-sm flex items-center gap-2"><TrendingUp className="h-4 w-4 text-chart-2" /> MTBF (min)</CardTitle>
                       <p className="text-xs text-muted-foreground">Mean Time Between Failures</p>
                     </CardHeader>
                     <CardContent>
@@ -693,8 +737,8 @@ export default function Reports() {
                             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                             <XAxis dataKey="name" className="text-xs" angle={-30} textAnchor="end" height={70} />
                             <YAxis className="text-xs" />
-                            <Tooltip formatter={(v: any) => [`${v} hrs`, "MTBF"]} />
-                            <Bar dataKey="mtbf" fill="hsl(var(--chart-2))" name="MTBF (hrs)" radius={[4, 4, 0, 0]} />
+                            <Tooltip formatter={(v: any) => [`${v} min`, "MTBF"]} />
+                            <Bar dataKey="mtbf" fill="hsl(var(--chart-2))" name="MTBF (min)" radius={[4, 4, 0, 0]} />
                           </BarChart>
                         </ResponsiveContainer>
                       ) : <p className="text-sm text-muted-foreground text-center py-10">Need 2+ WOs per asset for MTBF</p>}
@@ -713,10 +757,10 @@ export default function Reports() {
                         }))}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="name" className="text-xs" />
-                          <YAxis className="text-xs" label={{ value: "Hours", angle: -90, position: "insideLeft" }} />
+                          <YAxis className="text-xs" label={{ value: "Minutes", angle: -90, position: "insideLeft" }} />
                           <Tooltip /><Legend />
-                          <Bar dataKey="mttr" fill="hsl(var(--primary))" name="MTTR (hrs)" radius={[4, 4, 0, 0]} />
-                          <Bar dataKey="mtbf" fill="hsl(var(--chart-2))" name="MTBF (hrs)" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="mttr" fill="hsl(var(--primary))" name="MTTR (min)" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="mtbf" fill="hsl(var(--chart-2))" name="MTBF (min)" radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
                     </CardContent>
@@ -731,10 +775,10 @@ export default function Reports() {
                 <FilterBar
                   filters={[
                     { label: "Status", options: statusOptions, selected: woStatuses, onChange: setWoStatuses },
-                    { label: "Type", options: typeOptions, selected: woTypes, onChange: setWoTypes },
+                    { label: "Type", options: typeOptions, selected: woTypes, onChange: setWoTypes, labels: typeLabelMap },
                     { label: "Priority", options: priorityOptions, selected: woPriorities, onChange: setWoPriorities },
                     { label: "Department", options: deptNames, selected: woDepts, onChange: setWoDepts, icon: BarChart3 },
-                    { label: "Category", options: categoryOptions, selected: woCats, onChange: setWoCats, icon: Wrench },
+                    { label: "Category", options: categoryOptions, selected: woCats, onChange: setWoCats, icon: Wrench, labels: categoryLabelMap },
                   ]}
                   onReset={() => { setWoStatuses([]); setWoTypes([]); setWoPriorities([]); setWoDepts([]); setWoCats([]); }}
                 />
@@ -897,7 +941,7 @@ export default function Reports() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <KPICard title="Total Incidents" value={safetyKpis.total} subtitle="reported" icon={ShieldAlert} variant="primary" />
                   <KPICard title="Open" value={safetyKpis.open} subtitle={`${safetyKpis.investigating} investigating`} icon={AlertTriangle} variant="warning" />
-                  <KPICard title="Lost Time" value={`${safetyKpis.lostTime}h`} subtitle={`${safetyKpis.peopleAffected} people`} icon={Clock} variant="destructive" />
+                  <KPICard title="Lost Time" value={`${safetyKpis.lostTime} min`} subtitle={`${safetyKpis.peopleAffected} people`} icon={Clock} variant="destructive" />
                   <KPICard title="High Severity" value={safetyKpis.highSev} subtitle={`${safetyKpis.nearMiss} near miss`} icon={ShieldAlert} variant={safetyKpis.highSev > 0 ? "destructive" : "success"} />
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
@@ -1012,7 +1056,7 @@ export default function Reports() {
                 <FilterBar
                   filters={[
                     { label: "Department", options: deptNames, selected: dtDepts, onChange: setDtDepts, icon: BarChart3 },
-                    { label: "Category", options: categoryOptions, selected: dtCats, onChange: setDtCats, icon: Wrench },
+                    { label: "Category", options: categoryOptions, selected: dtCats, onChange: setDtCats, icon: Wrench, labels: categoryLabelMap },
                     { label: "Priority", options: priorityOptions, selected: dtPriorities, onChange: setDtPriorities },
                   ]}
                   onReset={() => { setDtDepts([]); setDtCats([]); setDtPriorities([]); }}
@@ -1020,7 +1064,7 @@ export default function Reports() {
                 <p className="text-xs text-muted-foreground">Showing {dtFiltered.length} of {workOrders.length} work orders</p>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  <KPICard title="Total Downtime" value={`${Math.round(dtFiltered.reduce((s: number, w: any) => s + (w.downtime_minutes || 0), 0) / 60)}h`} subtitle="all assets" icon={Clock} variant="destructive" />
+                  <KPICard title="Total Downtime" value={`${Math.round(dtFiltered.reduce((s: number, w: any) => s + (w.downtime_minutes || 0), 0))}m`} subtitle="all assets" icon={Clock} variant="destructive" />
                   <KPICard title="Avg per WO" value={`${Math.round(dtFiltered.filter((w: any) => w.downtime_minutes > 0).reduce((s: number, w: any) => s + w.downtime_minutes, 0) / Math.max(dtFiltered.filter((w: any) => w.downtime_minutes > 0).length, 1))}m`} subtitle="downtime" icon={Timer} variant="warning" />
                   <KPICard title="Assets Affected" value={new Set(dtFiltered.filter((w: any) => w.downtime_minutes > 0).map((w: any) => w.asset_id)).size} subtitle="with downtime" icon={Gauge} variant="info" />
                 </div>
@@ -1048,9 +1092,9 @@ export default function Reports() {
                 <FilterBar
                   filters={[
                     { label: "Status", options: statusOptions, selected: expStatuses, onChange: setExpStatuses },
-                    { label: "Type", options: typeOptions, selected: expTypes, onChange: setExpTypes },
+                    { label: "Type", options: typeOptions, selected: expTypes, onChange: setExpTypes, labels: typeLabelMap },
                     { label: "Priority", options: priorityOptions, selected: expPriorities, onChange: setExpPriorities },
-                    { label: "Category", options: categoryOptions, selected: expCats, onChange: setExpCats, icon: Wrench },
+                    { label: "Category", options: categoryOptions, selected: expCats, onChange: setExpCats, icon: Wrench, labels: categoryLabelMap },
                     { label: "Department", options: deptNames, selected: expDepts, onChange: setExpDepts, icon: BarChart3 },
                   ]}
                   onReset={() => { setExpStatuses([]); setExpTypes([]); setExpPriorities([]); setExpCats([]); setExpDepts([]); }}
@@ -1071,7 +1115,7 @@ export default function Reports() {
                         const count = expFiltered.filter((w: any) => w.category === cat).length;
                         return (
                           <Button key={cat} variant="outline" className="justify-start gap-2 text-xs" onClick={() => exportWOs(expFiltered.filter((w: any) => w.category === cat))}>
-                            <Download className="h-3.5 w-3.5" /> {cat.replace(/_/g, " ")}
+                            <Download className="h-3.5 w-3.5" /> {categoryLabelMap[cat] || cat.replace(/_/g, " ")}
                             <Badge variant="secondary" className="ml-auto text-[10px]">{count}</Badge>
                           </Button>
                         );
@@ -1088,11 +1132,11 @@ export default function Reports() {
                     <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
                       <Button variant="outline" className="justify-start gap-2" onClick={() => {
                         downloadCSV(`safety_report_${format(new Date(), "yyyyMMdd")}.csv`,
-                          ["Incident#", "Type", "Severity", "Status", "Date", "Description", "Location", "Lost Time", "People"],
+                          ["Incident#", "Type", "Severity", "Status", "Date", "Description", "Location", "Lost Time (min)", "People"],
                           safetyFiltered.map((i: any) => [
                             i.incident_number, i.incident_type, i.severity, i.status,
                             i.incident_date ? format(parseISO(i.incident_date), "yyyy-MM-dd") : "",
-                            esc(i.description), esc(i.location), i.lost_time_hours || 0, i.people_involved || 0,
+                            esc(i.description), esc(i.location), hoursToMinutes(i.lost_time_hours), i.people_involved || 0,
                           ].map(String))
                         );
                       }}>

@@ -659,15 +659,18 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
       row.createdAt,
       row.closedAt,
     ]);
+    const summaryMttrMinutes = Number((payload.summary.mttrHours * 60).toFixed(2));
+    const summaryMtbfMinutes = Number((payload.summary.mtbfHours * 60).toFixed(2));
+    const summaryMttfMinutes = Number((payload.summary.mttfHours * 60).toFixed(2));
 
     if (query.format === 'csv') {
       const csv = toCsv(
         ['Header', ''],
         [
           [brandedHeader, ''],
-          ['MTTR Hours', payload.summary.mttrHours],
-          ['MTBF Hours', payload.summary.mtbfHours],
-          ['MTTF Hours', payload.summary.mttfHours],
+          ['MTTR Minutes', summaryMttrMinutes],
+          ['MTBF Minutes', summaryMtbfMinutes],
+          ['MTTF Minutes', summaryMttfMinutes],
           ['Downtime Minutes', payload.summary.downtimeMinutes],
           ['Availability %', payload.summary.availabilityPercent],
           [brandedFooter, ''],
@@ -691,9 +694,9 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
             ['Organization', organizationName],
             ['Report Title', reportTitle],
             ['Generated At', generatedAt],
-            ['MTTR Hours', payload.summary.mttrHours],
-            ['MTBF Hours', payload.summary.mtbfHours],
-            ['MTTF Hours', payload.summary.mttfHours],
+            ['MTTR Minutes', summaryMttrMinutes],
+            ['MTBF Minutes', summaryMtbfMinutes],
+            ['MTTF Minutes', summaryMttfMinutes],
             ['Downtime Minutes', payload.summary.downtimeMinutes],
             ['Availability %', payload.summary.availabilityPercent],
             ['Footer', brandedFooter],
@@ -713,14 +716,14 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
 
     const pdf = createSimplePdf([
       brandedHeader,
-      `MTTR: ${payload.summary.mttrHours} hours`,
-      `MTBF: ${payload.summary.mtbfHours} hours`,
-      `MTTF: ${payload.summary.mttfHours} hours`,
+      `MTTR: ${summaryMttrMinutes} minutes`,
+      `MTBF: ${summaryMtbfMinutes} minutes`,
+      `MTTF: ${summaryMttfMinutes} minutes`,
       `Downtime: ${payload.summary.downtimeMinutes} minutes`,
       `Availability: ${payload.summary.availabilityPercent}%`,
       '',
       'Top Machine Reliability Ranking:',
-      ...payload.ranking.slice(0, 15).map((row, index) => `${index + 1}. ${row.assetCode} ${row.assetName} | MTTR ${row.mttrHours}h | Failures ${row.failures}`),
+      ...payload.ranking.slice(0, 15).map((row, index) => `${index + 1}. ${row.assetCode} ${row.assetName} | MTTR ${Number((row.mttrHours * 60).toFixed(2))} min | Failures ${row.failures}`),
       '',
       brandedFooter,
       'Page 1',

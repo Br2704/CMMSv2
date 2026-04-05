@@ -46,6 +46,9 @@ export class GateEntryEntity extends TimestampedUuidEntity {
   @Column({ name: 'person_to_meet', type: 'varchar', nullable: true })
   personToMeet!: string | null;
 
+  @Column({ name: 'person_to_meet_user_id', type: 'uuid', nullable: true })
+  personToMeetUserId!: string | null;
+
   @Column({ name: 'vehicle_number', type: 'varchar', nullable: true })
   vehicleNumber!: string | null;
 
@@ -103,6 +106,45 @@ export class GateEntryEntity extends TimestampedUuidEntity {
   @Column({ name: 'recorded_by', type: 'uuid', nullable: true })
   recordedBy!: string | null;
 
+  @Column({ name: 'approval_status', type: 'varchar', default: 'NOT_REQUIRED' })
+  approvalStatus!: string;
+
+  @Column({ name: 'approval_requested_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  approvalRequestedAt!: Date | null;
+
+  @Column({ name: 'approval_responded_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  approvalRespondedAt!: Date | null;
+
+  @Column({ name: 'approval_by', type: 'uuid', nullable: true })
+  approvalBy!: string | null;
+
+  @Column({ name: 'approval_comments', type: 'text', nullable: true })
+  approvalComments!: string | null;
+
+  @Column({ name: 'navigation_enabled', type: 'boolean', default: false })
+  navigationEnabled!: boolean;
+
+  @Column({ name: 'navigation_enabled_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  navigationEnabledAt!: Date | null;
+
+  @Column({ name: 'desired_visit_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  desiredVisitAt!: Date | null;
+
+  @Column({ name: 'allowed_visit_start_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  allowedVisitStartAt!: Date | null;
+
+  @Column({ name: 'allowed_visit_end_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  allowedVisitEndAt!: Date | null;
+
+  @Column({ name: 'visitor_user_id', type: 'uuid', nullable: true })
+  visitorUserId!: string | null;
+
+  @Column({ name: 'current_location_node_id', type: 'varchar', nullable: true })
+  currentLocationNodeId!: string | null;
+
+  @Column({ name: 'current_location_label', type: 'varchar', nullable: true })
+  currentLocationLabel!: string | null;
+
   @Column({ name: 'exit_approved_by', type: 'uuid', nullable: true })
   exitApprovedBy!: string | null;
 
@@ -139,6 +181,18 @@ export class GateEntryEntity extends TimestampedUuidEntity {
   @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'recorded_by' })
   recordedByUser!: UserEntity | null;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'person_to_meet_user_id' })
+  personToMeetUser!: UserEntity | null;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'visitor_user_id' })
+  visitorUser!: UserEntity | null;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'approval_by' })
+  approvalByUser!: UserEntity | null;
 
   @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'exit_approved_by' })

@@ -34,6 +34,7 @@ const linkSchema = z.object({
   startDate: z.string().datetime(),
   assignedTeamId: z.string().uuid().nullable().optional(),
   responsibleUserId: z.string().uuid().nullable().optional(),
+  checklistTasksOverride: z.array(z.string().trim().min(1)).optional(),
   isActive: z.boolean().default(true),
 });
 
@@ -69,6 +70,7 @@ function mapLink(entity: PmTemplateLinkEntity) {
     startDate: entity.startDate,
     assignedTeamId: entity.assignedTeamId,
     responsibleUserId: entity.responsibleUserId,
+    checklistTasksOverride: parseChecklistTasks(entity.checklistTasksOverride).map((item) => item.title),
     nextDueDate: entity.nextDueDate,
     lastGeneratedAt: entity.lastGeneratedAt,
     isActive: entity.isActive,
@@ -260,6 +262,7 @@ pmTemplatesRouter.post('/pm-template-links', requirePermission('MASTERS', 'CREAT
         assetId: body.assetId,
         responsibleUserId: body.responsibleUserId ?? null,
         assignedTeamId: body.assignedTeamId ?? null,
+        expectedDiscipline: template.discipline,
       });
     } catch (error) {
       res.status(400).json(fail(error instanceof Error ? error.message : 'Invalid PM link scope'));
@@ -275,6 +278,10 @@ pmTemplatesRouter.post('/pm-template-links', requirePermission('MASTERS', 'CREAT
       startDate,
       assignedTeamId: body.assignedTeamId ?? null,
       responsibleUserId: body.responsibleUserId ?? null,
+      checklistTasksOverride:
+        body.checklistTasksOverride && body.checklistTasksOverride.length > 0
+          ? JSON.stringify(body.checklistTasksOverride)
+          : null,
       nextDueDate: computeNextDueDate(startDate, template),
       isActive: body.isActive,
     });
@@ -318,9 +325,22 @@ pmTemplatesRouter.patch('/pm-template-links/:id', requirePermission('MASTERS', '
     const assetId = body.assetId ?? entity.assetId;
     const responsibleUserId = body.responsibleUserId === undefined ? entity.responsibleUserId : body.responsibleUserId ?? null;
     const assignedTeamId = body.assignedTeamId === undefined ? entity.assignedTeamId : body.assignedTeamId ?? null;
+    const checklistTasksOverride =
+      body.checklistTasksOverride === undefined
+        ? entity.checklistTasksOverride
+        : body.checklistTasksOverride.length > 0
+          ? JSON.stringify(body.checklistTasksOverride)
+          : null;
 
     try {
-      await validatePmLinkScope({ plantId, departmentId, assetId, responsibleUserId, assignedTeamId });
+      await validatePmLinkScope({
+        plantId,
+        departmentId,
+        assetId,
+        responsibleUserId,
+        assignedTeamId,
+        expectedDiscipline: template.discipline,
+      });
     } catch (error) {
       res.status(400).json(fail(error instanceof Error ? error.message : 'Invalid PM link scope'));
       return;
@@ -334,6 +354,7 @@ pmTemplatesRouter.patch('/pm-template-links/:id', requirePermission('MASTERS', '
       startDate,
       assignedTeamId,
       responsibleUserId,
+      checklistTasksOverride,
       isActive: body.isActive ?? entity.isActive,
       nextDueDate: computeNextDueDate(startDate, template),
     });

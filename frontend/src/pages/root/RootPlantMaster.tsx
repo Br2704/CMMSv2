@@ -177,15 +177,25 @@ export default function RootPlantMaster() {
     return map;
   }, [organizations]);
 
+  const scopedPlants = useMemo(() => {
+    if (isRootUser || isScopedSuperAdmin) {
+      return plants;
+    }
+    if (user?.plantId) {
+      return plants.filter((plant) => plant.id === user.plantId);
+    }
+    return plants;
+  }, [isRootUser, isScopedSuperAdmin, plants, user?.plantId]);
+
   const filtered = useMemo(() => {
-    const source = organizationFilter === "ALL" ? plants : plants.filter((plant) => plant.organizationId === organizationFilter);
+    const source = organizationFilter === "ALL" ? scopedPlants : scopedPlants.filter((plant) => plant.organizationId === organizationFilter);
     return [...source].sort((a, b) => {
       const orgA = (organizationNameById.get(a.organizationId) || a.organizationId || "").toLowerCase();
       const orgB = (organizationNameById.get(b.organizationId) || b.organizationId || "").toLowerCase();
       if (orgA !== orgB) return orgA.localeCompare(orgB);
       return (a.plantCode || "").localeCompare(b.plantCode || "");
     });
-  }, [plants, organizationFilter, organizationNameById]);
+  }, [scopedPlants, organizationFilter, organizationNameById]);
 
   const getAdminName = (adminId: string | null) => {
     if (!adminId) return "-";

@@ -48,6 +48,7 @@ export default function DepartmentMaster() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedPlant, setSelectedPlant] = useState<string>(canSelectPlant ? "all" : defaultPlantId);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -58,11 +59,12 @@ export default function DepartmentMaster() {
   const fetchDepartments = async () => {
     setLoading(true);
     try {
+      const effectivePlantId = canSelectPlant ? (selectedPlant === "all" ? undefined : selectedPlant) : defaultPlantId || undefined;
       const response = await listDepartments({
         page: 1,
         limit: 100,
         search: searchQuery || undefined,
-        plantId: canSelectPlant ? undefined : defaultPlantId || undefined,
+        plantId: effectivePlantId,
       });
       setDepartments(response.data);
     } catch (error: any) {
@@ -78,7 +80,7 @@ export default function DepartmentMaster() {
 
   useEffect(() => {
     fetchDepartments();
-  }, [searchQuery, defaultPlantId, canSelectPlant]);
+  }, [searchQuery, selectedPlant, defaultPlantId, canSelectPlant]);
 
   const plantOptions = useMemo(
     () => plantsOptions,
@@ -236,9 +238,20 @@ export default function DepartmentMaster() {
         toolbar={
           <Toolbar
             right={
-              <div className="relative w-full sm:w-72">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input placeholder="Search departments..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                {canSelectPlant && (
+                  <SelectField
+                    label=""
+                    value={selectedPlant}
+                    onChange={setSelectedPlant}
+                    options={[{ value: "all", label: "All Plants" }, ...plantOptions]}
+                    className="w-full sm:w-[180px]"
+                  />
+                )}
+                <div className="relative w-full sm:w-72">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input placeholder="Search departments..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
+                </div>
               </div>
             }
           />

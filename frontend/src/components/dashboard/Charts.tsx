@@ -167,14 +167,14 @@ export function WOByPriorityChart({ data }: { data: { name: string; value: numbe
 // MTBF Trend (Area chart)
 export function MTBFTrendChart({ data }: { data: { date: string; value: number }[] }) {
   return (
-    <ChartCard title="MTBF Trend" subtitle="Mean Time Between Failures (hours, Last 7 Days)" delay={0.35}>
+    <ChartCard title="MTBF Trend" subtitle="Mean Time Between Failures (minutes, Last 7 Days)" delay={0.35}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
           <XAxis dataKey="date" tickFormatter={formatDate} {...axisProps} />
           <YAxis {...axisProps} />
           <Tooltip contentStyle={tooltipStyle} labelFormatter={formatDate} />
-          <Area type="monotone" dataKey="value" name="MTBF (hrs)" stroke="hsl(var(--chart-2))" fill="hsl(var(--chart-2))" fillOpacity={0.15} strokeWidth={2} />
+          <Area type="monotone" dataKey="value" name="MTBF (min)" stroke="hsl(var(--chart-2))" fill="hsl(var(--chart-2))" fillOpacity={0.15} strokeWidth={2} />
         </AreaChart>
       </ResponsiveContainer>
     </ChartCard>

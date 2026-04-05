@@ -38,6 +38,7 @@ export interface PMAssetLink {
   startDate: string;
   assignedTeamId: string | null;
   responsibleUserId: string | null;
+  checklistTasksOverride: string[];
   nextDueDate: string;
   lastGeneratedAt: string | null;
   isActive: boolean;
@@ -79,6 +80,7 @@ export interface PMAssetLinkPayload {
   startDate: string;
   assignedTeamId?: string | null;
   responsibleUserId?: string | null;
+  checklistTasksOverride?: string[];
   isActive?: boolean;
 }
 

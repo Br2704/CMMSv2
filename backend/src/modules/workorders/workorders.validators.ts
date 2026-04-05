@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { listQuerySchema } from '../../utils/pagination';
 
 function toSnakeKey(input: string): string {
   return input
@@ -34,6 +35,11 @@ const optionalTrimmedString = z.preprocess((value) => {
   return trimmed.length > 0 ? trimmed : undefined;
 }, z.string().optional());
 
+const requiredTrimmedString = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  return value.trim();
+}, z.string().min(1));
+
 const nullableTrimmedString = z.preprocess((value) => {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'string') return value;
@@ -64,22 +70,33 @@ const spareConsumptionSchema = z.array(spareConsumptionEntrySchema).optional();
 
 const mobileAttachmentSchema = z.preprocess(
   normalizeObjectKeys,
-  z.object({
-    name: optionalTrimmedString,
-    mime_type: optionalTrimmedString,
-    data_url: optionalTrimmedString,
-    captured_at: optionalIsoDateTimeOrNull.optional(),
-  }),
-);
+  z
+    .object({
+      name: optionalTrimmedString,
+      mime_type: optionalTrimmedString,
+      data_url: requiredTrimmedString,
+      captured_at: optionalIsoDateTimeOrNull.optional(),
+    })
+    .superRefine((value, ctx) => {
+      const mimeType = value.mime_type?.toLowerCase() || '';
+      const dataUrl = value.data_url.toLowerCase();
 
-const voiceNoteSchema = z.preprocess(
-  normalizeObjectKeys,
-  z.object({
-    name: optionalTrimmedString,
-    duration_seconds: z.coerce.number().min(0).optional(),
-    data_url: optionalTrimmedString,
-    captured_at: optionalIsoDateTimeOrNull.optional(),
-  }),
+      if (mimeType && !mimeType.startsWith('image/')) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['mime_type'],
+          message: 'Only image attachments are allowed',
+        });
+      }
+
+      if (!dataUrl.startsWith('data:image/')) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['data_url'],
+          message: 'Attachment data_url must be an image data URL',
+        });
+      }
+    }),
 );
 
 const safetyChecklistSchema = z.preprocess(
@@ -120,7 +137,6 @@ const workOrderBodyBaseSchema = z.object({
     failure_code: nullableTrimmedString.optional(),
     sub_category: nullableTrimmedString.optional(),
     labor_hours: z.coerce.number().min(0).optional(),
-    estimated_cost: z.coerce.number().min(0).optional(),
     actual_cost: z.coerce.number().min(0).optional(),
     vendor_id: optionalUuidOrNull.optional(),
     warranty_claim: z.coerce.boolean().optional(),
@@ -128,7 +144,6 @@ const workOrderBodyBaseSchema = z.object({
     parts_replaced: nullableTrimmedString.optional(),
     spare_consumption: spareConsumptionSchema,
     attachments: z.array(mobileAttachmentSchema).optional(),
-    voice_notes: z.array(voiceNoteSchema).optional(),
     safety_checklist: safetyChecklistSchema.optional(),
     follow_up_required: z.coerce.boolean().optional(),
     follow_up_notes: nullableTrimmedString.optional(),
@@ -169,3 +184,119 @@ const updateWorkOrderBodySchema = workOrderBodyBaseSchema.partial().superRefine(
 
 export const createWorkOrderSchema = z.preprocess(normalizeObjectKeys, createWorkOrderBodySchema);
 export const updateWorkOrderSchema = z.preprocess(normalizeObjectKeys, updateWorkOrderBodySchema);
+
+const startWorkOrderBodySchema = z
+  .object({
+    verification_method: z.enum(['QR_SCAN', 'MANUAL_ENTRY']),
+    scanned_asset_id: optionalUuidOrNull.optional(),
+    manual_machine_code: nullableTrimmedString.optional(),
+    initial_assessment: nullableTrimmedString.optional(),
+    assigned_to_notes: nullableTrimmedString.optional(),
+    estimated_time_minutes: z.coerce.number().int().min(0).optional(),
+    safety_checklist: safetyChecklistSchema,
+  })
+  .superRefine((body, ctx) => {
+    if (body.verification_method === 'QR_SCAN' && !body.scanned_asset_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['scanned_asset_id'],
+        message: 'scanned_asset_id is required when using QR_SCAN',
+      });
+    }
+    if (body.verification_method === 'MANUAL_ENTRY' && !body.manual_machine_code) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['manual_machine_code'],
+        message: 'manual_machine_code is required when QR is unavailable',
+      });
+    }
+    if (!body.safety_checklist?.ppe_worn || !body.safety_checklist?.machine_isolated || !body.safety_checklist?.safety_lock_applied) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['safety_checklist'],
+        message: 'All safety checklist items must be confirmed',
+      });
+    }
+  });
+
+const submitWorkOrderForApprovalBodySchema = z.object({
+  work_performed_description: requiredTrimmedString,
+  issue_details: requiredTrimmedString,
+  time_spent_minutes: z.coerce.number().int().positive(),
+  downtime_minutes: z.coerce.number().int().min(0).default(0),
+  materials_used: requiredTrimmedString,
+  attachments: z.array(mobileAttachmentSchema).min(1),
+  remarks: requiredTrimmedString,
+  failure_code: nullableTrimmedString.optional(),
+  actual_cost: z.coerce.number().min(0).optional(),
+  spare_consumption: spareConsumptionSchema,
+  operator_fault: z.coerce.boolean().optional(),
+  warranty_claim: z.coerce.boolean().optional(),
+  follow_up_required: z.coerce.boolean().optional(),
+  follow_up_notes: nullableTrimmedString.optional(),
+});
+
+const reviewWorkOrderBodySchema = z.object({
+  comments: nullableTrimmedString.optional(),
+});
+
+export const startWorkOrderSchema = z.preprocess(normalizeObjectKeys, startWorkOrderBodySchema);
+export const submitWorkOrderForApprovalSchema = z.preprocess(normalizeObjectKeys, submitWorkOrderForApprovalBodySchema);
+export const reviewWorkOrderSchema = z.preprocess(normalizeObjectKeys, reviewWorkOrderBodySchema);
+
+const workOrderScopeSchema = z.enum(['assigned', 'raised', 'incharge', 'all', 'approval_required']);
+
+const optionalTrimmedQueryString = z.preprocess(
+  (value) => {
+    if (Array.isArray(value)) {
+      return value[0];
+    }
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  },
+  z.string().optional(),
+);
+
+const optionalBooleanQuery = z.preprocess(
+  (value) => {
+    if (Array.isArray(value)) {
+      return value[0];
+    }
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1') return true;
+      if (normalized === 'false' || normalized === '0') return false;
+    }
+    return undefined;
+  },
+  z.boolean().optional(),
+);
+
+export const workOrdersListQuerySchema = listQuerySchema.extend({
+  scope: z.preprocess(
+    (value) => {
+      if (Array.isArray(value)) return value[0];
+      if (typeof value !== 'string') return undefined;
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'approval' || normalized === 'approval-required') {
+        return 'approval_required';
+      }
+      return normalized;
+    },
+    workOrderScopeSchema.optional(),
+  ),
+  status: optionalTrimmedQueryString,
+  category: optionalTrimmedQueryString,
+  wo_type: optionalTrimmedQueryString,
+  woType: optionalTrimmedQueryString,
+  approval_required: optionalBooleanQuery,
+  approvalRequired: optionalBooleanQuery,
+});
+
+export const workOrdersSummaryQuerySchema = listQuerySchema.pick({ plantId: true });

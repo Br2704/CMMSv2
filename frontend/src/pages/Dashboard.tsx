@@ -166,7 +166,7 @@ export default function Dashboard() {
     },
     {
       title: "MTBF",
-      value: `${kpis.mtbfAvg} hrs`,
+      value: `${kpis.mtbfAvg} min`,
       subtitle: "Mean Time Between Failures",
       icon: Activity,
       variant: "primary" as const,

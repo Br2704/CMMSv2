@@ -23,6 +23,7 @@ import Inventory from "@/pages/Inventory";
 import Reports from "@/pages/Reports";
 import SecurityCenter from "@/pages/SecurityCenter";
 import SecurityGate from "@/pages/SecurityGate";
+import VisitorExperience from "@/pages/VisitorExperience";
 import Masters from "@/pages/Masters";
 import Logs from "@/pages/Logs";
 import NotFound from "@/pages/NotFound";
@@ -45,7 +46,6 @@ import ShiftMaster from "@/pages/masters/ShiftMaster";
 import MaintenanceTeamsMaster from "@/pages/masters/MaintenanceTeamsMaster";
 import WorkOrderConfigMaster from "@/pages/masters/WorkOrderConfigMaster";
 import GateMaster from "@/pages/masters/GateMaster";
-import GateTemplateMaster from "@/pages/masters/GateTemplateMaster";
 import SafetyConfigMaster from "@/pages/masters/SafetyConfigMaster";
 import EmailReportsMaster from "@/pages/masters/EmailReportsMaster";
 import LogTemplateMaster from "@/pages/masters/LogTemplateMaster";
@@ -213,8 +213,15 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
 function HomeRoute() {
   const { user } = useAuthStore();
+  const normalizedRoles = (user?.roles ?? []).map((role) => role.toUpperCase());
+  const isVisitorOnly = normalizedRoles.length > 0 && normalizedRoles.every((role) => role === "VISITOR");
+
   if (isRootAdmin(user)) {
     return <Navigate to="/root/dashboard" replace />;
+  }
+
+  if (isVisitorOnly) {
+    return <Navigate to="/visitor-experience" replace />;
   }
 
   return (
@@ -262,6 +269,34 @@ function RoleAccessRoute() {
     return <Navigate to="/root/role-access" replace />;
   }
   return <Navigate to="/403" replace />;
+}
+
+function normalizeSecurityCenterRole(role: string): string {
+  const normalized = role
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  if (normalized === "SUPER_ADMIN") return "SUPERADMIN";
+  if (normalized === "PLANT_ADMIN") return "ADMIN";
+  return normalized;
+}
+
+function SecurityCenterRoute() {
+  const { user } = useAuthStore();
+  const roleCandidates = [user?.roleKey ?? "", ...(user?.roles ?? [])].map(normalizeSecurityCenterRole);
+  const canAccess = roleCandidates.some((role) => role === "ROOT_ADMIN" || role === "SUPERADMIN" || role === "ADMIN");
+
+  if (!canAccess) {
+    return <Navigate to="/403" replace />;
+  }
+
+  return (
+    <ModuleGuard moduleId="security-center">
+      <SecurityCenter />
+    </ModuleGuard>
+  );
 }
 
 function CatchAllRoute() {
@@ -312,8 +347,9 @@ function App() {
                   <Route path="/esg" element={<ModuleGuard moduleId="esg"><ESG /></ModuleGuard>} />
                   <Route path="/inventory" element={<ModuleGuard moduleId="inventory"><Inventory /></ModuleGuard>} />
                   <Route path="/reports" element={<ModuleGuard moduleId="reports"><Reports /></ModuleGuard>} />
-                  <Route path="/security-center" element={<ModuleGuard moduleId="security-center"><SecurityCenter /></ModuleGuard>} />
+                  <Route path="/security-center" element={<SecurityCenterRoute />} />
                   <Route path="/security-gate" element={<ModuleGuard moduleId="security-gate"><SecurityGate /></ModuleGuard>} />
+                  <Route path="/visitor-experience" element={<ModuleGuard moduleId="visitor-experience"><VisitorExperience /></ModuleGuard>} />
                   <Route path="/logs" element={<ModuleGuard moduleId="logs"><Logs /></ModuleGuard>} />
                   <Route path="/403" element={<Forbidden />} />
 
@@ -334,7 +370,7 @@ function App() {
                   <Route path="/masters/amc-config" element={<ModuleGuard moduleId="masters.amc-config"><AMCConfigMaster /></ModuleGuard>} />
                   <Route path="/masters/esg-config" element={<ModuleGuard moduleId="masters.esg-config"><ESGConfigMaster /></ModuleGuard>} />
                   <Route path="/masters/gates" element={<ModuleGuard moduleId="masters.gates"><GateMaster /></ModuleGuard>} />
-                  <Route path="/masters/gate-templates" element={<ModuleGuard moduleId="masters.gate-templates"><GateTemplateMaster /></ModuleGuard>} />
+                  <Route path="/masters/gate-templates" element={<Navigate to="/masters/gates" replace />} />
                   <Route path="/masters/safety-config" element={<ModuleGuard moduleId="masters.safety-config"><SafetyConfigMaster /></ModuleGuard>} />
                   <Route path="/masters/email-reports" element={<ModuleGuard moduleId="masters.email-reports"><EmailReportsMaster /></ModuleGuard>} />
                   <Route path="/masters/log-templates" element={<ModuleGuard moduleId="masters.log-templates"><LogTemplateMaster /></ModuleGuard>} />

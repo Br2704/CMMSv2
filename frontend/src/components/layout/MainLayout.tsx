@@ -3,7 +3,7 @@ import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { BottomNav } from "./BottomNav";
-import { buildBrandingManifestUrl } from "@/api/branding";
+import { buildBrandingFaviconUrlByCode, buildBrandingManifestUrl } from "@/api/branding";
 import { useAuthStore } from "@/store/auth.store";
 import { useBrandingStore } from "@/store/branding.store";
 import { useFeaturesStore } from "@/store/features.store";
@@ -110,7 +110,7 @@ export function MainLayout() {
         ? `${organizationName} CMMS`
         : sidebarTitle
           ? `${sidebarTitle} CMMS`
-          : "TamOptiX CMMS");
+          : "JK Fenner CMMS");
     document.title = resolvedTitle;
 
     const updateMetaContent = (selector: string, value: string) => {
@@ -126,7 +126,7 @@ export function MainLayout() {
     updateMetaContent('meta[name="theme-color"]', brandColor || "#0f172a");
     updateMetaContent('meta[name="msapplication-TileColor"]', brandColor || "#0f172a");
 
-    const resolvedFavicon = faviconUrl || fallbackFaviconUrl || "/favicon.ico";
+    const resolvedFavicon = buildBrandingFaviconUrlByCode("JKF", brandingVersion || null, 192);
     const ensureLink = (rel: string, id?: string) => {
       let element = id
         ? document.querySelector<HTMLLinkElement>(`#${id}`)

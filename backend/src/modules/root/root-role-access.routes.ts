@@ -8,6 +8,7 @@ import { fail, ok } from '../../utils/apiResponse';
 import { bumpOrgRbacVersion, getOrgRbacVersion } from '../../utils/orgRbacVersion';
 import { ensureRoleCatalogEntry } from '../../utils/roleCatalog';
 import { RBAC_ACTIONS, normalizeActions, normalizeModuleKey, normalizeRoleName } from '../../utils/rbac';
+import { applySystemRolePermissionPolicy, isSystemManagedOrganizationRole } from '../../utils/systemRolePermissionPolicy';
 
 const orgRoleSchema = z.object({
   key: z.string().min(1).transform((value) => normalizeRoleName(value)),
@@ -25,10 +26,10 @@ const permissionMapSchema = z.record(z.array(z.enum(RBAC_ACTIONS)).default([]));
 const featureMapSchema = z.record(z.boolean());
 
 const DEFAULT_FEATURE_KEYS = ['SAFETY', 'ESG', 'GATE_ENTRY', 'ADVANCED_ANALYTICS', 'HR'] as const;
-const SYSTEM_ORG_ROLE_KEYS = new Set(['SUPERADMIN', 'ADMIN', 'USER', 'VENDOR', 'VISITOR']);
 const DEFAULT_ORG_ROLES = [
   { key: 'SUPERADMIN', name: 'SUPERADMIN', isSystem: true },
   { key: 'ADMIN', name: 'ADMIN', isSystem: true },
+  { key: 'SECURITY', name: 'SECURITY', isSystem: true },
   { key: 'VENDOR', name: 'VENDOR', isSystem: true },
   { key: 'VISITOR', name: 'VISITOR', isSystem: true },
   { key: 'USER', name: 'USER', isSystem: true },
@@ -246,7 +247,7 @@ rootRoleAccessRouter.delete('/orgs/:orgId/roles/:roleId', async (req, res, next)
       return;
     }
 
-    if (role.isSystem || SYSTEM_ORG_ROLE_KEYS.has(role.key)) {
+    if (role.isSystem || isSystemManagedOrganizationRole(role.key)) {
       res.status(409).json(fail('System role cannot be deleted'));
       return;
     }
@@ -296,10 +297,15 @@ rootRoleAccessRouter.put('/orgs/:orgId/roles/:roleId/permissions', async (req, r
       return;
     }
 
+    const normalizedPayload = Object.fromEntries(
+      Object.entries(payload).map(([moduleKey, actions]) => [normalizeModuleKey(moduleKey), normalizeActions(actions)]),
+    );
+    const effectivePayload = applySystemRolePermissionPolicy(role.key, normalizedPayload);
+
     const repo = AppDataSource.getRepository(OrgRolePermissionEntity);
     await repo.delete({ organizationId: params.orgId, roleId: role.id });
 
-    const rows = Object.entries(payload)
+    const rows = Object.entries(effectivePayload)
       .map(([moduleKey, actions]) => ({
         moduleKey: normalizeModuleKey(moduleKey),
         actions: normalizeActions(actions),

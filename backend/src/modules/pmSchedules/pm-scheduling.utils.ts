@@ -81,8 +81,19 @@ export function computeNextDueDate(startDate: Date, template: Pick<PmTemplateEnt
   return addFrequency(startDate, template.frequencyType, template.frequencyValue);
 }
 
-function buildTaskChecklist(template: PmTemplateEntity, dueDate: Date) {
-  const tasks = parseChecklistTasks(template.checklistTasks);
+function resolveDisciplineBucket(value: string | null | undefined): 'MECHANICAL' | 'ELECTRICAL' | null {
+  const normalized = String(value ?? '')
+    .trim()
+    .toUpperCase();
+  if (!normalized) return null;
+  if (normalized.includes('MECHAN') || normalized === 'M') return 'MECHANICAL';
+  if (normalized.includes('ELECT') || normalized === 'E') return 'ELECTRICAL';
+  return null;
+}
+
+function buildTaskChecklist(template: PmTemplateEntity, dueDate: Date, checklistOverride?: unknown) {
+  const overrideTasks = parseChecklistTasks(checklistOverride);
+  const tasks = overrideTasks.length > 0 ? overrideTasks : parseChecklistTasks(template.checklistTasks);
   return {
     taskSummary: template.templateName,
     maintenanceType: template.maintenanceType,
@@ -142,7 +153,7 @@ export async function generateDuePmTasks(now = new Date()) {
           frequencyType: link.template.frequencyType,
           frequencyValue: link.template.frequencyValue,
           estimatedDuration: link.template.estimatedDuration,
-          checklist: stringifyJsonObject(buildTaskChecklist(link.template, cursor)),
+          checklist: stringifyJsonObject(buildTaskChecklist(link.template, cursor, link.checklistTasksOverride)),
           assignedTo: link.responsibleUserId,
           assignedTeamId: link.assignedTeamId,
           nextDue: cursor,
@@ -172,6 +183,7 @@ export async function validatePmLinkScope(input: {
   assetId: string;
   responsibleUserId?: string | null;
   assignedTeamId?: string | null;
+  expectedDiscipline?: string | null;
 }) {
   const assetRepo = AppDataSource.getRepository(AssetEntity);
   const userRepo = AppDataSource.getRepository(UserEntity);
@@ -199,6 +211,16 @@ export async function validatePmLinkScope(input: {
     if (input.plantId && team.plantId && team.plantId !== input.plantId) {
       throw new Error('Assigned team is outside the selected plant');
     }
+
+    const templateDiscipline = resolveDisciplineBucket(input.expectedDiscipline);
+    const teamDiscipline = resolveDisciplineBucket(team.discipline);
+    if (templateDiscipline && teamDiscipline && templateDiscipline !== teamDiscipline) {
+      throw new Error(`Assigned team discipline must match ${templateDiscipline.toLowerCase()} template discipline`);
+    }
+  }
+
+  if (!input.assignedTeamId && resolveDisciplineBucket(input.expectedDiscipline)) {
+    throw new Error('Assigned team is required for discipline-specific PM/PD templates');
   }
 
   return asset;

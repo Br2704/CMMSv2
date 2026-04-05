@@ -1,9 +1,17 @@
 import { AppDataSource } from '../../database/data-source';
-import { AssetEntity, MaintenanceTeamEntity, NotificationEntity, WorkOrderEntity, WorkOrderMasterEntity, WorkOrderTeamMappingEntity } from '../../database/entities';
+import {
+  AssetEntity,
+  MaintenanceTeamEntity,
+  NotificationEntity,
+  WorkOrderActivityLogEntity,
+  WorkOrderEntity,
+  WorkOrderMasterEntity,
+  WorkOrderTeamMappingEntity,
+} from '../../database/entities';
 import type { AuthContext } from '../../types/auth';
-import { badRequest } from '../../utils/httpError';
-import { enforcePlantScope, resolveScopedPlantId } from '../../utils/plantScope';
-import type { GenericRecord } from '../_core/crud.types';
+import { badRequest, conflict, forbidden } from '../../utils/httpError';
+import { enforcePlantScope, resolvePlantFilter, resolveScopedPlantId } from '../../utils/plantScope';
+import type { GenericRecord, ListResult } from '../_core/crud.types';
 import { CrudService } from '../_core/crud.service';
 import { notifyBreakdownWorkOrderRaised } from '../amc/amc.helpers';
 import { applySpareUsageDelta, formatSpareUsageSummary, normalizeSpareUsage } from '../inventory/spare-consumption';
@@ -11,6 +19,7 @@ import { ensureDefaultWorkOrderMasters } from '../workOrderMasters/work-order-ma
 import { normalizeWorkOrderMasterCode, type WorkOrderMasterOptionType } from '../workOrderMasters/work-order-master.defaults';
 import { workordersRepository } from './workorders.repository';
 import { IsNull } from 'typeorm';
+import type { ListQuery } from '../../utils/pagination';
 
 function toSnakeKey(input: string): string {
   return input
@@ -64,6 +73,150 @@ function uniqueIds(values: Array<string | null | undefined>): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
 }
 
+const WORKFLOW_STATUSES = {
+  RAISED: 'RAISED',
+  OPENED: 'OPENED',
+  IN_PROGRESS: 'IN_PROGRESS',
+  APPROVAL_PENDING: 'APPROVAL_PENDING',
+  REJECTED: 'REJECTED',
+  CLOSED: 'CLOSED',
+} as const;
+
+const WORKFLOW_MANAGED_FIELDS = new Set([
+  'status',
+  'opened_at',
+  'closed_at',
+  'started_at',
+  'resolved_at',
+  'technician_verification',
+  'safety_checklist',
+  'submitted_for_approval_at',
+  'submitted_for_approval_by',
+  'approved_by',
+  'approved_at',
+  'rejected_by',
+  'rejected_at',
+  'approval_comments',
+  'admin_override_by',
+  'admin_override_at',
+  'admin_override_reason',
+]);
+
+const INCHARGE_CATEGORY_MAP: Record<string, string> = {
+  MECHANICAL_INCHARGE: 'MECHANICAL',
+  ELECTRICAL_INCHARGE: 'ELECTRICAL',
+  UTILITY_INCHARGE: 'UTILITY',
+  TOOLCHANGE_INCHARGE: 'TOOL_CHANGE',
+  CALIBRATION_INCHARGE: 'CALIBRATION',
+};
+
+function normalizeText(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function toUpperText(value: unknown): string | null {
+  const normalized = normalizeText(value);
+  return normalized ? normalized.toUpperCase() : null;
+}
+
+function parseJsonArray(value: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
+  }
+  if (typeof value !== 'string' || !value.trim()) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function minutesToLaborHours(value: unknown): number {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return 0;
+  }
+  return Number((minutes / 60).toFixed(2));
+}
+
+function hasAnyWorkflowManagedField(input: GenericRecord): boolean {
+  return Object.keys(input).some((key) => WORKFLOW_MANAGED_FIELDS.has(key));
+}
+
+function toScalar(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+  return value;
+}
+
+function readOptionalString(value: unknown): string | null {
+  const scalar = toScalar(value);
+  if (typeof scalar !== 'string') {
+    return null;
+  }
+  const trimmed = scalar.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function readOptionalBoolean(value: unknown): boolean | null {
+  const scalar = toScalar(value);
+  if (typeof scalar === 'boolean') {
+    return scalar;
+  }
+  if (typeof scalar === 'string') {
+    const normalized = scalar.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
+  }
+  return null;
+}
+
+function toNumber(value: unknown): number {
+  const parsed = Number(toScalar(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+type WorkOrderScope = 'assigned' | 'raised' | 'incharge' | 'all' | 'approval_required';
+
+function normalizeScope(value: unknown): WorkOrderScope | null {
+  const raw = readOptionalString(value);
+  if (!raw) return null;
+  const normalized = raw.toLowerCase();
+  if (normalized === 'assigned') return 'assigned';
+  if (normalized === 'raised') return 'raised';
+  if (normalized === 'incharge') return 'incharge';
+  if (normalized === 'all') return 'all';
+  if (normalized === 'approval_required' || normalized === 'approval-required' || normalized === 'approval') {
+    return 'approval_required';
+  }
+  return null;
+}
+
 class WorkOrdersService extends CrudService {
   private readonly assetsRepo = AppDataSource.getRepository(AssetEntity);
   private readonly workOrderMastersRepo = AppDataSource.getRepository(WorkOrderMasterEntity);
@@ -81,6 +234,379 @@ class WorkOrdersService extends CrudService {
         plantColumn: 'plant_id',
       },
       workordersRepository,
+    );
+  }
+
+  private getInchargeCategories(auth: AuthContext): string[] {
+    const roles = auth.roles.map((role) => String(role).toUpperCase());
+    return Array.from(new Set(roles.map((role) => INCHARGE_CATEGORY_MAP[role]).filter((value): value is string => Boolean(value))));
+  }
+
+  private normalizeListQuery(query: ListQuery) {
+    const extended = query as ListQuery & Record<string, unknown>;
+    const page = Math.max(1, Number(toScalar(query.page) || 1));
+    const limit = Math.min(1000, Math.max(1, Number(toScalar(query.limit) || 100)));
+    const search = readOptionalString(query.search)?.toLowerCase() ?? '';
+
+    const statusFilterRaw = readOptionalString(extended.status);
+    const statusFilter = statusFilterRaw && statusFilterRaw.toUpperCase() !== 'ALL' ? statusFilterRaw.toUpperCase() : null;
+
+    const categoryFilterRaw = readOptionalString(extended.category);
+    const categoryFilter =
+      categoryFilterRaw && categoryFilterRaw.toUpperCase() !== 'ALL' ? normalizeCategory(categoryFilterRaw) : null;
+
+    const woTypeFilterRaw = readOptionalString(extended.wo_type) ?? readOptionalString(extended.woType);
+    const woTypeFilter =
+      woTypeFilterRaw && woTypeFilterRaw.toUpperCase() !== 'ALL' ? normalizeWorkOrderMasterCode(woTypeFilterRaw) : null;
+
+    const scope = normalizeScope(extended.scope);
+    const approvalRequired =
+      readOptionalBoolean(extended.approval_required) ?? readOptionalBoolean(extended.approvalRequired) ?? false;
+
+    const sortRaw = readOptionalString(query.sort);
+    const [requestedSortColumn, requestedSortDirection] = sortRaw ? sortRaw.split(':') : [];
+    const allowedSortColumns = new Set([
+      'created_at',
+      'updated_at',
+      'status',
+      'priority',
+      'wo_number',
+      'closed_at',
+      'submitted_for_approval_at',
+    ]);
+    const sortColumn = requestedSortColumn && allowedSortColumns.has(requestedSortColumn) ? requestedSortColumn : 'created_at';
+    const sortDirection = requestedSortDirection?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    return {
+      page,
+      limit,
+      search,
+      statusFilter,
+      categoryFilter,
+      woTypeFilter,
+      scope,
+      approvalRequired,
+      sortColumn,
+      sortDirection,
+    };
+  }
+
+  async list(query: ListQuery, auth: AuthContext): Promise<ListResult<GenericRecord>> {
+    const scopedPlantIds = resolvePlantFilter(auth, query.plantId);
+    const {
+      page,
+      limit,
+      search,
+      statusFilter,
+      categoryFilter,
+      woTypeFilter,
+      scope,
+      approvalRequired,
+      sortColumn,
+      sortDirection,
+    } = this.normalizeListQuery(query);
+
+    const effectiveScope: WorkOrderScope | null = approvalRequired ? 'approval_required' : scope;
+    const inchargeCategories = this.getInchargeCategories(auth);
+    const canApproveAny = this.isAdminActor(auth);
+
+    const qb = AppDataSource.createQueryBuilder()
+      .select('t.*')
+      .addSelect('asset.id', 'asset_ref_id')
+      .addSelect('asset.code', 'asset_ref_code')
+      .addSelect('asset.name', 'asset_ref_name')
+      .from('work_orders', 't')
+      .leftJoin('assets', 'asset', 'asset.id = t.asset_id');
+
+    if (scopedPlantIds) {
+      if (scopedPlantIds.length === 0) {
+        return { items: [], total: 0 };
+      }
+      qb.andWhere('t.plant_id IN (:...plantIds)', { plantIds: scopedPlantIds });
+    }
+
+    if (effectiveScope === 'assigned') {
+      qb.andWhere('t.assigned_to = :actorUserId', { actorUserId: auth.userId });
+    }
+
+    if (effectiveScope === 'raised') {
+      qb.andWhere('t.raised_by = :actorUserId', { actorUserId: auth.userId });
+    }
+
+    if (effectiveScope === 'incharge') {
+      if (inchargeCategories.length === 0) {
+        return { items: [], total: 0 };
+      }
+      qb.andWhere('t.category IN (:...inchargeCategories)', { inchargeCategories });
+      qb.andWhere('(t.raised_by IS NULL OR t.raised_by <> :actorUserId)', { actorUserId: auth.userId });
+    }
+
+    if (effectiveScope === 'approval_required') {
+      qb.andWhere('t.status = :pendingStatus', { pendingStatus: WORKFLOW_STATUSES.APPROVAL_PENDING });
+      if (!canApproveAny) {
+        qb.andWhere('t.raised_by = :actorUserId', { actorUserId: auth.userId });
+      }
+    }
+
+    if (statusFilter) {
+      qb.andWhere('t.status = :statusFilter', { statusFilter });
+    }
+
+    if (categoryFilter) {
+      qb.andWhere('t.category = :categoryFilter', { categoryFilter });
+    }
+
+    if (woTypeFilter) {
+      qb.andWhere('t.wo_type = :woTypeFilter', { woTypeFilter });
+    }
+
+    if (search) {
+      qb.andWhere(
+        `(
+          LOWER(t.wo_number) LIKE :search
+          OR LOWER(COALESCE(t.problem_description, '')) LIKE :search
+          OR LOWER(COALESCE(t.category, '')) LIKE :search
+          OR LOWER(COALESCE(t.status, '')) LIKE :search
+          OR LOWER(COALESCE(asset.code, '')) LIKE :search
+          OR LOWER(COALESCE(asset.name, '')) LIKE :search
+        )`,
+        { search: `%${search}%` },
+      );
+    }
+
+    const totalQb = qb.clone().select('COUNT(1)', 'count');
+    qb
+      .orderBy(`t.${sortColumn}`, sortDirection as 'ASC' | 'DESC')
+      .offset((page - 1) * limit)
+      .limit(limit);
+
+    const [rows, totalRaw] = await Promise.all([
+      qb.getRawMany<GenericRecord & { asset_ref_id?: string | null; asset_ref_code?: string | null; asset_ref_name?: string | null }>(),
+      totalQb.getRawOne<{ count: string | number }>(),
+    ]);
+
+    const items = rows.map((row) => {
+      const item: GenericRecord = { ...row };
+      const assetId = typeof row.asset_ref_id === 'string' ? row.asset_ref_id : null;
+      item.assets = assetId
+        ? {
+            id: assetId,
+            code: row.asset_ref_code ?? null,
+            name: row.asset_ref_name ?? null,
+          }
+        : null;
+      delete item.asset_ref_id;
+      delete item.asset_ref_code;
+      delete item.asset_ref_name;
+      return item;
+    });
+
+    return { items, total: Number(totalRaw?.count ?? 0) };
+  }
+
+  async getQueueSummary(query: ListQuery, auth: AuthContext): Promise<GenericRecord> {
+    const scopedPlantIds = resolvePlantFilter(auth, query.plantId);
+    const canApproveAny = this.isAdminActor(auth);
+    const inchargeCategories = this.getInchargeCategories(auth);
+    const recentThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    const qb = AppDataSource.createQueryBuilder().from('work_orders', 't');
+    if (scopedPlantIds) {
+      if (scopedPlantIds.length === 0) {
+        return {
+          tabs: {
+            assigned: 0,
+            raised: 0,
+            incharge: 0,
+            all: 0,
+            approvalRequired: 0,
+          },
+          kpis: {
+            open: 0,
+            closedLast24h: 0,
+            pendingApproval: 0,
+            total: 0,
+          },
+          defaultScope: canApproveAny ? 'all' : inchargeCategories.length > 0 ? 'incharge' : 'assigned',
+        };
+      }
+      qb.andWhere('t.plant_id IN (:...plantIds)', { plantIds: scopedPlantIds });
+    }
+
+    qb
+      .select('COUNT(1)', 'total_count')
+      .addSelect('SUM(CASE WHEN t.assigned_to = :actorUserId THEN 1 ELSE 0 END)', 'assigned_count')
+      .addSelect('SUM(CASE WHEN t.raised_by = :actorUserId THEN 1 ELSE 0 END)', 'raised_count')
+      .addSelect(
+        inchargeCategories.length > 0
+          ? 'SUM(CASE WHEN t.category IN (:...inchargeCategories) AND (t.raised_by IS NULL OR t.raised_by <> :actorUserId) THEN 1 ELSE 0 END)'
+          : '0',
+        'incharge_count',
+      )
+      .addSelect(
+        canApproveAny
+          ? 'SUM(CASE WHEN t.status = :approvalPendingStatus THEN 1 ELSE 0 END)'
+          : 'SUM(CASE WHEN t.status = :approvalPendingStatus AND t.raised_by = :actorUserId THEN 1 ELSE 0 END)',
+        'approval_queue_count',
+      )
+      .addSelect('SUM(CASE WHEN t.status <> :closedStatus THEN 1 ELSE 0 END)', 'open_count')
+      .addSelect(
+        'SUM(CASE WHEN t.status = :closedStatus AND t.closed_at IS NOT NULL AND t.closed_at >= :recentThreshold THEN 1 ELSE 0 END)',
+        'closed_last_24h_count',
+      )
+      .addSelect('SUM(CASE WHEN t.status = :approvalPendingStatus THEN 1 ELSE 0 END)', 'pending_approval_count')
+      .setParameters({
+        actorUserId: auth.userId,
+        inchargeCategories,
+        closedStatus: WORKFLOW_STATUSES.CLOSED,
+        approvalPendingStatus: WORKFLOW_STATUSES.APPROVAL_PENDING,
+        recentThreshold,
+      });
+
+    const raw = await qb.getRawOne<Record<string, unknown>>();
+    return {
+      tabs: {
+        assigned: toNumber(raw?.assigned_count),
+        raised: toNumber(raw?.raised_count),
+        incharge: toNumber(raw?.incharge_count),
+        all: toNumber(raw?.total_count),
+        approvalRequired: toNumber(raw?.approval_queue_count),
+      },
+      kpis: {
+        open: toNumber(raw?.open_count),
+        closedLast24h: toNumber(raw?.closed_last_24h_count),
+        pendingApproval: toNumber(raw?.pending_approval_count),
+        total: toNumber(raw?.total_count),
+      },
+      defaultScope: canApproveAny ? 'all' : inchargeCategories.length > 0 ? 'incharge' : 'assigned',
+    };
+  }
+
+  async getActivityTimeline(id: string, query: ListQuery, auth: AuthContext): Promise<ListResult<GenericRecord>> {
+    await this.loadExistingWorkOrder(id, auth);
+
+    const page = Math.max(1, Number(toScalar(query.page) || 1));
+    const limit = Math.min(1000, Math.max(1, Number(toScalar(query.limit) || 50)));
+
+    const qb = AppDataSource.createQueryBuilder()
+      .select('log.*')
+      .from('work_order_activity_logs', 'log')
+      .where('log.work_order_id = :workOrderId', { workOrderId: id });
+
+    const totalQb = qb.clone().select('COUNT(1)', 'count');
+    qb.orderBy('log.occurred_at', 'DESC').offset((page - 1) * limit).limit(limit);
+
+    const [items, totalRaw] = await Promise.all([
+      qb.getRawMany<GenericRecord>(),
+      totalQb.getRawOne<{ count: string | number }>(),
+    ]);
+
+    return { items, total: Number(totalRaw?.count ?? 0) };
+  }
+
+  private isAdminActor(auth: AuthContext): boolean {
+    const roles = auth.roles.map((role) => String(role).toUpperCase());
+    return roles.some((role) => ['ROOT_ADMIN', 'SUPERADMIN', 'SUPER_ADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER'].includes(role));
+  }
+
+  private canExecuteWorkOrder(existing: GenericRecord, auth: AuthContext): boolean {
+    const assignedTo = typeof existing.assigned_to === 'string' ? existing.assigned_to : null;
+    const raisedBy = typeof existing.raised_by === 'string' ? existing.raised_by : null;
+    return auth.userId === assignedTo || auth.userId === raisedBy || this.isAdminActor(auth);
+  }
+
+  private ensureExecutionAccess(existing: GenericRecord, auth: AuthContext) {
+    if (this.canExecuteWorkOrder(existing, auth)) {
+      return;
+    }
+    forbidden('Only the assigned technician can perform this work order action');
+  }
+
+  private ensureApprovalAccess(existing: GenericRecord, auth: AuthContext): { isAdminOverride: boolean } {
+    const raisedBy = typeof existing.raised_by === 'string' ? existing.raised_by : null;
+    if (raisedBy && auth.userId === raisedBy) {
+      return { isAdminOverride: false };
+    }
+    if (this.isAdminActor(auth)) {
+      return { isAdminOverride: true };
+    }
+    forbidden('Only the work order raiser can review this work order');
+  }
+
+  private async loadExistingWorkOrder(
+    id: string,
+    auth: AuthContext,
+    manager = AppDataSource.manager,
+  ): Promise<GenericRecord> {
+    const existing = await manager
+      .createQueryBuilder()
+      .select('t.*')
+      .from('work_orders', 't')
+      .where('t.id = :id', { id })
+      .getRawOne<GenericRecord>();
+    if (!existing) {
+      badRequest('workorders record not found');
+    }
+    enforcePlantScope(auth, (existing.plant_id as string | null | undefined) ?? null);
+    return existing;
+  }
+
+  private async writeActivityLog(
+    workOrder: GenericRecord,
+    auth: AuthContext,
+    input: {
+      eventType: string;
+      notes?: string | null;
+      safetyChecklist?: Record<string, unknown> | null;
+      attachments?: Array<Record<string, unknown>> | null;
+      eventMeta?: Record<string, unknown> | null;
+      occurredAt?: string | null;
+    },
+    manager = AppDataSource.manager,
+  ) {
+    const repo = manager.getRepository(WorkOrderActivityLogEntity);
+    await repo.save(
+      repo.create({
+        workOrderId: String(workOrder.id),
+        assetId: typeof workOrder.asset_id === 'string' ? workOrder.asset_id : null,
+        plantId: typeof workOrder.plant_id === 'string' ? workOrder.plant_id : null,
+        actorUserId: auth.userId,
+        eventType: input.eventType,
+        notes: input.notes ?? null,
+        safetyChecklist: input.safetyChecklist ?? null,
+        attachments: input.attachments ?? null,
+        eventMeta: input.eventMeta ?? null,
+        occurredAt: input.occurredAt ? new Date(input.occurredAt) : new Date(),
+      }),
+    );
+  }
+
+  private async createNotifications(
+    notifications: Array<{
+      userId: string;
+      title: string;
+      message: string;
+      type: string;
+      link?: string | null;
+      woId?: string | null;
+    }>,
+    manager = AppDataSource.manager,
+  ) {
+    if (notifications.length === 0) {
+      return;
+    }
+    const repo = manager.getRepository(NotificationEntity);
+    await repo.save(
+      notifications.map((notification) =>
+        repo.create({
+          userId: notification.userId,
+          title: notification.title,
+          message: notification.message,
+          type: notification.type,
+          link: notification.link ?? null,
+          woId: notification.woId ?? null,
+        }),
+      ),
     );
   }
 
@@ -196,83 +722,460 @@ class WorkOrdersService extends CrudService {
       }
     }
 
+    await this.writeActivityLog(
+      createdWorkOrder,
+      auth,
+      {
+        eventType: 'RAISED',
+        notes: normalizeText(problemDescription),
+        attachments: parseJsonArray(payload.attachments),
+        occurredAt: new Date().toISOString(),
+      },
+    );
+
     await notifyBreakdownWorkOrderRaised(String(createdWorkOrder.id));
 
     return createdWorkOrder;
   }
 
-  async update(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+  private async persistWorkOrderUpdate(
+    id: string,
+    input: GenericRecord,
+    auth: AuthContext,
+    options?: { manager?: typeof AppDataSource.manager; allowWorkflowMutation?: boolean; existing?: GenericRecord },
+  ): Promise<GenericRecord> {
+    const manager = options?.manager ?? AppDataSource.manager;
+    const existing = options?.existing ?? (await this.loadExistingWorkOrder(id, auth, manager));
+    const normalized = normalizeKeys(input);
+
+    if (!options?.allowWorkflowMutation && hasAnyWorkflowManagedField(normalized)) {
+      badRequest('Use the dedicated work order workflow actions for status and approval changes');
+    }
+
+    const nextAssetId = (normalized.asset_id as string | undefined) ?? (existing.asset_id as string);
+    const asset = await manager.getRepository(AssetEntity).findOneBy({ id: nextAssetId, isActive: true });
+    if (!asset) {
+      badRequest('Invalid asset_id');
+    }
+
+    const requestedPlantId = (normalized.plant_id as string | null | undefined) ?? null;
+    const inferredPlantId = asset.plantId ?? null;
+    const plantId = resolveScopedPlantId(auth, requestedPlantId ?? inferredPlantId ?? null);
+    if (requestedPlantId && inferredPlantId && requestedPlantId !== inferredPlantId) {
+      badRequest('asset_id does not belong to selected plant');
+    }
+    enforcePlantScope(auth, plantId);
+
+    const normalizedCategory = normalized.category !== undefined
+      ? await this.validateMasterOption(plantId, 'CATEGORY', String(normalized.category))
+      : undefined;
+    const normalizedWorkOrderType = normalized.wo_type !== undefined
+      ? await this.validateMasterOption(plantId, 'WO_TYPE', String(normalized.wo_type))
+      : undefined;
+    const normalizedFailureCode = normalized.failure_code !== undefined
+      ? await this.validateMasterOption(
+          plantId,
+          'FAILURE_CODE',
+          normalized.failure_code === null ? null : String(normalized.failure_code),
+        )
+      : undefined;
+
+    const previousUsage = normalizeSpareUsage(existing.spare_consumption);
+    const nextUsage = normalized.spare_consumption !== undefined ? normalizeSpareUsage(normalized.spare_consumption) : previousUsage;
+    const previousStatus = String(existing.status ?? '').toUpperCase();
+    const nextStatus = String(normalized.status ?? existing.status ?? '').toUpperCase();
+
+    await applySpareUsageDelta(
+      manager,
+      previousStatus === WORKFLOW_STATUSES.CLOSED ? previousUsage : [],
+      nextStatus === WORKFLOW_STATUSES.CLOSED ? nextUsage : [],
+      { plantId, assetId: nextAssetId },
+    );
+
+    const payload: GenericRecord = {
+      ...normalized,
+      asset_id: nextAssetId,
+      plant_id: plantId,
+      ...(normalizedCategory !== undefined ? { category: normalizedCategory } : {}),
+      ...(normalizedWorkOrderType !== undefined ? { wo_type: normalizedWorkOrderType } : {}),
+      ...(normalizedFailureCode !== undefined ? { failure_code: normalizedFailureCode } : {}),
+      spare_consumption: nextUsage.length > 0 ? nextUsage : null,
+    };
+
+    if (normalized.parts_replaced === undefined && nextUsage.length > 0) {
+      payload.parts_replaced = formatSpareUsageSummary(nextUsage);
+    }
+
+    const sanitizedPayload = toEntityPayload(sanitizePayload(payload));
+    if (Object.keys(sanitizedPayload).length > 0) {
+      await manager.createQueryBuilder().update('work_orders').set(sanitizedPayload as never).where('id = :id', { id }).execute();
+    }
+
+    const updated = await manager
+      .createQueryBuilder()
+      .select('t.*')
+      .from('work_orders', 't')
+      .where('t.id = :id', { id })
+      .getRawOne<GenericRecord>();
+    return updated as GenericRecord;
+  }
+
+  async startWorkOrder(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
     return AppDataSource.transaction(async (manager) => {
-      const existing = await manager.createQueryBuilder().select('t.*').from('work_orders', 't').where('t.id = :id', { id }).getRawOne<GenericRecord>();
-      if (!existing) {
-        badRequest('workorders record not found');
+      const existing = await this.loadExistingWorkOrder(id, auth, manager);
+      const status = String(existing.status ?? '').toUpperCase();
+      if (status !== WORKFLOW_STATUSES.RAISED && status !== WORKFLOW_STATUSES.OPENED) {
+        conflict('Work order can only be started from Raised or Opened status');
       }
 
-      enforcePlantScope(auth, (existing.plant_id as string | null | undefined) ?? null);
+      this.ensureExecutionAccess(existing, auth);
+
       const normalized = normalizeKeys(input);
+      const verificationMethod = toUpperText(normalized.verification_method);
+      if (!verificationMethod || !['QR_SCAN', 'MANUAL_ENTRY'].includes(verificationMethod)) {
+        badRequest('verification_method must be QR_SCAN or MANUAL_ENTRY');
+      }
 
-      const nextAssetId = (normalized.asset_id as string | undefined) ?? (existing.asset_id as string);
-      const asset = await this.assetsRepo.findOneBy({ id: nextAssetId, isActive: true });
+      const asset = await manager.getRepository(AssetEntity).findOneBy({
+        id: String(existing.asset_id),
+        isActive: true,
+      });
       if (!asset) {
-        badRequest('Invalid asset_id');
+        badRequest('Assigned machine is not active');
       }
 
-      const requestedPlantId = (normalized.plant_id as string | null | undefined) ?? null;
-      const inferredPlantId = asset.plantId ?? null;
-      const plantId = resolveScopedPlantId(auth, requestedPlantId ?? inferredPlantId ?? null);
-      if (requestedPlantId && inferredPlantId && requestedPlantId !== inferredPlantId) {
-        badRequest('asset_id does not belong to selected plant');
+      const scannedAssetId = normalizeText(normalized.scanned_asset_id);
+      const manualMachineCode = normalizeText(normalized.manual_machine_code);
+      if (verificationMethod === 'QR_SCAN') {
+        if (!scannedAssetId || scannedAssetId !== existing.asset_id) {
+          badRequest('Scanned QR does not match the assigned machine');
+        }
       }
-      enforcePlantScope(auth, plantId);
+      if (verificationMethod === 'MANUAL_ENTRY') {
+        if (!manualMachineCode) {
+          badRequest('manual_machine_code is required when QR is unavailable');
+        }
+        if (manualMachineCode.toUpperCase() !== String(asset.code ?? '').trim().toUpperCase()) {
+          badRequest('Manual machine code does not match the assigned machine');
+        }
+      }
 
-      const normalizedCategory = normalized.category !== undefined
-        ? await this.validateMasterOption(plantId, 'CATEGORY', String(normalized.category))
-        : undefined;
-      const normalizedWorkOrderType = normalized.wo_type !== undefined
-        ? await this.validateMasterOption(plantId, 'WO_TYPE', String(normalized.wo_type))
-        : undefined;
-      const normalizedFailureCode = normalized.failure_code !== undefined
-        ? await this.validateMasterOption(
-            plantId,
-            'FAILURE_CODE',
-            normalized.failure_code === null ? null : String(normalized.failure_code),
-          )
-        : undefined;
+      const safetyChecklist = normalizeKeys((normalized.safety_checklist as GenericRecord | undefined) ?? {});
+      if (!safetyChecklist.ppe_worn || !safetyChecklist.machine_isolated || !safetyChecklist.safety_lock_applied) {
+        badRequest('All safety checklist items must be confirmed before work starts');
+      }
 
-      const previousUsage = normalizeSpareUsage(existing.spare_consumption);
-      const nextUsage = normalized.spare_consumption !== undefined ? normalizeSpareUsage(normalized.spare_consumption) : previousUsage;
-      const previousStatus = String(existing.status ?? '').toUpperCase();
-      const nextStatus = String(normalized.status ?? existing.status ?? '').toUpperCase();
-
-      await applySpareUsageDelta(
-        manager,
-        previousStatus === 'CLOSED' ? previousUsage : [],
-        nextStatus === 'CLOSED' ? nextUsage : [],
-        { plantId, assetId: nextAssetId },
-      );
-
-      const payload: GenericRecord = {
-        ...normalized,
-        asset_id: nextAssetId,
-        plant_id: plantId,
-        ...(normalizedCategory !== undefined ? { category: normalizedCategory } : {}),
-        ...(normalizedWorkOrderType !== undefined ? { wo_type: normalizedWorkOrderType } : {}),
-        ...(normalizedFailureCode !== undefined ? { failure_code: normalizedFailureCode } : {}),
-        spare_consumption: nextUsage.length > 0 ? nextUsage : null,
+      const now = new Date().toISOString();
+      const technicianVerification = {
+        ...(parseJsonObject(existing.technician_verification) ?? {}),
+        verified_at: now,
+        verification_method: verificationMethod,
+        initial_assessment: normalizeText(normalized.initial_assessment),
+        assigned_to_notes: normalizeText(normalized.assigned_to_notes),
+        estimated_time_minutes: Number.isFinite(Number(normalized.estimated_time_minutes))
+          ? Math.max(0, Math.round(Number(normalized.estimated_time_minutes)))
+          : null,
+        ...(verificationMethod === 'QR_SCAN' ? { scanned_asset_id: scannedAssetId } : {}),
+        ...(verificationMethod === 'MANUAL_ENTRY' ? { manual_machine_code: manualMachineCode } : {}),
       };
 
-      if (normalized.parts_replaced === undefined && nextUsage.length > 0) {
-        payload.parts_replaced = formatSpareUsageSummary(nextUsage);
+      const updated = await this.persistWorkOrderUpdate(
+        id,
+        {
+          status: WORKFLOW_STATUSES.IN_PROGRESS,
+          opened_at: existing.opened_at ?? now,
+          started_at: now,
+          technician_verification: technicianVerification,
+          safety_checklist: {
+            ...safetyChecklist,
+            confirmed_at: now,
+          },
+        },
+        auth,
+        { manager, allowWorkflowMutation: true, existing },
+      );
+
+      await this.writeActivityLog(
+        updated,
+        auth,
+        {
+          eventType: 'WORK_STARTED',
+          notes: normalizeText(normalized.initial_assessment),
+          safetyChecklist: parseJsonObject(updated.safety_checklist),
+          eventMeta: {
+            verificationMethod,
+            assignedToNotes: normalizeText(normalized.assigned_to_notes),
+            estimatedTimeMinutes: technicianVerification.estimated_time_minutes,
+          },
+          occurredAt: now,
+        },
+        manager,
+      );
+
+      const raisedBy = normalizeText(existing.raised_by);
+      if (raisedBy && raisedBy !== auth.userId) {
+        await this.createNotifications(
+          [
+            {
+              userId: raisedBy,
+              title: 'Work Order In Progress',
+              message: `${String(existing.wo_number)} is now in progress.`,
+              type: 'info',
+              link: '/work-orders',
+              woId: String(existing.id),
+            },
+          ],
+          manager,
+        );
       }
 
-      const sanitizedPayload = toEntityPayload(sanitizePayload(payload));
-      if (Object.keys(sanitizedPayload).length > 0) {
-        await manager.createQueryBuilder().update('work_orders').set(sanitizedPayload as never).where('id = :id', { id }).execute();
-      }
-
-      const updated = await manager.createQueryBuilder().select('t.*').from('work_orders', 't').where('t.id = :id', { id }).getRawOne<GenericRecord>();
-      return updated as GenericRecord;
+      return updated;
     });
+  }
+
+  async submitForApproval(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+    return AppDataSource.transaction(async (manager) => {
+      const existing = await this.loadExistingWorkOrder(id, auth, manager);
+      const status = String(existing.status ?? '').toUpperCase();
+      if (status !== WORKFLOW_STATUSES.IN_PROGRESS && status !== WORKFLOW_STATUSES.REJECTED) {
+        conflict('Only in-progress or rejected work orders can be submitted for approval');
+      }
+
+      this.ensureExecutionAccess(existing, auth);
+
+      const normalized = normalizeKeys(input);
+      const issueDetails = normalizeText(normalized.issue_details) ?? normalizeText(normalized.root_cause);
+      const workPerformed = normalizeText(normalized.work_performed_description) ?? normalizeText(normalized.action_taken);
+      const remarks = normalizeText(normalized.remarks);
+      const partsReplaced = normalizeText(normalized.parts_replaced) ?? normalizeText(normalized.materials_used);
+      const laborMinutes = Math.max(0, Math.round(Number(normalized.time_spent_minutes ?? normalized.labor_minutes ?? 0)));
+      const downtimeMinutes = Math.max(0, Math.round(Number(normalized.downtime_minutes ?? 0)));
+      const actualCost = Number.isFinite(Number(normalized.actual_cost)) ? Math.max(0, Number(normalized.actual_cost)) : 0;
+      const attachments = parseJsonArray(normalized.attachments);
+      const spareConsumption = normalized.spare_consumption !== undefined ? normalizeSpareUsage(normalized.spare_consumption) : [];
+      const hasMaterials = Boolean(partsReplaced) || spareConsumption.length > 0;
+
+      if (!issueDetails || !workPerformed || !remarks || laborMinutes <= 0 || !hasMaterials || attachments.length === 0) {
+        badRequest('issue_details, work_performed_description, time_spent_minutes, materials_used, attachments, and remarks are required');
+      }
+
+      const now = new Date().toISOString();
+      const mergedAttachments = [
+        ...parseJsonArray(existing.attachments),
+        ...attachments,
+      ];
+
+      const updated = await this.persistWorkOrderUpdate(
+        id,
+        {
+          status: WORKFLOW_STATUSES.APPROVAL_PENDING,
+          resolved_at: now,
+          closed_at: null,
+          root_cause: issueDetails,
+          action_taken: workPerformed,
+          downtime_minutes: downtimeMinutes,
+          failure_code: normalizeText(normalized.failure_code),
+          labor_hours: minutesToLaborHours(laborMinutes),
+          actual_cost: actualCost,
+          parts_replaced: partsReplaced,
+          spare_consumption: spareConsumption,
+          operator_fault: Boolean(normalized.operator_fault),
+          warranty_claim: Boolean(normalized.warranty_claim),
+          follow_up_required: Boolean(normalized.follow_up_required),
+          follow_up_notes: normalizeText(normalized.follow_up_notes),
+          remarks,
+          attachments: mergedAttachments,
+          submitted_for_approval_at: now,
+          submitted_for_approval_by: auth.userId,
+          approved_by: null,
+          approved_at: null,
+          rejected_by: null,
+          rejected_at: null,
+          approval_comments: null,
+          admin_override_by: null,
+          admin_override_at: null,
+          admin_override_reason: null,
+        },
+        auth,
+        { manager, allowWorkflowMutation: true, existing },
+      );
+
+      await this.writeActivityLog(
+        updated,
+        auth,
+        {
+          eventType: 'SUBMITTED_FOR_APPROVAL',
+          notes: remarks,
+          attachments,
+          eventMeta: {
+            issueDetails,
+            workPerformed,
+            laborMinutes,
+            downtimeMinutes,
+            actualCost,
+            hasStructuredSpareUsage: spareConsumption.length > 0,
+          },
+          occurredAt: now,
+        },
+        manager,
+      );
+
+      const raisedBy = normalizeText(existing.raised_by);
+      if (raisedBy) {
+        await this.createNotifications(
+          [
+            {
+              userId: raisedBy,
+              title: 'Work Order Submitted for Approval',
+              message: `${String(existing.wo_number)} is waiting for your approval.`,
+              type: 'warning',
+              link: '/work-orders',
+              woId: String(existing.id),
+            },
+          ],
+          manager,
+        );
+      }
+
+      return updated;
+    });
+  }
+
+  async approveWorkOrder(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+    return AppDataSource.transaction(async (manager) => {
+      const existing = await this.loadExistingWorkOrder(id, auth, manager);
+      const status = String(existing.status ?? '').toUpperCase();
+      if (status !== WORKFLOW_STATUSES.APPROVAL_PENDING) {
+        conflict('Only work orders submitted for approval can be approved');
+      }
+
+      const { isAdminOverride } = this.ensureApprovalAccess(existing, auth);
+      const normalized = normalizeKeys(input);
+      const comments = normalizeText(normalized.comments);
+      if (isAdminOverride && !comments) {
+        badRequest('Admin override approval requires comments for the audit trail');
+      }
+
+      const now = new Date().toISOString();
+      const updated = await this.persistWorkOrderUpdate(
+        id,
+        {
+          status: WORKFLOW_STATUSES.CLOSED,
+          closed_at: now,
+          approved_by: auth.userId,
+          approved_at: now,
+          rejected_by: null,
+          rejected_at: null,
+          approval_comments: comments,
+          admin_override_by: isAdminOverride ? auth.userId : null,
+          admin_override_at: isAdminOverride ? now : null,
+          admin_override_reason: isAdminOverride ? comments : null,
+        },
+        auth,
+        { manager, allowWorkflowMutation: true, existing },
+      );
+
+      await this.writeActivityLog(
+        updated,
+        auth,
+        {
+          eventType: isAdminOverride ? 'ADMIN_OVERRIDE_APPROVED' : 'APPROVED',
+          notes: comments,
+          eventMeta: {
+            reviewedByRaiser: !isAdminOverride,
+          },
+          occurredAt: now,
+        },
+        manager,
+      );
+
+      const recipients = uniqueIds([
+        normalizeText(existing.assigned_to),
+        isAdminOverride ? normalizeText(existing.raised_by) : null,
+      ]).filter((userId) => userId !== auth.userId);
+      await this.createNotifications(
+        recipients.map((userId) => ({
+          userId,
+          title: 'Work Order Approved',
+          message: `${String(existing.wo_number)} has been approved${isAdminOverride ? ' by admin override' : ''}.`,
+          type: 'success',
+          link: '/work-orders',
+          woId: String(existing.id),
+        })),
+        manager,
+      );
+
+      return updated;
+    });
+  }
+
+  async rejectWorkOrder(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+    return AppDataSource.transaction(async (manager) => {
+      const existing = await this.loadExistingWorkOrder(id, auth, manager);
+      const status = String(existing.status ?? '').toUpperCase();
+      if (status !== WORKFLOW_STATUSES.APPROVAL_PENDING) {
+        conflict('Only work orders submitted for approval can be rejected');
+      }
+
+      const { isAdminOverride } = this.ensureApprovalAccess(existing, auth);
+      const normalized = normalizeKeys(input);
+      const comments = normalizeText(normalized.comments);
+      if (!comments) {
+        badRequest('comments are required when rejecting a work order');
+      }
+
+      const now = new Date().toISOString();
+      const updated = await this.persistWorkOrderUpdate(
+        id,
+        {
+          status: WORKFLOW_STATUSES.REJECTED,
+          closed_at: null,
+          approved_by: null,
+          approved_at: null,
+          rejected_by: auth.userId,
+          rejected_at: now,
+          approval_comments: comments,
+          admin_override_by: isAdminOverride ? auth.userId : null,
+          admin_override_at: isAdminOverride ? now : null,
+          admin_override_reason: isAdminOverride ? comments : null,
+        },
+        auth,
+        { manager, allowWorkflowMutation: true, existing },
+      );
+
+      await this.writeActivityLog(
+        updated,
+        auth,
+        {
+          eventType: isAdminOverride ? 'ADMIN_OVERRIDE_REJECTED' : 'REJECTED',
+          notes: comments,
+          occurredAt: now,
+        },
+        manager,
+      );
+
+      const recipients = uniqueIds([
+        normalizeText(existing.assigned_to),
+        isAdminOverride ? normalizeText(existing.raised_by) : null,
+      ]).filter((userId) => userId !== auth.userId);
+      await this.createNotifications(
+        recipients.map((userId) => ({
+          userId,
+          title: 'Work Order Rejected',
+          message: `${String(existing.wo_number)} was rejected. Comments: ${comments}`,
+          type: 'critical',
+          link: '/work-orders',
+          woId: String(existing.id),
+        })),
+        manager,
+      );
+
+      return updated;
+    });
+  }
+
+  async update(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+    return AppDataSource.transaction(async (manager) => this.persistWorkOrderUpdate(id, input, auth, { manager }));
   }
 }
 

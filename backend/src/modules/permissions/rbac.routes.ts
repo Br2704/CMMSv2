@@ -7,14 +7,14 @@ import { requireAuth } from '../../middlewares/authMiddleware';
 import { requireRole } from '../../middlewares/permissions';
 import { fail, ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
-import { allowedRoleTargetsForCreate, allowedRoleTargetsForEdit, canDeleteRoleByPolicy, rolePrecedence } from '../../utils/policy';
+import { allowedRoleTargetsForCreate, allowedRoleTargetsForEdit, canAssignRole, canDeleteRoleByPolicy, rolePrecedence } from '../../utils/policy';
 import { ensureRoleCatalogEntry } from '../../utils/roleCatalog';
 import { bumpRbacVersion, getRbacVersion } from '../../utils/rbacVersion';
+import { applySystemRolePermissionPolicy } from '../../utils/systemRolePermissionPolicy';
 import {
   DASHBOARD_KPI_KEYS,
   RBAC_ACTIONS,
   RBAC_MODULE_KEYS,
-  isAdminRole,
   isRootAdminRole,
   isSuperAdminRole,
   normalizeActions,
@@ -22,6 +22,8 @@ import {
   permissionKeysFromMap,
   normalizeRoleName,
 } from '../../utils/rbac';
+
+const ADMIN_GOVERNANCE_BLOCKED_MODULES = new Set(['ORGANIZATIONS', 'PLANTS', 'ROLE_ACCESS', 'MODULES', 'MASTERS']);
 
 const roleCreateSchema = z.object({
   name: z.string().min(1).transform((value) => normalizeRoleName(value)),
@@ -57,13 +59,7 @@ function sanitizeRolePermissionPayload(roleName: string, payload: Record<string,
     const normalizedModule = normalizeModuleKey(moduleKey);
     normalized[normalizedModule] = normalizeActions(actions);
   }
-
-  if (isAdminRole(roleName)) {
-    delete normalized.PLANTS;
-    delete normalized.ROLE_ACCESS;
-  }
-
-  return normalized;
+  return applySystemRolePermissionPolicy(roleName, normalized);
 }
 
 function sanitizeRoleKpisPayload(roleName: string, payload: Array<{ kpiKey: string; isVisible: boolean; displayOrder: number }>) {
@@ -116,6 +112,33 @@ function isRootRoleName(roleName: string) {
   return normalizeRoleName(roleName) === 'ROOT_ADMIN';
 }
 
+function getActorRoleKey(req: Express.Request): string {
+  const fromRoleKey = normalizeRoleName(req.auth?.roleKey ?? '');
+  if (fromRoleKey) return fromRoleKey;
+  const roles = getRoleNamesFromAuth(req);
+  return roles[0] ?? 'USER';
+}
+
+function canActorManageRole(actorRoleKey: string, targetRoleName: string): boolean {
+  const normalizedActor = normalizeRoleName(actorRoleKey);
+  const normalizedTarget = normalizeRoleName(targetRoleName);
+  if (isRootAdminRole(normalizedActor) || isSuperAdminRole(normalizedActor)) {
+    return true;
+  }
+  if (normalizedActor === 'ADMIN') {
+    return canAssignRole(normalizedActor, normalizedTarget);
+  }
+  return false;
+}
+
+function stripGovernanceModulesForAdmin(permissionMap: Record<string, string[]>): Record<string, string[]> {
+  const filtered = { ...permissionMap };
+  for (const moduleKey of ADMIN_GOVERNANCE_BLOCKED_MODULES) {
+    delete filtered[moduleKey];
+  }
+  return filtered;
+}
+
 async function syncCatalogRolesForOrganization(organizationId: string | null) {
   if (!organizationId) return;
   const orgRoleRepo = AppDataSource.getRepository(OrgRoleEntity);
@@ -159,13 +182,8 @@ rbacRouter.get('/rbac/permissions/me', async (req, res, next) => {
       }),
     );
 
-    if (!isRootAdmin && !isSuperAdmin && roleNames.some((role) => isAdminRole(role))) {
-      delete permissions.PLANTS;
-      delete permissions.ROLE_ACCESS;
-    }
-    if (isSuperAdmin && !isRootAdmin) {
-      permissions.PLANTS = ['READ', 'UPDATE'];
-    }
+    const roleKey = req.auth?.roleKey ?? roleNames[0] ?? 'USER';
+    const effectivePermissionMap = applySystemRolePermissionPolicy(roleKey, permissions);
 
     const roleKpis = roles.length
       ? await kpiRepo.find({ where: { roleId: In(roles.map((role) => role.id)) }, order: { displayOrder: 'ASC', createdAt: 'ASC' } })
@@ -189,10 +207,9 @@ rbacRouter.get('/rbac/permissions/me', async (req, res, next) => {
     }
 
     const kpis = Array.from(kpiVisibilityMap.values()).sort((a, b) => a.displayOrder - b.displayOrder);
-    const roleKey = req.auth?.roleKey ?? roleNames[0] ?? 'USER';
     const profile = req.auth?.userId ? await profileRepo.findOneBy({ userId: req.auth.userId }) : null;
     const rbacVersion = await getRbacVersion();
-    const permissionKeys = permissionKeysFromMap(permissions);
+    const permissionKeys = permissionKeysFromMap(effectivePermissionMap);
 
     res.json(
       ok({
@@ -204,10 +221,10 @@ rbacRouter.get('/rbac/permissions/me', async (req, res, next) => {
         isRootAdmin: roleNames.some((role) => normalizeRoleName(role) === 'ROOT_ADMIN'),
         isGlobal: isSuperAdmin,
         plantId: profile?.plantId ?? null,
-        permissions,
+        permissions: effectivePermissionMap,
         permissionKeys,
-        allowedModules: Object.keys(permissions),
-        allowedActionsByModule: permissions,
+        allowedModules: Object.keys(effectivePermissionMap),
+        allowedActionsByModule: effectivePermissionMap,
         allowedRoleTargetsForCreate: allowedRoleTargetsForCreate(roleKey),
         allowedRoleTargetsForEdit: allowedRoleTargetsForEdit(roleKey),
         kpis,
@@ -231,12 +248,14 @@ rbacRouter.get('/rbac/version', async (_req, res, next) => {
   }
 });
 
-rbacRouter.get('/roles', requireRole(['ROOT_ADMIN', 'SUPERADMIN']), async (req, res, next) => {
+rbacRouter.get('/roles', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     await syncCatalogRolesForOrganization(req.auth?.organizationId ?? null);
     const repo = AppDataSource.getRepository(RoleEntity);
     const roles = await repo.find({ where: { isActive: true }, order: { name: 'ASC' } });
-    res.json(ok(roles));
+    const actorRoleKey = getActorRoleKey(req);
+    const data = actorRoleKey === 'ADMIN' ? roles.filter((role) => canActorManageRole(actorRoleKey, role.name)) : roles;
+    res.json(ok(data));
   } catch (error) {
     next(error);
   }
@@ -367,7 +386,7 @@ rbacRouter.delete('/roles/:id', requireRole(['ROOT_ADMIN', 'SUPERADMIN']), async
   }
 });
 
-rbacRouter.get('/roles/:id/permissions', requireRole(['ROOT_ADMIN', 'SUPERADMIN']), async (req, res, next) => {
+rbacRouter.get('/roles/:id/permissions', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const roleRepo = AppDataSource.getRepository(RoleEntity);
@@ -379,6 +398,12 @@ rbacRouter.get('/roles/:id/permissions', requireRole(['ROOT_ADMIN', 'SUPERADMIN'
       return;
     }
 
+    const actorRoleKey = getActorRoleKey(req);
+    if (!canActorManageRole(actorRoleKey, role.name)) {
+      res.status(403).json(fail('No permission to manage this role'));
+      return;
+    }
+
     if (isRootRoleName(role.name)) {
       res.json(ok(getAllModulePermissions()));
       return;
@@ -386,19 +411,15 @@ rbacRouter.get('/roles/:id/permissions', requireRole(['ROOT_ADMIN', 'SUPERADMIN'
 
     const rows = await permissionRepo.find({ where: [{ roleId: role.id }, { role: role.name }] });
     const permissions = mergePermissions(rows);
+    const effectivePermissions = applySystemRolePermissionPolicy(role.name, permissions);
 
-    if (isAdminRole(role.name)) {
-      delete permissions.PLANTS;
-      delete permissions.ROLE_ACCESS;
-    }
-
-    res.json(ok(permissions));
+    res.json(ok(effectivePermissions));
   } catch (error) {
     next(error);
   }
 });
 
-rbacRouter.put('/roles/:id/permissions', requireRole(['ROOT_ADMIN', 'SUPERADMIN']), async (req, res, next) => {
+rbacRouter.put('/roles/:id/permissions', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = rolePermissionsSchema.parse(req.body ?? {});
@@ -412,11 +433,18 @@ rbacRouter.put('/roles/:id/permissions', requireRole(['ROOT_ADMIN', 'SUPERADMIN'
       return;
     }
 
+    const actorRoleKey = getActorRoleKey(req);
+    if (!canActorManageRole(actorRoleKey, role.name)) {
+      res.status(403).json(fail('No permission to manage this role'));
+      return;
+    }
+
     const sanitized = sanitizeRolePermissionPayload(role.name, body);
+    const effectiveSanitized = normalizeRoleName(actorRoleKey) === 'ADMIN' ? stripGovernanceModulesForAdmin(sanitized) : sanitized;
 
     await permissionRepo.delete([{ roleId: role.id }, { role: role.name }]);
 
-    const entries = Object.entries(sanitized)
+    const entries = Object.entries(effectiveSanitized)
       .filter(([, actions]) => actions.length > 0)
       .map(([moduleKey, actions]) =>
         permissionRepo.create({
@@ -441,13 +469,13 @@ rbacRouter.put('/roles/:id/permissions', requireRole(['ROOT_ADMIN', 'SUPERADMIN'
       statusCode: 200,
     });
 
-    res.json(ok(sanitized, 'Role permissions updated'));
+    res.json(ok(effectiveSanitized, 'Role permissions updated'));
   } catch (error) {
     next(error);
   }
 });
 
-rbacRouter.get('/roles/:id/kpis', requireRole(['ROOT_ADMIN', 'SUPERADMIN']), async (req, res, next) => {
+rbacRouter.get('/roles/:id/kpis', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const roleRepo = AppDataSource.getRepository(RoleEntity);
@@ -456,6 +484,12 @@ rbacRouter.get('/roles/:id/kpis', requireRole(['ROOT_ADMIN', 'SUPERADMIN']), asy
     const role = await roleRepo.findOneBy({ id: params.id, isActive: true });
     if (!role) {
       res.status(404).json(fail('Role not found'));
+      return;
+    }
+
+    const actorRoleKey = getActorRoleKey(req);
+    if (!canActorManageRole(actorRoleKey, role.name)) {
+      res.status(403).json(fail('No permission to manage this role'));
       return;
     }
 
@@ -471,7 +505,7 @@ rbacRouter.get('/roles/:id/kpis', requireRole(['ROOT_ADMIN', 'SUPERADMIN']), asy
   }
 });
 
-rbacRouter.put('/roles/:id/kpis', requireRole(['ROOT_ADMIN', 'SUPERADMIN']), async (req, res, next) => {
+rbacRouter.put('/roles/:id/kpis', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const payload = roleKpiSchema.parse(req.body ?? []);
@@ -482,6 +516,12 @@ rbacRouter.put('/roles/:id/kpis', requireRole(['ROOT_ADMIN', 'SUPERADMIN']), asy
     const role = await roleRepo.findOneBy({ id: params.id, isActive: true });
     if (!role) {
       res.status(404).json(fail('Role not found'));
+      return;
+    }
+
+    const actorRoleKey = getActorRoleKey(req);
+    if (!canActorManageRole(actorRoleKey, role.name)) {
+      res.status(403).json(fail('No permission to manage this role'));
       return;
     }
 

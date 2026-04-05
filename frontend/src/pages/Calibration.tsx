@@ -283,12 +283,24 @@ export default function Calibration() {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <p className="font-medium">{item.title}</p>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={item.taskStatus} onChange={(event) => setFormData((current) => ({ ...current, checklist: current.checklist.map((task, taskIndex) => taskIndex === index ? { ...task, taskStatus: event.target.value } : task) }))}>
+                  <select
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    value={item.taskStatus}
+                    aria-label={`Checklist status for ${item.title}`}
+                    title={`Checklist status for ${item.title}`}
+                    onChange={(event) => setFormData((current) => ({ ...current, checklist: current.checklist.map((task, taskIndex) => taskIndex === index ? { ...task, taskStatus: event.target.value } : task) }))}
+                  >
                     <option value="PENDING">Pending</option>
                     <option value="COMPLETED">Completed</option>
                     <option value="RECHECK">Recheck</option>
                   </select>
-                  <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={item.passFail} onChange={(event) => setFormData((current) => ({ ...current, checklist: current.checklist.map((task, taskIndex) => taskIndex === index ? { ...task, passFail: event.target.value } : task) }))}>
+                  <select
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    value={item.passFail}
+                    aria-label={`Checklist result for ${item.title}`}
+                    title={`Checklist result for ${item.title}`}
+                    onChange={(event) => setFormData((current) => ({ ...current, checklist: current.checklist.map((task, taskIndex) => taskIndex === index ? { ...task, passFail: event.target.value } : task) }))}
+                  >
                     <option value="PENDING">Pending</option>
                     <option value="PASS">Pass</option>
                     <option value="FAIL">Fail</option>

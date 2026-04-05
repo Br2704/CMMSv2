@@ -27,7 +27,7 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const isRootUser = isRootAdmin(user);
   const brandingOrganizationName = useBrandingStore((state) => state.organizationName);
-  const organizationName = brandingOrganizationName || user?.organizationName || null;
+  const organizationName = user?.organizationName || brandingOrganizationName || null;
   const { hasModuleAccess } = usePermissions();
   const canReadNotifications = isRootUser || hasModuleAccess("alerts", "view") || hasModuleAccess("notifications", "view");
   const { notifications, unreadCount, loading: notificationsLoading, markAsRead, markAllAsRead, removeNotification } = useNotifications({ enabled: canReadNotifications });

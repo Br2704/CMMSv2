@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore, isAdmin, isSuperAdmin } from "@/store/auth.store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Plus, Search, Edit, Trash2, Cog, Eye, QrCode, RefreshCcw, Download, Printer, ImagePlus, Image as ImageIcon } from "lucide-react";
+import { Plus, Search, Edit, Trash2, Cog, Eye, QrCode, RefreshCcw, Download, Printer, ImagePlus, Image as ImageIcon, Upload } from "lucide-react";
 import { toast } from "sonner";
 import BackButton from "@/components/masters/BackButton";
 import HierarchyBreadcrumb from "@/components/masters/HierarchyBreadcrumb";
@@ -19,8 +19,8 @@ import { createAsset, deleteAsset, listAssets, type Asset, updateAsset } from "@
 import { getAssetAmcSummary, type AssetAmcSummary } from "@/api/amc";
 import { getAssetQr, rotateAssetQr, type AssetQrData } from "@/api/qr";
 import { listCostCenters, type CostCenter } from "@/api/costCenters";
-import { listDepartments, type Department } from "@/api/departments";
-import { listModules, type MachineModule } from "@/api/modules";
+import { createDepartment, listDepartments, type Department } from "@/api/departments";
+import { createModule, listModules, type MachineModule } from "@/api/modules";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { EmptyState } from "@/components/app-shell/EmptyState";
 import { FilterToolbar } from "@/components/app-shell/FilterToolbar";
@@ -69,6 +69,99 @@ const emptyForm: MachineFormState = {
   warrantyExpiry: "",
 };
 
+function normalizeLookupValue(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normalizeHeaderName(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function parseCsvRows(content: string): string[][] {
+  const rows: string[][] = [];
+  let currentCell = "";
+  let currentRow: string[] = [];
+  let inQuotes = false;
+
+  const pushCell = () => {
+    currentRow.push(currentCell.trim());
+    currentCell = "";
+  };
+
+  const pushRow = () => {
+    if (currentRow.length === 0) return;
+    rows.push(currentRow);
+    currentRow = [];
+  };
+
+  for (let index = 0; index < content.length; index += 1) {
+    const char = content[index];
+    const nextChar = content[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentCell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (!inQuotes && char === ",") {
+      pushCell();
+      continue;
+    }
+
+    if (!inQuotes && (char === "\n" || char === "\r")) {
+      pushCell();
+      pushRow();
+      if (char === "\r" && nextChar === "\n") {
+        index += 1;
+      }
+      continue;
+    }
+
+    currentCell += char;
+  }
+
+  pushCell();
+  pushRow();
+
+  return rows.filter((row) => row.some((cell) => cell.length > 0));
+}
+
+function nextUniqueCode(prefix: string, source: string, existingCodes: Set<string>) {
+  const cleaned = source.toUpperCase().replace(/[^A-Z0-9]+/g, "");
+  const base = (cleaned || prefix).slice(0, 10);
+  let candidate = base;
+  let counter = 1;
+
+  while (existingCodes.has(candidate)) {
+    const suffix = String(counter);
+    candidate = `${base.slice(0, Math.max(1, 10 - suffix.length))}${suffix}`;
+    counter += 1;
+  }
+
+  existingCodes.add(candidate);
+  return candidate;
+}
+
+function splitCodeAndName(raw: string) {
+  const trimmed = raw.trim();
+  const parts = trimmed.split("-").map((part) => part.trim()).filter(Boolean);
+  if (parts.length >= 2 && /^[A-Za-z0-9_]+$/.test(parts[0])) {
+    return {
+      codeHint: parts[0],
+      name: parts.slice(1).join(" - "),
+    };
+  }
+  return {
+    codeHint: "",
+    name: trimmed,
+  };
+}
+
 export default function MachinesMaster() {
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
@@ -85,6 +178,9 @@ export default function MachinesMaster() {
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [selectedPlant, setSelectedPlant] = useState<string>(canSelectPlant ? "all" : defaultPlantId);
+  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState<string>("all");
+  const [selectedModuleFilter, setSelectedModuleFilter] = useState<string>("all");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -97,15 +193,19 @@ export default function MachinesMaster() {
   const [qrLoading, setQrLoading] = useState(false);
   const [assetAmcSummary, setAssetAmcSummary] = useState<AssetAmcSummary | null>(null);
   const [assetAmcLoading, setAssetAmcLoading] = useState(false);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkPromptHandled, setBulkPromptHandled] = useState(false);
+  const bulkUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const fetchAssetsList = async () => {
     setLoading(true);
     try {
+      const effectivePlantId = canSelectPlant ? (selectedPlant === "all" ? undefined : selectedPlant) : defaultPlantId || undefined;
       const response = await listAssets({
         page: 1,
         limit: 100,
         search: searchQuery || undefined,
-        plantId: canSelectPlant ? undefined : defaultPlantId || undefined,
+        plantId: effectivePlantId,
       });
       setAssets(response.data);
     } catch (error: any) {
@@ -162,7 +262,7 @@ export default function MachinesMaster() {
 
   useEffect(() => {
     fetchAssetsList();
-  }, [searchQuery, defaultPlantId, canSelectPlant]);
+  }, [searchQuery, selectedPlant, defaultPlantId, canSelectPlant]);
 
   useEffect(() => {
     fetchPlants();
@@ -181,6 +281,15 @@ export default function MachinesMaster() {
   }, [assets, searchParams]);
 
   useEffect(() => {
+    if (bulkPromptHandled || !canManage) return;
+    if (searchParams.get("bulk") !== "1") return;
+    setBulkPromptHandled(true);
+    window.requestAnimationFrame(() => {
+      bulkUploadInputRef.current?.click();
+    });
+  }, [bulkPromptHandled, canManage, searchParams]);
+
+  useEffect(() => {
     if (!selectedMachine || !isViewOpen) {
       setAssetAmcSummary(null);
       return;
@@ -193,8 +302,28 @@ export default function MachinesMaster() {
   }, [selectedMachine?.id, isViewOpen]);
 
   const filtered = useMemo(
-    () => assets.filter((asset) => (categoryFilter === "all" ? true : asset.type === categoryFilter)),
-    [assets, categoryFilter],
+    () =>
+      assets
+        .filter((asset) => (categoryFilter === "all" ? true : asset.type === categoryFilter))
+        .filter((asset) => (selectedDepartmentFilter === "all" ? true : asset.departmentId === selectedDepartmentFilter))
+        .filter((asset) => (selectedModuleFilter === "all" ? true : asset.moduleId === selectedModuleFilter)),
+    [assets, categoryFilter, selectedDepartmentFilter, selectedModuleFilter],
+  );
+
+  const departmentFilterOptions = useMemo(
+    () =>
+      departments
+        .filter((department) => selectedPlant === "all" || department.plantId === selectedPlant)
+        .map((department) => ({ value: department.id, label: `${department.code} - ${department.name}` })),
+    [departments, selectedPlant],
+  );
+
+  const moduleFilterOptions = useMemo(
+    () =>
+      modules
+        .filter((module) => (selectedPlant === "all" || module.plantId === selectedPlant) && (selectedDepartmentFilter === "all" || module.departmentId === selectedDepartmentFilter))
+        .map((module) => ({ value: module.id, label: `${module.code ? `${module.code} - ` : ""}${module.name}` })),
+    [modules, selectedPlant, selectedDepartmentFilter],
   );
 
   const departmentOptions = useMemo(
@@ -241,6 +370,210 @@ export default function MachinesMaster() {
     formData.name.trim().length > 0 &&
     formData.assetType.trim().length > 0 &&
     (canSelectPlant ? Boolean(formData.plantId && formData.departmentId && formData.moduleId) : Boolean(defaultPlantId && formData.departmentId && formData.moduleId));
+
+  const handleBulkMachineCsv = async (content: string) => {
+    const resolvedPlantId = canSelectPlant ? (selectedPlant === "all" ? "" : selectedPlant) : defaultPlantId;
+    if (!resolvedPlantId) {
+      toast.error("Select a specific plant before bulk uploading machines");
+      return;
+    }
+
+    const rows = parseCsvRows(content);
+    if (rows.length < 2) {
+      toast.error("CSV must include a header and at least one machine row");
+      return;
+    }
+
+    const headerRow = rows[0] || [];
+    const headerIndex = new Map<string, number>();
+    headerRow.forEach((header, index) => {
+      const normalized = normalizeHeaderName(header);
+      if (normalized) {
+        headerIndex.set(normalized, index);
+      }
+    });
+
+    const requiredHeaders: Array<{ label: string; aliases: string[] }> = [
+      { label: "machine_code", aliases: ["machine_code", "code", "machine"] },
+      { label: "machine_name", aliases: ["machine_name", "name"] },
+      { label: "department", aliases: ["department", "department_name", "department_code"] },
+      { label: "module", aliases: ["module", "module_name", "module_code"] },
+    ];
+
+    const missingHeaders = requiredHeaders
+      .filter((entry) => !entry.aliases.some((alias) => headerIndex.has(alias)))
+      .map((entry) => entry.label);
+
+    if (missingHeaders.length > 0) {
+      toast.error(`Missing CSV columns: ${missingHeaders.join(", ")}`);
+      return;
+    }
+
+    const pickCell = (row: string[], aliases: string[]) => {
+      for (const alias of aliases) {
+        const cellIndex = headerIndex.get(alias);
+        if (cellIndex === undefined) continue;
+        const value = row[cellIndex];
+        if (typeof value === "string" && value.trim().length > 0) {
+          return value.trim();
+        }
+      }
+      return "";
+    };
+
+    const normalizeEnum = (value: string, allowed: string[], fallback: string) => {
+      const normalized = value.trim().toUpperCase();
+      return allowed.includes(normalized) ? normalized : fallback;
+    };
+
+    const departmentLookup = new Map<string, Department>();
+    const departmentCodes = new Set<string>();
+    departments
+      .filter((department) => department.plantId === resolvedPlantId)
+      .forEach((department) => {
+        departmentLookup.set(normalizeLookupValue(department.name), department);
+        departmentLookup.set(normalizeLookupValue(department.code), department);
+        departmentCodes.add(department.code.toUpperCase());
+      });
+
+    const moduleLookup = new Map<string, MachineModule>();
+    const moduleCodes = new Set<string>();
+    modules
+      .filter((module) => module.plantId === resolvedPlantId && module.departmentId)
+      .forEach((module) => {
+        const prefix = `${module.departmentId}:`;
+        moduleLookup.set(`${prefix}${normalizeLookupValue(module.name)}`, module);
+        if (module.code) {
+          moduleLookup.set(`${prefix}${normalizeLookupValue(module.code)}`, module);
+          moduleCodes.add(module.code.toUpperCase());
+        }
+      });
+
+    const seenCodes = new Set<string>();
+    const failures: string[] = [];
+    let createdCount = 0;
+
+    setBulkUploading(true);
+    try {
+      for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+        const row = rows[rowIndex];
+        if (!row || row.every((value) => value.trim().length === 0)) {
+          continue;
+        }
+
+        const machineCode = pickCell(row, ["machine_code", "code", "machine"]);
+        const machineName = pickCell(row, ["machine_name", "name"]);
+        const departmentRaw = pickCell(row, ["department", "department_name", "department_code"]);
+        const moduleRaw = pickCell(row, ["module", "module_name", "module_code"]);
+
+        if (!machineCode || !machineName || !departmentRaw || !moduleRaw) {
+          failures.push(`Row ${rowIndex + 1}: machine_code, machine_name, department, and module are required`);
+          continue;
+        }
+
+        const machineCodeKey = normalizeLookupValue(machineCode);
+        if (seenCodes.has(machineCodeKey)) {
+          failures.push(`Row ${rowIndex + 1}: duplicate machine code in CSV (${machineCode})`);
+          continue;
+        }
+        seenCodes.add(machineCodeKey);
+
+        const { codeHint: departmentCodeHint, name: departmentName } = splitCodeAndName(departmentRaw);
+        const departmentKeys = [departmentRaw, departmentCodeHint, departmentName]
+          .map((value) => normalizeLookupValue(value))
+          .filter(Boolean);
+
+        let department = departmentKeys.map((key) => departmentLookup.get(key)).find((value): value is Department => Boolean(value));
+
+        try {
+          if (!department) {
+            const createdDepartment = await createDepartment({
+              name: departmentName || departmentRaw,
+              code: nextUniqueCode("DEP", departmentCodeHint || departmentName || departmentRaw, departmentCodes),
+              plantId: resolvedPlantId,
+            });
+            department = createdDepartment.data;
+            departmentLookup.set(normalizeLookupValue(department.name), department);
+            departmentLookup.set(normalizeLookupValue(department.code), department);
+          }
+
+          const { codeHint: moduleCodeHint, name: moduleName } = splitCodeAndName(moduleRaw);
+          const moduleKeys = [moduleRaw, moduleCodeHint, moduleName]
+            .map((value) => normalizeLookupValue(value))
+            .filter(Boolean);
+          const moduleLookupPrefix = `${department.id}:`;
+
+          let machineModule = moduleKeys
+            .map((key) => moduleLookup.get(`${moduleLookupPrefix}${key}`))
+            .find((value): value is MachineModule => Boolean(value));
+
+          if (!machineModule) {
+            const createdModule = await createModule({
+              code: nextUniqueCode("MOD", moduleCodeHint || moduleName || moduleRaw, moduleCodes),
+              name: moduleName || moduleRaw,
+              plantId: resolvedPlantId,
+              departmentId: department.id,
+            });
+            machineModule = createdModule.data;
+            moduleLookup.set(`${moduleLookupPrefix}${normalizeLookupValue(machineModule.name)}`, machineModule);
+            if (machineModule.code) {
+              moduleLookup.set(`${moduleLookupPrefix}${normalizeLookupValue(machineModule.code)}`, machineModule);
+            }
+          }
+
+          await createAsset({
+            code: machineCode,
+            name: machineName,
+            type: normalizeEnum(pickCell(row, ["type"]), ["MACHINE", "UTILITY"], "MACHINE"),
+            assetType: normalizeEnum(pickCell(row, ["asset_type", "assettype"]), ["BOILER", "COMPRESSOR", "CHILLER", "HVAC", "PUMP"], "PUMP") as "BOILER" | "COMPRESSOR" | "CHILLER" | "HVAC" | "PUMP",
+            departmentId: department.id,
+            moduleId: machineModule.id,
+            plantId: resolvedPlantId,
+            criticality: normalizeEnum(pickCell(row, ["criticality"]), ["HIGH", "MEDIUM", "LOW"], "MEDIUM"),
+            status: normalizeEnum(pickCell(row, ["status"]), ["ACTIVE", "UNDER_MAINTENANCE", "INACTIVE"], "ACTIVE"),
+            make: pickCell(row, ["make"]) || null,
+            model: pickCell(row, ["model"]) || null,
+            serialNumber: pickCell(row, ["serial_number", "serial"] ) || null,
+            refrigerantGasType: pickCell(row, ["refrigerant_gas_type", "refrigerant"]) || null,
+            commissionDate: pickCell(row, ["commission_date"]) || null,
+            warrantyExpiry: pickCell(row, ["warranty_expiry"]) || null,
+          });
+          createdCount += 1;
+        } catch (error: any) {
+          failures.push(`Row ${rowIndex + 1}: ${error?.message || "failed to create machine"}`);
+        }
+      }
+
+      await Promise.all([
+        fetchAssetsList(),
+        fetchDepartmentsList(resolvedPlantId),
+        fetchModulesList(resolvedPlantId),
+      ]);
+      invalidateOptions(["assets", "departments", "modules"]);
+
+      if (createdCount > 0) {
+        toast.success(`Created ${createdCount} machine${createdCount === 1 ? "" : "s"}`);
+      }
+
+      if (failures.length > 0) {
+        const preview = failures.slice(0, 3).join(" | ");
+        const suffix = failures.length > 3 ? ` (+${failures.length - 3} more)` : "";
+        toast.error(`Machine bulk upload completed with ${failures.length} issue(s): ${preview}${suffix}`);
+      }
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+
+  const handleBulkMachineFileChange = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const content = await file.text();
+      await handleBulkMachineCsv(content);
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to read bulk upload file");
+    }
+  };
 
   const fileToDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -641,6 +974,36 @@ export default function MachinesMaster() {
         }
         right={
           <>
+            {canSelectPlant && (
+              <SelectField
+                label=""
+                value={selectedPlant}
+                onChange={(value) => {
+                  setSelectedPlant(value);
+                  setSelectedDepartmentFilter("all");
+                  setSelectedModuleFilter("all");
+                }}
+                options={[{ value: "all", label: "All Plants" }, ...plantsOptions]}
+                className="w-full sm:w-[180px] min-w-[160px] flex-shrink-0"
+              />
+            )}
+            <SelectField
+              label=""
+              value={selectedDepartmentFilter}
+              onChange={(value) => {
+                setSelectedDepartmentFilter(value);
+                setSelectedModuleFilter("all");
+              }}
+              options={[{ value: "all", label: "All Departments" }, ...departmentFilterOptions]}
+              className="w-full sm:w-[220px] min-w-[180px] flex-shrink-0"
+            />
+            <SelectField
+              label=""
+              value={selectedModuleFilter}
+              onChange={setSelectedModuleFilter}
+              options={[{ value: "all", label: "All Modules" }, ...moduleFilterOptions]}
+              className="w-full sm:w-[220px] min-w-[180px] flex-shrink-0"
+            />
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input placeholder="Search..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />

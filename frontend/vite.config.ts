@@ -29,9 +29,9 @@ export default defineConfig(({ mode }) => ({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "icons/*.png"],
       manifest: {
-        name: "TamOptiX CMMS Platform",
-        short_name: "TamOptiX",
-        description: "Industrial CMMS Platform",
+        name: "JK Fenner CMMS",
+        short_name: "JK Fenner CMMS",
+        description: "JK Fenner CMMS Platform",
         start_url: "/",
         display: "standalone",
         background_color: "#ffffff",

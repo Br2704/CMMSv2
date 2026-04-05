@@ -9,7 +9,7 @@ import { Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { listWorkOrderMasters } from "@/api/workOrderMasters";
-import { getFallbackWorkOrderOptions, humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
+import { humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
 
 interface RecentWOsProps {
   workOrders: any[];
@@ -38,13 +38,6 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
       });
     return map;
   }, [workOrderMasters]);
-  const fallbackCategoryLabels = useMemo(() => {
-    const map = new Map<string, string>();
-    getFallbackWorkOrderOptions("CATEGORY").forEach((item) => {
-      map.set(item.value, item.label);
-    });
-    return map;
-  }, []);
 
   const resolveCategoryLabel = (code: string | null | undefined, plantId?: string | null) => {
     if (!code) return "-";
@@ -52,7 +45,6 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
     return (
       categoryLabels.get(`${plantId || ""}:${normalizedCode}`) ||
       categoryLabels.get(`*:${normalizedCode}`) ||
-      fallbackCategoryLabels.get(normalizedCode) ||
       humanizeWorkOrderCode(normalizedCode)
     );
   };
@@ -102,13 +94,20 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
                         </StatusBadge>
                       </TableCell>
                       <TableCell>
-                        <StatusBadge variant={
-                          wo.status === "CLOSED" ? "completed" :
-                          wo.status === "IN_PROGRESS" ? "in_progress" :
-                          wo.status === "APPROVAL_PENDING" ? "critical" : "warning"
-                        }>
-                          {wo.status.replace(/_/g, " ")}
-                        </StatusBadge>
+                        <StatusBadge
+                          status={wo.status}
+                          variant={
+                            wo.status === "CLOSED"
+                              ? "completed"
+                              : wo.status === "IN_PROGRESS"
+                                ? "in_progress"
+                                : wo.status === "APPROVAL_PENDING"
+                                  ? "critical"
+                                  : wo.status === "REJECTED"
+                                    ? "error"
+                                    : "warning"
+                          }
+                        />
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {formatDistanceToNow(new Date(wo.created_at), { addSuffix: true })}

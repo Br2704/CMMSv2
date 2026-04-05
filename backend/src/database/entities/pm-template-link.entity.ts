@@ -1,5 +1,5 @@
 import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
-import { DATETIME_COLUMN_TYPE, TimestampedUuidEntity } from './common';
+import { DATETIME_COLUMN_TYPE, LARGE_TEXT_COLUMN_TYPE, TimestampedUuidEntity } from './common';
 import { AssetEntity } from './asset.entity';
 import { DepartmentEntity } from './department.entity';
 import { MaintenanceTeamEntity } from './maintenance-team.entity';
@@ -29,6 +29,9 @@ export class PmTemplateLinkEntity extends TimestampedUuidEntity {
 
   @Column({ name: 'responsible_user_id', type: 'uuid', nullable: true })
   responsibleUserId!: string | null;
+
+  @Column({ name: 'checklist_tasks_override', type: LARGE_TEXT_COLUMN_TYPE, nullable: true })
+  checklistTasksOverride!: string | null;
 
   @Column({ name: 'next_due_date', type: DATETIME_COLUMN_TYPE })
   nextDueDate!: Date;

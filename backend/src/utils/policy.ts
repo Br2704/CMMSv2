@@ -1,7 +1,7 @@
 import { forbidden } from './httpError';
 import { normalizeRoleName } from './rbac';
 
-export const SYSTEM_ROLES = ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER', 'USER', 'VENDOR', 'VISITOR'] as const;
+export const SYSTEM_ROLES = ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER', 'USER', 'VENDOR', 'VISITOR', 'SECURITY'] as const;
 
 export type SystemRole = (typeof SYSTEM_ROLES)[number];
 
@@ -32,6 +32,7 @@ const ROLE_PRECEDENCE: Record<string, number> = {
   STORE_USER: 125,
   VIEWER: 110,
   VENDOR: 105,
+  SECURITY: 102,
   VISITOR: 95,
 };
 
@@ -42,6 +43,7 @@ const SUPERADMIN_MANAGED_ROLES = new Set([
   'STORE_USER',
   'VIEWER',
   'USER',
+  'SECURITY',
   'VENDOR',
   'VISITOR',
 ]);
@@ -53,6 +55,7 @@ const ADMIN_MANAGED_ROLES = new Set([
   'STORE_USER',
   'VIEWER',
   'USER',
+  'SECURITY',
   'VENDOR',
   'VISITOR',
 ]);
@@ -85,15 +88,15 @@ export function isRegularRole(roleKey: string): boolean {
 export function visibleRolesForActor(actorRole: string): string[] {
   const role = normalizeRole(actorRole);
   if (role === 'ROOT_ADMIN') {
-    return ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'VENDOR', 'VISITOR', 'USER'];
+    return ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'SECURITY', 'VENDOR', 'VISITOR', 'USER'];
   }
   if (role === 'SUPERADMIN') {
-    return ['MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'VENDOR', 'VISITOR', 'USER'];
+    return ['MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'SECURITY', 'VENDOR', 'VISITOR', 'USER'];
   }
   if (role === 'ADMIN') {
-    return ['MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'USER', 'VENDOR', 'VISITOR'];
+    return ['MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'USER', 'SECURITY', 'VENDOR', 'VISITOR'];
   }
-  return ['USER', 'VENDOR', 'VISITOR'];
+  return ['USER', 'SECURITY', 'VENDOR', 'VISITOR'];
 }
 
 export function allowedRoleTargetsForCreate(actorRole: string): string[] {

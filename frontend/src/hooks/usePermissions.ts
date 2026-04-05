@@ -1,6 +1,6 @@
 import { getStoredAccessToken } from "@/api/http";
 import { NON_ROOT_APP_PAGES } from "@/config/app-page-catalog";
-import { usePermissionsStore, getPermissionsUpdatedEventName } from "@/store/permissions.store";
+import { usePermissionsStore } from "@/store/permissions.store";
 import { useAuthStore } from "@/store/auth.store";
 import { useFeaturesStore } from "@/store/features.store";
 import { useEffect } from "react";
@@ -40,7 +40,6 @@ const MODULE_ALIAS: Record<string, string[]> = {
   "masters.amc-config": ["AMC", "MASTERS", "*"],
   "masters.email-reports": ["REPORTS", "MASTERS", "*"],
   "masters.gates": ["GATES", "MASTERS", "*"],
-  "masters.gate-templates": ["GATES", "MASTERS", "*"],
   "masters.shifts": ["SHIFTS", "MASTERS", "*"],
   "masters.maintenance-teams": ["MASTERS", "*"],
   "masters.workorder-team-mapping": ["MASTERS", "*"],
@@ -61,7 +60,6 @@ const FEATURE_BY_MODULE: Record<string, string> = {
   "masters.esg-config": "ESG",
   "security-gate": "GATE_ENTRY",
   "masters.gates": "GATE_ENTRY",
-  "masters.gate-templates": "GATE_ENTRY",
   benchmarking: "ADVANCED_ANALYTICS",
   "performance-logs": "ADVANCED_ANALYTICS",
   insights: "ADVANCED_ANALYTICS",
@@ -69,23 +67,6 @@ const FEATURE_BY_MODULE: Record<string, string> = {
   diagnostics: "ADVANCED_ANALYTICS",
 };
 
-const ADMIN_BLOCKED_MODULE_IDS = new Set([
-  "PLANTS",
-  "ROLE_ACCESS",
-  "masters.plant",
-  "benchmarking",
-  "BENCHMARKING",
-  "insights",
-  "global-operations",
-  "diagnostics",
-  "INSIGHTS",
-  "GLOBAL-OPERATIONS",
-  "DIAGNOSTICS",
-]);
-const SUPERADMIN_ONLY_MODULE_IDS = new Set([
-  "masters.esg-config",
-  "MASTERS.ESG-CONFIG",
-]);
 const ROOT_ADMIN_ALLOWED_MODULE_IDS = new Set([
   "DASHBOARD",
   "MASTERS",
@@ -124,30 +105,56 @@ function normalizeRole(role: string): string {
   if (normalized === "ROOTADMIN" || normalized === "ROOT_ADMIN") return "ROOT_ADMIN";
   if (normalized === "PLANT_ADMIN" || normalized === "PLANTADMIN") return "ADMIN";
   if (normalized === "ORG_ADMIN" || normalized === "ORGANIZATION_ADMIN") return "ADMIN";
+  if (normalized === "SECURITY_USER") return "SECURITY";
   return normalized;
 }
 
 function policyAllowsModule(moduleId: string, roles: string[]): boolean {
   const normalizedRoles = roles.map(normalizeRole);
   const normalizedModuleId = moduleId.trim();
+  const normalizedModuleLower = normalizedModuleId.toLowerCase();
   const upperModuleId = normalizedModuleId.toUpperCase();
+
+  if (normalizedModuleLower === "security-center" || upperModuleId === "SECURITY-CENTER") {
+    return (
+      normalizedRoles.includes("ROOT_ADMIN") ||
+      normalizedRoles.includes("SUPERADMIN") ||
+      normalizedRoles.includes("ADMIN")
+    );
+  }
 
   if (normalizedRoles.includes("ROOT_ADMIN")) {
     return ROOT_ADMIN_ALLOWED_MODULE_IDS.has(upperModuleId);
-  }
-
-  if (SUPERADMIN_ONLY_MODULE_IDS.has(normalizedModuleId) || SUPERADMIN_ONLY_MODULE_IDS.has(upperModuleId)) {
-    return normalizedRoles.includes("SUPERADMIN");
   }
 
   if (normalizedRoles.includes("SUPERADMIN")) {
     return true;
   }
 
-  if (normalizedRoles.includes("ADMIN") || normalizedRoles.includes("MAINTENANCE_MANAGER")) {
-    if (ADMIN_BLOCKED_MODULE_IDS.has(normalizedModuleId) || ADMIN_BLOCKED_MODULE_IDS.has(upperModuleId)) {
+  if (normalizedRoles.includes("ADMIN")) {
+    if (upperModuleId === "PLANTS" || normalizedModuleLower === "masters.plant") {
       return false;
     }
+    return true;
+  }
+
+  if (normalizedRoles.includes("USER")) {
+    if (upperModuleId === "PLANTS" || normalizedModuleLower === "masters" || normalizedModuleLower.startsWith("masters.")) {
+      return false;
+    }
+    return true;
+  }
+
+  if (normalizedRoles.includes("VENDOR")) {
+    return upperModuleId === "AMC" || normalizedModuleLower === "amc";
+  }
+
+  if (normalizedRoles.includes("SECURITY")) {
+    return upperModuleId === "GATES" || normalizedModuleLower === "security-gate" || normalizedModuleLower === "visitor-experience";
+  }
+
+  if (normalizedRoles.includes("VISITOR")) {
+    return upperModuleId === "GATES" || normalizedModuleLower === "security-gate" || normalizedModuleLower === "visitor-experience";
   }
 
   return true;
@@ -155,9 +162,6 @@ function policyAllowsModule(moduleId: string, roles: string[]): boolean {
 
 export function invalidatePermissionsCache() {
   usePermissionsStore.getState().invalidate();
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(getPermissionsUpdatedEventName()));
-  }
 }
 
 export function usePermissions() {
@@ -195,7 +199,7 @@ export function usePermissions() {
 
   const hasSyncedPermissions = Boolean(permissionsMe);
   const permissionsBootstrapPending = Boolean(user) && Boolean(accessToken) && !hasSyncedPermissions && fetchedAt === null;
-  const userRoles = hasSyncedPermissions ? (permissionsMe?.roles ?? []) : (loading ? (user?.roles ?? []) : []);
+  const userRoles = hasSyncedPermissions ? (permissionsMe?.roles ?? user?.roles ?? []) : (user?.roles ?? []);
   const roleKey = permissionsMe?.roleKey || userRoles[0] || "USER";
 
   const resolveFeatureForModule = (moduleId: string): string | null => {
@@ -211,11 +215,22 @@ export function usePermissions() {
 
   const hasModuleAccess = (moduleId: string, action = "view"): boolean => {
     if (!user) return false;
-    if (!hasFeatureAccess(moduleId)) return false;
-    if (!policyAllowsModule(moduleId, userRoles)) return false;
-
+    const normalizedRoles = userRoles.map((role) => normalizeRole(role));
     const requestedAction = normalizeAction(action);
     const acceptableModuleIds = normalizeModuleIds(moduleId);
+
+    // Super admins are not blocked by feature flags or transient RBAC sync gaps,
+    // except Plant Master create/delete which is intentionally restricted.
+    if (normalizedRoles.includes("SUPERADMIN")) {
+      const isPlantModule = acceptableModuleIds.some((moduleKey) => moduleKey === "PLANTS" || moduleKey === "MASTERS.PLANT");
+      if (isPlantModule && (requestedAction === "CREATE" || requestedAction === "DELETE")) {
+        return false;
+      }
+      return true;
+    }
+
+    if (!hasFeatureAccess(moduleId)) return false;
+    if (!policyAllowsModule(moduleId, userRoles)) return false;
 
     const permissionMap = permissionsMe?.permissions ?? {};
     return acceptableModuleIds.some((moduleKey) => {

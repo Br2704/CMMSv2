@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { ArrowRight, Blocks, Building2, Eye, Factory, Gauge, Image as ImageIcon, Loader2, ScanLine, Search, ShieldCheck, Wrench } from "lucide-react";
+import { Eye, Factory, Gauge, History, Image as ImageIcon, Loader2, QrCode, ScanLine, Search, ShieldCheck, Wrench } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getAsset, getAssetOverview, type Asset, type AssetOverview } from "@/api/assets";
 import { getMasterDataGraph } from "@/api/master-data";
 import { listWorkOrders } from "@/api/workorders";
-import { getAssetQr, type AssetQrData } from "@/api/qr";
+import { getAssetQr, resolveQrToken, type AssetQrData } from "@/api/qr";
 import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -14,9 +14,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { ViewDialog } from "@/components/shared/ViewDialog";
+import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
+import { EnterpriseAssetMindmap } from "@/components/assets/EnterpriseAssetMindmap";
+import { parseQrContent } from "@/mobile/qr";
 import { toast } from "sonner";
 
 interface WorkOrderSummary {
@@ -24,6 +28,14 @@ interface WorkOrderSummary {
   assetId: string | null;
   status: string | null;
 }
+
+interface KpiPreview {
+  mttr: string;
+  mtbf: string;
+  loading: boolean;
+}
+
+type AssetStatusFilter = "all" | "ACTIVE" | "UNDER_MAINTENANCE" | "INACTIVE";
 
 function assetStatusVariant(status?: string) {
   if (status === "ACTIVE") return "active" as const;
@@ -36,15 +48,6 @@ function workOrderStatusVariant(status?: string) {
   if (status === "OPENED" || status === "IN_PROGRESS") return "info" as const;
   if (status === "CLOSED" || status === "COMPLETED") return "active" as const;
   return "default" as const;
-}
-
-function DiagramNode({ title, value }: { title: string; value: string }) {
-  return (
-    <div className="min-w-[210px] rounded-xl border border-border/70 bg-card px-4 py-3">
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{title}</p>
-      <p className="mt-1 truncate text-sm font-semibold text-foreground">{value}</p>
-    </div>
-  );
 }
 
 function formatMinutes(value: string | number | null | undefined) {
@@ -250,13 +253,21 @@ export default function Assets() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, activePlantId } = useAuthStore();
   const userIsSuperAdmin = isSuperAdmin(user);
+  const [activeTab, setActiveTab] = useState<"flow" | "list">("flow");
   const [search, setSearch] = useState("");
   const [selectedPlantId, setSelectedPlantId] = useState("");
   const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
   const [selectedModuleId, setSelectedModuleId] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<AssetStatusFilter>("all");
+  const [flowSearch, setFlowSearch] = useState("");
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [qrBlinkAssetId, setQrBlinkAssetId] = useState<string | null>(null);
+  const [assetKpiPreview, setAssetKpiPreview] = useState<Record<string, KpiPreview>>({});
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
+  const [resolvingQr, setResolvingQr] = useState(false);
+  const kpiPrefetchInFlightRef = useRef<Set<string>>(new Set());
+  const qrBlinkTimeoutRef = useRef<number | null>(null);
   const assetIdFromQuery = searchParams.get("assetId");
   const queryOpenHandledRef = useRef<string | null>(null);
 
@@ -334,6 +345,28 @@ export default function Assets() {
       cancelled = true;
     };
   }, [assetQrQuery.data?.data?.qrPayload]);
+
+  useEffect(() => {
+    return () => {
+      if (qrBlinkTimeoutRef.current) {
+        window.clearTimeout(qrBlinkTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const overview = overviewQuery.data?.data;
+    if (!overview?.asset?.id) return;
+
+    setAssetKpiPreview((current) => ({
+      ...current,
+      [overview.asset.id]: {
+        mttr: formatMinutes(overview.analytics.reliability?.mttrMinutes),
+        mtbf: formatMinutes(overview.analytics.reliability?.mtbfMinutes),
+        loading: false,
+      },
+    }));
+  }, [overviewQuery.data?.data]);
 
   const graph = masterDataQuery.data?.data;
   const plants = useMemo(() => graph?.plants ?? [], [graph?.plants]);
@@ -424,6 +457,7 @@ export default function Assets() {
     queryOpenHandledRef.current = resolvedAsset.id;
     setSelectedAsset(resolvedAsset);
     setIsViewOpen(true);
+    setActiveTab("list");
     if (resolvedAsset.plantId) {
       setSelectedPlantId(resolvedAsset.plantId);
     }
@@ -447,6 +481,127 @@ export default function Assets() {
       visibleAssets.filter((asset) => (workOrdersByAsset.get(asset.id) || []).some((workOrder) => workOrder.status && workOrder.status !== "CLOSED")).length,
     [visibleAssets, workOrdersByAsset],
   );
+
+  const handlePrefetchAssetKpi = async (assetId: string) => {
+    if (!assetId) return;
+    if (kpiPrefetchInFlightRef.current.has(assetId)) return;
+    if (assetKpiPreview[assetId] && !assetKpiPreview[assetId].loading) return;
+
+    kpiPrefetchInFlightRef.current.add(assetId);
+    setAssetKpiPreview((current) => {
+      const previous = current[assetId];
+      if (previous && !previous.loading) return current;
+      return {
+        ...current,
+        [assetId]: {
+          mttr: previous?.mttr || "-",
+          mtbf: previous?.mtbf || "-",
+          loading: true,
+        },
+      };
+    });
+
+    try {
+      const response = await getAssetOverview(assetId);
+      setAssetKpiPreview((current) => ({
+        ...current,
+        [assetId]: {
+          mttr: formatMinutes(response.data.analytics.reliability?.mttrMinutes),
+          mtbf: formatMinutes(response.data.analytics.reliability?.mtbfMinutes),
+          loading: false,
+        },
+      }));
+    } catch {
+      setAssetKpiPreview((current) => ({
+        ...current,
+        [assetId]: {
+          mttr: current[assetId]?.mttr || "-",
+          mtbf: current[assetId]?.mtbf || "-",
+          loading: false,
+        },
+      }));
+    } finally {
+      kpiPrefetchInFlightRef.current.delete(assetId);
+    }
+  };
+
+  const openAssetFromContext = async (
+    assetId: string,
+    options?: {
+      openDialog?: boolean;
+      targetTab?: "flow" | "list";
+      blinkInMindmap?: boolean;
+    },
+  ) => {
+    let resolvedAsset = assets.find((asset) => asset.id === assetId) || null;
+    if (!resolvedAsset) {
+      const response = await getAsset(assetId);
+      resolvedAsset = response.data;
+    }
+
+    if (!resolvedAsset) {
+      throw new Error("Machine not found for this QR");
+    }
+
+    if (resolvedAsset.plantId) {
+      setSelectedPlantId(resolvedAsset.plantId);
+    }
+    setSelectedDepartmentId(resolvedAsset.departmentId || "");
+    setSelectedModuleId(resolvedAsset.moduleId || "");
+    setSelectedAsset(resolvedAsset);
+
+    const openDialog = options?.openDialog ?? true;
+    const targetTab = options?.targetTab ?? "list";
+
+    setActiveTab(targetTab);
+    setIsViewOpen(openDialog);
+
+    if (options?.blinkInMindmap) {
+      setQrBlinkAssetId(resolvedAsset.id);
+      if (qrBlinkTimeoutRef.current) {
+        window.clearTimeout(qrBlinkTimeoutRef.current);
+      }
+      qrBlinkTimeoutRef.current = window.setTimeout(() => {
+        setQrBlinkAssetId((current) => (current === resolvedAsset?.id ? null : current));
+      }, 2200);
+    }
+
+    return resolvedAsset;
+  };
+
+  const handleAssetQrDecoded = async (rawValue: string) => {
+    setResolvingQr(true);
+    try {
+      const parsed = parseQrContent(rawValue);
+      let scannedMachineId = parsed.machineId || "";
+
+      if (!scannedMachineId && parsed.token) {
+        const resolved = await resolveQrToken(parsed.token);
+        scannedMachineId = resolved.data.asset?.id || "";
+      }
+
+      if (!scannedMachineId) {
+        throw new Error("Invalid machine QR. Please rescan.");
+      }
+
+      const locatedAsset = await openAssetFromContext(scannedMachineId, {
+        openDialog: false,
+        targetTab: "flow",
+        blinkInMindmap: true,
+      });
+      setFlowSearch(`${locatedAsset.code} ${locatedAsset.name}`);
+      toast.success("Machine located in enterprise mindmap");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Unable to resolve machine QR");
+      setIsQrScannerOpen(true);
+    } finally {
+      setResolvingQr(false);
+    }
+  };
+
+  const openWorkOrderHistory = (asset: Asset) => {
+    navigate(`/work-orders?assetId=${asset.id}`);
+  };
 
   const assetColumns = [
     {
@@ -476,11 +631,16 @@ export default function Assets() {
     },
     {
       key: "actions",
-      header: "View",
+      header: "Actions",
       render: (asset: Asset) => (
-        <Button variant="ghost" size="icon" onClick={() => { setSelectedAsset(asset); setIsViewOpen(true); }} aria-label={`View ${asset.name}`}>
-          <Eye className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={() => { setSelectedAsset(asset); setIsViewOpen(true); }} aria-label={`View ${asset.name}`}>
+            <Eye className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => openWorkOrderHistory(asset)} aria-label={`Work order history for ${asset.name}`}>
+            <History className="h-4 w-4" />
+          </Button>
+        </div>
       ),
     },
   ];
@@ -501,102 +661,196 @@ export default function Assets() {
 
   return (
     <PageShell className="space-y-4 sm:space-y-6">
-      <PageHeader title="Assets" subtitle="Integrated machine hierarchy with maintenance, AMC, calibration, and analytics context" />
+      <PageHeader
+        title="Assets"
+        subtitle="Advanced machine hierarchy and QR-assisted machine lookup"
+        actions={
+          <Button variant="outline" className="gap-2" onClick={() => setIsQrScannerOpen(true)} disabled={resolvingQr}>
+            <QrCode className="h-4 w-4" />
+            {resolvingQr ? "Resolving QR..." : "QR Scan"}
+          </Button>
+        }
+      />
 
-      <Card className="border-border/70 bg-gradient-to-br from-card to-muted/30 shadow-card">
-        <CardContent className="space-y-4 pt-5">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <div className="xl:col-span-2">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Search machine code, name, model, serial..." />
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "flow" | "list")} className="space-y-4">
+        <TabsList className="grid h-auto w-full grid-cols-2">
+          <TabsTrigger value="flow">Machine Flow Chart</TabsTrigger>
+          <TabsTrigger value="list">Machine Directory</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="flow" className="space-y-4">
+          <Card className="border-border/70 bg-gradient-to-br from-card to-muted/30 shadow-card">
+            <CardContent className="pt-5">
+              <div className="flex flex-wrap items-center gap-2">
+                {userIsSuperAdmin ? (
+                  <select aria-label="Flow chart plant filter" className="h-9 min-w-[220px] rounded-md border border-input bg-background px-3 text-sm" value={selectedPlantId} onChange={(event) => {
+                    setSelectedPlantId(event.target.value);
+                    setSelectedDepartmentId("");
+                    setSelectedModuleId("");
+                  }}>
+                    <option value="">All Plants</option>
+                    {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode || plant.plantName}</option>)}
+                  </select>
+                ) : (
+                  <div className="flex h-9 min-w-[220px] items-center rounded-md border border-input bg-background px-3 text-sm">
+                    {selectedPlant ? (selectedPlant.plantCode || selectedPlant.plantName) : "Plant Not Assigned"}
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-9"
+                  onClick={() => {
+                    setSelectedDepartmentId("");
+                    setSelectedModuleId("");
+                    setFlowSearch("");
+                    setQrBlinkAssetId(null);
+                  }}
+                >
+                  Reset
+                </Button>
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {userIsSuperAdmin ? (
-              <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={selectedPlantId} onChange={(event) => setSelectedPlantId(event.target.value)}>
-                <option value="">All Plants</option>
-                {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode}</option>)}
-              </select>
-            ) : null}
+          <EnterpriseAssetMindmap
+            plants={plants}
+            departments={departments}
+            modules={modules}
+            assets={assets.filter((asset) => asset.isActive)}
+            workOrdersByAsset={workOrdersByAsset}
+            selectedPlantId={selectedPlantId}
+            selectedDepartmentId={selectedDepartmentId}
+            selectedModuleId={selectedModuleId}
+            selectedAssetId={selectedAsset?.id || null}
+            searchTerm={flowSearch}
+            statusFilter="all"
+            user={user}
+            userIsSuperAdmin={userIsSuperAdmin}
+            blinkAssetId={qrBlinkAssetId}
+            assetKpiPreview={assetKpiPreview}
+            onSearchChange={setFlowSearch}
+            onSelectPlant={(plantId) => {
+              setSelectedPlantId(plantId);
+              setSelectedDepartmentId("");
+              setSelectedModuleId("");
+            }}
+            onSelectDepartment={(departmentId) => {
+              setSelectedDepartmentId(departmentId);
+              setSelectedModuleId("");
+            }}
+            onSelectModule={setSelectedModuleId}
+            onSelectAsset={(asset) => {
+              setSelectedAsset(asset);
+              setIsViewOpen(true);
+              setActiveTab("flow");
+            }}
+            onPrefetchAssetKpi={(assetId) => {
+              void handlePrefetchAssetKpi(assetId);
+            }}
+          />
+        </TabsContent>
 
-            <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={selectedDepartmentId} onChange={(event) => setSelectedDepartmentId(event.target.value)}>
-              <option value="">All Departments</option>
-              {departmentsForPlant.map((department) => <option key={department.id} value={department.id}>{department.code} - {department.name}</option>)}
-            </select>
+        <TabsContent value="list" className="space-y-4">
+          <Card className="border-border/70 bg-gradient-to-br from-card to-muted/30 shadow-card">
+            <CardContent className="space-y-4 pt-5">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <div className="xl:col-span-2">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Search machine code, name, model, serial..." />
+                  </div>
+                </div>
 
-            <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={selectedModuleId} onChange={(event) => setSelectedModuleId(event.target.value)}>
-              <option value="">All Modules</option>
-              {modulesForScope.map((module) => <option key={module.id} value={module.id}>{module.code ? `${module.code} - ` : ""}{module.name}</option>)}
-            </select>
+                {userIsSuperAdmin ? (
+                  <select aria-label="Machine list plant filter" className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={selectedPlantId} onChange={(event) => {
+                    setSelectedPlantId(event.target.value);
+                    setSelectedDepartmentId("");
+                    setSelectedModuleId("");
+                  }}>
+                    <option value="">All Plants</option>
+                    {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode}</option>)}
+                  </select>
+                ) : null}
 
-            <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-              <option value="all">All Status</option>
-              <option value="ACTIVE">Active</option>
-              <option value="UNDER_MAINTENANCE">Under Maintenance</option>
-              <option value="INACTIVE">Inactive</option>
-            </select>
-          </div>
+                <select aria-label="Machine list department filter" className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={selectedDepartmentId} onChange={(event) => {
+                  setSelectedDepartmentId(event.target.value);
+                  setSelectedModuleId("");
+                }}>
+                  <option value="">All Departments</option>
+                  {departmentsForPlant.map((department) => <option key={department.id} value={department.id}>{department.code} - {department.name}</option>)}
+                </select>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Card className="border-border/60"><CardContent className="pt-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Machines In Scope</p><p className="mt-1 text-2xl font-bold">{visibleAssets.length}</p></CardContent></Card>
-            <Card className="border-border/60"><CardContent className="pt-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">With Open Work Orders</p><p className="mt-1 text-2xl font-bold">{assetsWithOpenWo}</p></CardContent></Card>
-            <Card className="border-border/60"><CardContent className="pt-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Hierarchy Path</p><p className="mt-1 text-sm font-medium">{userIsSuperAdmin && !selectedPlantId ? "ALL-PLANTS" : selectedPlant?.plantCode || "-"} / {selectedDepartment?.code || "ALL-DEPT"} / {selectedModule?.code || "ALL-MOD"}</p></CardContent></Card>
-          </div>
-        </CardContent>
-      </Card>
+                <select aria-label="Machine list module filter" className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={selectedModuleId} onChange={(event) => setSelectedModuleId(event.target.value)}>
+                  <option value="">All Modules</option>
+                  {modulesForScope.map((module) => <option key={module.id} value={module.id}>{module.code ? `${module.code} - ` : ""}{module.name}</option>)}
+                </select>
 
-      <Card className="shadow-card">
-        <CardHeader><CardTitle className="text-base sm:text-lg">Single Line Diagram</CardTitle></CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto pb-1">
-            <div className="flex min-w-max items-center gap-2">
-              <DiagramNode title="Plant" value={userIsSuperAdmin && !selectedPlantId ? "All Plants" : selectedPlant ? `${selectedPlant.plantCode} - ${selectedPlant.plantName}` : "No Plant"} />
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-              <DiagramNode title="Department" value={selectedDepartment ? `${selectedDepartment.code} - ${selectedDepartment.name}` : "All Departments"} />
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-              <DiagramNode title="Module" value={selectedModule ? `${selectedModule.code ? `${selectedModule.code} - ` : ""}${selectedModule.name}` : "All Modules"} />
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-              <DiagramNode title="Machine Nodes" value={`${visibleAssets.length} machine(s)`} />
-            </div>
-          </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-4">
-            <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm"><Factory className="h-4 w-4 text-primary" /><span>{userIsSuperAdmin && !selectedPlantId ? "ALL-PLANTS" : selectedPlant ? selectedPlant.plantCode : "No Plant"}</span></div>
-            <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm"><Building2 className="h-4 w-4 text-primary" /><span>{selectedDepartment ? selectedDepartment.code : "All Departments"}</span></div>
-            <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm"><Blocks className="h-4 w-4 text-primary" /><span>{selectedModule ? selectedModule.code || selectedModule.name : "All Modules"}</span></div>
-            <div className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm"><Wrench className="h-4 w-4 text-primary" /><span>{visibleAssets.length} Machines</span></div>
-          </div>
-        </CardContent>
-      </Card>
+                <select aria-label="Machine list status filter" className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as AssetStatusFilter)}>
+                  <option value="all">All Status</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="UNDER_MAINTENANCE">Under Maintenance</option>
+                  <option value="INACTIVE">Inactive</option>
+                </select>
+              </div>
 
-      <Card className="shadow-card">
-        <CardHeader><CardTitle className="text-base sm:text-lg">Machines List</CardTitle></CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-          ) : (
-            <ResponsiveTable
-              data={visibleAssets}
-              columns={assetColumns}
-              keyExtractor={(asset) => asset.id}
-              emptyMessage="No machines found for the selected hierarchy and filters."
-              mobileCard={(asset) => {
-                const department = departments.find((item) => item.id === asset.departmentId);
-                const module = modules.find((item) => item.id === asset.moduleId);
-                return (
-                  <MobileCard onView={() => { setSelectedAsset(asset); setIsViewOpen(true); }}>
-                    <MobileCardHeader title={asset.code} subtitle={asset.name} badge={<StatusBadge variant={assetStatusVariant(asset.status)}>{asset.status.replace(/_/g, " ")}</StatusBadge>} />
-                    <MobileCardRow label="Department" value={department ? department.code : "-"} />
-                    <MobileCardRow label="Module" value={module ? module.code || module.name : "-"} />
-                    <MobileCardRow label="Type" value={asset.assetType || "-"} />
-                    <MobileCardRow label="WO History" value={(workOrdersByAsset.get(asset.id) || []).length} />
-                  </MobileCard>
-                );
-              }}
-            />
-          )}
-        </CardContent>
-      </Card>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Card className="border-border/60"><CardContent className="pt-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Machines In Scope</p><p className="mt-1 text-2xl font-bold">{visibleAssets.length}</p></CardContent></Card>
+                <Card className="border-border/60"><CardContent className="pt-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">With Open Work Orders</p><p className="mt-1 text-2xl font-bold">{assetsWithOpenWo}</p></CardContent></Card>
+                <Card className="border-border/60"><CardContent className="pt-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Hierarchy Path</p><p className="mt-1 text-sm font-medium">{userIsSuperAdmin && !selectedPlantId ? "ALL-PLANTS" : selectedPlant?.plantCode || "-"} / {selectedDepartment?.code || "ALL-DEPT"} / {selectedModule?.code || "ALL-MOD"}</p></CardContent></Card>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-card">
+            <CardHeader><CardTitle className="text-base sm:text-lg">Machines List</CardTitle></CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+              ) : (
+                <ResponsiveTable
+                  data={visibleAssets}
+                  columns={assetColumns}
+                  keyExtractor={(asset) => asset.id}
+                  emptyMessage="No machines found for the selected hierarchy and filters."
+                  mobileCard={(asset) => {
+                    const department = departments.find((item) => item.id === asset.departmentId);
+                    const module = modules.find((item) => item.id === asset.moduleId);
+                    return (
+                      <MobileCard
+                        onView={() => { setSelectedAsset(asset); setIsViewOpen(true); }}
+                        actions={[
+                          {
+                            label: "Work Order History",
+                            icon: <History className="mr-2 h-4 w-4" />,
+                            onClick: () => openWorkOrderHistory(asset),
+                          },
+                        ]}
+                      >
+                        <MobileCardHeader title={asset.code} subtitle={asset.name} badge={<StatusBadge variant={assetStatusVariant(asset.status)}>{asset.status.replace(/_/g, " ")}</StatusBadge>} />
+                        <MobileCardRow label="Department" value={department ? department.code : "-"} />
+                        <MobileCardRow label="Module" value={module ? module.code || module.name : "-"} />
+                        <MobileCardRow label="Type" value={asset.assetType || "-"} />
+                        <MobileCardRow label="WO History" value={(workOrdersByAsset.get(asset.id) || []).length} />
+                      </MobileCard>
+                    );
+                  }}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <MobileQrScannerDialog
+        open={isQrScannerOpen}
+        onOpenChange={setIsQrScannerOpen}
+        title="Scan Machine QR"
+        description="Scan a machine QR code to locate and highlight that machine in the enterprise mindmap."
+        onDecoded={(value) => void handleAssetQrDecoded(value)}
+      />
 
       <ViewDialog
         open={isViewOpen}

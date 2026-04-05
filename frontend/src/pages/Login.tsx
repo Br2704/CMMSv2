@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { buildBrandingLogoUrlByCode, buildBrandingManifestUrl } from "@/api/branding";
+import { buildBrandingFaviconUrlByCode, buildBrandingLogoUrlByCode, buildBrandingManifestUrl } from "@/api/branding";
 import { ApiError, clearSessionBootstrapHint, clearStoredAccessToken } from "@/api/http";
 import { login } from "@/api/auth";
 import { useAuthStore, fetchUserProfile, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
@@ -13,6 +13,22 @@ import { Eye, EyeOff, LogIn, Factory, ShieldCheck, Building2 } from "lucide-reac
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import tamoptixLogo from "@/assets/tamoptix-logo.png";
+
+type LoginBrand = {
+  name: string;
+  code: string | null;
+  title: string;
+  themeColor: string;
+};
+
+function resolveLoginBrand(): LoginBrand {
+  return {
+    name: "JK Fenner",
+    code: "JKF",
+    title: "JK Fenner CMMS",
+    themeColor: "#0f766e",
+  };
+}
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -31,11 +47,10 @@ export default function Login() {
   const { setSession, setUser, setActivePlant } = useAuthStore();
   const resetBranding = useBrandingStore((state) => state.reset);
   const primeBranding = useBrandingStore((state) => state.primeFromSeed);
-  const browserTitle = useBrandingStore((state) => state.browserTitle);
-  const brandColor = useBrandingStore((state) => state.brandColor);
   const { toast } = useToast();
-  const localFavicon = "/icons/icon-192x192.png";
-  const jkFennerLogo = buildBrandingLogoUrlByCode("JKF", null, 512);
+  const localFavicon = useMemo(() => buildBrandingFaviconUrlByCode("JKF", null, 192), []);
+  const loginBrand = useMemo(() => resolveLoginBrand(), []);
+  const loginOrganizationLogo = useMemo(() => buildBrandingLogoUrlByCode("JKF", null, 512), []);
   const returnTo = useMemo(() => {
     const candidate = searchParams.get("returnTo") || "";
     if (!candidate.startsWith("/") || candidate.startsWith("//")) {
@@ -44,6 +59,15 @@ export default function Login() {
     return candidate;
   }, [searchParams]);
 
+  const resolvePostLoginPath = (targetUser: Parameters<typeof isSuperAdmin>[0]): string => {
+    if (!returnTo) return "/";
+    const isRootOnlyPath = returnTo.startsWith("/root/");
+    if (isRootOnlyPath && !isRootAdmin(targetUser)) {
+      return "/";
+    }
+    return returnTo;
+  };
+
   useEffect(() => {
     resetBranding();
   }, [resetBranding]);
@@ -51,7 +75,7 @@ export default function Login() {
   useLayoutEffect(() => {
     if (typeof document === "undefined") return;
 
-    const resolvedTitle = browserTitle || "JK Fenner CMMS";
+    const resolvedTitle = loginBrand.title;
     document.title = resolvedTitle;
 
     const updateMetaContent = (selector: string, value: string) => {
@@ -64,8 +88,8 @@ export default function Login() {
     updateMetaContent('meta[name="application-name"]', resolvedTitle);
     updateMetaContent('meta[name="apple-mobile-web-app-title"]', resolvedTitle);
     updateMetaContent('meta[name="title"]', resolvedTitle);
-    updateMetaContent('meta[name="theme-color"]', brandColor || "#0f172a");
-    updateMetaContent('meta[name="msapplication-TileColor"]', brandColor || "#0f172a");
+    updateMetaContent('meta[name="theme-color"]', loginBrand.themeColor);
+    updateMetaContent('meta[name="msapplication-TileColor"]', loginBrand.themeColor);
 
     const ensureLink = (rel: string, id?: string) => {
       let element = id
@@ -85,7 +109,7 @@ export default function Login() {
     ensureLink("shortcut icon");
     ensureLink("apple-touch-icon", "dynamic-apple-touch-icon").href = localFavicon;
     ensureLink("manifest", "dynamic-manifest-link").href = buildBrandingManifestUrl(null, null);
-  }, [brandColor, browserTitle]);
+  }, [loginBrand]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,7 +165,7 @@ export default function Login() {
         setUser(profile);
         setActivePlant(null, null, null);
         toast({ title: "Welcome!", description: "You have global access to all plants." });
-        navigate(returnTo || "/");
+        navigate(resolvePostLoginPath(profile));
         setIsLoading(false);
         return;
       }
@@ -168,7 +192,7 @@ export default function Login() {
       setUser(profile);
       setActivePlant(profile.plantId, profile.plantCode, profile.plantName);
       toast({ title: "Welcome back!", description: `Logged in to ${profile.plantName || "assigned plant"}` });
-      navigate(returnTo || "/");
+      navigate(resolvePostLoginPath(profile));
     } catch (err) {
       if (err instanceof ApiError) {
         const payload = (err.payload ?? {}) as {
@@ -220,7 +244,7 @@ export default function Login() {
               </span>
               <span className="inline-flex items-center gap-2 font-semibold">
                 <Building2 className="h-4 w-4 text-slate-500" />
-                JK Fenner
+                {loginBrand.name}
               </span>
             </div>
           </div>
@@ -235,12 +259,12 @@ export default function Login() {
               <div className="w-full max-w-sm space-y-4">
                 <div className="rounded-3xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 px-6 py-5 shadow-sm">
                   <img
-                    src={jkFennerLogo}
-                    alt="JK Fenner Logo"
+                    src={loginOrganizationLogo}
+                    alt={`${loginBrand.name} Logo`}
                     className="mx-auto h-16 w-auto object-contain"
                     onError={(event) => {
                       event.currentTarget.onerror = null;
-                      event.currentTarget.src = tamoptixLogo;
+                      event.currentTarget.src = "/icons/jkfenner-logo.svg";
                     }}
                   />
                 </div>
@@ -418,11 +442,11 @@ export default function Login() {
               transition={{ delay: 0.5 }}
             >
               <div className="flex flex-col items-center gap-3 text-center">
+                <img src={tamoptixLogo} alt="TamOptiX" className="h-8 w-auto object-contain" />
                 <div className="flex items-center gap-3">
-                  <img src={tamoptixLogo} alt="TamOptiX Logo" className="h-8 w-auto object-contain" />
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Powered by TamOptiX</p>
-                    <p className="text-sm text-slate-600">Smart maintenance technology for connected plants.</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Organization Aware Login</p>
+                    <p className="text-sm text-slate-600">Sign in to access your organization's CMMS workspace.</p>
                   </div>
                 </div>
                 <p className="text-xs text-slate-500">Computerized Maintenance Management System</p>

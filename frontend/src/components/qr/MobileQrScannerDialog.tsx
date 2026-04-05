@@ -45,12 +45,69 @@ async function requestCameraAccess() {
     throw new Error("This browser does not support camera access.");
   }
 
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: { facingMode: { ideal: "environment" } },
-  });
+  let stream: MediaStream | null = null;
 
-  stream.getTracks().forEach((track) => track.stop());
+  try {
+    // Request generic video permission first so device-specific constraints do not fail early.
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: true,
+    });
+  } finally {
+    stream?.getTracks().forEach((track) => track.stop());
+  }
+
+  await new Promise((resolve) => window.setTimeout(resolve, 260));
+}
+
+async function startScannerWithFallback(
+  elementId: string,
+  onDecoded: (decodedText: string) => void,
+) {
+  const config = { fps: 10, qrbox: { width: 260, height: 260 }, aspectRatio: 1 };
+
+  const cameras = await Html5Qrcode.getCameras().catch(() => []);
+  const preferredCameraIds = cameras
+    .slice()
+    .sort((left, right) => {
+      const leftScore = /(back|rear|environment)/i.test(left.label) ? 1 : 0;
+      const rightScore = /(back|rear|environment)/i.test(right.label) ? 1 : 0;
+      return rightScore - leftScore;
+    })
+    .map((camera) => camera.id);
+
+  const attempts: Array<string | { facingMode: string | { exact?: string; ideal?: string } }> = [
+    ...preferredCameraIds,
+    { facingMode: { ideal: "environment" } },
+    { facingMode: "environment" },
+    { facingMode: "user" },
+  ];
+
+  let lastError: unknown = null;
+
+  for (const attempt of attempts) {
+    const scanner = new Html5Qrcode(elementId, {
+      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+      verbose: false,
+    });
+
+    try {
+      await scanner.start(
+        attempt,
+        config,
+        onDecoded,
+        () => {
+          // Ignore frame-level decode errors.
+        },
+      );
+      return scanner;
+    } catch (error) {
+      lastError = error;
+      await disposeScanner(scanner);
+    }
+  }
+
+  throw lastError ?? new Error("No camera could be started for QR scanning.");
 }
 
 function getScannerErrorMessage(error: unknown) {
@@ -59,17 +116,30 @@ function getScannerErrorMessage(error: unknown) {
   if (message.includes("Permission denied") || message.includes("NotAllowedError")) {
     return "Camera permission was denied. Allow camera access in your browser and try again.";
   }
+  if (message.includes("Permission dismissed")) {
+    return "Camera permission was dismissed. Allow access and retry.";
+  }
   if (message.includes("NotFoundError") || message.includes("Requested device not found")) {
     return "No camera was found on this device.";
   }
   if (message.includes("NotReadableError")) {
     return "The camera is already in use by another app or browser tab.";
   }
+  if (message.includes("OverconstrainedError") || message.includes("constraint")) {
+    return "The preferred camera mode is not available. Try again to switch camera source.";
+  }
+  if (message.includes("Could not start video source") || message.includes("AbortError")) {
+    return "Camera was blocked while starting. Close other camera apps and retry.";
+  }
   if (message.includes("HTTPS or localhost")) {
     return message;
   }
   if (message.includes("still loading")) {
     return message;
+  }
+
+  if (message.trim()) {
+    return `Unable to access the camera right now. ${message}`;
   }
 
   return "Unable to access the camera right now. Check browser permission and try again.";
@@ -135,25 +205,13 @@ export function MobileQrScannerDialog({
         if (disposed) return;
 
         setStatus("starting");
-        const scanner = new Html5Qrcode(elementId, {
-          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-          verbose: false,
+        const scanner = await startScannerWithFallback(elementId, (decodedText) => {
+          if (decodedRef.current) return;
+          decodedRef.current = true;
+          onDecodedRef.current(decodedText);
+          onOpenChangeRef.current(false);
         });
         scannerRef.current = scanner;
-
-        await scanner.start(
-          { facingMode: { ideal: "environment" } },
-          { fps: 10, qrbox: { width: 260, height: 260 }, aspectRatio: 1 },
-          (decodedText) => {
-            if (decodedRef.current) return;
-            decodedRef.current = true;
-            onDecodedRef.current(decodedText);
-            onOpenChangeRef.current(false);
-          },
-          () => {
-            // Ignore frame-level decode errors.
-          },
-        );
 
         if (!disposed) {
           setStatus("ready");

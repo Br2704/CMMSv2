@@ -85,9 +85,6 @@ export class WorkOrderEntity extends TimestampedUuidEntity {
   @Column({ name: 'labor_hours', type: 'decimal', precision: 10, scale: 2, default: 0 })
   laborHours!: string;
 
-  @Column({ name: 'estimated_cost', type: 'decimal', precision: 12, scale: 2, default: 0 })
-  estimatedCost!: string;
-
   @Column({ name: 'actual_cost', type: 'decimal', precision: 12, scale: 2, default: 0 })
   actualCost!: string;
 
@@ -109,14 +106,41 @@ export class WorkOrderEntity extends TimestampedUuidEntity {
   @Column({ type: 'simple-json', nullable: true })
   attachments!: Array<Record<string, unknown>> | null;
 
-  @Column({ name: 'voice_notes', type: 'simple-json', nullable: true })
-  voiceNotes!: Array<Record<string, unknown>> | null;
-
   @Column({ name: 'safety_checklist', type: 'simple-json', nullable: true })
   safetyChecklist!: Record<string, unknown> | null;
 
   @Column({ name: 'technician_verification', type: 'simple-json', nullable: true })
   technicianVerification!: Record<string, unknown> | null;
+
+  @Column({ name: 'submitted_for_approval_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  submittedForApprovalAt!: Date | null;
+
+  @Column({ name: 'submitted_for_approval_by', type: 'uuid', nullable: true })
+  submittedForApprovalBy!: string | null;
+
+  @Column({ name: 'approved_by', type: 'uuid', nullable: true })
+  approvedBy!: string | null;
+
+  @Column({ name: 'approved_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  approvedAt!: Date | null;
+
+  @Column({ name: 'rejected_by', type: 'uuid', nullable: true })
+  rejectedBy!: string | null;
+
+  @Column({ name: 'rejected_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  rejectedAt!: Date | null;
+
+  @Column({ name: 'approval_comments', type: 'text', nullable: true })
+  approvalComments!: string | null;
+
+  @Column({ name: 'admin_override_by', type: 'uuid', nullable: true })
+  adminOverrideBy!: string | null;
+
+  @Column({ name: 'admin_override_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  adminOverrideAt!: Date | null;
+
+  @Column({ name: 'admin_override_reason', type: 'text', nullable: true })
+  adminOverrideReason!: string | null;
 
   @Column({ name: 'follow_up_required', type: 'boolean', default: false })
   followUpRequired!: boolean;
@@ -138,6 +162,22 @@ export class WorkOrderEntity extends TimestampedUuidEntity {
   @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'assigned_to' })
   assignedToUser!: UserEntity | null;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'submitted_for_approval_by' })
+  submittedForApprovalByUser!: UserEntity | null;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'approved_by' })
+  approvedByUser!: UserEntity | null;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'rejected_by' })
+  rejectedByUser!: UserEntity | null;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'admin_override_by' })
+  adminOverrideByUser!: UserEntity | null;
 
   @ManyToOne(() => PlantEntity, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'plant_id' })
