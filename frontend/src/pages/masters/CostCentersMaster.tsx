@@ -40,6 +40,7 @@ export default function CostCentersMaster() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedPlant, setSelectedPlant] = useState<string>(canSelectPlant ? (defaultPlantId || "") : defaultPlantId);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -50,11 +51,16 @@ export default function CostCentersMaster() {
   const fetchCostCentersList = async () => {
     setLoading(true);
     try {
+      const effectivePlantId = canSelectPlant ? selectedPlant || undefined : defaultPlantId || undefined;
+      if (canSelectPlant && !effectivePlantId) {
+        setCostCenters([]);
+        return;
+      }
       const response = await listCostCenters({
         page: 1,
         limit: 100,
         search: searchQuery || undefined,
-        plantId: canSelectPlant ? undefined : defaultPlantId || undefined,
+        plantId: effectivePlantId,
       });
       setCostCenters(response.data);
     } catch (error: any) {
@@ -66,10 +72,15 @@ export default function CostCentersMaster() {
 
   const fetchDepartmentsList = async (plantId?: string) => {
     try {
+      const effectivePlantId = plantId || (canSelectPlant ? selectedPlant || undefined : defaultPlantId || undefined);
+      if (canSelectPlant && !effectivePlantId) {
+        setDepartments([]);
+        return;
+      }
       const response = await listDepartments({
         page: 1,
         limit: 100,
-        plantId: plantId || (canSelectPlant ? undefined : defaultPlantId || undefined),
+        plantId: effectivePlantId,
       });
       setDepartments(response.data);
     } catch (error: any) {
@@ -79,11 +90,11 @@ export default function CostCentersMaster() {
 
   useEffect(() => {
     fetchCostCentersList();
-  }, [searchQuery, defaultPlantId, canSelectPlant]);
+  }, [searchQuery, selectedPlant, defaultPlantId, canSelectPlant]);
 
   useEffect(() => {
     fetchPlants();
-    fetchDepartmentsList(canSelectPlant ? undefined : defaultPlantId);
+    fetchDepartmentsList(canSelectPlant ? selectedPlant : defaultPlantId);
   }, []);
 
   const filtered = useMemo(() => costCenters, [costCenters]);
@@ -103,7 +114,7 @@ export default function CostCentersMaster() {
   };
 
   const handleAdd = () => {
-    setFormData({ ...emptyForm, plantId: canSelectPlant ? "" : defaultPlantId });
+    setFormData({ ...emptyForm, plantId: canSelectPlant ? selectedPlant : defaultPlantId });
     setSelectedCC(null);
     setIsEditing(false);
     setIsFormOpen(true);
@@ -228,9 +239,25 @@ export default function CostCentersMaster() {
               <Wallet className="h-5 w-5 text-primary" />
               Cost Centers ({filtered.length})
             </CardTitle>
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+              {canSelectPlant && (
+                <SelectField
+                  label=""
+                  value={selectedPlant}
+                  onChange={(value) => {
+                    setSelectedPlant(value);
+                    setFormData((prev) => ({ ...prev, plantId: value, departmentId: "" }));
+                    void fetchDepartmentsList(value);
+                  }}
+                  options={plantsOptions}
+                  placeholder="Select plant"
+                  className="w-full sm:w-[180px]"
+                />
+              )}
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input placeholder="Search..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -239,6 +266,8 @@ export default function CostCentersMaster() {
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
+          ) : canSelectPlant && !selectedPlant ? (
+            <div className="text-center py-12 text-muted-foreground">Select a plant to view cost center data.</div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">No cost centers found.</div>
           ) : (
@@ -264,7 +293,7 @@ export default function CostCentersMaster() {
           {canSelectPlant ? (
             <SelectField label="Plant" value={formData.plantId} onChange={handlePlantChange} options={plantsOptions} placeholder="Select plant" />
           ) : (
-            <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => {}} disabled />
+            <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => { }} disabled />
           )}
           <SelectField label="Department" value={formData.departmentId} onChange={(value) => setFormData({ ...formData, departmentId: value })} options={deptOptions} placeholder="Select" hint={deptOptions.length === 0 ? "No departments for selected plant." : undefined} />
           <SelectField label="Status" value={formData.isActive ? "Active" : "Inactive"} onChange={(value) => setFormData({ ...formData, isActive: value === "Active" })} options={[{ value: "Active", label: "Active" }, { value: "Inactive", label: "Inactive" }]} />

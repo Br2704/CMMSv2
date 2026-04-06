@@ -38,6 +38,7 @@ import { getAsset, listAssets } from "@/api/assets";
 import { listSpareItems, type SpareItem } from "@/api/inventory";
 import { listWorkOrderMasters, type WorkOrderMaster, type WorkOrderMasterOptionType } from "@/api/workOrderMasters";
 import { listWorkOrderTeamMappings, type WorkOrderTeamMapping } from "@/api/workOrderTeamMappings";
+import { listMaintenanceTeams } from "@/api/maintenanceTeams";
 import {
   approveWorkOrder,
   createWorkOrder,
@@ -120,14 +121,12 @@ const getInitialRaiseFormData = (plantId = "") => ({
 const EMPTY_CLOSE_DATA = {
   root_cause: "",
   action_taken: "",
-  downtime_minutes: "0",
   failure_code: "",
-  labor_hours: "0",
-  actual_cost: "0",
   parts_replaced: "",
   operator_fault: false,
   warranty_claim: false,
   follow_up_required: false,
+  follow_up_team_id: "",
   follow_up_notes: "",
   remarks: "",
 };
@@ -820,11 +819,48 @@ export default function WorkOrders() {
     [closingWO?.plant_id, workOrderMasters],
   );
 
+  const { data: closeFollowUpTeams = [] } = useQuery({
+    queryKey: ["wo_close_follow_up_teams", closingWO?.plant_id || "none"],
+    enabled: Boolean(closingWO?.plant_id),
+    queryFn: async () => {
+      const response = await listMaintenanceTeams({
+        plantId: closingWO?.plant_id || undefined,
+        page: 1,
+        limit: 500,
+        includeInactive: false,
+      });
+      return (response.data || []).filter((team) => team.isActive);
+    },
+  });
+
+  const closeFollowUpTeamOptions = useMemo(
+    () =>
+      closeFollowUpTeams
+        .slice()
+        .sort((left, right) => left.teamName.localeCompare(right.teamName))
+        .map((team) => ({
+          value: team.id,
+          label: `${team.teamName} (${team.discipline})`,
+        })),
+    [closeFollowUpTeams],
+  );
+
   useEffect(() => {
     if (!closeData.failure_code) return;
     if (closeFailureCodeOptions.some((option) => option.value === closeData.failure_code)) return;
     setCloseData((prev) => ({ ...prev, failure_code: "" }));
   }, [closeData.failure_code, closeFailureCodeOptions]);
+
+  useEffect(() => {
+    if (closeData.follow_up_required) {
+      if (!closeData.follow_up_team_id) return;
+      if (closeFollowUpTeamOptions.some((option) => option.value === closeData.follow_up_team_id)) return;
+      setCloseData((prev) => ({ ...prev, follow_up_team_id: "" }));
+      return;
+    }
+    if (!closeData.follow_up_team_id && !closeData.follow_up_notes) return;
+    setCloseData((prev) => ({ ...prev, follow_up_team_id: "", follow_up_notes: "" }));
+  }, [closeData.follow_up_notes, closeData.follow_up_required, closeData.follow_up_team_id, closeFollowUpTeamOptions]);
 
   const { data: closeAvailableSpares = [] } = useQuery({
     queryKey: ["wo_close_spares", closingWO?.plant_id, closingWO?.asset_id],
@@ -1399,14 +1435,22 @@ export default function WorkOrders() {
     const workPerformed = closeData.action_taken.trim();
     const remarks = closeData.remarks.trim();
     const materialsUsed = closeData.parts_replaced.trim();
-    const laborMinutes = Number.parseInt(closeData.labor_hours, 10) || 0;
+    const followUpNotes = closeData.follow_up_notes.trim();
 
-    if (!issueDetails || !workPerformed || !remarks || laborMinutes <= 0 || (!materialsUsed && spareConsumption.length === 0) || closeAttachments.length === 0) {
-      toast.error("Issue details, work performed, time spent, materials used, closure attachments, and remarks are required");
+    if (!issueDetails || !workPerformed || !remarks || (!materialsUsed && spareConsumption.length === 0)) {
+      toast.error("Issue details, work performed, materials used, and remarks are required");
       return;
     }
     if (closeData.failure_code && !closeFailureCodeOptions.some((option) => option.value === closeData.failure_code)) {
       toast.error("Select a valid failure code from Work Order Config Master");
+      return;
+    }
+    if (closeData.follow_up_required && !closeData.follow_up_team_id) {
+      toast.error("Follow-up team is required when follow-up is enabled");
+      return;
+    }
+    if (closeData.follow_up_required && !followUpNotes) {
+      toast.error("Follow-up notes are required when follow-up is enabled");
       return;
     }
 
@@ -1414,25 +1458,23 @@ export default function WorkOrders() {
       await submitWorkOrderForApproval(closingWOId, {
         issue_details: issueDetails,
         work_performed_description: workPerformed,
-        time_spent_minutes: laborMinutes,
-        downtime_minutes: parseInt(closeData.downtime_minutes) || 0,
         materials_used: materialsUsed || "Structured spare usage attached",
-        attachments: closeAttachments,
+        attachments: closeAttachments.length > 0 ? closeAttachments : undefined,
         remarks,
         failure_code: closeData.failure_code || null,
-        actual_cost: parseFloat(closeData.actual_cost) || 0,
         parts_replaced: materialsUsed || null,
         spare_consumption: spareConsumption,
         operator_fault: closeData.operator_fault,
         warranty_claim: closeData.warranty_claim,
         follow_up_required: closeData.follow_up_required,
-        follow_up_notes: closeData.follow_up_notes || null,
+        follow_up_team_id: closeData.follow_up_required ? closeData.follow_up_team_id : null,
+        follow_up_notes: followUpNotes || null,
       });
     } catch (error: any) {
       toast.error(error?.message || "Failed to submit work order for approval");
       return;
     }
-    toast.success("Work order submitted for approval");
+    toast.success(closeData.follow_up_required ? "Work order routed for follow-up" : "Work order submitted for approval");
     triggerWorkOrderLiveSync();
     void queryClient.invalidateQueries({ queryKey: ["dashboard_metrics"] });
     void queryClient.invalidateQueries({ queryKey: ["spare-maintenance-items"] });
@@ -1914,7 +1956,15 @@ export default function WorkOrders() {
       </FormDialog>
 
       {/* ===== CLOSE WORK ORDER FORM (Enhanced) ===== */}
-      <FormDialog open={isCloseFormOpen} onOpenChange={setIsCloseFormOpen} title="Close Work Order" description="Complete closure details, attach compressed photos, and submit for approval." onSubmit={handleCloseWithDetails} submitLabel="Submit for Approval" size="xl">
+      <FormDialog
+        open={isCloseFormOpen}
+        onOpenChange={setIsCloseFormOpen}
+        title="Close Work Order"
+        description="Complete closure details and either submit for approval or route to a follow-up team."
+        onSubmit={handleCloseWithDetails}
+        submitLabel={closeData.follow_up_required ? "Route Follow-up Team" : "Submit for Approval"}
+        size="xl"
+      >
         <div className="space-y-6">
           <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
             Drafts auto-save while this form is open so technicians can resume incomplete closure details.
@@ -1925,14 +1975,6 @@ export default function WorkOrders() {
               <TextareaField label="Issue Details" value={closeData.root_cause} onChange={(v) => setCloseData({ ...closeData, root_cause: v })} placeholder="Describe the issue found during maintenance..." className="sm:col-span-2" required />
               <SelectField label="Failure Code" value={closeData.failure_code} onChange={(v) => setCloseData({ ...closeData, failure_code: v })} options={closeFailureCodeOptions} placeholder="Select failure code" hint={closeFailureCodeOptions.length === 0 ? "No active failure codes are configured for this plant." : "Uses the active failure codes configured for this work order's plant."} />
               <TextareaField label="Work Performed Description" value={closeData.action_taken} onChange={(v) => setCloseData({ ...closeData, action_taken: v })} placeholder="What corrective work was completed?" className="sm:col-span-2" required />
-            </div>
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Time & Cost</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <InputField label="Downtime (minutes)" value={closeData.downtime_minutes} onChange={(v) => setCloseData({ ...closeData, downtime_minutes: v })} type="number" />
-              <InputField label="Time Spent (minutes)" value={closeData.labor_hours} onChange={(v) => setCloseData({ ...closeData, labor_hours: v })} type="number" />
-              <InputField label="Actual Cost (₹)" value={closeData.actual_cost} onChange={(v) => setCloseData({ ...closeData, actual_cost: v })} type="number" />
             </div>
           </div>
           <div>
@@ -1947,7 +1989,7 @@ export default function WorkOrders() {
                 options={closeSpareOptions}
               />
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Closure Photo (auto-compressed)</Label>
+                <Label className="text-xs text-muted-foreground">Closure Photo (optional, auto-compressed)</Label>
                 <input
                   ref={closeFileInputRef}
                   type="file"
@@ -2004,12 +2046,40 @@ export default function WorkOrders() {
                 <Label htmlFor="warranty_claim" className="text-sm">Warranty Claim</Label>
               </div>
               <div className="flex items-center space-x-2">
-                <Checkbox id="follow_up" checked={closeData.follow_up_required} onCheckedChange={(c) => setCloseData({ ...closeData, follow_up_required: !!c })} />
+                <Checkbox
+                  id="follow_up"
+                  checked={closeData.follow_up_required}
+                  onCheckedChange={(c) =>
+                    setCloseData((prev) => ({
+                      ...prev,
+                      follow_up_required: !!c,
+                      ...(c ? {} : { follow_up_team_id: "", follow_up_notes: "" }),
+                    }))
+                  }
+                />
                 <Label htmlFor="follow_up" className="text-sm">Follow-up Required</Label>
               </div>
             </div>
             {closeData.follow_up_required && (
-              <TextareaField label="Follow-up Notes" value={closeData.follow_up_notes} onChange={(v) => setCloseData({ ...closeData, follow_up_notes: v })} placeholder="Describe the follow-up needed..." className="mt-4" />
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <SelectField
+                  label="Follow-up Team"
+                  value={closeData.follow_up_team_id}
+                  onChange={(v) => setCloseData({ ...closeData, follow_up_team_id: v })}
+                  options={closeFollowUpTeamOptions}
+                  placeholder={closeFollowUpTeamOptions.length === 0 ? "No active teams available" : "Select follow-up team"}
+                  hint={closeFollowUpTeamOptions.length === 0 ? "Create or activate a maintenance team in Team Master for this plant." : "Selected team will receive this work order for follow-up execution."}
+                  required
+                />
+                <TextareaField
+                  label="Follow-up Notes"
+                  value={closeData.follow_up_notes}
+                  onChange={(v) => setCloseData({ ...closeData, follow_up_notes: v })}
+                  placeholder="Describe what the follow-up team must verify or complete..."
+                  className="sm:col-span-1"
+                  required
+                />
+              </div>
             )}
           </div>
         </div>

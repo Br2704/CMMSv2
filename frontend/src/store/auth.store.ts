@@ -1,5 +1,6 @@
 import { getMe, logout as apiLogout, type MeResponse } from "@/api/auth";
 import { ensureAccessToken } from "@/api/http";
+import { mastersOptionsStore } from "@/store/mastersOptions.store";
 import { create } from "zustand";
 
 export type AppRole =
@@ -132,6 +133,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   setUser: (user) =>
     set((state) => {
       if (state.user === user && state.isAuthenticated === !!user) return state;
+      const previousUserId = state.user?.id ?? null;
+      const nextUserId = user?.id ?? null;
+      const previousOrganizationId = state.user?.organizationId ?? null;
+      const nextOrganizationId = user?.organizationId ?? null;
+
+      if (previousUserId !== nextUserId || previousOrganizationId !== nextOrganizationId) {
+        mastersOptionsStore.invalidate();
+      }
+
       debugAuth("setUser", { userId: user?.id ?? null, isAuthenticated: !!user });
       return { user, isAuthenticated: !!user };
     }),
@@ -157,6 +167,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       await apiLogout();
     } finally {
+      mastersOptionsStore.invalidate();
       set({
         user: null,
         session: null,
@@ -243,11 +254,11 @@ export const hasRole = (user: AppUser | null, roles: AppRole[]): boolean => {
 };
 
 export const isAdmin = (user: AppUser | null): boolean => {
-  return hasRole(user, ["SUPERADMIN", "SUPER_ADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER"]);
+  return hasRole(user, ["ROOT_ADMIN", "SUPERADMIN", "SUPER_ADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER"]);
 };
 
 export const isSuperAdmin = (user: AppUser | null): boolean => {
-  return hasRole(user, ["SUPERADMIN", "SUPER_ADMIN"]);
+  return hasRole(user, ["ROOT_ADMIN", "SUPERADMIN", "SUPER_ADMIN"]);
 };
 
 export const isRootAdmin = (user: AppUser | null): boolean => {

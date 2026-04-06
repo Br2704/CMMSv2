@@ -5,18 +5,43 @@ import { ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { CrudService } from './crud.service';
 
+function toCamelKey(input: string) {
+  return input.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+}
+
+function toCamelCase<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => toCamelCase(item)) as T;
+  }
+
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const transformed: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(record)) {
+      transformed[toCamelKey(key)] = toCamelCase(item);
+    }
+    return transformed as T;
+  }
+
+  return value;
+}
+
 export function createCrudController(service: CrudService, moduleName = 'resource') {
   return {
     list: asyncHandler(async (req: Request, res: Response) => {
       const result = await service.list(req.query as never, req.auth!);
       const page = Number(req.query.page ?? 1) || 1;
       const limit = Number(req.query.limit ?? 100) || 100;
-      res.status(200).json(ok(result.items, 'Fetched successfully', toPagination(page, limit, result.total)));
+      res.status(200).json(ok(toCamelCase(result.items), 'Fetched successfully', toPagination(page, limit, result.total)));
     }),
 
     getById: asyncHandler(async (req: Request, res: Response) => {
       const data = await service.getById(req.params.id, req.auth!);
-      res.status(200).json(ok(data));
+      res.status(200).json(ok(toCamelCase(data)));
     }),
 
     create: asyncHandler(async (req: Request, res: Response) => {
@@ -30,7 +55,7 @@ export function createCrudController(service: CrudService, moduleName = 'resourc
         plantId: typeof (data.plant_id ?? data.plantId) === 'string' ? String(data.plant_id ?? data.plantId) : null,
         statusCode: 201,
       });
-      res.status(201).json(ok(data, 'Created successfully'));
+      res.status(201).json(ok(toCamelCase(data), 'Created successfully'));
     }),
 
     update: asyncHandler(async (req: Request, res: Response) => {
@@ -44,7 +69,7 @@ export function createCrudController(service: CrudService, moduleName = 'resourc
         plantId: typeof (data.plant_id ?? data.plantId) === 'string' ? String(data.plant_id ?? data.plantId) : null,
         statusCode: 200,
       });
-      res.status(200).json(ok(data, 'Updated successfully'));
+      res.status(200).json(ok(toCamelCase(data), 'Updated successfully'));
     }),
 
     remove: asyncHandler(async (req: Request, res: Response) => {

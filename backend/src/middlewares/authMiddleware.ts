@@ -368,9 +368,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
     if (isRootAdmin) {
       const rootScopedPermissions: Record<string, string[]> = {};
-      ROOT_GOVERNANCE_MODULES.forEach((moduleKey) => {
+      RBAC_MODULE_KEYS.forEach((moduleKey) => {
         const actions = (permissionMap[moduleKey] ?? []).map((action) => action.toUpperCase());
-        rootScopedPermissions[moduleKey] = actions.length > 0 ? actions : [...RBAC_ACTIONS];
+        rootScopedPermissions[moduleKey] =
+          actions.length > 0
+            ? Array.from(new Set(actions))
+            : ROOT_GOVERNANCE_MODULES.has(moduleKey)
+              ? [...RBAC_ACTIONS]
+              : ['READ'];
       });
       permissionMap = rootScopedPermissions;
     }

@@ -48,7 +48,7 @@ export default function DepartmentMaster() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedPlant, setSelectedPlant] = useState<string>(canSelectPlant ? "all" : defaultPlantId);
+  const [selectedPlant, setSelectedPlant] = useState<string>(canSelectPlant ? (defaultPlantId || "") : defaultPlantId);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -59,7 +59,11 @@ export default function DepartmentMaster() {
   const fetchDepartments = async () => {
     setLoading(true);
     try {
-      const effectivePlantId = canSelectPlant ? (selectedPlant === "all" ? undefined : selectedPlant) : defaultPlantId || undefined;
+      if (canSelectPlant && !selectedPlant) {
+        setDepartments([]);
+        return;
+      }
+      const effectivePlantId = canSelectPlant ? selectedPlant || undefined : defaultPlantId || undefined;
       const response = await listDepartments({
         page: 1,
         limit: 100,
@@ -97,7 +101,7 @@ export default function DepartmentMaster() {
     (canSelectPlant ? Boolean(formData.plantId) : Boolean(defaultPlantId));
 
   const handleAdd = () => {
-    setFormData({ ...emptyForm, plantId: canSelectPlant ? "" : defaultPlantId });
+    setFormData({ ...emptyForm, plantId: canSelectPlant ? selectedPlant : defaultPlantId });
     setSelectedDept(null);
     setIsEditing(false);
     setIsFormOpen(true);
@@ -244,7 +248,8 @@ export default function DepartmentMaster() {
                     label=""
                     value={selectedPlant}
                     onChange={setSelectedPlant}
-                    options={[{ value: "all", label: "All Plants" }, ...plantOptions]}
+                    options={plantOptions}
+                    placeholder="Select plant"
                     className="w-full sm:w-[180px]"
                   />
                 )}
@@ -259,6 +264,11 @@ export default function DepartmentMaster() {
       >
         {loading ? (
           <TableSkeleton />
+        ) : canSelectPlant && !selectedPlant ? (
+          <EmptyState
+            title="Select a plant"
+            description="Choose a plant to view department data."
+          />
         ) : filtered.length === 0 ? (
           <EmptyState
             title="No departments found"
@@ -312,7 +322,7 @@ export default function DepartmentMaster() {
               required
             />
           ) : (
-            <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => {}} disabled />
+            <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => { }} disabled />
           )}
           <SelectField
             label="Status"

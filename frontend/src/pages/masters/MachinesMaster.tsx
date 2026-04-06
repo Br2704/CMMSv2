@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useAuthStore, isAdmin, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore, isAdmin, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -270,7 +270,7 @@ export default function MachinesMaster() {
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user);
+  const canSelectPlant = isSuperAdmin(user) || isRootAdmin(user);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants, invalidateOptions } = useMastersOptions();
 
@@ -282,7 +282,7 @@ export default function MachinesMaster() {
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [selectedPlant, setSelectedPlant] = useState<string>(canSelectPlant ? "all" : defaultPlantId);
+  const [selectedPlant, setSelectedPlant] = useState<string>(canSelectPlant ? (defaultPlantId || "") : defaultPlantId);
   const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState<string>("all");
   const [selectedModuleFilter, setSelectedModuleFilter] = useState<string>("all");
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -313,7 +313,12 @@ export default function MachinesMaster() {
   const fetchAssetsList = async () => {
     setLoading(true);
     try {
-      const effectivePlantId = canSelectPlant ? (selectedPlant === "all" ? undefined : selectedPlant) : defaultPlantId || undefined;
+      if (canSelectPlant && !selectedPlant) {
+        setAssets([]);
+        return;
+      }
+
+      const effectivePlantId = canSelectPlant ? selectedPlant || undefined : defaultPlantId || undefined;
       const response = await listAssets({
         page: 1,
         limit: 100,
@@ -330,10 +335,15 @@ export default function MachinesMaster() {
 
   const fetchDepartmentsList = async (plantId?: string) => {
     try {
+      const resolvedPlantId = plantId || (canSelectPlant ? selectedPlant || undefined : defaultPlantId || undefined);
+      if (canSelectPlant && !resolvedPlantId) {
+        setDepartments([]);
+        return;
+      }
       const response = await listDepartments({
         page: 1,
         limit: 100,
-        plantId: plantId || (canSelectPlant ? undefined : defaultPlantId || undefined),
+        plantId: resolvedPlantId,
       });
       setDepartments(response.data);
     } catch (error: any) {
@@ -343,10 +353,15 @@ export default function MachinesMaster() {
 
   const fetchModulesList = async (plantId?: string, departmentId?: string) => {
     try {
+      const resolvedPlantId = plantId || (canSelectPlant ? selectedPlant || undefined : defaultPlantId || undefined);
+      if (canSelectPlant && !resolvedPlantId) {
+        setModules([]);
+        return;
+      }
       const response = await listModules({
         page: 1,
         limit: 100,
-        plantId: plantId || (canSelectPlant ? undefined : defaultPlantId || undefined),
+        plantId: resolvedPlantId,
         departmentId: departmentId || undefined,
       });
       setModules(response.data);
@@ -357,10 +372,15 @@ export default function MachinesMaster() {
 
   const fetchCostCentersList = async (plantId?: string, departmentId?: string) => {
     try {
+      const resolvedPlantId = plantId || (canSelectPlant ? selectedPlant || undefined : defaultPlantId || undefined);
+      if (canSelectPlant && !resolvedPlantId) {
+        setCostCenters([]);
+        return;
+      }
       const response = await listCostCenters({
         page: 1,
         limit: 100,
-        plantId: plantId || (canSelectPlant ? undefined : defaultPlantId || undefined),
+        plantId: resolvedPlantId,
       });
 
       const filteredByDepartment = departmentId
@@ -394,10 +414,14 @@ export default function MachinesMaster() {
 
   useEffect(() => {
     fetchPlants();
-    fetchDepartmentsList(canSelectPlant ? undefined : defaultPlantId);
-    fetchModulesList(canSelectPlant ? undefined : defaultPlantId);
-    fetchCostCentersList(canSelectPlant ? undefined : defaultPlantId);
   }, []);
+
+  useEffect(() => {
+    const scopedPlantId = canSelectPlant ? selectedPlant : defaultPlantId;
+    void fetchDepartmentsList(scopedPlantId || undefined);
+    void fetchModulesList(scopedPlantId || undefined);
+    void fetchCostCentersList(scopedPlantId || undefined);
+  }, [selectedPlant, canSelectPlant, defaultPlantId]);
 
   useEffect(() => {
     const assetId = searchParams.get("assetId");
@@ -451,7 +475,7 @@ export default function MachinesMaster() {
   const departmentFilterOptions = useMemo(
     () =>
       departments
-        .filter((department) => selectedPlant === "all" || department.plantId === selectedPlant)
+        .filter((department) => !selectedPlant || department.plantId === selectedPlant)
         .map((department) => ({ value: department.id, label: `${department.code} - ${department.name}` })),
     [departments, selectedPlant],
   );
@@ -459,7 +483,7 @@ export default function MachinesMaster() {
   const moduleFilterOptions = useMemo(
     () =>
       modules
-        .filter((module) => (selectedPlant === "all" || module.plantId === selectedPlant) && (selectedDepartmentFilter === "all" || module.departmentId === selectedDepartmentFilter))
+        .filter((module) => (!selectedPlant || module.plantId === selectedPlant) && (selectedDepartmentFilter === "all" || module.departmentId === selectedDepartmentFilter))
         .map((module) => ({ value: module.id, label: `${module.code ? `${module.code} - ` : ""}${module.name}` })),
     [modules, selectedPlant, selectedDepartmentFilter],
   );
@@ -510,7 +534,7 @@ export default function MachinesMaster() {
     (canSelectPlant ? Boolean(formData.plantId && formData.departmentId && formData.moduleId) : Boolean(defaultPlantId && formData.departmentId && formData.moduleId));
 
   const handleBulkMachineCsv = async (content: string) => {
-    const resolvedPlantId = canSelectPlant ? (selectedPlant === "all" ? "" : selectedPlant) : defaultPlantId;
+    const resolvedPlantId = canSelectPlant ? selectedPlant : defaultPlantId;
     if (!resolvedPlantId) {
       toast.error("Select a specific plant before bulk uploading machines");
       return;
@@ -700,7 +724,7 @@ export default function MachinesMaster() {
             status: normalizeEnum(pickCell(row, ["status"]), ["ACTIVE", "UNDER_MAINTENANCE", "INACTIVE"], "ACTIVE"),
             make: pickCell(row, ["make"]) || null,
             model: pickCell(row, ["model"]) || null,
-            serialNumber: pickCell(row, ["serial_number", "serial"] ) || null,
+            serialNumber: pickCell(row, ["serial_number", "serial"]) || null,
             refrigerantGasType: pickCell(row, ["refrigerant_gas_type", "refrigerant"]) || null,
             commissionDate: pickCell(row, ["commission_date"]) || null,
             warrantyExpiry: pickCell(row, ["warranty_expiry"]) || null,
@@ -932,7 +956,7 @@ export default function MachinesMaster() {
   };
 
   const handleAdd = () => {
-    setFormData({ ...emptyForm, plantId: canSelectPlant ? "" : defaultPlantId });
+    setFormData({ ...emptyForm, plantId: canSelectPlant ? selectedPlant : defaultPlantId });
     setSelectedMachine(null);
     setIsEditing(false);
     setEnableEnergyMeterOnCreate(false);
@@ -1110,9 +1134,9 @@ export default function MachinesMaster() {
     setEnergyMeterForm(
       selectedMachine
         ? {
-            ...defaultEnergyMeterForm,
-            meterName: `${selectedMachine.code} Energy Meter`,
-          }
+          ...defaultEnergyMeterForm,
+          meterName: `${selectedMachine.code} Energy Meter`,
+        }
         : defaultEnergyMeterForm,
     );
   };
@@ -1280,11 +1304,11 @@ export default function MachinesMaster() {
       dataPoints:
         config.dataPoints && config.dataPoints.length > 0
           ? config.dataPoints.map((point) => ({
-              label: point.label || "",
-              register: point.register || "",
-              unit: point.unit || "",
-              multiplier: point.multiplier !== null && point.multiplier !== undefined ? String(point.multiplier) : "",
-            }))
+            label: point.label || "",
+            register: point.register || "",
+            unit: point.unit || "",
+            multiplier: point.multiplier !== null && point.multiplier !== undefined ? String(point.multiplier) : "",
+          }))
           : [{ label: "", register: "", unit: "", multiplier: "" }],
     });
   };
@@ -1500,7 +1524,8 @@ export default function MachinesMaster() {
                   setSelectedDepartmentFilter("all");
                   setSelectedModuleFilter("all");
                 }}
-                options={[{ value: "all", label: "All Plants" }, ...plantsOptions]}
+                options={plantsOptions}
+                placeholder="Select plant"
                 className="w-full sm:w-[180px] min-w-[160px] flex-shrink-0"
               />
             )}
@@ -1544,7 +1569,7 @@ export default function MachinesMaster() {
           <CardTitle className="text-base sm:text-lg font-semibold">Machine List</CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (<TableSkeleton />) : filtered.length === 0 ? (<EmptyState title="No machines found" description="Add your first machine record to start work orders and logs." actionLabel={canManage ? "Add Machine" : undefined} onAction={canManage ? handleAdd : undefined} />) : (
+          {loading ? (<TableSkeleton />) : canSelectPlant && !selectedPlant ? (<EmptyState title="Select a plant" description="Choose a plant to view machine data." />) : filtered.length === 0 ? (<EmptyState title="No machines found" description="Add your first machine record to start work orders and logs." actionLabel={canManage ? "Add Machine" : undefined} onAction={canManage ? handleAdd : undefined} />) : (
             <ResponsiveTable
               data={filtered}
               columns={columns}
@@ -1559,9 +1584,9 @@ export default function MachinesMaster() {
                   onDelete={
                     canManage
                       ? () => {
-                          setSelectedMachine(item);
-                          setIsDeleteOpen(true);
-                        }
+                        setSelectedMachine(item);
+                        setIsDeleteOpen(true);
+                      }
                       : undefined
                   }
                 >
@@ -1629,7 +1654,7 @@ export default function MachinesMaster() {
           {canSelectPlant ? (
             <SelectField label="Plant" required value={formData.plantId} onChange={handlePlantChange} options={plantsOptions} placeholder="Select plant" />
           ) : (
-            <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => {}} disabled />
+            <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => { }} disabled />
           )}
           <SelectField
             label="Department"

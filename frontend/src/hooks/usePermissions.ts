@@ -67,19 +67,6 @@ const FEATURE_BY_MODULE: Record<string, string> = {
   diagnostics: "ADVANCED_ANALYTICS",
 };
 
-const ROOT_ADMIN_ALLOWED_MODULE_IDS = new Set([
-  "DASHBOARD",
-  "MASTERS",
-  "PLANTS",
-  "USERS",
-  "ROLE_ACCESS",
-  "ROOT.ORGANIZATIONS",
-  "ROOT.PLANTS",
-  "ROOT.ROLE_ACCESS",
-  "ROOT.ROLE-ACCESS",
-  "SECURITY-CENTER",
-]);
-
 function normalizeAction(action: string): string {
   const input = action.toUpperCase();
   if (input === "VIEW" || input === "READ") return "READ";
@@ -124,7 +111,7 @@ function policyAllowsModule(moduleId: string, roles: string[]): boolean {
   }
 
   if (normalizedRoles.includes("ROOT_ADMIN")) {
-    return ROOT_ADMIN_ALLOWED_MODULE_IDS.has(upperModuleId);
+    return true;
   }
 
   if (normalizedRoles.includes("SUPERADMIN")) {

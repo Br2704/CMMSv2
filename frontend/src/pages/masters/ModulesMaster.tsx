@@ -16,7 +16,7 @@ import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared
 import { createModule, deleteModule, listModules, type MachineModule, updateModule } from "@/api/modules";
 import { listDepartments, type Department } from "@/api/departments";
 import { listAssets } from "@/api/assets";
-import { useAuthStore, isAdmin, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore, isAdmin, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -47,7 +47,7 @@ const emptyForm: ModuleFormState = {
 export default function ModulesMaster() {
   const { user } = useAuthStore();
   const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user);
+  const canSelectPlant = isSuperAdmin(user) || isRootAdmin(user);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants, invalidateOptions } = useMastersOptions();
 
@@ -56,7 +56,7 @@ export default function ModulesMaster() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedPlant, setSelectedPlant] = useState<string>(canSelectPlant ? "all" : defaultPlantId);
+  const [selectedPlant, setSelectedPlant] = useState<string>(canSelectPlant ? (defaultPlantId || "") : defaultPlantId);
   const [selectedDepartment, setSelectedDepartment] = useState<string>("all");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
@@ -68,19 +68,24 @@ export default function ModulesMaster() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const effectivePlantId = canSelectPlant ? (selectedPlant === "all" ? undefined : selectedPlant) : defaultPlantId || undefined;
+      if (canSelectPlant && !selectedPlant) {
+        setDepartments([]);
+        setModules([]);
+        return;
+      }
+      const effectivePlantId = canSelectPlant ? selectedPlant || undefined : defaultPlantId || undefined;
       const effectiveDepartmentId = selectedDepartment === "all" ? undefined : selectedDepartment;
 
       const [modulesResponse, departmentsResponse, assetsResponse] = await Promise.all([
         listModules({
           page: 1,
-             limit: 100,
+          limit: 100,
           search: searchQuery || undefined,
           plantId: effectivePlantId,
           departmentId: effectiveDepartmentId,
         }),
-           listDepartments({ page: 1, limit: 100, plantId: effectivePlantId }),
-           listAssets({ page: 1, limit: 100, plantId: effectivePlantId, departmentId: effectiveDepartmentId }),
+        listDepartments({ page: 1, limit: 100, plantId: effectivePlantId }),
+        listAssets({ page: 1, limit: 100, plantId: effectivePlantId, departmentId: effectiveDepartmentId }),
       ]);
 
       const machineCountMap = new Map<string, number>();
@@ -112,7 +117,7 @@ export default function ModulesMaster() {
   }, [searchQuery, selectedPlant, selectedDepartment, defaultPlantId, canSelectPlant]);
 
   const departmentFilterOptions = useMemo(() => {
-    const rows = selectedPlant === "all" ? departments : departments.filter((department) => department.plantId === selectedPlant);
+    const rows = !selectedPlant ? [] : departments.filter((department) => department.plantId === selectedPlant);
     return rows.map((department) => ({ value: department.id, label: `${department.code} - ${department.name}` }));
   }, [departments, selectedPlant]);
 
@@ -132,7 +137,7 @@ export default function ModulesMaster() {
 
   const handleAdd = () => {
     setSelectedModule(null);
-    setFormData({ ...emptyForm, plantId: canSelectPlant ? "" : defaultPlantId });
+    setFormData({ ...emptyForm, plantId: canSelectPlant ? selectedPlant : defaultPlantId });
     setIsEditing(false);
     setIsFormOpen(true);
   };
@@ -313,7 +318,8 @@ export default function ModulesMaster() {
                     setSelectedPlant(value);
                     setSelectedDepartment("all");
                   }}
-                  options={[{ value: "all", label: "All Plants" }, ...plantsOptions]}
+                  options={plantsOptions}
+                  placeholder="Select plant"
                   className="min-w-[170px]"
                 />
               )}
@@ -341,6 +347,8 @@ export default function ModulesMaster() {
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
+          ) : canSelectPlant && !selectedPlant ? (
+            <div className="text-center py-12 text-muted-foreground">Select a plant to view module data.</div>
           ) : modules.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">No modules found.</div>
           ) : (
@@ -358,9 +366,9 @@ export default function ModulesMaster() {
                   onDelete={
                     canManage
                       ? () => {
-                          setSelectedModule(item);
-                          setIsDeleteOpen(true);
-                        }
+                        setSelectedModule(item);
+                        setIsDeleteOpen(true);
+                      }
                       : undefined
                   }
                 >
@@ -411,7 +419,7 @@ export default function ModulesMaster() {
               required
             />
           ) : (
-            <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => {}} disabled />
+            <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => { }} disabled />
           )}
           <SelectField
             label="Department"

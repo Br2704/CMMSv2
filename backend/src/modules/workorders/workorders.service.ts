@@ -164,6 +164,23 @@ function minutesToLaborHours(value: unknown): number {
   return Number((minutes / 60).toFixed(2));
 }
 
+function parseDateTime(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function elapsedMinutes(startValue: unknown, endAt: Date): number {
+  const start = parseDateTime(startValue);
+  if (!start) return 0;
+  const diffMs = endAt.getTime() - start.getTime();
+  if (!Number.isFinite(diffMs) || diffMs <= 0) return 0;
+  return Math.max(0, Math.round(diffMs / 60000));
+}
+
 function hasAnyWorkflowManagedField(input: GenericRecord): boolean {
   return Object.keys(input).some((key) => WORKFLOW_MANAGED_FIELDS.has(key));
 }
@@ -950,43 +967,90 @@ class WorkOrdersService extends CrudService {
       const workPerformed = normalizeText(normalized.work_performed_description) ?? normalizeText(normalized.action_taken);
       const remarks = normalizeText(normalized.remarks);
       const partsReplaced = normalizeText(normalized.parts_replaced) ?? normalizeText(normalized.materials_used);
-      const laborMinutes = Math.max(0, Math.round(Number(normalized.time_spent_minutes ?? normalized.labor_minutes ?? 0)));
-      const downtimeMinutes = Math.max(0, Math.round(Number(normalized.downtime_minutes ?? 0)));
+      const nowDate = new Date();
+      const now = nowDate.toISOString();
+      const parsedLaborMinutes = Number(normalized.time_spent_minutes ?? normalized.labor_minutes);
+      const hasProvidedLaborMinutes = Number.isFinite(parsedLaborMinutes);
+      const laborMinutes = hasProvidedLaborMinutes
+        ? Math.max(0, Math.round(parsedLaborMinutes))
+        : elapsedMinutes(existing.started_at, nowDate);
+      const parsedDowntimeMinutes = Number(normalized.downtime_minutes);
+      const hasProvidedDowntimeMinutes = Number.isFinite(parsedDowntimeMinutes);
+      const downtimeMinutes = hasProvidedDowntimeMinutes
+        ? Math.max(0, Math.round(parsedDowntimeMinutes))
+        : elapsedMinutes(existing.downtime_start_at ?? existing.started_at, nowDate);
       const actualCost = Number.isFinite(Number(normalized.actual_cost)) ? Math.max(0, Number(normalized.actual_cost)) : 0;
       const attachments = parseJsonArray(normalized.attachments);
       const spareConsumption = normalized.spare_consumption !== undefined ? normalizeSpareUsage(normalized.spare_consumption) : [];
       const hasMaterials = Boolean(partsReplaced) || spareConsumption.length > 0;
+      const operatorFault = Boolean(normalized.operator_fault);
+      const followUpRequired = Boolean(normalized.follow_up_required);
+      const followUpTeamId = normalizeText(normalized.follow_up_team_id);
+      const existingPlantId = normalizeText(existing.plant_id);
 
-      if (!issueDetails || !workPerformed || !remarks || laborMinutes <= 0 || !hasMaterials || attachments.length === 0) {
-        badRequest('issue_details, work_performed_description, time_spent_minutes, materials_used, attachments, and remarks are required');
+      let followUpTeam: Pick<MaintenanceTeamEntity, 'id' | 'teamLeaderId' | 'teamMemberIds' | 'teamName'> | null = null;
+      if (followUpRequired) {
+        if (!followUpTeamId) {
+          badRequest('follow_up_team_id is required when follow_up_required is true');
+        }
+        if (!existingPlantId) {
+          badRequest('Follow-up team routing requires a plant-scoped work order');
+        }
+        followUpTeam = await manager.getRepository(MaintenanceTeamEntity).findOne({
+          where: {
+            id: followUpTeamId,
+            plantId: existingPlantId,
+            isActive: true,
+          },
+          select: ['id', 'teamLeaderId', 'teamMemberIds', 'teamName'],
+        });
+
+        if (!followUpTeam) {
+          badRequest('Invalid follow_up_team_id for this work order plant');
+        }
       }
 
-      const now = new Date().toISOString();
+      const followUpAssignee = followUpTeam
+        ? followUpTeam.teamLeaderId ?? (followUpTeam.teamMemberIds ?? [])[0] ?? null
+        : null;
+      if (followUpRequired && !followUpAssignee) {
+        badRequest('Selected follow-up team must have at least one active member');
+      }
+
+      const workOrderType = normalizeWorkOrderMasterCode(String(existing.wo_type ?? 'BREAKDOWN'));
+      const isFailureEvent = workOrderType === 'BREAKDOWN' && !operatorFault;
+
+      if (!issueDetails || !workPerformed || !remarks || !hasMaterials) {
+        badRequest('issue_details, work_performed_description, materials_used, and remarks are required');
+      }
       const mergedAttachments = [
         ...parseJsonArray(existing.attachments),
         ...attachments,
       ];
 
-      const updated = await this.persistWorkOrderUpdate(
-        id,
-        {
+      const lifecycleUpdate = followUpRequired
+        ? {
+          status: WORKFLOW_STATUSES.OPENED,
+          opened_at: existing.opened_at ?? now,
+          started_at: null,
+          resolved_at: null,
+          closed_at: null,
+          assigned_to: followUpAssignee,
+          submitted_for_approval_at: null,
+          submitted_for_approval_by: null,
+          approved_by: null,
+          approved_at: null,
+          rejected_by: null,
+          rejected_at: null,
+          approval_comments: null,
+          admin_override_by: null,
+          admin_override_at: null,
+          admin_override_reason: null,
+        }
+        : {
           status: WORKFLOW_STATUSES.APPROVAL_PENDING,
           resolved_at: now,
           closed_at: null,
-          root_cause: issueDetails,
-          action_taken: workPerformed,
-          downtime_minutes: downtimeMinutes,
-          failure_code: normalizeText(normalized.failure_code),
-          labor_hours: minutesToLaborHours(laborMinutes),
-          actual_cost: actualCost,
-          parts_replaced: partsReplaced,
-          spare_consumption: spareConsumption,
-          operator_fault: Boolean(normalized.operator_fault),
-          warranty_claim: Boolean(normalized.warranty_claim),
-          follow_up_required: Boolean(normalized.follow_up_required),
-          follow_up_notes: normalizeText(normalized.follow_up_notes),
-          remarks,
-          attachments: mergedAttachments,
           submitted_for_approval_at: now,
           submitted_for_approval_by: auth.userId,
           approved_by: null,
@@ -997,6 +1061,28 @@ class WorkOrdersService extends CrudService {
           admin_override_by: null,
           admin_override_at: null,
           admin_override_reason: null,
+        };
+
+      const updated = await this.persistWorkOrderUpdate(
+        id,
+        {
+          ...lifecycleUpdate,
+          root_cause: issueDetails,
+          action_taken: workPerformed,
+          downtime_minutes: downtimeMinutes,
+          is_failure_event: isFailureEvent,
+          failure_code: normalizeText(normalized.failure_code),
+          labor_hours: minutesToLaborHours(laborMinutes),
+          actual_cost: actualCost,
+          parts_replaced: partsReplaced,
+          spare_consumption: spareConsumption,
+          operator_fault: operatorFault,
+          warranty_claim: Boolean(normalized.warranty_claim),
+          follow_up_required: followUpRequired,
+          follow_up_team_id: followUpRequired ? followUpTeam?.id ?? followUpTeamId : null,
+          follow_up_notes: normalizeText(normalized.follow_up_notes),
+          remarks,
+          attachments: mergedAttachments,
         },
         auth,
         { manager, allowWorkflowMutation: true, existing },
@@ -1006,7 +1092,7 @@ class WorkOrdersService extends CrudService {
         updated,
         auth,
         {
-          eventType: 'SUBMITTED_FOR_APPROVAL',
+          eventType: followUpRequired ? 'FOLLOW_UP_ROUTED' : 'SUBMITTED_FOR_APPROVAL',
           notes: remarks,
           attachments,
           eventMeta: {
@@ -1016,6 +1102,11 @@ class WorkOrdersService extends CrudService {
             downtimeMinutes,
             actualCost,
             hasStructuredSpareUsage: spareConsumption.length > 0,
+            followUpRequired,
+            followUpTeamId: followUpTeam?.id ?? null,
+            timeSpentAutoCalculated: !hasProvidedLaborMinutes,
+            downtimeAutoCalculated: !hasProvidedDowntimeMinutes,
+            isFailureEvent,
           },
           occurredAt: now,
         },
@@ -1023,7 +1114,38 @@ class WorkOrdersService extends CrudService {
       );
 
       const raisedBy = normalizeText(existing.raised_by);
-      if (raisedBy) {
+      if (followUpRequired && followUpTeam) {
+        const recipientIds = uniqueIds([followUpTeam.teamLeaderId, ...(followUpTeam.teamMemberIds ?? [])]).filter(
+          (userId) => userId !== auth.userId,
+        );
+        await this.createNotifications(
+          recipientIds.map((userId) => ({
+            userId,
+            title: 'Follow-up Work Order Assigned',
+            message: `${String(existing.wo_number)} requires follow-up by ${followUpTeam.teamName}.`,
+            type: 'warning',
+            link: '/work-orders',
+            woId: String(existing.id),
+          })),
+          manager,
+        );
+
+        if (raisedBy && raisedBy !== auth.userId) {
+          await this.createNotifications(
+            [
+              {
+                userId: raisedBy,
+                title: 'Work Order Follow-up Assigned',
+                message: `${String(existing.wo_number)} was routed to ${followUpTeam.teamName} for follow-up closure.`,
+                type: 'info',
+                link: '/work-orders',
+                woId: String(existing.id),
+              },
+            ],
+            manager,
+          );
+        }
+      } else if (raisedBy) {
         await this.createNotifications(
           [
             {

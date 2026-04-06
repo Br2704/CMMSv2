@@ -231,16 +231,27 @@ export function useDashboardData(selectedPlantId?: string | null) {
     return calibrations.filter((calibration: any) => calibration.plant_id === selectedPlantId);
   }, [calibrations, userIsSuperAdmin, selectedPlantId]);
 
+  const actorIds = useMemo(
+    () =>
+      new Set(
+        [user?.authId, user?.id].filter((value): value is string => Boolean(value)),
+      ),
+    [user?.authId, user?.id],
+  );
+
+  const isOwnedByActor = (value: unknown) => typeof value === "string" && actorIds.has(value);
+
   // Role-based WO filtering
   const filteredWOs = useMemo(() => {
     if (userIsAdmin) return scopedWorkOrders;
     if (userIsIncharge) {
       return scopedWorkOrders.filter(
-        (wo: any) => inchargeCategories.includes(wo.category) || wo.raised_by === user?.authId
+        (wo: any) => inchargeCategories.includes(wo.category) || isOwnedByActor(wo.raised_by) || isOwnedByActor(wo.assigned_to)
       );
     }
-    return scopedWorkOrders.filter((wo: any) => wo.raised_by === user?.authId);
-  }, [scopedWorkOrders, userIsAdmin, userIsIncharge, inchargeCategories, user]);
+    if (actorIds.size === 0) return [];
+    return scopedWorkOrders.filter((wo: any) => isOwnedByActor(wo.raised_by) || isOwnedByActor(wo.assigned_to));
+  }, [scopedWorkOrders, userIsAdmin, userIsIncharge, inchargeCategories, actorIds]);
 
   const isLoading = (authEnabled && permissionsLoading) || woLoading || assetsLoading || pmLoading || calLoading || gateLoading || plantsLoading;
 

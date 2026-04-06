@@ -4,6 +4,7 @@ import { normalizeRoleName, RBAC_ACTIONS, RBAC_MODULE_KEYS, DASHBOARD_KPI_KEYS }
 import { hashPassword } from '../../utils/password';
 import { AppDataSource } from '../data-source';
 import { OrgRoleEntity, ProfileEntity, RoleDashboardKpiEntity, RoleEntity, RolePermissionEntity, UserEntity, UserRoleEntity } from '../entities';
+import { seedJkFennerDemoData } from './seedJkFennerDemo';
 
 type RoleSeed = { name: string; isSystem: boolean; description: string };
 type PermissionSeed = { role: string; moduleKey: string; actions: string[] };
@@ -537,6 +538,7 @@ export async function runSeed() {
 
   await ensureRolePermissions(rolePermissionRepo, roleMap);
   await ensureRoleKpis(roleDashboardKpiRepo, roleMap);
+  const demoData = await seedJkFennerDemoData(roleMap);
   await repairUserRoleAssignments(roleMap);
 
   return {
@@ -545,5 +547,6 @@ export async function runSeed() {
       .sort(),
     superadminEmail: superadminUser?.email ?? null,
     rootAdminEmail: rootAdminUser.email,
+    demoData,
   };
 }

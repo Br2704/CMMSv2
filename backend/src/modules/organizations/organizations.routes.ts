@@ -5,7 +5,7 @@ import { requireAuth } from '../../middlewares/authMiddleware';
 import { requirePermission } from '../../middlewares/permissions';
 import { validateRequest } from '../../middlewares/validate';
 import { asyncHandler } from '../../utils/asyncHandler';
-import { ok } from '../../utils/apiResponse';
+import { fail, ok } from '../../utils/apiResponse';
 import { toPagination } from '../../utils/pagination';
 import { createCrudController } from '../_core/crud.controller';
 import { idParamSchema, listQuerySchema } from '../_core/crud.validators';
@@ -98,6 +98,12 @@ async function loadOrganizationsWithCounts(input: {
   search?: string;
 }) {
   const ids = input.ids?.filter(Boolean) ?? [];
+  if (input.ids && ids.length === 0) {
+    return {
+      items: [] as EnrichedOrganizationRow[],
+      total: 0,
+    };
+  }
   const normalizedSearch = input.search?.trim().toLowerCase() ?? '';
   const qb = AppDataSource.getRepository(OrganizationEntity)
     .createQueryBuilder('organization')
@@ -146,6 +152,30 @@ async function loadOrganizationsWithCounts(input: {
   };
 }
 
+async function resolveScopedOrganizationIds(auth?: Express.AuthContext) {
+  if (!auth) {
+    return [] as string[];
+  }
+
+  if (auth.scopeType === 'ROOT_ADMIN') {
+    return undefined;
+  }
+
+  if (auth.scopeType === 'ORGANIZATION') {
+    return auth.organizationId ? [auth.organizationId] : [];
+  }
+
+  if (auth.scopeType === 'PLANT' && auth.plantIds.length > 0) {
+    const plants = await AppDataSource.getRepository(PlantEntity).find({
+      where: auth.plantIds.map((id) => ({ id })),
+      select: ['organizationId'],
+    });
+    return Array.from(new Set(plants.map((plant) => plant.organizationId).filter(Boolean)));
+  }
+
+  return [] as string[];
+}
+
 const organizationsController = createCrudController(organizationsService, 'organizations');
 
 export const organizationsRouter = Router();
@@ -161,16 +191,7 @@ organizationsRouter.get(
     const includeInactive = String(req.query.includeInactive ?? 'false').toLowerCase() === 'true';
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
-    let organizationIds: string[] | undefined;
-    if (req.auth?.scopeType === 'ORGANIZATION' && req.auth.organizationId) {
-      organizationIds = [req.auth.organizationId];
-    } else if (req.auth?.scopeType === 'PLANT' && req.auth.plantIds.length > 0) {
-      const plants = await AppDataSource.getRepository(PlantEntity).find({
-        where: req.auth.plantIds.map((id) => ({ id })),
-        select: ['organizationId'],
-      });
-      organizationIds = Array.from(new Set(plants.map((plant) => plant.organizationId).filter(Boolean)));
-    }
+    const organizationIds = await resolveScopedOrganizationIds(req.auth);
 
     const result = await loadOrganizationsWithCounts({
       ids: organizationIds,
@@ -187,7 +208,24 @@ organizationsRouter.get(
   '/organizations/:id',
   requirePermission('ORGANIZATIONS', 'READ'),
   validateRequest({ params: idParamSchema }),
-  organizationsController.getById,
+  asyncHandler(async (req, res, next) => {
+    const scopedOrganizationIds = await resolveScopedOrganizationIds(req.auth);
+    if (Array.isArray(scopedOrganizationIds)) {
+      if (scopedOrganizationIds.length === 0 || !scopedOrganizationIds.includes(req.params.id)) {
+        res.status(403).json(
+          fail('Organization access denied', {
+            code: 'ORG_SCOPE_DENIED',
+            requestedOrganizationId: req.params.id,
+            organizationId: req.auth?.organizationId ?? null,
+            scopeType: req.auth?.scopeType ?? null,
+          }),
+        );
+        return;
+      }
+    }
+
+    await organizationsController.getById(req, res, next);
+  }),
 );
 organizationsRouter.post(
   '/organizations',

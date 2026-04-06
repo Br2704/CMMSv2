@@ -1,6 +1,7 @@
 import { Column, Entity, JoinColumn, ManyToOne, VersionColumn } from 'typeorm';
 import { DATETIME_COLUMN_TYPE, TimestampedUuidEntity } from './common';
 import { AssetEntity } from './asset.entity';
+import { MaintenanceTeamEntity } from './maintenance-team.entity';
 import { PlantEntity } from './plant.entity';
 import { UserEntity } from './user.entity';
 import { VendorEntity } from './vendor.entity';
@@ -145,6 +146,9 @@ export class WorkOrderEntity extends TimestampedUuidEntity {
   @Column({ name: 'follow_up_required', type: 'boolean', default: false })
   followUpRequired!: boolean;
 
+  @Column({ name: 'follow_up_team_id', type: 'uuid', nullable: true })
+  followUpTeamId!: string | null;
+
   @Column({ name: 'follow_up_notes', type: 'text', nullable: true })
   followUpNotes!: string | null;
 
@@ -186,4 +190,8 @@ export class WorkOrderEntity extends TimestampedUuidEntity {
   @ManyToOne(() => VendorEntity, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'vendor_id' })
   vendor!: VendorEntity | null;
+
+  @ManyToOne(() => MaintenanceTeamEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'follow_up_team_id' })
+  followUpTeam!: MaintenanceTeamEntity | null;
 }

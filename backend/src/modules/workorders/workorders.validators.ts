@@ -146,6 +146,7 @@ const workOrderBodyBaseSchema = z.object({
     attachments: z.array(mobileAttachmentSchema).optional(),
     safety_checklist: safetyChecklistSchema.optional(),
     follow_up_required: z.coerce.boolean().optional(),
+    follow_up_team_id: optionalUuidOrNull.optional(),
     follow_up_notes: nullableTrimmedString.optional(),
   });
 
@@ -219,22 +220,33 @@ const startWorkOrderBodySchema = z
     }
   });
 
-const submitWorkOrderForApprovalBodySchema = z.object({
-  work_performed_description: requiredTrimmedString,
-  issue_details: requiredTrimmedString,
-  time_spent_minutes: z.coerce.number().int().positive(),
-  downtime_minutes: z.coerce.number().int().min(0).default(0),
-  materials_used: requiredTrimmedString,
-  attachments: z.array(mobileAttachmentSchema).min(1),
-  remarks: requiredTrimmedString,
-  failure_code: nullableTrimmedString.optional(),
-  actual_cost: z.coerce.number().min(0).optional(),
-  spare_consumption: spareConsumptionSchema,
-  operator_fault: z.coerce.boolean().optional(),
-  warranty_claim: z.coerce.boolean().optional(),
-  follow_up_required: z.coerce.boolean().optional(),
-  follow_up_notes: nullableTrimmedString.optional(),
-});
+const submitWorkOrderForApprovalBodySchema = z
+  .object({
+    work_performed_description: requiredTrimmedString,
+    issue_details: requiredTrimmedString,
+    time_spent_minutes: z.coerce.number().int().min(0).optional(),
+    downtime_minutes: z.coerce.number().int().min(0).optional(),
+    materials_used: requiredTrimmedString,
+    attachments: z.array(mobileAttachmentSchema).optional(),
+    remarks: requiredTrimmedString,
+    failure_code: nullableTrimmedString.optional(),
+    actual_cost: z.coerce.number().min(0).optional(),
+    spare_consumption: spareConsumptionSchema,
+    operator_fault: z.coerce.boolean().optional(),
+    warranty_claim: z.coerce.boolean().optional(),
+    follow_up_required: z.coerce.boolean().optional(),
+    follow_up_team_id: optionalUuidOrNull.optional(),
+    follow_up_notes: nullableTrimmedString.optional(),
+  })
+  .superRefine((body, ctx) => {
+    if (body.follow_up_required && !body.follow_up_team_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['follow_up_team_id'],
+        message: 'follow_up_team_id is required when follow_up_required is true',
+      });
+    }
+  });
 
 const reviewWorkOrderBodySchema = z.object({
   comments: nullableTrimmedString.optional(),
