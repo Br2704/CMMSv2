@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { parseQrContent } from "@/mobile/qr";
-import { resolveQrToken } from "@/api/qr";
+import { resolveQrMachineCode, resolveQrToken } from "@/api/qr";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,18 @@ export default function LiveQrScan() {
 
   const handleDecoded = async (value: string) => {
     const parsed = parseQrContent(value);
+
+    if (parsed.machineCode) {
+      try {
+        const resolved = await resolveQrMachineCode(parsed.machineCode, parsed.token);
+        const assetId = resolved.data.asset?.id;
+        if (!assetId) throw new Error("Machine not found");
+        navigate(`/machine/${assetId}`);
+        return;
+      } catch {
+        // Fall back to token resolution below.
+      }
+    }
 
     if (parsed.machineId) {
       navigate(`/machine/${parsed.machineId}`);

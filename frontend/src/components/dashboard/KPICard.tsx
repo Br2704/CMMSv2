@@ -70,7 +70,7 @@ export function KPICard({
       transition={{ duration: 0.4 }}
       className={cn(kpiCardVariants({ variant }), className)}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1.5 sm:space-y-2">
           <p className="break-words text-xs font-medium leading-snug text-muted-foreground sm:text-sm">{title}</p>
           <div className="flex items-baseline gap-1 sm:gap-2 flex-wrap">
@@ -91,7 +91,7 @@ export function KPICard({
             <p className="break-words text-[11px] leading-snug text-muted-foreground sm:text-xs">{subtitle}</p>
           )}
         </div>
-        <div className={cn(iconContainerVariants({ variant }), "self-start sm:self-auto")}>
+        <div className={cn(iconContainerVariants({ variant }), "self-start")}>
           <Icon className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6" />
         </div>
       </div>

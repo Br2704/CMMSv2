@@ -47,7 +47,7 @@ import {
 import { humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { parseQrContent } from "@/mobile/qr";
-import { resolveQrToken } from "@/api/qr";
+import { resolveQrMachineCode, resolveQrToken } from "@/api/qr";
 import { compressImage } from "@/mobile/media";
 import { hoursToMinutes } from "@/lib/time";
 import { broadcastWorkOrderSync, subscribeWorkOrderSync } from "@/lib/work-order-sync";
@@ -228,7 +228,7 @@ function getUnionWorkOrderOptions(masters: WorkOrderMaster[], optionType: WorkOr
 
 export default function WorkOrders() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, session, isLoading: authLoading, isAuthenticated } = useAuthStore();
   const queryClient = useQueryClient();
   const [raiseDateTime, setRaiseDateTime] = useState(() => new Date());
@@ -301,6 +301,8 @@ export default function WorkOrders() {
   }, [allWorkOrders, userIsAdmin]);
 
   const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "incharge" | "all" | "approval">("assigned");
+  const activeAssetHistoryId = assetIdFromQuery?.trim() || "";
+  const isAssetHistoryMode = Boolean(activeAssetHistoryId);
 
   useEffect(() => {
     if (!authEnabled || activeTabInitializedRef.current) return;
@@ -319,24 +321,29 @@ export default function WorkOrders() {
   }, [activeTab, userIsAdmin, userIsIncharge]);
 
   const displayedOrders = useMemo(() => {
+    if (isAssetHistoryMode) {
+      return allWorkOrders;
+    }
     if (activeTab === "assigned") return assignedWorkOrders;
     if (activeTab === "raised") return raisedWorkOrders;
     if (userIsIncharge && activeTab === "incharge") return inchargeWorkOrders;
     if (activeTab === "approval") return approvalQueueWorkOrders;
     if (userIsAdmin && activeTab === "all") return allWorkOrders;
     return assignedWorkOrders;
-  }, [activeTab, allWorkOrders, approvalQueueWorkOrders, assignedWorkOrders, inchargeWorkOrders, raisedWorkOrders, userIsAdmin, userIsIncharge]);
+  }, [activeTab, allWorkOrders, approvalQueueWorkOrders, assignedWorkOrders, inchargeWorkOrders, isAssetHistoryMode, raisedWorkOrders, userIsAdmin, userIsIncharge]);
 
   const kpiSource =
-    activeTab === "approval"
-      ? approvalQueueWorkOrders
-      : activeTab === "incharge"
-      ? inchargeWorkOrders
-      : activeTab === "all"
-        ? allWorkOrders
-        : activeTab === "raised"
-          ? raisedWorkOrders
-          : assignedWorkOrders;
+    isAssetHistoryMode
+      ? allWorkOrders.filter((wo: any) => wo.asset_id === activeAssetHistoryId)
+      : activeTab === "approval"
+        ? approvalQueueWorkOrders
+        : activeTab === "incharge"
+          ? inchargeWorkOrders
+          : activeTab === "all"
+            ? allWorkOrders
+            : activeTab === "raised"
+              ? raisedWorkOrders
+              : assignedWorkOrders;
   const now24h = subHours(new Date(), 24);
   const openWOs = kpiSource.filter((wo: any) => !["CLOSED"].includes(wo.status)).length;
   const closedLast24h = kpiSource.filter((wo: any) => wo.status === "CLOSED" && wo.closed_at && new Date(wo.closed_at) > now24h).length;
@@ -356,6 +363,7 @@ export default function WorkOrders() {
   const showWorkOrdersLoading = authLoading || (authEnabled && isLoading);
 
   const filtered = displayedOrders.filter((wo: any) => {
+    const matchesAsset = !activeAssetHistoryId || wo.asset_id === activeAssetHistoryId;
     const normalizedSearch = searchQuery.trim().toLowerCase();
     const matchesSearch =
       normalizedSearch.length === 0 ||
@@ -366,8 +374,16 @@ export default function WorkOrders() {
     const matchesStatus = effectiveStatusFilter === "all" || wo.status === effectiveStatusFilter;
     const matchesCat = categoryFilter === "all" || wo.category === categoryFilter;
     const matchesType = typeFilter === "all" || wo.wo_type === typeFilter;
-    return matchesSearch && matchesStatus && matchesCat && matchesType;
+    return matchesAsset && matchesSearch && matchesStatus && matchesCat && matchesType;
   });
+
+  const clearAssetHistoryFilter = () => {
+    if (!activeAssetHistoryId) return;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("assetId");
+    nextParams.delete("mode");
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -991,6 +1007,16 @@ export default function WorkOrders() {
     const parsed = parseQrContent(rawValue);
     let scannedMachineId = parsed.machineId || "";
 
+    if (!scannedMachineId && parsed.machineCode) {
+      try {
+        const resolvedByCode = await resolveQrMachineCode(parsed.machineCode, parsed.token);
+        scannedMachineId = resolvedByCode.data.asset?.id || "";
+      } catch {
+        setQrMismatchMessage("QR could not be resolved. Rescan machine QR.");
+        return;
+      }
+    }
+
     if (!scannedMachineId && parsed.token) {
       try {
         const resolved = await resolveQrToken(parsed.token);
@@ -1322,7 +1348,7 @@ export default function WorkOrders() {
         ))}
       </div>
 
-      {(userIsAdmin || userIsIncharge || Boolean(user)) && (
+      {(userIsAdmin || userIsIncharge || Boolean(user)) && !isAssetHistoryMode && (
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/70 bg-card/60 p-3 shadow-sm">
           <Button variant={activeTab === "assigned" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("assigned")}>Assigned to Me ({assignedWorkOrders.length})</Button>
           <Button variant={activeTab === "raised" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("raised")}>Raised by Me ({raisedWorkOrders.length})</Button>
@@ -1343,6 +1369,22 @@ export default function WorkOrders() {
             </Button>
           </div>
         </div>
+      )}
+
+      {isAssetHistoryMode && (
+        <Card className="shadow-card">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Machine-Scoped History</p>
+              <p className="text-xs text-muted-foreground">
+                Showing work orders only for {prefetchedAsset?.code || "the selected machine"}.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={clearAssetHistoryFilter}>
+              View All Machines
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
       <Card className="shadow-card">
@@ -1377,15 +1419,17 @@ export default function WorkOrders() {
       <Card className="shadow-card">
         <CardHeader className="pb-3">
           <CardTitle className="text-base sm:text-lg font-semibold">
-            {activeTab === "incharge"
-              ? "Category Work Orders"
-              : activeTab === "approval"
-                ? "Approval Queue"
-              : activeTab === "all"
-                ? "All Work Orders"
-                : activeTab === "raised"
-                  ? "Raised Work Orders"
-                  : "Assigned Work Orders"} ({filtered.length})
+            {isAssetHistoryMode
+              ? "Machine Work Order History"
+              : activeTab === "incharge"
+                ? "Category Work Orders"
+                : activeTab === "approval"
+                  ? "Approval Queue"
+                  : activeTab === "all"
+                    ? "All Work Orders"
+                    : activeTab === "raised"
+                      ? "Raised Work Orders"
+                      : "Assigned Work Orders"} ({filtered.length})
           </CardTitle>
         </CardHeader>
         <CardContent>

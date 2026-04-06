@@ -1,6 +1,7 @@
 export interface ParsedQrContent {
   token?: string;
   machineId?: string;
+  machineCode?: string;
   raw: string;
 }
 
@@ -34,15 +35,23 @@ export function parseQrContent(content: string): ParsedQrContent {
   try {
     const parsed = new URL(trimmed);
     const path = parsed.pathname;
-    const token = extractTokenFromPath(path);
-    if (token) {
-      return { token, raw: content };
-    }
+    const tokenFromPath = extractTokenFromPath(path);
+    const tokenFromQuery = parsed.searchParams.get("token") || undefined;
+    const token = tokenFromPath || (tokenFromQuery && /^[A-Za-z0-9_-]{16,128}$/.test(tokenFromQuery) ? tokenFromQuery : undefined);
 
     const parts = path.split("/").filter(Boolean);
     const machineIndex = parts.findIndex((part) => part === "machine");
     if (machineIndex >= 0 && parts[machineIndex + 1]) {
-      return { machineId: decodeURIComponent(parts[machineIndex + 1]), raw: content };
+      return { token, machineId: decodeURIComponent(parts[machineIndex + 1]), raw: content };
+    }
+
+    const assetIndex = parts.findIndex((part) => part === "assets");
+    if (assetIndex >= 0 && parts[assetIndex + 1]) {
+      return { token, machineCode: decodeURIComponent(parts[assetIndex + 1]), raw: content };
+    }
+
+    if (token) {
+      return { token, raw: content };
     }
   } catch {
     // Keep fallback below.

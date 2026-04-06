@@ -6,7 +6,7 @@ import { requireAuth } from '../../middlewares/authMiddleware';
 import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
 import { ok } from '../../utils/apiResponse';
 
-const ALLOWED_ASSET_TYPES = ['BOILER', 'COMPRESSOR', 'CHILLER', 'HVAC', 'PUMP'] as const;
+const ALLOWED_ASSET_TYPES = ['BOILER', 'COMPRESSOR', 'CHILLER', 'HVAC', 'PUMP', 'MOTOR', 'GENERATOR', 'FAN', 'CONVEYOR', 'ROBOT', 'CNC', 'TRANSFORMER', 'GEARBOX', 'COOLING_TOWER'] as const;
 
 const compareQuerySchema = z
   .object({

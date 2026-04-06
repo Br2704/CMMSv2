@@ -21,6 +21,7 @@ export * from './asset-qr.entity';
 export * from './asset-downtime-event.entity';
 export * from './asset-reliability-kpi.entity';
 export * from './asset-performance-log.entity';
+export * from './asset-energy-meter-config.entity';
 export * from './feature-flag.entity';
 export * from './alert-config.entity';
 export * from './alert-log.entity';

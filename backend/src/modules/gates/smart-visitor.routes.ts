@@ -977,7 +977,7 @@ smartVisitorRouter.post('/admin/geo-fences', requireRole(['SUPERADMIN', 'ADMIN']
   }
 });
 
-smartVisitorRouter.post('/visitor/create', requirePermission('GATES', 'CREATE'), async (req, res, next) => {
+smartVisitorRouter.post('/visitor/create', requireRole(['SECURITY']), requirePermission('GATES', 'CREATE'), async (req, res, next) => {
   try {
     const body = visitorCreateSchema.parse(req.body);
     const plantId = await resolvePlant(req, body.plantId);

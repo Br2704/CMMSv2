@@ -637,14 +637,16 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
     const payload = buildReliabilityPayload(rows, query.startDate, query.endDate);
     const now = new Date();
 
-    const organizationName = req.auth?.organizationId
-      ? (await AppDataSource.getRepository(OrganizationEntity).findOneBy({ id: req.auth.organizationId }))?.name ?? 'CMMS Organization'
-      : 'CMMS Organization';
+    const organization = req.auth?.organizationId
+      ? await AppDataSource.getRepository(OrganizationEntity).findOneBy({ id: req.auth.organizationId })
+      : null;
+    const organizationName = organization?.name ?? 'CMMS Organization';
+    const organizationLogoUrl = organization?.logoUrl ?? null;
 
     const reportTitle = 'Machine Reliability Report';
     const generatedAt = now.toISOString();
     const brandedHeader = `${organizationName} | ${reportTitle} | Generated: ${generatedAt}`;
-    const brandedFooter = 'Powered by TamOptix Technologies | © TamOptix Technologies. All Rights Reserved.';
+    const brandedFooter = 'Powered by TamOptix Technologies | TamOptix CMMS Platform';
 
     const detailRows = rows.map((row) => [
       row.woNumber,
@@ -668,11 +670,14 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
         ['Header', ''],
         [
           [brandedHeader, ''],
+          ['Organization', organizationName],
+          ['Organization Logo', organizationLogoUrl ?? '-'],
           ['MTTR Minutes', summaryMttrMinutes],
           ['MTBF Minutes', summaryMtbfMinutes],
           ['MTTF Minutes', summaryMttfMinutes],
           ['Downtime Minutes', payload.summary.downtimeMinutes],
           ['Availability %', payload.summary.availabilityPercent],
+          ['Footer Branding', brandedFooter],
           [brandedFooter, ''],
           [],
           ['WO Number', 'Machine Code', 'Machine Name', 'Plant', 'Department', 'Module', 'Status', 'Maintenance Type', 'Downtime Min', 'Created At', 'Closed At'],
@@ -692,6 +697,7 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
           headers: ['Field', 'Value'],
           rows: [
             ['Organization', organizationName],
+            ['Organization Logo', organizationLogoUrl ?? '-'],
             ['Report Title', reportTitle],
             ['Generated At', generatedAt],
             ['MTTR Minutes', summaryMttrMinutes],
@@ -707,7 +713,12 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
           headers: ['WO Number', 'Machine Code', 'Machine Name', 'Plant', 'Department', 'Module', 'Status', 'Maintenance Type', 'Downtime Min', 'Created At', 'Closed At'],
           rows: detailRows,
         },
-      ]);
+      ], {
+        organizationName,
+        organizationLogoUrl,
+        generatedAt,
+        footerBranding: brandedFooter,
+      });
       res.setHeader('Content-Type', 'application/vnd.ms-excel');
       res.setHeader('Content-Disposition', `attachment; filename="machine-reliability-${now.toISOString().slice(0, 10)}.xls"`);
       res.status(200).send(workbook);
@@ -716,6 +727,7 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
 
     const pdf = createSimplePdf([
       brandedHeader,
+      `Organization Logo: ${organizationLogoUrl ?? '-'}`,
       `MTTR: ${summaryMttrMinutes} minutes`,
       `MTBF: ${summaryMtbfMinutes} minutes`,
       `MTTF: ${summaryMttfMinutes} minutes`,
@@ -725,9 +737,13 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
       'Top Machine Reliability Ranking:',
       ...payload.ranking.slice(0, 15).map((row, index) => `${index + 1}. ${row.assetCode} ${row.assetName} | MTTR ${Number((row.mttrHours * 60).toFixed(2))} min | Failures ${row.failures}`),
       '',
-      brandedFooter,
-      'Page 1',
-    ]);
+    ], {
+      title: reportTitle,
+      subtitle: organizationName,
+      organizationLogoUrl,
+      generatedAt,
+      footerBranding: brandedFooter,
+    });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="machine-reliability-${now.toISOString().slice(0, 10)}.pdf"`);
     res.status(200).send(pdf);

@@ -1,3 +1,4 @@
+import { createServer } from 'http';
 import { app } from './app';
 import { startAmcScheduler } from './modules/amc/amc.scheduler';
 import { env } from './config/env';
@@ -7,6 +8,7 @@ import { startCalibrationScheduler } from './modules/calibration/calibration.sch
 import { startOrganizationSubscriptionScheduler } from './modules/organizations/organizations.scheduler';
 import { startPmSchedulesScheduler } from './modules/pmSchedules/pmschedules.scheduler';
 import { startReportsScheduler } from './modules/reports/reports.scheduler';
+import { startDashboardSocketServer, stopDashboardSocketServer } from './realtime/dashboard-socket';
 
 async function bootstrap() {
   await AppDataSource.initialize();
@@ -15,13 +17,17 @@ async function bootstrap() {
   startCalibrationScheduler();
   startAmcScheduler();
   startOrganizationSubscriptionScheduler();
-  const server = app.listen(env.PORT, () => {
+
+  const server = createServer(app);
+  startDashboardSocketServer(server);
+  server.listen(env.PORT, () => {
     logger.info({ port: env.PORT }, 'Server started');
   });
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutting down server');
     server.close(async () => {
+      await stopDashboardSocketServer();
       if (AppDataSource.isInitialized) {
         await AppDataSource.destroy();
       }

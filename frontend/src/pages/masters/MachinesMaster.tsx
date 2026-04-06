@@ -131,6 +131,20 @@ function parseCsvRows(content: string): string[][] {
   return rows.filter((row) => row.some((cell) => cell.length > 0));
 }
 
+function downloadCsvTemplate(fileName: string, headers: string[], rows: string[][]) {
+  const toCell = (value: string) => `"${String(value).replace(/"/g, '""')}"`;
+  const csv = [headers.map(toCell).join(","), ...rows.map((row) => row.map(toCell).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
 function nextUniqueCode(prefix: string, source: string, existingCodes: Set<string>) {
   const cleaned = source.toUpperCase().replace(/[^A-Z0-9]+/g, "");
   const base = (cleaned || prefix).slice(0, 10);
@@ -525,7 +539,11 @@ export default function MachinesMaster() {
             code: machineCode,
             name: machineName,
             type: normalizeEnum(pickCell(row, ["type"]), ["MACHINE", "UTILITY"], "MACHINE"),
-            assetType: normalizeEnum(pickCell(row, ["asset_type", "assettype"]), ["BOILER", "COMPRESSOR", "CHILLER", "HVAC", "PUMP"], "PUMP") as "BOILER" | "COMPRESSOR" | "CHILLER" | "HVAC" | "PUMP",
+            assetType: normalizeEnum(
+              pickCell(row, ["asset_type", "assettype"]),
+              ["BOILER", "COMPRESSOR", "CHILLER", "HVAC", "PUMP", "MOTOR", "GENERATOR", "FAN", "CONVEYOR", "ROBOT", "CNC", "TRANSFORMER", "GEARBOX", "COOLING_TOWER"],
+              "PUMP",
+            ) as "BOILER" | "COMPRESSOR" | "CHILLER" | "HVAC" | "PUMP" | "MOTOR" | "GENERATOR" | "FAN" | "CONVEYOR" | "ROBOT" | "CNC" | "TRANSFORMER" | "GEARBOX" | "COOLING_TOWER",
             departmentId: department.id,
             moduleId: machineModule.id,
             plantId: resolvedPlantId,
@@ -575,6 +593,63 @@ export default function MachinesMaster() {
     }
   };
 
+  const handleDownloadMachineSampleCsv = () => {
+    downloadCsvTemplate(
+      "machine_bulk_upload_sample.csv",
+      [
+        "machine_code",
+        "machine_name",
+        "department",
+        "module",
+        "type",
+        "asset_type",
+        "criticality",
+        "status",
+        "make",
+        "model",
+        "serial_number",
+        "refrigerant_gas_type",
+        "commission_date",
+        "warranty_expiry",
+      ],
+      [
+        [
+          "MCH-001",
+          "Air Compressor 01",
+          "DEP-UTILITY - Utility",
+          "MOD-AIR - Air System",
+          "MACHINE",
+          "COMPRESSOR",
+          "HIGH",
+          "ACTIVE",
+          "Atlas Copco",
+          "GA55",
+          "AC-2024-0001",
+          "",
+          "2024-01-10",
+          "2028-01-10",
+        ],
+        [
+          "MCH-002",
+          "Cooling Tower 02",
+          "DEP-UTILITY - Utility",
+          "MOD-CT - Cooling",
+          "UTILITY",
+          "COOLING_TOWER",
+          "MEDIUM",
+          "ACTIVE",
+          "BAC",
+          "VXT-180",
+          "CT-2024-0002",
+          "",
+          "2023-06-01",
+          "2027-06-01",
+        ],
+      ],
+    );
+    toast.success("Machine sample CSV downloaded");
+  };
+
   const fileToDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -614,14 +689,12 @@ export default function MachinesMaster() {
     });
   };
 
-  const buildMachineUrlPayload = (assetId: string) => `${window.location.origin}/machine/${assetId}`;
-
   const handleOpenQr = async (asset: Asset) => {
     setQrLoading(true);
     try {
       const response = await getAssetQr(asset.id);
       setQrData(response.data);
-      setQrImageDataUrl(await generateQrImage(buildMachineUrlPayload(asset.id)));
+      setQrImageDataUrl(await generateQrImage(response.data.qrPayload));
       setIsQrOpen(true);
     } catch (error: any) {
       toast.error(error?.message || "Failed to load QR code");
@@ -636,7 +709,7 @@ export default function MachinesMaster() {
     try {
       const response = await rotateAssetQr(selectedMachine.id);
       setQrData(response.data);
-      setQrImageDataUrl(await generateQrImage(buildMachineUrlPayload(selectedMachine.id)));
+      setQrImageDataUrl(await generateQrImage(response.data.qrPayload));
       toast.success("QR token rotated successfully");
     } catch (error: any) {
       toast.error(error?.message || "Failed to rotate QR token");
@@ -664,7 +737,7 @@ export default function MachinesMaster() {
     setQrLoading(true);
     try {
       const response = await getAssetQr(selectedMachine.id);
-      const imageDataUrl = await generateQrImage(buildMachineUrlPayload(selectedMachine.id));
+      const imageDataUrl = await generateQrImage(response.data.qrPayload);
       setQrData(response.data);
       setQrImageDataUrl(imageDataUrl);
       triggerQrDownload(imageDataUrl, selectedMachine.code);
@@ -699,7 +772,7 @@ export default function MachinesMaster() {
             <img src="${qrImageDataUrl}" alt="Asset QR" />
             <div class="token">Machine ID: ${selectedMachine.id}</div>
             <div class="token">Machine Name: ${selectedMachine.name}</div>
-            <div class="token">URL: ${buildMachineUrlPayload(selectedMachine.id)}</div>
+            <div class="token">URL: ${qrData.publicResolverUrl}</div>
           </div>
           <script>window.print();</script>
         </body>
@@ -780,7 +853,7 @@ export default function MachinesMaster() {
         code: formData.code.trim(),
         name: formData.name.trim(),
         type: formData.type,
-        assetType: formData.assetType as "BOILER" | "COMPRESSOR" | "CHILLER" | "HVAC" | "PUMP",
+        assetType: formData.assetType as "BOILER" | "COMPRESSOR" | "CHILLER" | "HVAC" | "PUMP" | "MOTOR" | "GENERATOR" | "FAN" | "CONVEYOR" | "ROBOT" | "CNC" | "TRANSFORMER" | "GEARBOX" | "COOLING_TOWER",
         departmentId: formData.departmentId,
         moduleId: formData.moduleId,
         costCenterId: formData.costCenterId || null,
@@ -953,10 +1026,39 @@ export default function MachinesMaster() {
         description="Manage machines under Plant -> Department -> Module -> Machine hierarchy"
         actions={
           canManage ? (
-            <Button onClick={handleAdd} className="w-full gap-2 gradient-primary text-primary-foreground shadow-glow sm:w-auto">
-              <Plus className="h-4 w-4" />
-              Add Machine
-            </Button>
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+              <input
+                ref={bulkUploadInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                aria-label="Bulk upload machine CSV"
+                title="Bulk upload machine CSV"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] || null;
+                  void handleBulkMachineFileChange(file);
+                  event.target.value = "";
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full gap-2 sm:w-auto"
+                onClick={() => bulkUploadInputRef.current?.click()}
+                disabled={bulkUploading}
+              >
+                <Upload className="h-4 w-4" />
+                {bulkUploading ? "Uploading..." : "Bulk Upload CSV"}
+              </Button>
+              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={handleDownloadMachineSampleCsv}>
+                <Download className="h-4 w-4" />
+                Download Sample CSV
+              </Button>
+              <Button onClick={handleAdd} className="w-full gap-2 gradient-primary text-primary-foreground shadow-glow sm:w-auto">
+                <Plus className="h-4 w-4" />
+                Add Machine
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -1090,6 +1192,15 @@ export default function MachinesMaster() {
               { value: "CHILLER", label: "Chiller" },
               { value: "HVAC", label: "HVAC" },
               { value: "PUMP", label: "Pump" },
+              { value: "MOTOR", label: "Motor" },
+              { value: "GENERATOR", label: "Generator" },
+              { value: "FAN", label: "Fan" },
+              { value: "CONVEYOR", label: "Conveyor" },
+              { value: "ROBOT", label: "Robot" },
+              { value: "CNC", label: "CNC" },
+              { value: "TRANSFORMER", label: "Transformer" },
+              { value: "GEARBOX", label: "Gearbox" },
+              { value: "COOLING_TOWER", label: "Cooling Tower" },
             ]}
             placeholder="Select asset type"
           />

@@ -12,7 +12,21 @@ export interface Asset {
   code: string;
   name: string;
   type: string;
-  assetType: "BOILER" | "COMPRESSOR" | "CHILLER" | "HVAC" | "PUMP";
+  assetType:
+    | "BOILER"
+    | "COMPRESSOR"
+    | "CHILLER"
+    | "HVAC"
+    | "PUMP"
+    | "MOTOR"
+    | "GENERATOR"
+    | "FAN"
+    | "CONVEYOR"
+    | "ROBOT"
+    | "CNC"
+    | "TRANSFORMER"
+    | "GEARBOX"
+    | "COOLING_TOWER";
   departmentId: string | null;
   moduleId: string | null;
   costCenterId: string | null;
@@ -41,7 +55,21 @@ export interface AssetPayload {
   code: string;
   name: string;
   type?: string;
-  assetType?: "BOILER" | "COMPRESSOR" | "CHILLER" | "HVAC" | "PUMP";
+  assetType?:
+    | "BOILER"
+    | "COMPRESSOR"
+    | "CHILLER"
+    | "HVAC"
+    | "PUMP"
+    | "MOTOR"
+    | "GENERATOR"
+    | "FAN"
+    | "CONVEYOR"
+    | "ROBOT"
+    | "CNC"
+    | "TRANSFORMER"
+    | "GEARBOX"
+    | "COOLING_TOWER";
   departmentId?: string | null;
   moduleId?: string | null;
   costCenterId?: string | null;
@@ -108,6 +136,47 @@ export interface AssetPerformanceSample {
   notes: string | null;
 }
 
+export interface AssetEnergyMeterConfig {
+  id: string;
+  assetId: string;
+  plantId: string;
+  checklistName: string;
+  meterName: string;
+  connectionType: "MODBUS_TCP" | "MODBUS_RTU_RS485";
+  ipAddress: string | null;
+  port: number;
+  modbusSlaveId: number | null;
+  modbusRegister: string | null;
+  baudRate: number | null;
+  parity: "NONE" | "EVEN" | "ODD" | null;
+  stopBits: number | null;
+  pollIntervalSeconds: number;
+  driverType: "DOTNET_RS485_BRIDGE" | "NATIVE_MODBUS_TCP";
+  bridgeEndpoint: string | null;
+  notes: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssetEnergyMeterConfigPayload {
+  checklistName?: string;
+  meterName: string;
+  connectionType?: "MODBUS_TCP" | "MODBUS_RTU_RS485";
+  ipAddress?: string | null;
+  port?: number;
+  modbusSlaveId?: number | null;
+  modbusRegister?: string | null;
+  baudRate?: number | null;
+  parity?: "NONE" | "EVEN" | "ODD" | null;
+  stopBits?: number | null;
+  pollIntervalSeconds?: number;
+  driverType?: "DOTNET_RS485_BRIDGE" | "NATIVE_MODBUS_TCP";
+  bridgeEndpoint?: string | null;
+  notes?: string | null;
+  isActive?: boolean;
+}
+
 export interface AssetOverview {
   asset: Asset & {
     department?: Department | null;
@@ -131,6 +200,7 @@ export interface AssetOverview {
     reliability: AssetReliabilitySummary | null;
     performance: AssetPerformanceSample[];
     esgSample: Array<Record<string, unknown>>;
+    energyMeterConfigs: AssetEnergyMeterConfig[];
   };
 }
 
@@ -160,4 +230,26 @@ export function deleteAsset(id: string) {
 
 export function listAssetWorkOrders(id: string, params: ListParams = {}) {
   return httpRequest<ApiListResponse<Record<string, unknown>>>(`/assets/${id}/work-orders${toQueryString(params)}`, { method: "GET" });
+}
+
+export function listAssetEnergyMeterConfigs(id: string) {
+  return httpRequest<ApiResponse<AssetEnergyMeterConfig[]>>(`/assets/${id}/energy-meter-configs`, { method: "GET" });
+}
+
+export function createAssetEnergyMeterConfig(id: string, payload: AssetEnergyMeterConfigPayload) {
+  return httpRequest<ApiResponse<AssetEnergyMeterConfig>>(`/assets/${id}/energy-meter-configs`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAssetEnergyMeterConfig(id: string, configId: string, payload: Partial<AssetEnergyMeterConfigPayload>) {
+  return httpRequest<ApiResponse<AssetEnergyMeterConfig>>(`/assets/${id}/energy-meter-configs/${configId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAssetEnergyMeterConfig(id: string, configId: string) {
+  return httpRequest<ApiResponse<DeleteResult>>(`/assets/${id}/energy-meter-configs/${configId}`, { method: "DELETE" });
 }

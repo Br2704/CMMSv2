@@ -23,6 +23,13 @@ export interface QrResolvedAsset {
   qrCodeId: string | null;
   status?: string | null;
   location?: string | null;
+  machineImageUrl?: string | null;
+  reliability?: {
+    mttrMinutes?: string | number | null;
+    mtbfMinutes?: string | number | null;
+    downtimeMinutes?: string | number | null;
+    windowEnd?: string | null;
+  } | null;
 }
 
 export interface QrResolvedHierarchy {
@@ -44,6 +51,11 @@ export interface QrResolveData {
   links?: QrResolvedLinks;
 }
 
+function withOptionalToken(path: string, token?: string) {
+  if (!token) return path;
+  return `${path}?token=${encodeURIComponent(token)}`;
+}
+
 export function getAssetQr(assetId: string) {
   return httpRequest<ApiResponse<AssetQrData>>(`/assets/${assetId}/qr`, {
     method: "GET",
@@ -63,8 +75,20 @@ export function resolveQrToken(token: string) {
   });
 }
 
+export function resolveQrMachineCode(machineCode: string, token?: string) {
+  return httpRequest<ApiResponse<QrResolveData>>(withOptionalToken(`/qr/resolve-by-code/${encodeURIComponent(machineCode)}`, token), {
+    method: "GET",
+  });
+}
+
 export function resolvePublicQrToken(token: string) {
   return httpRequest<ApiResponse<QrResolveData>>(`/qr/public/${encodeURIComponent(token)}`, {
+    method: "GET",
+  });
+}
+
+export function resolvePublicMachineCode(machineCode: string, token?: string) {
+  return httpRequest<ApiResponse<QrResolveData>>(withOptionalToken(`/qr/public/machine/${encodeURIComponent(machineCode)}`, token), {
     method: "GET",
   });
 }

@@ -328,6 +328,7 @@ function App() {
               <Routes>
                 <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
                 <Route path="/qr/:token" element={<PublicQrAssetPage />} />
+                <Route path="/assets/:machineCode" element={<PublicQrAssetPage />} />
                 <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
                   <Route path="/" element={<HomeRoute />} />
                   <Route path="/root/dashboard" element={<RootOnlyRoute><RootDashboard /></RootOnlyRoute>} />

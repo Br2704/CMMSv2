@@ -1,10 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { dbClient } from "@/api/dbClient";
 import { getGateDashboardSummary } from "@/api/gates";
 import { getStoredAccessToken } from "@/api/http";
 import { useAuthStore, isAdmin, isIncharge, isSuperAdmin } from "@/store/auth.store";
 import { usePermissions } from "@/hooks/usePermissions";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
+import { useDashboardRealtime } from "@/hooks/useDashboardRealtime";
 import { subDays, subHours, format, startOfDay } from "date-fns";
 
 // Map incharge roles → WO categories
@@ -82,6 +83,7 @@ function calculateMachineWiseMtbfMinutes(workOrders: any[]): number {
 }
 
 export function useDashboardData(selectedPlantId?: string | null) {
+  const queryClient = useQueryClient();
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const { hasModuleAccess, loading: permissionsLoading } = usePermissions();
   const authEnabled = !authLoading && isAuthenticated && Boolean(getStoredAccessToken());
@@ -111,6 +113,23 @@ export function useDashboardData(selectedPlantId?: string | null) {
       return failureCount < 1;
     },
   };
+
+  const lastRealtimeRefreshAtRef = useRef(0);
+  useDashboardRealtime({
+    enabled: authEnabled && permissionsReady,
+    onRefresh: () => {
+      const now = Date.now();
+      if (now - lastRealtimeRefreshAtRef.current < 1500) return;
+      lastRealtimeRefreshAtRef.current = now;
+
+      void queryClient.invalidateQueries({ queryKey: ["dashboard_wo"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard_assets"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard_pm"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard_calibrations"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard_gate"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard_plants"] });
+    },
+  });
 
   // Fetch all work orders (RLS handles plant filtering)
   const { data: workOrders = [], isLoading: woLoading } = useQuery({

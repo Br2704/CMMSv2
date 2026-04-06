@@ -1293,12 +1293,11 @@ export function EnterpriseAssetMindmap({
   ]);
 
   const focusNodeId = useMemo(() => {
-    const hasExplicitSelection = Boolean(selectedAssetId || selectedModuleId || selectedDepartmentId);
     if (blinkAssetId) return `machine:${blinkAssetId}`;
     if (matchingMachineNodeIds.length > 0) return matchingMachineNodeIds[0];
-    if (!hasExplicitSelection) return null;
-    return selectedNodeId;
-  }, [blinkAssetId, matchingMachineNodeIds, selectedAssetId, selectedDepartmentId, selectedModuleId, selectedNodeId]);
+    if (selectedAssetId) return `machine:${selectedAssetId}`;
+    return null;
+  }, [blinkAssetId, matchingMachineNodeIds, selectedAssetId]);
 
   useEffect(() => {
     if (!flowInstance || !focusNodeId) return;
@@ -1314,6 +1313,7 @@ export function EnterpriseAssetMindmap({
 
   useEffect(() => {
     if (!flowInstance || focusNodeId || flowData.nodes.length === 0) return;
+    if (selectedDepartmentId || selectedModuleId) return;
 
     const plantNodes = flowData.nodes.filter((node) => {
       const data = node.data as MindmapNodeData;
@@ -1333,7 +1333,7 @@ export function EnterpriseAssetMindmap({
       },
       { duration: 420 },
     );
-  }, [flowData.nodes, focusNodeId, flowInstance]);
+  }, [flowData.nodes, focusNodeId, flowInstance, selectedDepartmentId, selectedModuleId]);
 
   const nodeTypes = useMemo(() => ({ mindmapNode: MindmapNode }), []);
 

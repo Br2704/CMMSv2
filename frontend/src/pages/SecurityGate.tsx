@@ -58,6 +58,15 @@ function normalizeKey(value: string | null | undefined) {
     .replace(/^_+|_+$/g, "");
 }
 
+function isSecurityRole(role: string) {
+  const normalized = role
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized === "SECURITY" || normalized === "SECURITY_USER";
+}
+
 function defaultSummary(): GateDashboardSummary {
   return {
     visitorsToday: 0,
@@ -117,6 +126,10 @@ const visitorDurationOptions = [1, 2, 3, 4, 6, 8, 12, 24].map((hours) => ({
 export default function SecurityGate() {
   const { user } = useAuthStore();
   const plantId = user?.plantId || undefined;
+  const canCreateTemporaryVisitor = useMemo(
+    () => (user?.roles ?? []).some((role) => isSecurityRole(role)),
+    [user?.roles],
+  );
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -725,6 +738,10 @@ export default function SecurityGate() {
   };
 
   const handleCreateSmartVisitor = async () => {
+    if (!canCreateTemporaryVisitor) {
+      toast.error("Only security role users can create temporary visitor access");
+      return;
+    }
     if (!plantId) {
       toast.error("Plant context is missing for this user");
       return;
@@ -1182,9 +1199,15 @@ export default function SecurityGate() {
                     <Textarea value={smartVisitorForm.remarks} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, remarks: event.target.value }))} rows={2} placeholder="Optional note for approval flow" />
                   </div>
 
-                  <Button className="w-full" onClick={() => void handleCreateSmartVisitor()} disabled={creatingSmartVisitor}>
+                  <Button className="w-full" onClick={() => void handleCreateSmartVisitor()} disabled={creatingSmartVisitor || !canCreateTemporaryVisitor}>
                     {creatingSmartVisitor ? "Creating Visitor Session..." : "Create Temporary Visitor + Approval Window"}
                   </Button>
+
+                  {!canCreateTemporaryVisitor ? (
+                    <p className="text-xs text-rose-600">
+                      Temporary visitor creation is restricted to security roles.
+                    </p>
+                  ) : null}
 
                   {createdSmartVisitor ? (
                     <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm">

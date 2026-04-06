@@ -1,8 +1,8 @@
 import { useEffect, useMemo } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowRight, Building2, Factory, Loader2, LogIn, MapPin, QrCode, ScanLine, ShieldCheck } from "lucide-react";
-import { resolvePublicQrToken } from "@/api/qr";
+import { resolvePublicMachineCode, resolvePublicQrToken } from "@/api/qr";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -13,21 +13,44 @@ function formatHierarchyValue(code?: string | null, name?: string | null) {
   return code || name || "-";
 }
 
+function formatMetricMinutes(value?: string | number | null) {
+  if (value === null || value === undefined || value === "") return "-";
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return String(value);
+  return `${numeric.toFixed(1)} min`;
+}
+
 export default function PublicQrAssetPage() {
-  const { token } = useParams<{ token: string }>();
+  const { token, machineCode } = useParams<{ token?: string; machineCode?: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
-  const returnTo = token ? `/qr/${encodeURIComponent(token)}` : "/";
+  const tokenFromQuery = searchParams.get("token") || undefined;
+
+  const returnTo = useMemo(() => {
+    if (token) {
+      return `/qr/${encodeURIComponent(token)}`;
+    }
+    if (machineCode) {
+      const query = tokenFromQuery ? `?token=${encodeURIComponent(tokenFromQuery)}` : "";
+      return `/assets/${encodeURIComponent(machineCode)}${query}`;
+    }
+    return "/";
+  }, [machineCode, token, tokenFromQuery]);
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["public_qr_asset", token],
-    enabled: Boolean(token),
+    queryKey: ["public_qr_asset", token || null, machineCode || null, tokenFromQuery || null],
+    enabled: Boolean(token || machineCode),
     queryFn: async () => {
-      if (!token) {
-        throw new Error("Missing QR token");
+      if (token) {
+        const response = await resolvePublicQrToken(token);
+        return response.data;
       }
-      const response = await resolvePublicQrToken(token);
-      return response.data;
+      if (machineCode) {
+        const response = await resolvePublicMachineCode(machineCode, tokenFromQuery);
+        return response.data;
+      }
+      throw new Error("Missing machine code or QR token");
     },
     retry: false,
   });
@@ -102,6 +125,43 @@ export default function PublicQrAssetPage() {
                         <StatusBadge variant={statusVariant}>{data.asset.status || "READY"}</StatusBadge>
                         <div className="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs text-slate-300">
                           QR ID: {data.asset.qrCodeId || "-"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                        <Factory className="h-4 w-4 text-cyan-300" />
+                        Machine Image
+                      </div>
+                      <div className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-slate-950/40">
+                        {data.asset.machineImageUrl ? (
+                          <img src={data.asset.machineImageUrl} alt={data.asset.name} className="h-44 w-full object-cover" />
+                        ) : (
+                          <div className="flex h-44 items-center justify-center text-xs text-slate-400">No machine image available</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                        <ShieldCheck className="h-4 w-4 text-teal-300" />
+                        Reliability Snapshot
+                      </div>
+                      <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                        <div className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2">
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400">MTTR</p>
+                          <p className="font-semibold text-slate-100">{formatMetricMinutes(data.asset.reliability?.mttrMinutes)}</p>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2">
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400">MTBF</p>
+                          <p className="font-semibold text-slate-100">{formatMetricMinutes(data.asset.reliability?.mtbfMinutes)}</p>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2">
+                          <p className="text-[11px] uppercase tracking-wide text-slate-400">Downtime</p>
+                          <p className="font-semibold text-slate-100">{formatMetricMinutes(data.asset.reliability?.downtimeMinutes)}</p>
                         </div>
                       </div>
                     </div>

@@ -3,10 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Eye, Factory, Gauge, History, Image as ImageIcon, Loader2, QrCode, ScanLine, Search, ShieldCheck, Wrench } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { getAsset, getAssetOverview, type Asset, type AssetOverview } from "@/api/assets";
+import { createAssetEnergyMeterConfig, getAsset, getAssetOverview, type Asset, type AssetOverview } from "@/api/assets";
 import { getMasterDataGraph } from "@/api/master-data";
 import { listWorkOrders } from "@/api/workorders";
-import { getAssetQr, resolveQrToken, type AssetQrData } from "@/api/qr";
+import { getAssetQr, resolveQrMachineCode, resolveQrToken, type AssetQrData } from "@/api/qr";
 import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -17,6 +17,8 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
+import { FormDialog } from "@/components/shared/FormDialog";
+import { InputField, SelectField } from "@/components/shared/FormField";
 import { ViewDialog } from "@/components/shared/ViewDialog";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { EnterpriseAssetMindmap } from "@/components/assets/EnterpriseAssetMindmap";
@@ -57,18 +59,61 @@ function formatMinutes(value: string | number | null | undefined) {
   return `${numeric.toFixed(1)} min`;
 }
 
+type EnergyMeterFormState = {
+  checklistName: string;
+  meterName: string;
+  connectionType: "MODBUS_TCP" | "MODBUS_RTU_RS485";
+  ipAddress: string;
+  port: string;
+  modbusSlaveId: string;
+  modbusRegister: string;
+  baudRate: string;
+  parity: "NONE" | "EVEN" | "ODD";
+  stopBits: string;
+  pollIntervalSeconds: string;
+  driverType: "DOTNET_RS485_BRIDGE" | "NATIVE_MODBUS_TCP";
+  bridgeEndpoint: string;
+  notes: string;
+};
+
+const defaultEnergyMeterForm: EnergyMeterFormState = {
+  checklistName: "Energy Meter Checklist",
+  meterName: "",
+  connectionType: "MODBUS_TCP",
+  ipAddress: "",
+  port: "502",
+  modbusSlaveId: "1",
+  modbusRegister: "40001",
+  baudRate: "9600",
+  parity: "NONE",
+  stopBits: "1",
+  pollIntervalSeconds: "60",
+  driverType: "DOTNET_RS485_BRIDGE",
+  bridgeEndpoint: "",
+  notes: "",
+};
+
+function parseOptionalInteger(value: string): number | null | "invalid" {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  if (!/^-?\d+$/.test(normalized)) return "invalid";
+  return Number(normalized);
+}
+
 function AssetOverviewPanel({
   overview,
   qrData,
   qrImageUrl,
   qrLoading,
   onRaiseWorkOrder,
+  onOpenEnergyMeterChecklist,
 }: {
   overview: AssetOverview;
   qrData: AssetQrData | null;
   qrImageUrl: string | null;
   qrLoading: boolean;
   onRaiseWorkOrder: () => void;
+  onOpenEnergyMeterChecklist: () => void;
 }) {
   const reliability = overview.analytics.reliability;
   const resolverUrl = qrData?.publicResolverUrl || "";
@@ -213,6 +258,21 @@ function AssetOverviewPanel({
                 ))}
                 {overview.analytics.performance.length === 0 ? <p>No recent energy samples.</p> : null}
                 <p>ESG entries in plant scope: {overview.analytics.esgSample.length}</p>
+                {overview.analytics.energyMeterConfigs.length > 0 ? (
+                  <div className="space-y-1 rounded-md border border-border/50 bg-muted/20 p-2">
+                    {overview.analytics.energyMeterConfigs.slice(0, 3).map((config) => (
+                      <p key={config.id}>
+                        {config.meterName}: {config.connectionType === "MODBUS_TCP" ? `${config.ipAddress || "-"}:${config.port}` : `Slave ${config.modbusSlaveId || "-"}`}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p>No energy meter checklist configured.</p>
+                )}
+                <Button type="button" variant="outline" size="sm" className="mt-1 gap-2" onClick={onOpenEnergyMeterChecklist}>
+                  <Gauge className="h-3.5 w-3.5" />
+                  Energy Meter Checklist
+                </Button>
               </div>
             </div>
           </div>
@@ -266,6 +326,9 @@ export default function Assets() {
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [resolvingQr, setResolvingQr] = useState(false);
+  const [isEnergyMeterDialogOpen, setIsEnergyMeterDialogOpen] = useState(false);
+  const [energyMeterSubmitting, setEnergyMeterSubmitting] = useState(false);
+  const [energyMeterForm, setEnergyMeterForm] = useState<EnergyMeterFormState>(defaultEnergyMeterForm);
   const kpiPrefetchInFlightRef = useRef<Set<string>>(new Set());
   const qrBlinkTimeoutRef = useRef<number | null>(null);
   const assetIdFromQuery = searchParams.get("assetId");
@@ -575,6 +638,11 @@ export default function Assets() {
       const parsed = parseQrContent(rawValue);
       let scannedMachineId = parsed.machineId || "";
 
+      if (!scannedMachineId && parsed.machineCode) {
+        const resolvedByCode = await resolveQrMachineCode(parsed.machineCode, parsed.token);
+        scannedMachineId = resolvedByCode.data.asset?.id || "";
+      }
+
       if (!scannedMachineId && parsed.token) {
         const resolved = await resolveQrToken(parsed.token);
         scannedMachineId = resolved.data.asset?.id || "";
@@ -657,6 +725,122 @@ export default function Assets() {
     nextParams.delete("view");
     nextParams.delete("from");
     setSearchParams(nextParams, { replace: true });
+  };
+
+  const handleOpenEnergyMeterChecklist = () => {
+    if (!selectedAsset) {
+      toast.error("Select a machine before configuring an energy meter");
+      return;
+    }
+
+    setEnergyMeterForm({
+      ...defaultEnergyMeterForm,
+      meterName: `${selectedAsset.code} Energy Meter`,
+    });
+    setIsEnergyMeterDialogOpen(true);
+  };
+
+  const updateEnergyMeterForm = <K extends keyof EnergyMeterFormState>(key: K, value: EnergyMeterFormState[K]) => {
+    setEnergyMeterForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleSubmitEnergyMeterChecklist = async () => {
+    if (!selectedAsset?.id) {
+      toast.error("No machine selected for checklist configuration");
+      return;
+    }
+
+    const checklistName = energyMeterForm.checklistName.trim() || defaultEnergyMeterForm.checklistName;
+    const meterName = energyMeterForm.meterName.trim();
+    const ipAddress = energyMeterForm.ipAddress.trim();
+    const modbusRegister = energyMeterForm.modbusRegister.trim();
+    const bridgeEndpoint = energyMeterForm.bridgeEndpoint.trim();
+    const notes = energyMeterForm.notes.trim();
+
+    if (!meterName) {
+      toast.error("Meter name is required");
+      return;
+    }
+
+    if (energyMeterForm.connectionType === "MODBUS_TCP" && !ipAddress) {
+      toast.error("IP address is required for Modbus TCP");
+      return;
+    }
+
+    const port = Number(energyMeterForm.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      toast.error("Port must be between 1 and 65535");
+      return;
+    }
+
+    const pollIntervalSeconds = Number(energyMeterForm.pollIntervalSeconds);
+    if (!Number.isInteger(pollIntervalSeconds) || pollIntervalSeconds < 5 || pollIntervalSeconds > 86400) {
+      toast.error("Poll interval must be between 5 and 86400 seconds");
+      return;
+    }
+
+    const modbusSlaveId = parseOptionalInteger(energyMeterForm.modbusSlaveId);
+    if (modbusSlaveId === "invalid") {
+      toast.error("Slave ID must be a whole number");
+      return;
+    }
+    if (modbusSlaveId !== null && (modbusSlaveId < 1 || modbusSlaveId > 247)) {
+      toast.error("Slave ID must be between 1 and 247");
+      return;
+    }
+    if (energyMeterForm.connectionType === "MODBUS_RTU_RS485" && modbusSlaveId === null) {
+      toast.error("Slave ID is required for Modbus RTU RS485");
+      return;
+    }
+
+    const baudRate = parseOptionalInteger(energyMeterForm.baudRate);
+    if (baudRate === "invalid") {
+      toast.error("Baud rate must be a whole number");
+      return;
+    }
+    if (baudRate !== null && (baudRate < 300 || baudRate > 115200)) {
+      toast.error("Baud rate must be between 300 and 115200");
+      return;
+    }
+
+    const stopBits = parseOptionalInteger(energyMeterForm.stopBits);
+    if (stopBits === "invalid") {
+      toast.error("Stop bits must be a whole number");
+      return;
+    }
+    if (stopBits !== null && (stopBits < 1 || stopBits > 2)) {
+      toast.error("Stop bits must be either 1 or 2");
+      return;
+    }
+
+    setEnergyMeterSubmitting(true);
+    try {
+      await createAssetEnergyMeterConfig(selectedAsset.id, {
+        checklistName,
+        meterName,
+        connectionType: energyMeterForm.connectionType,
+        ipAddress: energyMeterForm.connectionType === "MODBUS_TCP" ? ipAddress : null,
+        port,
+        modbusSlaveId,
+        modbusRegister: modbusRegister || null,
+        baudRate,
+        parity: energyMeterForm.connectionType === "MODBUS_RTU_RS485" ? energyMeterForm.parity : null,
+        stopBits,
+        pollIntervalSeconds,
+        driverType: energyMeterForm.driverType,
+        bridgeEndpoint: bridgeEndpoint || null,
+        notes: notes || null,
+        isActive: true,
+      });
+      toast.success("Energy meter checklist saved");
+      setIsEnergyMeterDialogOpen(false);
+      setEnergyMeterForm(defaultEnergyMeterForm);
+      await overviewQuery.refetch();
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to save energy meter checklist");
+    } finally {
+      setEnergyMeterSubmitting(false);
+    }
   };
 
   return (
@@ -874,11 +1058,154 @@ export default function Assets() {
             qrImageUrl={assetQrImageUrl}
             qrLoading={assetQrQuery.isLoading || assetQrQuery.isFetching}
             onRaiseWorkOrder={handleRaiseWorkOrder}
+            onOpenEnergyMeterChecklist={handleOpenEnergyMeterChecklist}
           />
         ) : selectedAsset ? (
           <div className="rounded-lg border border-dashed border-border/70 p-6 text-sm text-muted-foreground">Machine overview could not be loaded.</div>
         ) : null}
       </ViewDialog>
+
+      <FormDialog
+        open={isEnergyMeterDialogOpen}
+        onOpenChange={(open) => {
+          setIsEnergyMeterDialogOpen(open);
+          if (!open && !energyMeterSubmitting) {
+            setEnergyMeterForm(defaultEnergyMeterForm);
+          }
+        }}
+        title="Energy Meter Checklist"
+        description="Configure Modbus TCP or RS485 connectivity for automated energy capture."
+        onSubmit={() => {
+          void handleSubmitEnergyMeterChecklist();
+        }}
+        submitLabel="Save Checklist"
+        isLoading={energyMeterSubmitting}
+        size="lg"
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <InputField
+            label="Checklist Name"
+            value={energyMeterForm.checklistName}
+            onChange={(value) => updateEnergyMeterForm("checklistName", value)}
+            required
+          />
+          <InputField
+            label="Meter Name"
+            value={energyMeterForm.meterName}
+            onChange={(value) => updateEnergyMeterForm("meterName", value)}
+            required
+            placeholder="Main incomer meter"
+          />
+          <SelectField
+            label="Connection Type"
+            value={energyMeterForm.connectionType}
+            onChange={(value) => updateEnergyMeterForm("connectionType", value as EnergyMeterFormState["connectionType"])}
+            options={[
+              { value: "MODBUS_TCP", label: "Modbus TCP" },
+              { value: "MODBUS_RTU_RS485", label: "Modbus RTU RS485" },
+            ]}
+          />
+          <SelectField
+            label="Driver Type"
+            value={energyMeterForm.driverType}
+            onChange={(value) => updateEnergyMeterForm("driverType", value as EnergyMeterFormState["driverType"])}
+            options={[
+              { value: "DOTNET_RS485_BRIDGE", label: ".NET RS485 Bridge" },
+              { value: "NATIVE_MODBUS_TCP", label: "Native Modbus TCP" },
+            ]}
+          />
+        </div>
+
+        {energyMeterForm.connectionType === "MODBUS_TCP" ? (
+          <div className="grid gap-4 md:grid-cols-3">
+            <InputField
+              label="IP Address"
+              value={energyMeterForm.ipAddress}
+              onChange={(value) => updateEnergyMeterForm("ipAddress", value)}
+              required
+              placeholder="192.168.1.20"
+            />
+            <InputField
+              label="Port"
+              type="number"
+              value={energyMeterForm.port}
+              onChange={(value) => updateEnergyMeterForm("port", value)}
+              required
+              placeholder="502"
+            />
+            <InputField
+              label="Register"
+              value={energyMeterForm.modbusRegister}
+              onChange={(value) => updateEnergyMeterForm("modbusRegister", value)}
+              placeholder="40001"
+            />
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-3">
+            <InputField
+              label="Slave ID"
+              type="number"
+              value={energyMeterForm.modbusSlaveId}
+              onChange={(value) => updateEnergyMeterForm("modbusSlaveId", value)}
+              required
+              placeholder="1"
+            />
+            <InputField
+              label="Baud Rate"
+              type="number"
+              value={energyMeterForm.baudRate}
+              onChange={(value) => updateEnergyMeterForm("baudRate", value)}
+              placeholder="9600"
+            />
+            <SelectField
+              label="Parity"
+              value={energyMeterForm.parity}
+              onChange={(value) => updateEnergyMeterForm("parity", value as EnergyMeterFormState["parity"])}
+              options={[
+                { value: "NONE", label: "None" },
+                { value: "EVEN", label: "Even" },
+                { value: "ODD", label: "Odd" },
+              ]}
+            />
+            <InputField
+              label="Stop Bits"
+              type="number"
+              value={energyMeterForm.stopBits}
+              onChange={(value) => updateEnergyMeterForm("stopBits", value)}
+              placeholder="1"
+            />
+            <InputField
+              label="Register"
+              value={energyMeterForm.modbusRegister}
+              onChange={(value) => updateEnergyMeterForm("modbusRegister", value)}
+              placeholder="40001"
+            />
+            <InputField
+              label="Bridge Endpoint"
+              value={energyMeterForm.bridgeEndpoint}
+              onChange={(value) => updateEnergyMeterForm("bridgeEndpoint", value)}
+              placeholder="http://localhost:5001/rs485/read"
+            />
+          </div>
+        )}
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <InputField
+            label="Poll Interval (seconds)"
+            type="number"
+            value={energyMeterForm.pollIntervalSeconds}
+            onChange={(value) => updateEnergyMeterForm("pollIntervalSeconds", value)}
+            required
+            placeholder="60"
+          />
+          <InputField
+            label="Notes"
+            value={energyMeterForm.notes}
+            onChange={(value) => updateEnergyMeterForm("notes", value)}
+            placeholder="Optional configuration notes"
+          />
+        </div>
+      </FormDialog>
     </PageShell>
   );
 }

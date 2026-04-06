@@ -1568,7 +1568,11 @@ gatesRouter.get('/gate-reports', requirePermission('GATES', 'EXPORT'), async (re
     const plantMap = new Map(plants.map((plant) => [plant.id, plant]));
     const organizationName =
       (query.plantId ? plantMap.get(query.plantId ?? '')?.organization?.name : plants[0]?.organization?.name) ?? 'TamOptiX CMMS';
+    const organizationLogoUrl =
+      (query.plantId ? plantMap.get(query.plantId ?? '')?.organization?.logoUrl : plants[0]?.organization?.logoUrl) ?? null;
     const plantName = query.plantId ? plantMap.get(query.plantId ?? '')?.plantName ?? 'All Plants' : 'All Plants';
+    const generatedAt = new Date().toISOString();
+    const brandedFooter = 'Powered by TamOptix Technologies | TamOptix CMMS Platform';
     const transportLogMap = new Map<string, GhgTransportLogEntity>();
     for (const item of transportLogs) {
       if (item.gateEntryId && !transportLogMap.has(item.gateEntryId)) {
@@ -1615,26 +1619,35 @@ gatesRouter.get('/gate-reports', requirePermission('GATES', 'EXPORT'), async (re
 
     if (query.format === 'csv') {
       const csv = toCsv(
-        ['Gate', 'Gate ID', 'Plant', 'Visitor Type', 'Visitor Name', 'Vehicle Number', 'Status', 'Entry Time', 'Exit Time', 'Duplicate', 'Blacklist', 'Watchlist', 'Pass ID', 'Transport Mode', 'Emission Category', 'Estimated CO2e (kg)', 'Material'],
-        reportRows.map((row) => [
-          row.gate,
-          row.gateCode,
-          row.plant,
-          row.visitorType,
-          row.visitorName,
-          row.vehicleNumber,
-          row.status,
-          row.entryTime,
-          row.exitTime,
-          row.duplicate,
-          row.blacklist,
-          row.watchlist,
-          row.passId,
-          row.transportMode,
-          row.emissionCategory,
-          row.estimatedCo2eKg,
-          row.materialName,
-        ]),
+        ['Field', 'Value'],
+        [
+          ['Organization', organizationName],
+          ['Organization Logo', organizationLogoUrl ?? '-'],
+          ['Plant', plantName],
+          ['Generated At', generatedAt],
+          ['Footer Branding', brandedFooter],
+          [],
+          ['Gate', 'Gate ID', 'Plant', 'Visitor Type', 'Visitor Name', 'Vehicle Number', 'Status', 'Entry Time', 'Exit Time', 'Duplicate', 'Blacklist', 'Watchlist', 'Pass ID', 'Transport Mode', 'Emission Category', 'Estimated CO2e (kg)', 'Material'],
+          ...reportRows.map((row) => [
+            row.gate,
+            row.gateCode,
+            row.plant,
+            row.visitorType,
+            row.visitorName,
+            row.vehicleNumber,
+            row.status,
+            row.entryTime,
+            row.exitTime,
+            row.duplicate,
+            row.blacklist,
+            row.watchlist,
+            row.passId,
+            row.transportMode,
+            row.emissionCategory,
+            row.estimatedCo2eKg,
+            row.materialName,
+          ]),
+        ],
       );
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="gate-report-${new Date().toISOString().slice(0, 10)}.csv"`);
@@ -1667,7 +1680,12 @@ gatesRouter.get('/gate-reports', requirePermission('GATES', 'EXPORT'), async (re
             row.materialName,
           ]),
         },
-      ]);
+      ], {
+        organizationName,
+        organizationLogoUrl,
+        generatedAt,
+        footerBranding: brandedFooter,
+      });
       res.setHeader('Content-Type', 'application/vnd.ms-excel');
       res.setHeader('Content-Disposition', `attachment; filename="gate-report-${new Date().toISOString().slice(0, 10)}.xls"`);
       res.status(200).send(workbook);
@@ -1676,12 +1694,20 @@ gatesRouter.get('/gate-reports', requirePermission('GATES', 'EXPORT'), async (re
 
     if (query.format === 'pdf') {
       const lines = [
-        `${organizationName}`,
-        `${plantName} Gate Entry Report`,
+        `Organization: ${organizationName}`,
+        `Organization Logo: ${organizationLogoUrl ?? '-'}`,
+        `Plant: ${plantName}`,
         `Report Date: ${new Date().toISOString().slice(0, 10)}`,
+        '',
         ...reportRows.slice(0, 30).map((row) => `${row.entryTime} | ${row.gate} | ${row.visitorName} | ${row.visitorType} | ${row.status}`),
       ];
-      const pdf = createSimplePdf(lines);
+      const pdf = createSimplePdf(lines, {
+        title: `${plantName} Gate Entry Report`,
+        subtitle: organizationName,
+        organizationLogoUrl,
+        generatedAt,
+        footerBranding: brandedFooter,
+      });
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="gate-report-${new Date().toISOString().slice(0, 10)}.pdf"`);
       res.status(200).send(pdf);

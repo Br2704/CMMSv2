@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Plus, Search, Edit, Trash2, Users, Eye, EyeOff } from "lucide-react";
+import { Plus, Search, Edit, Trash2, Users, Eye, EyeOff, Upload, Download } from "lucide-react";
 import { toast } from "sonner";
 import BackButton from "@/components/masters/BackButton";
 import { FormDialog } from "@/components/shared/FormDialog";
@@ -69,6 +70,82 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function normalizeLookupValue(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normalizeHeaderName(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function parseCsvRows(content: string): string[][] {
+  const rows: string[][] = [];
+  let currentCell = "";
+  let currentRow: string[] = [];
+  let inQuotes = false;
+
+  const pushCell = () => {
+    currentRow.push(currentCell.trim());
+    currentCell = "";
+  };
+
+  const pushRow = () => {
+    if (currentRow.length === 0) return;
+    rows.push(currentRow);
+    currentRow = [];
+  };
+
+  for (let index = 0; index < content.length; index += 1) {
+    const char = content[index];
+    const nextChar = content[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentCell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (!inQuotes && char === ",") {
+      pushCell();
+      continue;
+    }
+
+    if (!inQuotes && (char === "\n" || char === "\r")) {
+      pushCell();
+      pushRow();
+      if (char === "\r" && nextChar === "\n") {
+        index += 1;
+      }
+      continue;
+    }
+
+    currentCell += char;
+  }
+
+  pushCell();
+  pushRow();
+
+  return rows.filter((row) => row.some((cell) => cell.length > 0));
+}
+
+function downloadCsvTemplate(fileName: string, headers: string[], rows: string[][]) {
+  const toCell = (value: string) => `"${String(value).replace(/"/g, '""')}"`;
+  const csv = [headers.map(toCell).join(","), ...rows.map((row) => row.map(toCell).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
 const emptyForm = {
   userCode: "",
   fullName: "",
@@ -82,6 +159,7 @@ const emptyForm = {
 };
 
 export default function UsersMaster() {
+  const [searchParams] = useSearchParams();
   const { user: currentUser } = useAuthStore();
   const currentIsSuperAdmin = isSuperAdmin(currentUser);
   const currentIsRootAdmin = isRootAdmin(currentUser);
@@ -117,6 +195,9 @@ export default function UsersMaster() {
   const [formData, setFormData] = useState({ ...emptyForm, plantId: defaultPlantId });
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkPromptHandled, setBulkPromptHandled] = useState(false);
+  const bulkUploadInputRef = useRef<HTMLInputElement | null>(null);
   const visibleRoleTargetKeys = useMemo(
     () => Array.from(new Set([...allowedRoleTargetsForCreate, ...allowedRoleTargetsForEdit].map((role) => normalizeRoleKey(role)))),
     [allowedRoleTargetsForCreate, allowedRoleTargetsForEdit],
@@ -256,6 +337,15 @@ export default function UsersMaster() {
     if (!isFormOpen) return;
     fetchDepartmentsData(formData.plantId || undefined, true);
   }, [fetchDepartmentsData, formData.plantId, isFormOpen]);
+
+  useEffect(() => {
+    if (bulkPromptHandled || !canCreateUsers) return;
+    if (searchParams.get("bulk") !== "1") return;
+    setBulkPromptHandled(true);
+    window.requestAnimationFrame(() => {
+      bulkUploadInputRef.current?.click();
+    });
+  }, [bulkPromptHandled, canCreateUsers, searchParams]);
 
   useEffect(() => {
     const refreshPageData = () => {
@@ -424,6 +514,225 @@ export default function UsersMaster() {
     }
   };
 
+  const handleBulkUsersCsv = async (content: string) => {
+    if (roleOptions.length === 0) {
+      toast.error("Roles are still loading. Try bulk upload again in a moment.");
+      return;
+    }
+
+    const rows = parseCsvRows(content);
+    if (rows.length < 2) {
+      toast.error("CSV must include a header and at least one user row");
+      return;
+    }
+
+    const headerRow = rows[0] || [];
+    const headerIndex = new Map<string, number>();
+    headerRow.forEach((header, index) => {
+      const normalized = normalizeHeaderName(header);
+      if (normalized) {
+        headerIndex.set(normalized, index);
+      }
+    });
+
+    const requiredHeaders: Array<{ label: string; aliases: string[] }> = [
+      { label: "user_code", aliases: ["user_code", "code"] },
+      { label: "full_name", aliases: ["full_name", "name"] },
+      { label: "email", aliases: ["email"] },
+      { label: "password", aliases: ["password"] },
+    ];
+
+    const missingHeaders = requiredHeaders
+      .filter((entry) => !entry.aliases.some((alias) => headerIndex.has(alias)))
+      .map((entry) => entry.label);
+
+    if (missingHeaders.length > 0) {
+      toast.error(`Missing CSV columns: ${missingHeaders.join(", ")}`);
+      return;
+    }
+
+    const pickCell = (row: string[], aliases: string[]) => {
+      for (const alias of aliases) {
+        const cellIndex = headerIndex.get(alias);
+        if (cellIndex === undefined) continue;
+        const value = row[cellIndex];
+        if (typeof value === "string" && value.trim().length > 0) {
+          return value.trim();
+        }
+      }
+      return "";
+    };
+
+    const roleValueByNormalized = new Map<string, string>();
+    roleOptions.forEach((roleOption) => {
+      roleValueByNormalized.set(normalizeRoleKey(roleOption.value), roleOption.value === "SUPER_ADMIN" ? "SUPERADMIN" : roleOption.value);
+    });
+
+    const parseIsActive = (value: string) => {
+      if (!value) return true;
+      const normalized = value.trim().toLowerCase();
+      if (["true", "1", "yes", "active"].includes(normalized)) return true;
+      if (["false", "0", "no", "inactive"].includes(normalized)) return false;
+      return true;
+    };
+
+    const plantLookup = new Map<string, string>();
+    plantsOptions.forEach((plantOption) => {
+      plantLookup.set(normalizeLookupValue(plantOption.value), plantOption.value);
+      plantLookup.set(normalizeLookupValue(plantOption.label), plantOption.value);
+      const codeToken = plantOption.label.split("-")[0]?.trim();
+      if (codeToken) {
+        plantLookup.set(normalizeLookupValue(codeToken), plantOption.value);
+      }
+    });
+
+    const departmentAliasByPlant = new Map<string, Map<string, string>>();
+    const resolveDepartmentName = async (plantId: string | null, rawDepartment: string) => {
+      const trimmed = rawDepartment.trim();
+      if (!trimmed) return null;
+      if (!plantId) return trimmed;
+
+      if (!departmentAliasByPlant.has(plantId)) {
+        const response = await listDepartments({ page: 1, limit: 500, plantId, includeInactive: false });
+        const aliasMap = new Map<string, string>();
+        response.data.forEach((department) => {
+          aliasMap.set(normalizeLookupValue(department.name), department.name);
+          aliasMap.set(normalizeLookupValue(department.code), department.name);
+        });
+        departmentAliasByPlant.set(plantId, aliasMap);
+      }
+
+      const aliases = departmentAliasByPlant.get(plantId)!;
+      const key = normalizeLookupValue(trimmed);
+      if (aliases.has(key)) {
+        return aliases.get(key) || trimmed;
+      }
+      aliases.set(key, trimmed);
+      return trimmed;
+    };
+
+    const seenCodes = new Set<string>();
+    const seenEmails = new Set<string>();
+    const failures: string[] = [];
+    let createdCount = 0;
+
+    setBulkUploading(true);
+    try {
+      for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+        const row = rows[rowIndex];
+        if (!row || row.every((value) => value.trim().length === 0)) {
+          continue;
+        }
+
+        const userCode = pickCell(row, ["user_code", "code"]);
+        const fullName = pickCell(row, ["full_name", "name"]);
+        const emailRaw = pickCell(row, ["email"]);
+        const password = pickCell(row, ["password"]);
+
+        if (!userCode || !fullName || !emailRaw || !password) {
+          failures.push(`Row ${rowIndex + 1}: user_code, full_name, email, and password are required`);
+          continue;
+        }
+
+        const normalizedEmail = emailRaw.toLowerCase();
+        const userCodeKey = normalizeLookupValue(userCode);
+        if (seenCodes.has(userCodeKey)) {
+          failures.push(`Row ${rowIndex + 1}: duplicate user_code in CSV (${userCode})`);
+          continue;
+        }
+        if (seenEmails.has(normalizedEmail)) {
+          failures.push(`Row ${rowIndex + 1}: duplicate email in CSV (${emailRaw})`);
+          continue;
+        }
+        seenCodes.add(userCodeKey);
+        seenEmails.add(normalizedEmail);
+
+        const roleRaw = pickCell(row, ["role"]) || "USER";
+        const normalizedRole = normalizeRoleKey(roleRaw);
+        const roleValue = roleValueByNormalized.get(normalizedRole);
+        if (!roleValue) {
+          failures.push(`Row ${rowIndex + 1}: role '${roleRaw}' is not allowed`);
+          continue;
+        }
+
+        const systemRole = normalizedRole === "SUPERADMIN" || normalizedRole === "ROOT_ADMIN";
+        const rowPlantValue = pickCell(row, ["plant_id", "plant_code", "plant"]);
+        const resolvedPlantId =
+          systemRole
+            ? null
+            : canSelectPlant
+              ? (rowPlantValue ? plantLookup.get(normalizeLookupValue(rowPlantValue)) || rowPlantValue : defaultPlantId || null)
+              : defaultPlantId || null;
+
+        if (!systemRole && !resolvedPlantId) {
+          failures.push(`Row ${rowIndex + 1}: plant is required for role '${roleValue}'`);
+          continue;
+        }
+
+        try {
+          const departmentRaw = pickCell(row, ["department", "department_name", "department_code"]);
+          const departmentName = await resolveDepartmentName(resolvedPlantId, departmentRaw);
+
+          await createUser({
+            email: normalizedEmail,
+            password,
+            userCode,
+            fullName,
+            phone: pickCell(row, ["phone"]) || null,
+            profileImageUrl: null,
+            plantId: resolvedPlantId,
+            department: departmentName,
+            roles: [roleValue],
+            isActive: parseIsActive(pickCell(row, ["is_active", "active", "status"])),
+          });
+          createdCount += 1;
+        } catch (error: unknown) {
+          failures.push(`Row ${rowIndex + 1}: ${getErrorMessage(error, "failed to create user")}`);
+        }
+      }
+
+      await Promise.all([
+        fetchUsersData(),
+        fetchDepartmentsData(canSelectPlant ? undefined : defaultPlantId, true),
+      ]);
+      invalidateOptions("departments");
+
+      if (createdCount > 0) {
+        toast.success(`Created ${createdCount} user${createdCount === 1 ? "" : "s"}`);
+      }
+
+      if (failures.length > 0) {
+        const preview = failures.slice(0, 3).join(" | ");
+        const suffix = failures.length > 3 ? ` (+${failures.length - 3} more)` : "";
+        toast.error(`User bulk upload completed with ${failures.length} issue(s): ${preview}${suffix}`);
+      }
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+
+  const handleBulkUsersFileChange = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const content = await file.text();
+      await handleBulkUsersCsv(content);
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to read bulk upload file"));
+    }
+  };
+
+  const handleDownloadUsersSampleCsv = () => {
+    downloadCsvTemplate(
+      "user_bulk_upload_sample.csv",
+      ["user_code", "full_name", "email", "password", "role", "plant", "department", "phone", "is_active"],
+      [
+        ["USR001", "Anita Sharma", "anita.sharma@example.com", "TempPass@123", "USER", "PLANT_CODE_OR_ID", "Maintenance", "+91-9000000001", "true"],
+        ["SEC001", "Ravi Security", "ravi.security@example.com", "TempPass@123", "SECURITY", "PLANT_CODE_OR_ID", "Security", "+91-9000000002", "true"],
+      ],
+    );
+    toast.success("User sample CSV downloaded");
+  };
+
   const confirmDelete = async () => {
     if (!selectedUser) return;
     setSubmitting(true);
@@ -504,11 +813,42 @@ export default function UsersMaster() {
         title="User Management"
         subtitle="Manage users, roles, and permissions"
         actions={
-          canCreateUsers && roleOptions.length > 0 ? (
-            <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
-              <Plus className="h-4 w-4" />
-              Add User
-            </Button>
+          canCreateUsers ? (
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+              <input
+                ref={bulkUploadInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                aria-label="Bulk upload users CSV"
+                title="Bulk upload users CSV"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] || null;
+                  void handleBulkUsersFileChange(file);
+                  event.target.value = "";
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full gap-2 sm:w-auto"
+                onClick={() => bulkUploadInputRef.current?.click()}
+                disabled={bulkUploading || roleOptions.length === 0}
+              >
+                <Upload className="h-4 w-4" />
+                {bulkUploading ? "Uploading..." : "Bulk Upload CSV"}
+              </Button>
+              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={handleDownloadUsersSampleCsv}>
+                <Download className="h-4 w-4" />
+                Download Sample CSV
+              </Button>
+              {roleOptions.length > 0 ? (
+                <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
+                  <Plus className="h-4 w-4" />
+                  Add User
+                </Button>
+              ) : null}
+            </div>
           ) : undefined
         }
       />
