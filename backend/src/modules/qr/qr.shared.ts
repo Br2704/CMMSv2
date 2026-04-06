@@ -11,22 +11,25 @@ function isLoopbackHost(hostname: string) {
 }
 
 function requestBaseUrl(req: RequestLike) {
-  const forwardedHost = req.get('x-forwarded-host');
-  const host = forwardedHost || req.get('host');
+  const host = req.get('host');
   if (!host) {
     return null;
   }
-  const forwardedProto = req.get('x-forwarded-proto');
-  const protocol = (forwardedProto || req.protocol || 'http').split(',')[0].trim();
+  const protocol = (req.protocol || 'http').split(',')[0].trim();
   return `${protocol}://${host}`.replace(/\/+$/, '');
 }
 
 export function publicFrontendBaseUrl(req: RequestLike) {
+  const configuredFrontendUrl = env.FRONTEND_URL.replace(/\/+$/, '');
+  if (env.NODE_ENV === 'production') {
+    return configuredFrontendUrl;
+  }
+
   const requestUrl = requestBaseUrl(req);
   if (requestUrl) {
     try {
       const parsedRequestUrl = new URL(requestUrl);
-      if (!isLoopbackHost(parsedRequestUrl.hostname)) {
+      if (isLoopbackHost(parsedRequestUrl.hostname)) {
         return parsedRequestUrl.toString().replace(/\/+$/, '');
       }
     } catch {
@@ -34,7 +37,6 @@ export function publicFrontendBaseUrl(req: RequestLike) {
     }
   }
 
-  const configuredFrontendUrl = env.FRONTEND_URL.replace(/\/+$/, '');
   try {
     const parsed = new URL(configuredFrontendUrl);
     if (!isLoopbackHost(parsed.hostname)) {
@@ -58,13 +60,17 @@ export function toScanLinks(
     departmentCode?: string | null;
     moduleCode?: string | null;
   },
+  options?: {
+    includeSensitiveIds?: boolean;
+  },
 ) {
   const frontendBase = publicFrontendBaseUrl(req);
+  const includeSensitiveIds = options?.includeSensitiveIds ?? true;
   const resolverParams = new URLSearchParams();
   resolverParams.set('token', token);
-  if (context?.assetId) resolverParams.set('assetId', context.assetId);
-  if (context?.departmentId) resolverParams.set('departmentId', context.departmentId);
-  if (context?.moduleId) resolverParams.set('moduleId', context.moduleId);
+  if (includeSensitiveIds && context?.assetId) resolverParams.set('assetId', context.assetId);
+  if (includeSensitiveIds && context?.departmentId) resolverParams.set('departmentId', context.departmentId);
+  if (includeSensitiveIds && context?.moduleId) resolverParams.set('moduleId', context.moduleId);
   if (context?.departmentCode) resolverParams.set('department', context.departmentCode);
   if (context?.moduleCode) resolverParams.set('module', context.moduleCode);
 
@@ -76,7 +82,9 @@ export function toScanLinks(
   return {
     publicResolverUrl,
     appScanUrl: `${frontendBase}/scan/${encodeURIComponent(token)}`,
-    machineCardUrl: context?.assetId ? `${frontendBase}/machine/${encodeURIComponent(context.assetId)}` : `${frontendBase}/machine`,
+    machineCardUrl: includeSensitiveIds
+      ? (context?.assetId ? `${frontendBase}/machine/${encodeURIComponent(context.assetId)}` : `${frontendBase}/machine`)
+      : (context?.assetCode ? `${frontendBase}/machine/${encodeURIComponent(context.assetCode)}` : `${frontendBase}/machine`),
   };
 }
 
@@ -211,7 +219,16 @@ export async function findQrResolutionRowByMachineCode(machineCode: string) {
     }>();
 }
 
-export function toResolvedPayload(req: RequestLike, token: string, row: NonNullable<Awaited<ReturnType<typeof findQrResolutionRow>>>) {
+export function toResolvedPayload(
+  req: RequestLike,
+  token: string,
+  row: NonNullable<Awaited<ReturnType<typeof findQrResolutionRow>>>,
+  options?: {
+    includeSensitiveIds?: boolean;
+  },
+) {
+  const includeSensitiveIds = options?.includeSensitiveIds ?? true;
+
   return {
     token,
     asset: {
@@ -225,9 +242,27 @@ export function toResolvedPayload(req: RequestLike, token: string, row: NonNulla
       machineImageUrl: row.asset_machine_image_url,
     },
     hierarchy: {
-      plant: row.plant_id ? { id: row.plant_id, code: row.plant_code, name: row.plant_name } : null,
-      department: row.department_id ? { id: row.department_id, code: row.department_code, name: row.department_name } : null,
-      module: row.module_id ? { id: row.module_id, code: row.module_code, name: row.module_name } : null,
+      plant: row.plant_id
+        ? {
+            ...(includeSensitiveIds ? { id: row.plant_id } : {}),
+            code: row.plant_code,
+            name: row.plant_name,
+          }
+        : null,
+      department: row.department_id
+        ? {
+            ...(includeSensitiveIds ? { id: row.department_id } : {}),
+            code: row.department_code,
+            name: row.department_name,
+          }
+        : null,
+      module: row.module_id
+        ? {
+            ...(includeSensitiveIds ? { id: row.module_id } : {}),
+            code: row.module_code,
+            name: row.module_name,
+          }
+        : null,
     },
     links: toScanLinks(req, token, {
       assetId: row.asset_id,
@@ -236,6 +271,8 @@ export function toResolvedPayload(req: RequestLike, token: string, row: NonNulla
       moduleId: row.asset_module_id,
       departmentCode: row.department_code,
       moduleCode: row.module_code,
+    }, {
+      includeSensitiveIds,
     }),
   };
 }

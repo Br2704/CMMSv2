@@ -48,10 +48,13 @@ export function useDashboardRealtime(options: { enabled: boolean; onRefresh: () 
       if (disposed) return;
 
       const token = getStoredAccessToken();
-      const url = new URL(getDashboardSocketUrl(), window.location.origin);
-      if (token) {
-        url.searchParams.set("token", token);
+      if (!token) {
+        scheduleReconnect();
+        return;
       }
+
+      const url = new URL(getDashboardSocketUrl(), window.location.origin);
+      url.searchParams.set("token", token);
 
       socket = new WebSocket(url.toString());
 

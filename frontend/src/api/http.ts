@@ -153,6 +153,7 @@ async function handleUnauthorized(): Promise<void> {
   if (unauthorizedHandled) return;
   unauthorizedHandled = true;
   debugLog("handleUnauthorized:start");
+  responseBodyCache.clear();
   clearStoredAccessToken();
   clearStoredCsrfToken();
   clearSessionBootstrapHint();
@@ -198,6 +199,14 @@ const responseBodyCache = new Map<string, unknown>();
 
 function buildRequestCacheKey(method: string, url: string): string {
   return `${method.toUpperCase()} ${url}`;
+}
+
+function withCacheBuster(path: string): string {
+  const queryIndex = path.indexOf("?");
+  const basePath = queryIndex === -1 ? path : path.slice(0, queryIndex);
+  const searchParams = new URLSearchParams(queryIndex === -1 ? "" : path.slice(queryIndex + 1));
+  searchParams.set("_cb", Date.now().toString());
+  return `${basePath}?${searchParams.toString()}`;
 }
 
 async function refreshAccessToken(): Promise<boolean> {
@@ -309,12 +318,20 @@ function withSafeLimit(path: string): string {
   return `${basePath}?${searchParams.toString()}`;
 }
 
-export async function httpRequest<T>(path: string, init: RequestInit = {}, retry = true, limitRetry = true): Promise<T> {
+export async function httpRequest<T>(
+  path: string,
+  init: RequestInit = {},
+  retry = true,
+  limitRetry = true,
+  cacheRetry = true,
+): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
   const method = (init.method || "GET").toUpperCase();
   const requestCacheKey = buildRequestCacheKey(method, url);
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
+  headers.set("Cache-Control", "no-cache");
+  headers.set("Pragma", "no-cache");
   if ((path === "/auth/refresh" || path === "/auth/logout") && getCsrfForRequest()) {
     headers.set("X-CSRF-Token", getCsrfForRequest() as string);
   }
@@ -342,7 +359,7 @@ export async function httpRequest<T>(path: string, init: RequestInit = {}, retry
   if (shouldAttemptRefresh(path, response.status, retry)) {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
-      return httpRequest<T>(path, init, false, limitRetry);
+      return httpRequest<T>(path, init, false, limitRetry, cacheRetry);
     }
     await handleUnauthorized();
   }
@@ -354,6 +371,9 @@ export async function httpRequest<T>(path: string, init: RequestInit = {}, retry
       return cached as T;
     }
     debugLog("response-304-cache-miss", { url, method });
+    if (cacheRetry) {
+      return httpRequest<T>(withCacheBuster(path), init, retry, limitRetry, false);
+    }
   }
 
   if (!response.ok) {
@@ -378,7 +398,7 @@ export async function httpRequest<T>(path: string, init: RequestInit = {}, retry
     }
 
     if (shouldRetryWithSafeLimit(path, response.status, payload, limitRetry)) {
-      return httpRequest<T>(withSafeLimit(path), init, retry, false);
+      return httpRequest<T>(withSafeLimit(path), init, retry, false, cacheRetry);
     }
 
     if (response.status === 401 && path !== "/auth/login") {

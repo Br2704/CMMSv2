@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
@@ -9,7 +10,7 @@ import { env } from './config/env';
 import { logger } from './config/logger';
 import { helmetOptions } from './config/security';
 import { AppDataSource } from './database/data-source';
-import { AssetEntity, AssetReliabilityKpiEntity } from './database/entities';
+import { AssetReliabilityKpiEntity } from './database/entities';
 import { auditLogger } from './middlewares/auditLogger';
 import { errorHandler } from './middlewares/errorHandler';
 import { apiNotFoundHandler } from './middlewares/notFoundHandler';
@@ -18,7 +19,7 @@ import { sanitizeInput } from './middlewares/sanitizeInput';
 import { router } from './routes';
 import { fail, ok } from './utils/apiResponse';
 import { notFound } from './utils/httpError';
-import { ensureAssetQr, findQrResolutionRow, findQrResolutionRowByMachineCode, toResolvedPayload } from './modules/qr/qr.shared';
+import { findQrResolutionRow, toResolvedPayload } from './modules/qr/qr.shared';
 import { emitDashboardRefresh } from './realtime/dashboard-socket';
 
 const qrTokenParamSchema = z.object({
@@ -42,19 +43,54 @@ async function enrichPublicQrPayload(payload: ReturnType<typeof toResolvedPayloa
       ...payload.asset,
       reliability: reliability
         ? {
-            mttrMinutes: reliability.mttrMinutes,
-            mtbfMinutes: reliability.mtbfMinutes,
-            downtimeMinutes: reliability.downtimeMinutes,
-            windowEnd: reliability.windowEnd,
-          }
+          mttrMinutes: reliability.mttrMinutes,
+          mtbfMinutes: reliability.mtbfMinutes,
+          downtimeMinutes: reliability.downtimeMinutes,
+          windowEnd: reliability.windowEnd,
+        }
         : null,
     },
   };
 }
 
+function sanitizePublicQrPayload(payload: Awaited<ReturnType<typeof enrichPublicQrPayload>>) {
+  const { id: _assetId, qrCodeId: _assetQrCodeId, ...safeAsset } = payload.asset;
+  const safeLinks = {
+    publicResolverUrl: payload.links.publicResolverUrl,
+    appScanUrl: payload.links.appScanUrl,
+  };
+
+  return {
+    token: payload.token,
+    asset: safeAsset,
+    hierarchy: {
+      plant: payload.hierarchy.plant
+        ? {
+            code: payload.hierarchy.plant.code,
+            name: payload.hierarchy.plant.name,
+          }
+        : null,
+      department: payload.hierarchy.department
+        ? {
+            code: payload.hierarchy.department.code,
+            name: payload.hierarchy.department.name,
+          }
+        : null,
+      module: payload.hierarchy.module
+        ? {
+            code: payload.hierarchy.module.code,
+            name: payload.hierarchy.module.name,
+          }
+        : null,
+    },
+    links: safeLinks,
+  };
+}
+
 export const app = express();
 
-app.set('trust proxy', 1);
+app.set('trust proxy', env.TRUST_PROXY_HOPS);
+app.set('etag', false);
 app.disable('x-powered-by');
 app.use(pinoHttp({ logger }));
 app.use(helmet(helmetOptions));
@@ -74,8 +110,8 @@ app.use((req, res, next) => {
 
   res.on('finish', () => {
     const isApiRequest = req.path.startsWith(env.API_PREFIX);
-    const isSuccessfulMutation = res.statusCode >= 200 && res.statusCode < 500;
-    if (isApiRequest && isSuccessfulMutation) {
+    const isSuccessfulMutation = res.statusCode >= 200 && res.statusCode < 400;
+    if (isApiRequest && isSuccessfulMutation && Boolean(req.auth?.userId)) {
       emitDashboardRefresh('mutation');
     }
   });
@@ -83,11 +119,19 @@ app.use((req, res, next) => {
   next();
 });
 app.use((req, res, next) => {
+  const inboundRequestId = req.header('x-request-id')?.trim();
+  const requestId = inboundRequestId && inboundRequestId.length > 0 ? inboundRequestId : randomUUID();
+  res.setHeader('X-Request-Id', requestId);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
-  if (req.path.startsWith(`${env.API_PREFIX}/auth`)) {
-    res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
+
+  if (req.path.startsWith(env.API_PREFIX)) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
   }
+
   next();
 });
 
@@ -103,11 +147,19 @@ app.get('/', (_req, res) => {
   });
 });
 
-app.get('/ready', (_req, res) => {
+app.get('/ready', async (_req, res) => {
   if (!AppDataSource.isInitialized) {
     res.status(503).json(fail('Database not ready'));
     return;
   }
+
+  try {
+    await AppDataSource.query('SELECT 1');
+  } catch {
+    res.status(503).json(fail('Database connectivity check failed'));
+    return;
+  }
+
   res.status(200).json({ success: true, message: 'READY', data: { status: 'ok' } });
 });
 
@@ -135,9 +187,6 @@ app.get('/qr/:token', (req, res, next) => {
 
       const resolverParams = new URLSearchParams();
       resolverParams.set('token', token);
-      if (row.asset_id) resolverParams.set('assetId', row.asset_id);
-      if (row.asset_department_id) resolverParams.set('departmentId', row.asset_department_id);
-      if (row.asset_module_id) resolverParams.set('moduleId', row.asset_module_id);
       if (row.department_code) resolverParams.set('department', row.department_code);
       if (row.module_code) resolverParams.set('module', row.module_code);
 
@@ -166,8 +215,8 @@ app.get(`${env.API_PREFIX}/qr/public/:token`, (req, res, next) => {
         notFound('QR token not found');
       }
 
-      const payload = await enrichPublicQrPayload(toResolvedPayload(req, token, row));
-      res.json(ok(payload));
+      const payload = await enrichPublicQrPayload(toResolvedPayload(req, token, row, { includeSensitiveIds: false }));
+      res.json(ok(sanitizePublicQrPayload(payload)));
     } catch (error) {
       next(error);
     }
@@ -188,41 +237,27 @@ app.get(`${env.API_PREFIX}/qr/public/machine/:machineCode`, (req, res, next) => 
     return;
   }
   const tokenFromQuery = parsedToken && parsedToken.success ? parsedToken.data.token : null;
+  if (!tokenFromQuery) {
+    res.status(400).json(fail('QR token is required'));
+    return;
+  }
 
   void (async () => {
     try {
       const machineCode = parsedMachineCode.data.machineCode;
-      const rowByCode = await findQrResolutionRowByMachineCode(machineCode);
-      if (!rowByCode) {
+      const resolvedRow = await findQrResolutionRow(tokenFromQuery);
+      if (!resolvedRow) {
         notFound('Machine code not found');
       }
 
-      let token = tokenFromQuery ?? rowByCode.qr_token;
-      let resolvedRow = token ? await findQrResolutionRow(token) : null;
-
-      if (!resolvedRow || resolvedRow.asset_id !== rowByCode.asset_id) {
-        token = rowByCode.qr_token;
-        resolvedRow = token ? await findQrResolutionRow(token) : null;
+      const normalizedRequestedCode = machineCode.trim().toLowerCase();
+      const normalizedResolvedCode = resolvedRow.asset_code.trim().toLowerCase();
+      if (normalizedRequestedCode !== normalizedResolvedCode) {
+        notFound('Machine code not found');
       }
 
-      if (!token || !resolvedRow) {
-        const assetRepo = AppDataSource.getRepository(AssetEntity);
-        const asset = await assetRepo.findOneBy({ id: rowByCode.asset_id, isActive: true });
-        if (!asset) {
-          notFound('Machine code not found');
-        }
-
-        const qr = await ensureAssetQr(asset);
-        token = qr.qrToken;
-        resolvedRow = await findQrResolutionRow(token);
-      }
-
-      if (!token || !resolvedRow) {
-        notFound('QR token not found for machine code');
-      }
-
-      const payload = await enrichPublicQrPayload(toResolvedPayload(req, token, resolvedRow));
-      res.json(ok(payload));
+      const payload = await enrichPublicQrPayload(toResolvedPayload(req, tokenFromQuery, resolvedRow, { includeSensitiveIds: false }));
+      res.json(ok(sanitizePublicQrPayload(payload)));
     } catch (error) {
       next(error);
     }

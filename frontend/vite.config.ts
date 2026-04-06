@@ -170,29 +170,6 @@ export default defineConfig(({ mode }) => ({
           },
           {
             urlPattern: ({ url, request }) =>
-              request.method === "GET" &&
-              !url.pathname.endsWith("/stream") &&
-              (url.pathname.startsWith("/api/assets") ||
-                url.pathname.startsWith("/api/work-orders") ||
-                url.pathname.startsWith("/api/pm-schedules") ||
-                url.pathname.startsWith("/api/calibration") ||
-                url.pathname.startsWith("/api/amc") ||
-                url.pathname.startsWith("/api/notifications")),
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "cmms-mobile-api-cache",
-              networkTimeoutSeconds: 4,
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-              expiration: {
-                maxEntries: 150,
-                maxAgeSeconds: 60 * 60 * 24,
-              },
-            },
-          },
-          {
-            urlPattern: ({ url, request }) =>
               request.method === "POST" &&
               (url.pathname.startsWith("/api/work-orders") ||
                 url.pathname.startsWith("/api/pm-schedules") ||
