@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getAssetOverview } from "@/api/assets";
+import { resolveQrMachineCode } from "@/api/qr";
 import { cacheGet, cachePut } from "@/mobile/indexedDb";
 
 type TimelineItem = {
@@ -19,20 +20,39 @@ export default function MachineQuickCard() {
   const { machineId } = useParams<{ machineId: string }>();
   const navigate = useNavigate();
 
+  const isUuidLike = (value: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
   const { data, isLoading } = useQuery({
     queryKey: ["machine_quick_card", machineId],
     enabled: Boolean(machineId),
     staleTime: 30_000,
     queryFn: async () => {
-      if (!machineId) throw new Error("Missing machine id");
+      const machineKey = machineId?.trim();
+      if (!machineKey) throw new Error("Missing machine identifier");
+
+      let resolvedMachineId = machineKey;
+      if (!isUuidLike(machineKey)) {
+        const resolved = await resolveQrMachineCode(machineKey);
+        resolvedMachineId = resolved.data.asset?.id || "";
+      }
+      if (!resolvedMachineId) {
+        throw new Error("Machine not found");
+      }
+
+      const cacheKeys = [`machine_overview_${machineKey}`, `machine_overview_${resolvedMachineId}`];
 
       try {
-        const response = await getAssetOverview(machineId);
-        void cachePut(`machine_overview_${machineId}`, response.data);
+        const response = await getAssetOverview(resolvedMachineId);
+        await Promise.all(cacheKeys.map((key) => cachePut(key, response.data)));
         return response.data;
       } catch (error) {
-        const cached = await cacheGet<any>(`machine_overview_${machineId}`);
-        if (cached?.value) return cached.value;
+        for (const cacheKey of cacheKeys) {
+          const cached = await cacheGet<any>(cacheKey);
+          if (cached?.value) {
+            return cached.value;
+          }
+        }
         throw error;
       }
     },
@@ -86,7 +106,8 @@ export default function MachineQuickCard() {
       <Card className="shadow-card">
         <CardHeader className="pb-3">
           <CardTitle className="text-base sm:text-lg">{data.asset.name}</CardTitle>
-          <p className="text-xs text-muted-foreground">Machine ID: {data.asset.id}</p>
+          <p className="text-xs text-muted-foreground">Machine Code: {data.asset.code}</p>
+          <p className="text-[11px] text-muted-foreground/80">Machine ID: {data.asset.id}</p>
         </CardHeader>
         <CardContent className="space-y-3">
           {data.asset.machineImageUrl ? (

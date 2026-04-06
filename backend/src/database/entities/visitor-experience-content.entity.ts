@@ -32,6 +32,9 @@ export class VisitorExperienceContentEntity extends TimestampedUuidEntity {
   @Column({ name: 'products', type: 'simple-json', nullable: true })
   products!: Array<Record<string, unknown>> | null;
 
+  @Column({ name: 'experience_meta', type: 'simple-json', nullable: true })
+  experienceMeta!: Record<string, unknown> | null;
+
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 

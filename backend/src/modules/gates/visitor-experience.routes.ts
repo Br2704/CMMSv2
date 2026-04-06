@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { Brackets, In, IsNull } from 'typeorm';
 import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
@@ -10,11 +10,15 @@ import {
   NotificationEntity,
   PlantEntity,
   PlantLayoutEntity,
+  PathwayEntity,
   ProfileEntity,
   UserEntity,
   UserRoleEntity,
   VisitorExperienceContentEntity,
   VisitorNavigationLogEntity,
+  VisitorSafetyLogEntity,
+  VisitorSessionEntity,
+  VisitorTrackingEntity,
 } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
@@ -30,6 +34,8 @@ type LayoutNode = {
   refId?: string | null;
   x?: number;
   y?: number;
+  latitude?: number;
+  longitude?: number;
 };
 
 type LayoutEdge = {
@@ -57,6 +63,38 @@ const optionalDateTimeString = z.preprocess((value) => {
   return value;
 }, z.string().datetime({ offset: true }).nullable());
 
+const experienceMetaSchema = z.object({
+  certifications: z.array(z.string().min(1)).optional().nullable(),
+  esgInitiatives: z.array(z.string().min(1)).optional().nullable(),
+  plantCapabilities: z.array(z.string().min(1)).optional().nullable(),
+  introVideoUrl: optionalString,
+  galleryImages: z.array(z.string().min(1)).optional().nullable(),
+  whyVisitHighlights: z.array(z.string().min(1)).optional().nullable(),
+  safetyInstructions: z.array(z.string().min(1)).optional().nullable(),
+  ppeRequirements: z.array(z.string().min(1)).optional().nullable(),
+  restrictedZonesWarning: optionalString,
+  emergencyContacts: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        role: optionalString,
+        phone: z.string().min(3),
+      }),
+    )
+    .optional()
+    .nullable(),
+  evacuationRoutes: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        label: z.string().min(1),
+        description: optionalString,
+      }),
+    )
+    .optional()
+    .nullable(),
+});
+
 const contentSchema = z.object({
   plantId: optionalUuid,
   pageTitle: z.string().min(1).max(200).default('Welcome to JK Fenner'),
@@ -75,6 +113,36 @@ const contentSchema = z.object({
         imageUrl: optionalString,
         plantIds: z.array(z.string().uuid()).optional().nullable(),
         departmentIds: z.array(z.string().uuid()).optional().nullable(),
+      }),
+    )
+    .optional()
+    .nullable(),
+  experienceMeta: experienceMetaSchema.optional().nullable(),
+  certifications: z.array(z.string().min(1)).optional().nullable(),
+  esgInitiatives: z.array(z.string().min(1)).optional().nullable(),
+  plantCapabilities: z.array(z.string().min(1)).optional().nullable(),
+  introVideoUrl: optionalString,
+  galleryImages: z.array(z.string().min(1)).optional().nullable(),
+  whyVisitHighlights: z.array(z.string().min(1)).optional().nullable(),
+  safetyInstructions: z.array(z.string().min(1)).optional().nullable(),
+  ppeRequirements: z.array(z.string().min(1)).optional().nullable(),
+  restrictedZonesWarning: optionalString,
+  emergencyContacts: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        role: optionalString,
+        phone: z.string().min(3),
+      }),
+    )
+    .optional()
+    .nullable(),
+  evacuationRoutes: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        label: z.string().min(1),
+        description: optionalString,
       }),
     )
     .optional()
@@ -111,6 +179,48 @@ const visitorRequestSchema = z.object({
 const visitorApprovalSchema = z.object({
   action: z.enum(['APPROVE', 'REJECT']),
   comments: optionalString,
+  meetingLocationNodeId: optionalString,
+  meetingLocationLabel: optionalString,
+  meetingDepartmentId: optionalUuid,
+  escortUserId: optionalUuid,
+});
+
+const visitorConsentSchema = z.object({
+  plantId: optionalUuid,
+  gateEntryId: optionalUuid,
+  consentGiven: z.boolean().default(true),
+  deviceInfo: optionalString,
+});
+
+const visitorPassQuerySchema = z.object({
+  sessionToken: optionalString,
+  sessionId: optionalUuid,
+  gateEntryId: optionalUuid,
+});
+
+const visitorTrackingQuerySchema = z.object({
+  sessionToken: optionalString,
+  sessionId: optionalUuid,
+  gateEntryId: optionalUuid,
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+const visitorNavigationQuerySchema = z.object({
+  sessionToken: optionalString,
+  sessionId: optionalUuid,
+  gateEntryId: optionalUuid,
+  fromNodeId: optionalString,
+  toNodeId: optionalString,
+});
+
+const visitorSosSchema = z.object({
+  gateEntryId: optionalUuid,
+  sessionId: optionalUuid,
+  plantId: optionalUuid,
+  latitude: z.number().finite().min(-90).max(90).optional().nullable(),
+  longitude: z.number().finite().min(-180).max(180).optional().nullable(),
+  note: optionalString,
 });
 
 const navigationCheckInSchema = z.object({
@@ -168,6 +278,8 @@ function parseLayoutData(input: unknown): { nodes: LayoutNode[]; edges: LayoutEd
         refId: normalizeString(node.refId),
         x: typeof node.x === 'number' ? node.x : undefined,
         y: typeof node.y === 'number' ? node.y : undefined,
+        latitude: typeof node.latitude === 'number' && Number.isFinite(node.latitude) ? node.latitude : undefined,
+        longitude: typeof node.longitude === 'number' && Number.isFinite(node.longitude) ? node.longitude : undefined,
       });
     });
   }
@@ -342,6 +454,128 @@ function toVisitorStatusText(status: string) {
   return normalized;
 }
 
+function normalizeExperienceMeta(content: VisitorExperienceContentEntity | null) {
+  const raw = (content?.experienceMeta ?? {}) as Record<string, unknown>;
+
+  const asStringArray = (value: unknown, fallback: string[] = []) => {
+    if (!Array.isArray(value)) return fallback;
+    return value.filter((row): row is string => typeof row === 'string' && row.trim().length > 0);
+  };
+
+  const asEmergencyContacts = (value: unknown) => {
+    if (!Array.isArray(value)) return [] as Array<{ name: string; role: string | null; phone: string }>;
+    return value
+      .map((row) => {
+        if (!row || typeof row !== 'object') return null;
+        const input = row as Record<string, unknown>;
+        const name = normalizeString(input.name);
+        const phone = normalizeString(input.phone);
+        if (!name || !phone) return null;
+        return {
+          name,
+          role: normalizeString(input.role),
+          phone,
+        };
+      })
+      .filter((row): row is { name: string; role: string | null; phone: string } => Boolean(row));
+  };
+
+  const asEvacuationRoutes = (value: unknown) => {
+    if (!Array.isArray(value)) return [] as Array<{ id: string; label: string; description: string | null }>;
+    return value
+      .map((row) => {
+        if (!row || typeof row !== 'object') return null;
+        const input = row as Record<string, unknown>;
+        const id = normalizeString(input.id);
+        const label = normalizeString(input.label);
+        if (!id || !label) return null;
+        return {
+          id,
+          label,
+          description: normalizeString(input.description),
+        };
+      })
+      .filter((row): row is { id: string; label: string; description: string | null } => Boolean(row));
+  };
+
+  return {
+    certifications: asStringArray(raw.certifications),
+    esgInitiatives: asStringArray(raw.esgInitiatives),
+    plantCapabilities: asStringArray(raw.plantCapabilities),
+    introVideoUrl: normalizeString(raw.introVideoUrl),
+    galleryImages: asStringArray(raw.galleryImages),
+    whyVisitHighlights: asStringArray(raw.whyVisitHighlights),
+    safetyInstructions: asStringArray(raw.safetyInstructions, [
+      'Always follow marked walkways and security instructions.',
+      'Report any unsafe condition immediately to your escort or security team.',
+      'Photography in restricted areas is prohibited without written approval.',
+    ]),
+    ppeRequirements: asStringArray(raw.ppeRequirements, ['Safety Helmet', 'Safety Shoes', 'Visitor Badge']),
+    restrictedZonesWarning:
+      normalizeString(raw.restrictedZonesWarning)
+      ?? 'Restricted zones are monitored continuously. Enter only approved locations during your visit window.',
+    emergencyContacts: asEmergencyContacts(raw.emergencyContacts),
+    evacuationRoutes: asEvacuationRoutes(raw.evacuationRoutes),
+  };
+}
+
+function getRequestIpAddress(req: Request) {
+  const xForwardedFor = req.headers['x-forwarded-for'];
+  if (typeof xForwardedFor === 'string' && xForwardedFor.trim()) {
+    return xForwardedFor.split(',')[0].trim();
+  }
+  if (Array.isArray(xForwardedFor) && xForwardedFor.length > 0) {
+    return xForwardedFor[0];
+  }
+  return req.socket.remoteAddress ?? null;
+}
+
+function buildDeviceInfo(req: Request, explicitDeviceInfo: string | null) {
+  const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
+  const payload = {
+    explicitDeviceInfo,
+    userAgent,
+    platform: normalizeString(req.headers['sec-ch-ua-platform']),
+    language: typeof req.headers['accept-language'] === 'string' ? req.headers['accept-language'] : null,
+  };
+  return JSON.stringify(payload);
+}
+
+function canAccessEntry(input: {
+  roles: string[];
+  actorUserId: string;
+  entry: GateEntryEntity;
+  visitorUserId: string | null;
+}) {
+  const actorIsPrivileged = isPrivilegedApprover(input.roles);
+  const actorIsVisitor = input.visitorUserId === input.actorUserId;
+  const actorIsRequester = input.entry.recordedBy === input.actorUserId;
+  const actorIsAssignee = input.entry.personToMeetUserId === input.actorUserId;
+  return actorIsPrivileged || actorIsVisitor || actorIsRequester || actorIsAssignee;
+}
+
+async function findSessionByLookup(input: {
+  req: Request;
+  sessionToken: string | null;
+  sessionId: string | null;
+  gateEntryId: string | null;
+}) {
+  const repo = AppDataSource.getRepository(VisitorSessionEntity);
+  let session: VisitorSessionEntity | null = null;
+
+  if (input.sessionId) {
+    session = await repo.findOneBy({ id: input.sessionId });
+  } else if (input.sessionToken) {
+    session = await repo.findOneBy({ sessionToken: input.sessionToken });
+  } else if (input.gateEntryId) {
+    session = await repo.findOneBy({ gateEntryId: input.gateEntryId });
+  } else {
+    session = await repo.findOne({ where: { visitorUserId: input.req.auth!.userId }, order: { createdAt: 'DESC' } });
+  }
+
+  return session;
+}
+
 export const visitorExperienceRouter = Router();
 visitorExperienceRouter.use(requireAuth);
 
@@ -401,6 +635,7 @@ visitorExperienceRouter.get('/visitor-experience/content', requirePermission('GA
     });
 
     const plant = resolvedPlantId ? await plantRepo.findOneBy({ id: resolvedPlantId }) : null;
+    const experienceMeta = normalizeExperienceMeta(content);
 
     res.json(
       ok(
@@ -417,6 +652,18 @@ visitorExperienceRouter.get('/visitor-experience/content', requirePermission('GA
           contactAddress: content?.contactAddress ?? null,
           heroHighlights: content?.heroHighlights ?? [],
           products: enrichedProducts,
+          experienceMeta,
+          certifications: experienceMeta.certifications,
+          esgInitiatives: experienceMeta.esgInitiatives,
+          plantCapabilities: experienceMeta.plantCapabilities,
+          introVideoUrl: experienceMeta.introVideoUrl,
+          galleryImages: experienceMeta.galleryImages,
+          whyVisitHighlights: experienceMeta.whyVisitHighlights,
+          safetyInstructions: experienceMeta.safetyInstructions,
+          ppeRequirements: experienceMeta.ppeRequirements,
+          restrictedZonesWarning: experienceMeta.restrictedZonesWarning,
+          emergencyContacts: experienceMeta.emergencyContacts,
+          evacuationRoutes: experienceMeta.evacuationRoutes,
           updatedAt: content?.updatedAt ?? null,
         },
         'Visitor experience content fetched',
@@ -451,11 +698,133 @@ visitorExperienceRouter.put('/visitor-experience/content', requireRole(['SUPERAD
     entity.contactAddress = body.contactAddress;
     entity.heroHighlights = body.heroHighlights ?? null;
     entity.products = body.products ?? null;
+
+    const mergedMeta: Record<string, unknown> = {
+      ...((entity.experienceMeta ?? {}) as Record<string, unknown>),
+      ...((body.experienceMeta ?? {}) as Record<string, unknown>),
+    };
+
+    if (body.certifications !== undefined) mergedMeta.certifications = body.certifications;
+    if (body.esgInitiatives !== undefined) mergedMeta.esgInitiatives = body.esgInitiatives;
+    if (body.plantCapabilities !== undefined) mergedMeta.plantCapabilities = body.plantCapabilities;
+    if (body.introVideoUrl !== undefined) mergedMeta.introVideoUrl = body.introVideoUrl;
+    if (body.galleryImages !== undefined) mergedMeta.galleryImages = body.galleryImages;
+    if (body.whyVisitHighlights !== undefined) mergedMeta.whyVisitHighlights = body.whyVisitHighlights;
+    if (body.safetyInstructions !== undefined) mergedMeta.safetyInstructions = body.safetyInstructions;
+    if (body.ppeRequirements !== undefined) mergedMeta.ppeRequirements = body.ppeRequirements;
+    if (body.restrictedZonesWarning !== undefined) mergedMeta.restrictedZonesWarning = body.restrictedZonesWarning;
+    if (body.emergencyContacts !== undefined) mergedMeta.emergencyContacts = body.emergencyContacts;
+    if (body.evacuationRoutes !== undefined) mergedMeta.evacuationRoutes = body.evacuationRoutes;
+
+    entity.experienceMeta = Object.keys(mergedMeta).length > 0 ? mergedMeta : null;
     entity.isActive = body.isActive ?? true;
     entity.createdBy = req.auth!.userId;
 
     const saved = await repo.save(entity);
     res.json(ok(saved, 'Visitor experience content saved'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+visitorExperienceRouter.get('/visitor/profile', requirePermission('GATES', 'READ'), async (req, res, next) => {
+  try {
+    const requestedPlantId = optionalUuid.parse(req.query.plantId);
+    const resolvedPlantId = resolveScopedPlantId(req.auth!, requestedPlantId ?? null);
+    ensurePlantAccess(req, resolvedPlantId);
+
+    const [content, safetyLog] = await Promise.all([
+      AppDataSource.getRepository(VisitorExperienceContentEntity).findOne({
+        where: resolvedPlantId
+          ? [{ plantId: resolvedPlantId, isActive: true }, { plantId: IsNull(), isActive: true }]
+          : { plantId: IsNull(), isActive: true },
+        order: { plantId: 'DESC', updatedAt: 'DESC' },
+      }),
+      AppDataSource.getRepository(VisitorSafetyLogEntity).findOne({
+        where: {
+          visitorId: req.auth!.userId,
+          ...(resolvedPlantId ? { plantId: resolvedPlantId } : {}),
+        },
+        order: { consentedAt: 'DESC' },
+      }),
+    ]);
+
+    const profileMeta = normalizeExperienceMeta(content);
+
+    res.json(
+      ok(
+        {
+          plantId: resolvedPlantId,
+          pageTitle: content?.pageTitle ?? 'Welcome to Visitor Experience',
+          companyOverview: content?.companyOverview ?? '',
+          heroHighlights: content?.heroHighlights ?? [],
+          products: content?.products ?? [],
+          contactName: content?.contactName ?? null,
+          contactEmail: content?.contactEmail ?? null,
+          contactPhone: content?.contactPhone ?? null,
+          contactAddress: content?.contactAddress ?? null,
+          ...profileMeta,
+          latestSafetyConsent: safetyLog
+            ? {
+                id: safetyLog.id,
+                consentGiven: safetyLog.consentGiven,
+                consentedAt: safetyLog.consentedAt,
+                gateEntryId: safetyLog.gateEntryId,
+              }
+            : null,
+        },
+        'Visitor profile fetched',
+      ),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+visitorExperienceRouter.post('/visitor/consent', async (req, res, next) => {
+  try {
+    const body = visitorConsentSchema.parse(req.body);
+
+    const resolvedPlantId = resolveScopedPlantId(req.auth!, body.plantId ?? null);
+    ensurePlantAccess(req, resolvedPlantId);
+
+    let gateEntry: GateEntryEntity | null = null;
+    if (body.gateEntryId) {
+      gateEntry = await AppDataSource.getRepository(GateEntryEntity).findOneBy({ id: body.gateEntryId });
+      if (!gateEntry) {
+        res.status(404).json(fail('Visitor request not found for consent logging'));
+        return;
+      }
+      ensurePlantAccess(req, gateEntry.plantId);
+    }
+
+    const ipAddress = getRequestIpAddress(req);
+    const saved = await AppDataSource.getRepository(VisitorSafetyLogEntity).save(
+      AppDataSource.getRepository(VisitorSafetyLogEntity).create({
+        visitorId: req.auth!.userId,
+        gateEntryId: gateEntry?.id ?? body.gateEntryId ?? null,
+        plantId: gateEntry?.plantId ?? resolvedPlantId,
+        consentGiven: body.consentGiven,
+        consentedAt: new Date(),
+        ipAddress,
+        deviceInfo: buildDeviceInfo(req, body.deviceInfo),
+      }),
+    );
+
+    res.status(201).json(
+      ok(
+        {
+          id: saved.id,
+          visitorId: saved.visitorId,
+          consentGiven: saved.consentGiven,
+          timestamp: saved.consentedAt,
+          ipAddress: saved.ipAddress,
+          gateEntryId: saved.gateEntryId,
+          plantId: saved.plantId,
+        },
+        'Visitor safety consent recorded',
+      ),
+    );
   } catch (error) {
     next(error);
   }
@@ -837,10 +1206,50 @@ visitorExperienceRouter.patch('/visitor-requests/:id/approval', requirePermissio
     entry.navigationEnabledAt = isApprove ? new Date() : null;
     entry.status = isApprove ? 'APPROVED' : 'REJECTED';
 
+    if (isApprove) {
+      if (body.meetingLocationNodeId) {
+        entry.currentLocationNodeId = body.meetingLocationNodeId;
+      }
+      if (body.meetingLocationLabel) {
+        entry.currentLocationLabel = body.meetingLocationLabel;
+      }
+      if (body.meetingDepartmentId) {
+        entry.departmentId = body.meetingDepartmentId;
+      }
+
+      const nextEntryData = Array.isArray(entry.entryData) ? [...entry.entryData] : [];
+      if (body.meetingLocationNodeId) {
+        nextEntryData.push({
+          fieldName: 'meeting_location_node_id',
+          fieldLabel: 'Meeting Location Node',
+          fieldType: 'TEXT',
+          value: body.meetingLocationNodeId,
+        });
+      }
+      if (body.meetingLocationLabel) {
+        nextEntryData.push({
+          fieldName: 'meeting_location_label',
+          fieldLabel: 'Meeting Location Label',
+          fieldType: 'TEXT',
+          value: body.meetingLocationLabel,
+        });
+      }
+      if (body.escortUserId) {
+        nextEntryData.push({
+          fieldName: 'escort_user_id',
+          fieldLabel: 'Escort User',
+          fieldType: 'TEXT',
+          value: body.escortUserId,
+        });
+      }
+      entry.entryData = nextEntryData;
+    }
+
     await entryRepo.save(entry);
 
     const notificationTargets = new Set<string>();
     if (entry.recordedBy) notificationTargets.add(entry.recordedBy);
+    if (isApprove && body.escortUserId) notificationTargets.add(body.escortUserId);
 
     if (entry.plantId && isApprove) {
       const securityRoles = await roleRepo.find({ where: [{ role: 'SECURITY' }, { role: 'SECURITY_USER' }] });
@@ -1039,6 +1448,379 @@ visitorExperienceRouter.get('/visitor-requests/:id/navigation', requirePermissio
           },
         },
         'Visitor navigation route generated',
+      ),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+visitorExperienceRouter.get('/visitor/navigation', requirePermission('GATES', 'READ'), async (req, res, next) => {
+  try {
+    const query = visitorNavigationQuerySchema.parse(req.query);
+
+    const lookedUpSession = await findSessionByLookup({
+      req,
+      sessionToken: query.sessionToken,
+      sessionId: query.sessionId,
+      gateEntryId: query.gateEntryId,
+    });
+
+    const gateEntryId = query.gateEntryId ?? lookedUpSession?.gateEntryId ?? null;
+    if (!gateEntryId) {
+      res.status(400).json(fail('gateEntryId, sessionId, or sessionToken is required'));
+      return;
+    }
+
+    const entryRepo = AppDataSource.getRepository(GateEntryEntity);
+    const layoutRepo = AppDataSource.getRepository(PlantLayoutEntity);
+    const departmentRepo = AppDataSource.getRepository(DepartmentEntity);
+    const moduleRepo = AppDataSource.getRepository(MachineModuleEntity);
+
+    const entry = await entryRepo.findOne({ where: { id: gateEntryId }, relations: { department: true, module: true, plant: true } });
+    if (!entry) {
+      res.status(404).json(fail('Visitor request not found'));
+      return;
+    }
+
+    ensurePlantAccess(req, entry.plantId);
+
+    const actorCanAccess = canAccessEntry({
+      roles: req.auth!.roles,
+      actorUserId: req.auth!.userId,
+      entry,
+      visitorUserId: lookedUpSession?.visitorUserId ?? null,
+    });
+    if (!actorCanAccess) {
+      res.status(403).json(fail('No permission to view visitor navigation'));
+      return;
+    }
+
+    if (entry.approvalStatus !== 'APPROVED' || !entry.navigationEnabled) {
+      res.status(409).json(fail('Navigation is enabled only after approval'));
+      return;
+    }
+
+    if (!entry.plantId) {
+      res.status(400).json(fail('Visitor request is missing plant mapping'));
+      return;
+    }
+
+    const layout = await layoutRepo.findOne({ where: { plantId: entry.plantId, isActive: true }, order: { updatedAt: 'DESC' } });
+    const departments = await departmentRepo.find({ where: { plantId: entry.plantId, isActive: true }, order: { name: 'ASC' } });
+    const modules = await moduleRepo.find({ where: { plantId: entry.plantId, isActive: true }, order: { name: 'ASC' } });
+
+    const fallback = buildDefaultLayoutFromHierarchy({ departments, modules });
+    const parsed = layout ? parseLayoutData(layout.mapData ?? null) : { nodes: fallback.nodes, edges: fallback.edges };
+    const nodes = parsed.nodes.length > 0 ? parsed.nodes : fallback.nodes;
+    const edges = parsed.edges.length > 0 ? parsed.edges : fallback.edges;
+
+    const sourceNodeId =
+      query.fromNodeId
+      ?? normalizeString(entry.currentLocationNodeId)
+      ?? nodes.find((node) => ['ENTRANCE', 'GATE', 'MAIN_GATE'].includes(node.nodeType.toUpperCase()))?.id
+      ?? nodes[0]?.id;
+
+    const destinationNodeId =
+      query.toNodeId
+      ?? nodes.find((node) => node.nodeType.toUpperCase() === 'MODULE' && entry.moduleId && node.refId === entry.moduleId)?.id
+      ?? nodes.find((node) => node.nodeType.toUpperCase() === 'DEPARTMENT' && entry.departmentId && node.refId === entry.departmentId)?.id
+      ?? nodes[nodes.length - 1]?.id;
+
+    if (!sourceNodeId || !destinationNodeId) {
+      res.status(400).json(fail('Layout does not have enough nodes to compute route'));
+      return;
+    }
+
+    const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+    const pathNodeIds = shortestPath(nodes, edges, sourceNodeId, destinationNodeId);
+    const resolvedNodeIds = pathNodeIds.length > 0 ? pathNodeIds : [sourceNodeId, destinationNodeId];
+    const pathNodes = resolvedNodeIds.map((nodeId) => nodeMap.get(nodeId)).filter((node): node is LayoutNode => Boolean(node));
+
+    const instructions = pathNodes.slice(1).map((node, index) => {
+      const previous = pathNodes[index];
+      return `Move from ${previous.label} to ${node.label}`;
+    });
+
+    res.json(
+      ok(
+        {
+          gateEntryId: entry.id,
+          approvalStatus: entry.approvalStatus,
+          sourceNode: nodeMap.get(sourceNodeId) ?? null,
+          destinationNode: nodeMap.get(destinationNodeId) ?? null,
+          pathNodes,
+          instructions,
+          svgMarkup: layout?.svgMarkup ?? fallback.svgMarkup,
+          mapData: { nodes, edges },
+        },
+        'Visitor navigation fetched',
+      ),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+visitorExperienceRouter.get('/visitor/pass', async (req, res, next) => {
+  try {
+    const query = visitorPassQuerySchema.parse(req.query);
+    const session = await findSessionByLookup({
+      req,
+      sessionToken: query.sessionToken,
+      sessionId: query.sessionId,
+      gateEntryId: query.gateEntryId,
+    });
+
+    if (!session) {
+      res.status(404).json(fail('Visitor session not found'));
+      return;
+    }
+
+    const entry = await AppDataSource.getRepository(GateEntryEntity).findOne({
+      where: { id: session.gateEntryId },
+      relations: { gate: true, plant: true, department: true, module: true, personToMeetUser: true },
+    });
+    if (!entry) {
+      res.status(404).json(fail('Visitor entry not found'));
+      return;
+    }
+
+    ensurePlantAccess(req, session.plantId);
+
+    const actorCanAccess = canAccessEntry({
+      roles: req.auth!.roles,
+      actorUserId: req.auth!.userId,
+      entry,
+      visitorUserId: session.visitorUserId,
+    });
+    if (!actorCanAccess) {
+      res.status(403).json(fail('No permission to view visitor pass'));
+      return;
+    }
+
+    const latestSafetyConsent = await AppDataSource.getRepository(VisitorSafetyLogEntity).findOne({
+      where: {
+        visitorId: session.visitorUserId ?? req.auth!.userId,
+        gateEntryId: entry.id,
+      },
+      order: { consentedAt: 'DESC' },
+    });
+
+    const now = Date.now();
+    const isExpired = session.endTime.getTime() <= now;
+    const accessAllowed = session.approvalStatus === 'APPROVED' && !isExpired;
+    const qrPayload = {
+      type: 'VISITOR_PASS',
+      sessionToken: session.sessionToken,
+      gateEntryId: entry.id,
+      visitorName: entry.visitorName,
+      validFrom: session.startTime.toISOString(),
+      validTo: session.endTime.toISOString(),
+    };
+
+    res.json(
+      ok(
+        {
+          gateEntryId: entry.id,
+          sessionId: session.id,
+          sessionToken: session.sessionToken,
+          visitor: {
+            name: entry.visitorName,
+            company: entry.visitorCompany,
+            phone: entry.visitorPhone,
+            purpose: entry.purpose,
+          },
+          host: {
+            userId: entry.personToMeetUserId,
+            name: entry.personToMeetUser?.fullName ?? entry.personToMeet,
+          },
+          location: {
+            gate: entry.gate?.gateName ?? null,
+            department: entry.department?.name ?? null,
+            module: entry.module?.name ?? null,
+            meetingNodeId: entry.currentLocationNodeId,
+            meetingNodeLabel: entry.currentLocationLabel,
+          },
+          validity: {
+            status: accessAllowed ? 'VALID' : isExpired ? 'EXPIRED' : 'PENDING',
+            approved: session.approvalStatus === 'APPROVED',
+            validFrom: session.startTime.toISOString(),
+            validTo: session.endTime.toISOString(),
+            remainingSeconds: Math.max(0, Math.floor((session.endTime.getTime() - now) / 1000)),
+          },
+          qrPayload,
+          gateScanValidation: {
+            allowed: accessAllowed,
+            reason: accessAllowed ? null : isExpired ? 'Pass has expired' : 'Waiting for approval',
+          },
+          safetyConsent: latestSafetyConsent
+            ? {
+                consentGiven: latestSafetyConsent.consentGiven,
+                consentedAt: latestSafetyConsent.consentedAt,
+              }
+            : null,
+        },
+        'Visitor pass fetched',
+      ),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+visitorExperienceRouter.get('/visitor/tracking', async (req, res, next) => {
+  try {
+    const query = visitorTrackingQuerySchema.parse(req.query);
+    const session = await findSessionByLookup({
+      req,
+      sessionToken: query.sessionToken,
+      sessionId: query.sessionId,
+      gateEntryId: query.gateEntryId,
+    });
+
+    if (!session) {
+      res.status(404).json(fail('Visitor session not found'));
+      return;
+    }
+
+    const entry = await AppDataSource.getRepository(GateEntryEntity).findOneBy({ id: session.gateEntryId });
+    if (!entry) {
+      res.status(404).json(fail('Visitor entry not found'));
+      return;
+    }
+
+    ensurePlantAccess(req, session.plantId);
+    const actorCanAccess = canAccessEntry({
+      roles: req.auth!.roles,
+      actorUserId: req.auth!.userId,
+      entry,
+      visitorUserId: session.visitorUserId,
+    });
+    if (!actorCanAccess) {
+      res.status(403).json(fail('No permission to view visitor tracking'));
+      return;
+    }
+
+    const trackingRepo = AppDataSource.getRepository(VisitorTrackingEntity);
+    const [rows, total] = await trackingRepo.findAndCount({
+      where: { visitorSessionId: session.id },
+      order: { trackedAt: 'DESC', createdAt: 'DESC' },
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
+    });
+
+    res.json(
+      ok(
+        {
+          sessionId: session.id,
+          gateEntryId: session.gateEntryId,
+          path: rows,
+          latest: rows[0] ?? null,
+        },
+        'Visitor tracking fetched',
+        buildPagination(query.page, query.limit, total),
+      ),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+visitorExperienceRouter.post('/visitor/sos', async (req, res, next) => {
+  try {
+    const body = visitorSosSchema.parse(req.body);
+
+    const session = body.sessionId
+      ? await AppDataSource.getRepository(VisitorSessionEntity).findOneBy({ id: body.sessionId })
+      : null;
+
+    const gateEntryId = body.gateEntryId ?? session?.gateEntryId ?? null;
+    const entry = gateEntryId
+      ? await AppDataSource.getRepository(GateEntryEntity).findOneBy({ id: gateEntryId })
+      : null;
+
+    const resolvedPlantId = resolveScopedPlantId(req.auth!, body.plantId ?? entry?.plantId ?? session?.plantId ?? null);
+    ensurePlantAccess(req, resolvedPlantId);
+
+    if (!resolvedPlantId) {
+      res.status(400).json(fail('plantId is required to raise SOS alert'));
+      return;
+    }
+
+    if (entry) {
+      const canAccess = canAccessEntry({
+        roles: req.auth!.roles,
+        actorUserId: req.auth!.userId,
+        entry,
+        visitorUserId: session?.visitorUserId ?? null,
+      });
+      if (!canAccess) {
+        res.status(403).json(fail('No permission to raise SOS for this visitor request'));
+        return;
+      }
+    }
+
+    const roleRepo = AppDataSource.getRepository(UserRoleEntity);
+    const profileRepo = AppDataSource.getRepository(ProfileEntity);
+    const notificationRepo = AppDataSource.getRepository(NotificationEntity);
+
+    const roleRows = await roleRepo.find({
+      where: [{ role: 'SECURITY' }, { role: 'SECURITY_USER' }, { role: 'ADMIN' }, { role: 'SUPERADMIN' }],
+    });
+
+    const uniqueUserIds = Array.from(new Set(roleRows.map((row) => row.userId).filter(Boolean)));
+    const profiles = uniqueUserIds.length > 0
+      ? await profileRepo.find({ where: uniqueUserIds.map((userId) => ({ userId })) })
+      : [];
+
+    const targetUserIds = Array.from(
+      new Set(
+        profiles
+          .filter((profile) => !profile.plantId || profile.plantId === resolvedPlantId)
+          .map((profile) => profile.userId)
+          .filter((userId) => userId !== req.auth!.userId),
+      ),
+    );
+
+    const locationText = body.latitude !== null && body.latitude !== undefined && body.longitude !== null && body.longitude !== undefined
+      ? `Location: ${body.latitude.toFixed(6)}, ${body.longitude.toFixed(6)}`
+      : 'Location unavailable';
+
+    const message = [
+      `${req.auth!.email || 'Visitor'} raised an SOS alert.`,
+      entry ? `Visitor: ${entry.visitorName}` : null,
+      body.note || null,
+      locationText,
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    if (targetUserIds.length > 0) {
+      const notifications = targetUserIds.map((userId) =>
+        notificationRepo.create({
+          userId,
+          title: 'SOS Alert from Visitor Experience',
+          message,
+          type: 'critical',
+          isRead: false,
+          link: '/visitor-experience',
+          woId: null,
+        }),
+      );
+      await notificationRepo.save(notifications);
+      targetUserIds.forEach((userId) => publishNotificationChange(userId));
+    }
+
+    res.status(201).json(
+      ok(
+        {
+          alertRaised: true,
+          notificationsSent: targetUserIds.length,
+          gateEntryId: entry?.id ?? null,
+          plantId: resolvedPlantId,
+        },
+        'SOS alert sent to security teams',
       ),
     );
   } catch (error) {

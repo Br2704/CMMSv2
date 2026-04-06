@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { AppDataSource } from '../../database/data-source';
 import {
   AssetEntity,
@@ -390,10 +391,10 @@ class WorkOrdersService extends CrudService {
       const assetId = typeof row.asset_ref_id === 'string' ? row.asset_ref_id : null;
       item.assets = assetId
         ? {
-            id: assetId,
-            code: row.asset_ref_code ?? null,
-            name: row.asset_ref_name ?? null,
-          }
+          id: assetId,
+          code: row.asset_ref_code ?? null,
+          name: row.asset_ref_name ?? null,
+        }
         : null;
       delete item.asset_ref_id;
       delete item.asset_ref_code;
@@ -567,6 +568,7 @@ class WorkOrdersService extends CrudService {
     const repo = manager.getRepository(WorkOrderActivityLogEntity);
     await repo.save(
       repo.create({
+        id: randomUUID(),
         workOrderId: String(workOrder.id),
         assetId: typeof workOrder.asset_id === 'string' ? workOrder.asset_id : null,
         plantId: typeof workOrder.plant_id === 'string' ? workOrder.plant_id : null,
@@ -685,9 +687,9 @@ class WorkOrdersService extends CrudService {
     }
     const assignedTeam = categoryMapping && plantId
       ? await this.teamsRepo.findOne({
-          where: { id: categoryMapping.teamId, plantId, isActive: true },
-          select: ['id', 'teamLeaderId', 'teamMemberIds', 'teamName'],
-        })
+        where: { id: categoryMapping.teamId, plantId, isActive: true },
+        select: ['id', 'teamLeaderId', 'teamMemberIds', 'teamName'],
+      })
       : null;
 
     const woNumber = typeof normalized.wo_number === 'string' ? normalized.wo_number.trim() : '';
@@ -774,10 +776,10 @@ class WorkOrdersService extends CrudService {
       : undefined;
     const normalizedFailureCode = normalized.failure_code !== undefined
       ? await this.validateMasterOption(
-          plantId,
-          'FAILURE_CODE',
-          normalized.failure_code === null ? null : String(normalized.failure_code),
-        )
+        plantId,
+        'FAILURE_CODE',
+        normalized.failure_code === null ? null : String(normalized.failure_code),
+      )
       : undefined;
 
     const previousUsage = normalizeSpareUsage(existing.spare_consumption);

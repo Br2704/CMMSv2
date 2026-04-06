@@ -1,7 +1,7 @@
 import { forbidden } from './httpError';
 import { normalizeRoleName } from './rbac';
 
-export const SYSTEM_ROLES = ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER', 'USER', 'VENDOR', 'VISITOR', 'SECURITY'] as const;
+export const SYSTEM_ROLES = ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER', 'USER', 'VENDOR', 'VISITOR', 'TEMPORARY_VISITOR', 'SECURITY'] as const;
 
 export type SystemRole = (typeof SYSTEM_ROLES)[number];
 
@@ -34,6 +34,7 @@ const ROLE_PRECEDENCE: Record<string, number> = {
   VENDOR: 105,
   SECURITY: 102,
   VISITOR: 95,
+  TEMPORARY_VISITOR: 94,
 };
 
 const SUPERADMIN_MANAGED_ROLES = new Set([
@@ -46,6 +47,7 @@ const SUPERADMIN_MANAGED_ROLES = new Set([
   'SECURITY',
   'VENDOR',
   'VISITOR',
+  'TEMPORARY_VISITOR',
 ]);
 
 const ADMIN_MANAGED_ROLES = new Set([
@@ -58,6 +60,7 @@ const ADMIN_MANAGED_ROLES = new Set([
   'SECURITY',
   'VENDOR',
   'VISITOR',
+  'TEMPORARY_VISITOR',
 ]);
 
 function normalizeRole(role: string): string {
@@ -88,15 +91,15 @@ export function isRegularRole(roleKey: string): boolean {
 export function visibleRolesForActor(actorRole: string): string[] {
   const role = normalizeRole(actorRole);
   if (role === 'ROOT_ADMIN') {
-    return ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'SECURITY', 'VENDOR', 'VISITOR', 'USER'];
+    return ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'SECURITY', 'VENDOR', 'VISITOR', 'TEMPORARY_VISITOR', 'USER'];
   }
   if (role === 'SUPERADMIN') {
-    return ['MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'SECURITY', 'VENDOR', 'VISITOR', 'USER'];
+    return ['MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'SECURITY', 'VENDOR', 'VISITOR', 'TEMPORARY_VISITOR', 'USER'];
   }
   if (role === 'ADMIN') {
-    return ['MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'USER', 'SECURITY', 'VENDOR', 'VISITOR'];
+    return ['MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'USER', 'SECURITY', 'VENDOR', 'VISITOR', 'TEMPORARY_VISITOR'];
   }
-  return ['USER', 'SECURITY', 'VENDOR', 'VISITOR'];
+  return ['USER', 'SECURITY', 'VENDOR', 'VISITOR', 'TEMPORARY_VISITOR'];
 }
 
 export function allowedRoleTargetsForCreate(actorRole: string): string[] {

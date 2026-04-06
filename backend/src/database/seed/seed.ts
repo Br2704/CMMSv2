@@ -29,6 +29,7 @@ const DEFAULT_ROLES: RoleSeed[] = [
   { name: 'VIEWER', isSystem: true, description: 'Read-only user' },
   { name: 'VENDOR', isSystem: true, description: 'External vendor user' },
   { name: 'VISITOR', isSystem: true, description: 'Visitor portal user' },
+  { name: 'TEMPORARY_VISITOR', isSystem: true, description: 'Temporary visitor role for smart gate sessions' },
   { name: 'USER', isSystem: true, description: 'Standard plant user' },
 ];
 
@@ -133,6 +134,7 @@ function buildPermissionMapByRole() {
     VIEWER: viewerPermissions,
     VENDOR: vendorPermissions,
     VISITOR: visitorPermissions,
+    TEMPORARY_VISITOR: visitorPermissions,
     USER: userPermissions,
   } as const;
 }

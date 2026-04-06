@@ -15,6 +15,7 @@ export type AppRole =
   | "VIEWER"
   | "VENDOR"
   | "VISITOR"
+  | "TEMPORARY_VISITOR"
   | "SECURITY"
   | "USER"
   | "MECHANICAL_INCHARGE"

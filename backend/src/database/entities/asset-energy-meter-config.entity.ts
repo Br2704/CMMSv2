@@ -1,6 +1,13 @@
 import { Column, Entity } from 'typeorm';
 import { TimestampedUuidEntity } from './common';
 
+export type EnergyMeterDataPoint = {
+  label: string;
+  register: string;
+  unit: string | null;
+  multiplier: number | null;
+};
+
 @Entity('asset_energy_meter_configs')
 export class AssetEnergyMeterConfigEntity extends TimestampedUuidEntity {
   @Column({ name: 'asset_id', type: 'uuid' })
@@ -50,6 +57,9 @@ export class AssetEnergyMeterConfigEntity extends TimestampedUuidEntity {
 
   @Column({ type: 'text', nullable: true })
   notes!: string | null;
+
+  @Column({ name: 'data_points', type: 'simple-json', nullable: true })
+  dataPoints!: EnergyMeterDataPoint[] | null;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;

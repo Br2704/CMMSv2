@@ -92,13 +92,13 @@ function buildFallbackPermissionsForRole(role: string): Record<string, string[]>
   if (normalized === 'VENDOR') {
     return fromModules(['AMC'], readOnly);
   }
-  if (normalized === 'VISITOR') {
+  if (normalized === 'VISITOR' || normalized === 'TEMPORARY_VISITOR') {
     return {};
   }
   if (normalized === 'SECURITY_USER' || normalized === 'SECURITY') {
     return {
-      ...fromModules(['GATES'], readOnly),
-      GATES: ['READ'],
+      ...fromModules(['GATES'], ['READ', 'CREATE', 'UPDATE', 'EXPORT']),
+      GATES: ['READ', 'CREATE', 'UPDATE', 'EXPORT'],
     };
   }
   if (normalized === 'USER') {

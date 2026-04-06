@@ -1,1099 +1,719 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { format } from 'date-fns';
-import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { InputField, SelectField, TextareaField } from '@/components/shared/FormField';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { PageShell } from '@/components/layout/PageShell';
-import { approveSmartVisitor, createVisitorRequest, getPlantVisitorLayout, getSmartNavigationRoute, getVisitorExperienceContent, getVisitorInsights, getVisitorSessionStatus, listVisitorRequests, savePlantVisitorLayout, saveVisitorExperienceContent, type PlantLayout, type PlantLayoutEdge, type PlantLayoutNode, type VisitorExperienceContent, type VisitorExperienceProduct, type VisitorNavigationRoute, type VisitorRequestRecord, type VisitorSessionStatus, updateVisitorLocation } from '@/api/visitorExperience';
-import { listAssets, type Asset } from '@/api/assets';
-import { listPlants, type Plant } from '@/api/plants';
-import { listDepartments, type Department } from '@/api/departments';
-import { listModules, type MachineModule } from '@/api/modules';
-import { listUsers, type UserProfile } from '@/api/users';
-import { listGates, type Gate } from '@/api/gates';
-import { isAdmin, useAuthStore } from '@/store/auth.store';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import {
+    AlertTriangle,
+    CheckCircle2,
+    IdCard,
+    MapPinned,
+    Navigation,
+    RefreshCw,
+    ShieldAlert,
+    Siren,
+    UserCheck,
+} from "lucide-react";
+import { PageShell } from "@/components/layout/PageShell";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { SelectField } from "@/components/shared/FormField";
+import { listPlants, type Plant } from "@/api/plants";
+import {
+    getVisitorNavigation,
+    getVisitorPass,
+    getVisitorProfile,
+    getVisitorTracking,
+    listVisitorRequests,
+    logVisitorSafetyConsent,
+    reviewVisitorRequest,
+    sendVisitorSos,
+    type VisitorNavigationRoute,
+    type VisitorPassData,
+    type VisitorProfileResponse,
+    type VisitorRequestRecord,
+    type VisitorTrackingResponse,
+} from "@/api/visitorExperience";
+import { isSuperAdmin, useAuthStore } from "@/store/auth.store";
 
-const EMPTY_CONTENT_DRAFT = {
-  pageTitle: 'Welcome to JK Fenner',
-  companyOverview: '',
-  contactName: '',
-  contactEmail: '',
-  contactPhone: '',
-  contactAddress: '',
-  productsJson: '[]',
-};
-
-const EMPTY_LAYOUT_DRAFT = {
-  layoutName: 'Plant Layout',
-  svgMarkup: '',
-  mapDataJson: '{\n  "nodes": [],\n  "edges": []\n}',
-};
-
-function prettyJson(value: unknown) {
-  try {
-    return JSON.stringify(value ?? [], null, 2);
-  } catch {
-    return '[]';
-  }
-}
+type VisitorTab = "profile" | "navigation" | "approval" | "pass" | "safety";
 
 function resolveErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const maybeMessage = (error as { message?: unknown }).message;
-    if (typeof maybeMessage === 'string' && maybeMessage.trim()) {
-      return maybeMessage;
+    if (error && typeof error === "object" && "message" in error) {
+        const message = (error as { message?: unknown }).message;
+        if (typeof message === "string" && message.trim().length > 0) {
+            return message;
+        }
     }
-  }
-  return fallback;
+    return fallback;
 }
 
-function parseLayoutNode(value: unknown): PlantLayoutNode | null {
-  if (!value || typeof value !== 'object') return null;
-  const input = value as Record<string, unknown>;
-  const id = String(input.id ?? '').trim();
-  const label = String(input.label ?? '').trim();
-  if (!id || !label) return null;
-
-  return {
-    id,
-    label,
-    nodeType: String(input.nodeType ?? 'WAYPOINT'),
-    refId: input.refId ? String(input.refId) : undefined,
-    x: typeof input.x === 'number' ? input.x : undefined,
-    y: typeof input.y === 'number' ? input.y : undefined,
-  };
+function isApprovalRole(role: string) {
+    const normalized = role.trim().toUpperCase();
+    return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "SECURITY", "SECURITY_USER"].includes(normalized);
 }
 
-function parseLayoutEdge(value: unknown): PlantLayoutEdge | null {
-  if (!value || typeof value !== 'object') return null;
-  const input = value as Record<string, unknown>;
-  const fromNodeId = String(input.fromNodeId ?? '').trim();
-  const toNodeId = String(input.toNodeId ?? '').trim();
-  if (!fromNodeId || !toNodeId) return null;
-
-  return {
-    fromNodeId,
-    toNodeId,
-    distance: typeof input.distance === 'number' ? input.distance : undefined,
-    directional: typeof input.directional === 'boolean' ? input.directional : undefined,
-  };
+function formatDateTime(value: string | null | undefined) {
+    if (!value) return "-";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleString();
 }
 
-function formatVisitorStatus(status: string | null | undefined) {
-  const normalized = String(status ?? '').toUpperCase();
-  if (normalized === 'PENDING') return 'Pending Approval';
-  if (normalized === 'APPROVED') return 'Approved';
-  if (normalized === 'REJECTED') return 'Rejected';
-  if (normalized === 'IN') return 'Inside Plant';
-  if (normalized === 'OUT') return 'Exited';
-  return normalized || 'Unknown';
-}
+async function captureCurrentPosition() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return null;
 
-function getStatusVariant(status: string | null | undefined) {
-  const normalized = String(status ?? '').toUpperCase();
-  if (normalized === 'APPROVED' || normalized === 'IN') return 'completed' as const;
-  if (normalized === 'REJECTED') return 'error' as const;
-  if (normalized === 'PENDING') return 'warning' as const;
-  return 'default' as const;
+    return new Promise<{ latitude: number; longitude: number } | null>((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+            (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
+            () => resolve(null),
+            { enableHighAccuracy: true, timeout: 8000 },
+        );
+    });
 }
 
 export default function VisitorExperience() {
-  const { user } = useAuthStore();
-  const userIsAdmin = isAdmin(user);
-  const isSecurityUser = useMemo(
-    () =>
-      (user?.roles ?? []).some((role) => {
-        const normalized = role.toUpperCase();
-        return normalized === 'SECURITY' || normalized === 'SECURITY_USER';
-      }),
-    [user?.roles],
-  );
-  const userIsVisitor = useMemo(
-    () => (user?.roles ?? []).some((role) => role.toUpperCase() === 'VISITOR'),
-    [user?.roles],
-  );
-
-  const [loading, setLoading] = useState(true);
-  const [savingContent, setSavingContent] = useState(false);
-  const [savingLayout, setSavingLayout] = useState(false);
-  const [submittingRequest, setSubmittingRequest] = useState(false);
-  const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
-
-  const [plants, setPlants] = useState<Plant[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [modules, setModules] = useState<MachineModule[]>([]);
-  const [employees, setEmployees] = useState<UserProfile[]>([]);
-  const [gates, setGates] = useState<Gate[]>([]);
-
-  const [selectedPlantId, setSelectedPlantId] = useState<string>('');
-  const [content, setContent] = useState<VisitorExperienceContent | null>(null);
-  const [layout, setLayout] = useState<PlantLayout | null>(null);
-  const [insights, setInsights] = useState<Awaited<ReturnType<typeof getVisitorInsights>>['data'] | null>(null);
-
-  const [contentDraft, setContentDraft] = useState(EMPTY_CONTENT_DRAFT);
-  const [layoutDraft, setLayoutDraft] = useState(EMPTY_LAYOUT_DRAFT);
-
-  const [requestScope, setRequestScope] = useState<'my-requests' | 'approvals' | 'all'>('my-requests');
-  const [requests, setRequests] = useState<VisitorRequestRecord[]>([]);
-  const [requestSearch, setRequestSearch] = useState('');
-
-  const [requestForm, setRequestForm] = useState({
-    gateId: '',
-    departmentId: '',
-    moduleId: '',
-    personToMeetUserId: '',
-    visitorName: user?.fullName || '',
-    visitorCompany: '',
-    visitorPhone: user?.phone || '',
-    purpose: '',
-    desiredVisitAt: '',
-    idProofType: '',
-    idProofNumber: '',
-    vehicleNumber: '',
-    remarks: '',
-  });
-
-  const [selectedProduct, setSelectedProduct] = useState<VisitorExperienceProduct | null>(null);
-  const [selectedRequestId, setSelectedRequestId] = useState<string>('');
-  const [routeData, setRouteData] = useState<VisitorNavigationRoute | null>(null);
-  const [currentNodeId, setCurrentNodeId] = useState<string>('');
-  const [sessionTokenInput, setSessionTokenInput] = useState('');
-  const [sessionStatus, setSessionStatus] = useState<VisitorSessionStatus | null>(null);
-  const [loadingSessionStatus, setLoadingSessionStatus] = useState(false);
-  const [updatingLocation, setUpdatingLocation] = useState(false);
-  const [destinationDepartmentId, setDestinationDepartmentId] = useState<string>('');
-  const [departmentMachines, setDepartmentMachines] = useState<Asset[]>([]);
-  const [routeCoordinateLookup, setRouteCoordinateLookup] = useState<Record<string, { latitude: number; longitude: number; label: string; departmentId: string | null }>>({});
-
-  const plantOptions = useMemo(
-    () => plants.map((plant) => ({ value: plant.id, label: `${plant.plantCode} - ${plant.plantName}` })),
-    [plants],
-  );
-
-  const selectedPlant = useMemo(() => plants.find((plant) => plant.id === selectedPlantId) || null, [plants, selectedPlantId]);
-
-  const filteredDepartments = useMemo(
-    () => departments.filter((department) => !selectedPlantId || department.plantId === selectedPlantId),
-    [departments, selectedPlantId],
-  );
-
-  const filteredModules = useMemo(
-    () =>
-      modules.filter((module) => {
-        if (selectedPlantId && module.plantId !== selectedPlantId) return false;
-        if (requestForm.departmentId && module.departmentId !== requestForm.departmentId) return false;
-        return true;
-      }),
-    [modules, requestForm.departmentId, selectedPlantId],
-  );
-
-  const employeeOptions = useMemo(
-    () =>
-      employees
-        .filter((employee) => employee.isActive)
-        .map((employee) => ({
-          value: employee.userId,
-          label: `${employee.fullName} (${employee.userCode})`,
-        })),
-    [employees],
-  );
-
-  const gateOptions = useMemo(
-    () => gates.map((gate) => ({ value: gate.id, label: `${gate.gateName} (${gate.gateCode})` })),
-    [gates],
-  );
-
-  const requestScopeOptions = useMemo(() => {
-    if (userIsVisitor) return [{ value: 'my-requests', label: 'My Requests' }];
-    if (userIsAdmin || isSecurityUser) {
-      return [
-        { value: 'all', label: 'All Visitor Requests' },
-        { value: 'approvals', label: 'My Approvals' },
-        { value: 'my-requests', label: 'Requests Raised by Me' },
-      ];
-    }
-    return [
-      { value: 'approvals', label: 'My Approvals' },
-      { value: 'my-requests', label: 'Requests Raised by Me' },
-    ];
-  }, [isSecurityUser, userIsAdmin, userIsVisitor]);
-
-  const requestOptions = useMemo(
-    () =>
-      requests
-        .filter((request) => request.approvalStatus === 'APPROVED' && request.navigationEnabled)
-        .map((request) => ({
-          value: request.id,
-          label: `${request.visitorName} • ${request.department?.name || 'Department'} • ${formatVisitorStatus(request.status)}`,
-        })),
-    [requests],
-  );
-
-  const canReviewRequest = (request: VisitorRequestRecord) => {
-    if (request.approvalStatus !== 'PENDING') return false;
-    if (userIsAdmin || isSecurityUser) return true;
-    return request.personToMeetUserId === user?.authId;
-  };
-
-  const canConfigureExperience = userIsAdmin || isSecurityUser;
-
-  const loadPlants = useCallback(async () => {
-    try {
-      const response = await listPlants({ page: 1, limit: 200, includeInactive: false });
-      const availablePlants = response.data;
-      setPlants(availablePlants);
-
-      const fallbackPlantId = user?.plantId || availablePlants[0]?.id || '';
-      setSelectedPlantId((current) => current || fallbackPlantId);
-    } catch {
-      if (user?.plantId && user?.plantCode && user?.plantName) {
-        setPlants([
-          {
-            id: user.plantId,
-            plantCode: user.plantCode,
-            plantName: user.plantName,
-            location: null,
-            plantAdminId: null,
-            organizationId: user.organizationId || '',
-            isActive: true,
-            createdAt: '',
-            updatedAt: '',
-          },
-        ]);
-        setSelectedPlantId(user.plantId);
-      }
-    }
-  }, [user?.organizationId, user?.plantCode, user?.plantId, user?.plantName]);
-
-  const loadReferenceData = useCallback(async (plantId: string) => {
-    const [departmentResponse, moduleResponse, userResponse, gateResponse] = await Promise.all([
-      listDepartments({ page: 1, limit: 300, plantId, includeInactive: false }),
-      listModules({ page: 1, limit: 400, plantId, includeInactive: false }),
-      listUsers({ page: 1, limit: 400, plantId, includeInactive: false }),
-      listGates({ page: 1, limit: 100, plantId, includeInactive: false }),
-    ]);
-
-    setDepartments(departmentResponse.data || []);
-    setModules(moduleResponse.data || []);
-
-    const filteredEmployees = (userResponse.data || []).filter((profile) => {
-      const roles = (profile.roles ?? []).map((role) => role.toUpperCase());
-      return !roles.includes('VISITOR');
-    });
-    setEmployees(filteredEmployees);
-
-    const activeGates = (gateResponse.data || []).filter((gate) => gate.isActive);
-    setGates(activeGates);
-
-    setRequestForm((current) => ({
-      ...current,
-      gateId: current.gateId || activeGates[0]?.id || '',
-      personToMeetUserId: current.personToMeetUserId || filteredEmployees[0]?.userId || '',
-    }));
-  }, []);
-
-  const loadVisitorExperienceContext = useCallback(async (plantId: string) => {
-    if (!plantId) return;
-
-    const [contentResponse, layoutResponse, requestResponse, insightResponse] = await Promise.all([
-      getVisitorExperienceContent(plantId),
-      getPlantVisitorLayout(plantId),
-      listVisitorRequests({ plantId, scope: requestScope, search: requestSearch || undefined, page: 1, limit: 100 }),
-      getVisitorInsights({ plantId }),
-    ]);
-
-    setContent(contentResponse.data);
-    setContentDraft({
-      pageTitle: contentResponse.data.pageTitle || 'Welcome to JK Fenner',
-      companyOverview: contentResponse.data.companyOverview || '',
-      contactName: contentResponse.data.contactName || '',
-      contactEmail: contentResponse.data.contactEmail || '',
-      contactPhone: contentResponse.data.contactPhone || '',
-      contactAddress: contentResponse.data.contactAddress || '',
-      productsJson: prettyJson(contentResponse.data.products || []),
-    });
-
-    setLayout(layoutResponse.data);
-    setLayoutDraft({
-      layoutName: layoutResponse.data.layoutName || 'Plant Layout',
-      svgMarkup: layoutResponse.data.svgMarkup || '',
-      mapDataJson: prettyJson(layoutResponse.data.mapData || { nodes: [], edges: [] }),
-    });
-
-    setRequests(requestResponse.data || []);
-    setInsights(insightResponse.data);
-
-    if (requestResponse.data.length > 0) {
-      const firstApprovedRequest = requestResponse.data.find((request) => request.approvalStatus === 'APPROVED' && request.navigationEnabled);
-      if (firstApprovedRequest) {
-        setSelectedRequestId((current) => current || firstApprovedRequest.id);
-      }
-    }
-  }, [requestScope, requestSearch]);
-
-  const refreshAll = useCallback(async () => {
-    if (!selectedPlantId) return;
-    setLoading(true);
-    try {
-      await loadReferenceData(selectedPlantId);
-      await loadVisitorExperienceContext(selectedPlantId);
-    } catch (error: unknown) {
-      toast.error(resolveErrorMessage(error, 'Failed to load visitor experience'));
-    } finally {
-      setLoading(false);
-    }
-  }, [loadReferenceData, loadVisitorExperienceContext, selectedPlantId]);
-
-  useEffect(() => {
-    void (async () => {
-      setLoading(true);
-      try {
-        await loadPlants();
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [loadPlants]);
-
-  useEffect(() => {
-    if (!selectedPlantId) return;
-    void refreshAll();
-  }, [refreshAll, selectedPlantId]);
-
-  useEffect(() => {
-    if (!selectedPlantId) return;
-    void loadVisitorExperienceContext(selectedPlantId).catch((error: unknown) => {
-      toast.error(resolveErrorMessage(error, 'Failed to refresh visitor requests'));
-    });
-  }, [loadVisitorExperienceContext, selectedPlantId]);
-
-  const handleSubmitVisitorRequest = async () => {
-    if (!selectedPlantId) {
-      toast.error('Select a plant before submitting visitor request');
-      return;
-    }
-    if (!requestForm.personToMeetUserId) {
-      toast.error('Select the employee to visit');
-      return;
-    }
-    if (!requestForm.visitorName.trim() || !requestForm.purpose.trim()) {
-      toast.error('Visitor name and purpose are required');
-      return;
-    }
-
-    setSubmittingRequest(true);
-    try {
-      await createVisitorRequest({
-        gateId: requestForm.gateId || null,
-        plantId: selectedPlantId,
-        departmentId: requestForm.departmentId || null,
-        moduleId: requestForm.moduleId || null,
-        personToMeetUserId: requestForm.personToMeetUserId,
-        visitorName: requestForm.visitorName.trim(),
-        visitorCompany: requestForm.visitorCompany.trim() || null,
-        visitorPhone: requestForm.visitorPhone.trim() || null,
-        purpose: requestForm.purpose.trim(),
-        desiredVisitAt: requestForm.desiredVisitAt || null,
-        idProofType: requestForm.idProofType.trim() || null,
-        idProofNumber: requestForm.idProofNumber.trim() || null,
-        vehicleNumber: requestForm.vehicleNumber.trim() || null,
-        remarks: requestForm.remarks.trim() || null,
-      });
-
-      toast.success('Visitor request submitted successfully');
-      setRequestForm((current) => ({
-        ...current,
-        purpose: '',
-        desiredVisitAt: '',
-        idProofType: '',
-        idProofNumber: '',
-        vehicleNumber: '',
-        remarks: '',
-      }));
-
-      await loadVisitorExperienceContext(selectedPlantId);
-    } catch (error: unknown) {
-      toast.error(resolveErrorMessage(error, 'Failed to submit visitor request'));
-    } finally {
-      setSubmittingRequest(false);
-    }
-  };
-
-  const handleReviewVisitorRequest = async (request: VisitorRequestRecord, action: 'APPROVE' | 'REJECT') => {
-    if (!canReviewRequest(request)) return;
-
-    const commentsPrompt = action === 'REJECT' ? 'Enter rejection comments (required):' : 'Enter approval comments (optional):';
-    const comments = window.prompt(commentsPrompt, action === 'REJECT' ? 'Please update visit details and resubmit.' : '') ?? '';
-
-    if (action === 'REJECT' && !comments.trim()) {
-      toast.error('Rejection comments are required');
-      return;
-    }
-
-    setReviewingRequestId(request.id);
-    try {
-      await approveSmartVisitor({
-        gateEntryId: request.id,
-        action,
-        comments: comments.trim() || null,
-      });
-
-      toast.success(action === 'APPROVE' ? 'Visitor request approved' : 'Visitor request rejected');
-      await loadVisitorExperienceContext(selectedPlantId);
-    } catch (error: unknown) {
-      toast.error(resolveErrorMessage(error, `Failed to ${action.toLowerCase()} visitor request`));
-    } finally {
-      setReviewingRequestId(null);
-    }
-  };
-
-  const handleSaveContent = async () => {
-    if (!selectedPlantId) {
-      toast.error('Select a plant before saving content');
-      return;
-    }
-
-    let products: VisitorExperienceProduct[] = [];
-    try {
-      const parsed = JSON.parse(contentDraft.productsJson || '[]');
-      if (!Array.isArray(parsed)) {
-        toast.error('Products must be a JSON array');
-        return;
-      }
-      products = parsed;
-    } catch {
-      toast.error('Products JSON is invalid');
-      return;
-    }
-
-    setSavingContent(true);
-    try {
-      const response = await saveVisitorExperienceContent({
-        plantId: selectedPlantId,
-        pageTitle: contentDraft.pageTitle,
-        companyOverview: contentDraft.companyOverview || null,
-        contactName: contentDraft.contactName || null,
-        contactEmail: contentDraft.contactEmail || null,
-        contactPhone: contentDraft.contactPhone || null,
-        contactAddress: contentDraft.contactAddress || null,
-        products,
-      });
-      setContent(response.data);
-      toast.success('Visitor experience content saved');
-      await loadVisitorExperienceContext(selectedPlantId);
-    } catch (error: unknown) {
-      toast.error(resolveErrorMessage(error, 'Failed to save visitor content'));
-    } finally {
-      setSavingContent(false);
-    }
-  };
-
-  const handleSaveLayout = async () => {
-    if (!selectedPlantId) {
-      toast.error('Select a plant before saving layout');
-      return;
-    }
-
-    let mapData: { nodes: PlantLayoutNode[]; edges: PlantLayoutEdge[] };
-    try {
-      const parsed = JSON.parse(layoutDraft.mapDataJson || '{}') as { nodes?: unknown; edges?: unknown };
-      const nodes = Array.isArray(parsed.nodes)
-        ? parsed.nodes
-            .map((node) => parseLayoutNode(node))
-            .filter((node): node is PlantLayoutNode => node !== null)
-        : [];
-      const edges = Array.isArray(parsed.edges)
-        ? parsed.edges
-            .map((edge) => parseLayoutEdge(edge))
-            .filter((edge): edge is PlantLayoutEdge => edge !== null)
-        : [];
-      mapData = {
-        nodes,
-        edges,
-      };
-    } catch {
-      toast.error('Layout map JSON is invalid');
-      return;
-    }
-
-    setSavingLayout(true);
-    try {
-      const response = await savePlantVisitorLayout({
-        plantId: selectedPlantId,
-        layoutName: layoutDraft.layoutName,
-        svgMarkup: layoutDraft.svgMarkup || null,
-        mapData,
-        publishNow: true,
-      });
-      setLayout(response.data);
-      toast.success('Plant layout saved');
-      await loadVisitorExperienceContext(selectedPlantId);
-    } catch (error: unknown) {
-      toast.error(resolveErrorMessage(error, 'Failed to save plant layout'));
-    } finally {
-      setSavingLayout(false);
-    }
-  };
-
-  const loadDestinationAssets = useCallback(async (departmentId: string | null) => {
-    if (!selectedPlantId || !departmentId) {
-      setDepartmentMachines([]);
-      setDestinationDepartmentId('');
-      return;
-    }
-
-    const response = await listAssets({ page: 1, limit: 200, plantId: selectedPlantId, departmentId, includeInactive: false });
-    setDestinationDepartmentId(departmentId);
-    setDepartmentMachines(response.data || []);
-  }, [selectedPlantId]);
-
-  const handleLoadSessionStatus = useCallback(async (lookup?: { gateEntryId?: string; sessionToken?: string }) => {
-    setLoadingSessionStatus(true);
-    try {
-      const response = await getVisitorSessionStatus({
-        gateEntryId: lookup?.gateEntryId,
-        sessionToken: lookup?.sessionToken,
-      });
-      setSessionStatus(response.data);
-      if (response.data.gateEntryId) {
-        setSelectedRequestId((current) => current || response.data.gateEntryId);
-      }
-    } catch (error: unknown) {
-      toast.error(resolveErrorMessage(error, 'Failed to fetch visitor session status'));
-    } finally {
-      setLoadingSessionStatus(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!selectedRequestId) return;
-    const interval = window.setInterval(() => {
-      void handleLoadSessionStatus({ gateEntryId: selectedRequestId });
-    }, 10_000);
-    return () => window.clearInterval(interval);
-  }, [handleLoadSessionStatus, selectedRequestId]);
-
-  const handleGenerateRoute = async () => {
-    if (!selectedRequestId) {
-      toast.error('Select an approved visitor request to generate navigation route');
-      return;
-    }
-
-    try {
-      const response = await getSmartNavigationRoute({ gateEntryId: selectedRequestId });
-      const smartRoute = response.data;
-
-      const nodes: PlantLayoutNode[] = smartRoute.routeCoordinates.map((coordinate) => ({
-        id: coordinate.id,
-        label: coordinate.locationName,
-        nodeType: coordinate.locationType,
-        refId: coordinate.moduleId || coordinate.departmentId || coordinate.gateId || undefined,
-      }));
-
-      const lookup = Object.fromEntries(
-        smartRoute.routeCoordinates.map((coordinate) => [
-          coordinate.id,
-          {
-            latitude: Number(coordinate.latitude),
-            longitude: Number(coordinate.longitude),
-            label: coordinate.locationName,
-            departmentId: coordinate.departmentId,
-          },
-        ]),
-      );
-      setRouteCoordinateLookup(lookup);
-
-      setRouteData({
-        gateEntryId: smartRoute.gateEntryId,
-        approvalStatus: smartRoute.sessionStatus,
-        sourceNode: {
-          id: smartRoute.source.id,
-          label: smartRoute.source.locationName,
-          nodeType: smartRoute.source.locationType,
-          refId: smartRoute.source.moduleId || smartRoute.source.departmentId || smartRoute.source.gateId || undefined,
-        },
-        destinationNode: {
-          id: smartRoute.destination.id,
-          label: smartRoute.destination.locationName,
-          nodeType: smartRoute.destination.locationType,
-          refId: smartRoute.destination.moduleId || smartRoute.destination.departmentId || smartRoute.destination.gateId || undefined,
-        },
-        pathNodes: nodes,
-        instructions: smartRoute.steps,
-        svgMarkup: layout?.svgMarkup || null,
-        mapData: {
-          nodes,
-          edges: [],
-        },
-      });
-
-      setCurrentNodeId(smartRoute.source.id);
-      await Promise.all([
-        loadDestinationAssets(smartRoute.destination.departmentId),
-        handleLoadSessionStatus({ gateEntryId: selectedRequestId }),
-      ]);
-      toast.success('Navigation route generated');
-    } catch (error: unknown) {
-      toast.error(resolveErrorMessage(error, 'Failed to generate route'));
-    }
-  };
-
-  const handleManualCheckIn = async () => {
-    if (!selectedRequestId) {
-      toast.error('Select a visitor request first');
-      return;
-    }
-
-    const selectedNode = routeCoordinateLookup[currentNodeId];
-    if (!selectedNode) {
-      toast.error('Select a checkpoint node for check-in');
-      return;
-    }
-
-    setUpdatingLocation(true);
-    try {
-      await updateVisitorLocation({
-        gateEntryId: selectedRequestId,
-        nodeId: currentNodeId,
-        nodeLabel: selectedNode.label,
-        latitude: selectedNode.latitude,
-        longitude: selectedNode.longitude,
-        source: 'CHECKPOINT',
-      });
-      toast.success('Checkpoint check-in recorded');
-      await Promise.all([
-        loadVisitorExperienceContext(selectedPlantId),
-        handleLoadSessionStatus({ gateEntryId: selectedRequestId }),
-      ]);
-    } catch (error: unknown) {
-      toast.error(resolveErrorMessage(error, 'Failed to record checkpoint'));
-    } finally {
-      setUpdatingLocation(false);
-    }
-  };
-
-  const handleGpsCheckIn = async () => {
-    if (!selectedRequestId) {
-      toast.error('Select a visitor request first');
-      return;
-    }
-
-    if (!('geolocation' in navigator)) {
-      toast.error('GPS is not available on this device');
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        setUpdatingLocation(true);
-        try {
-          await updateVisitorLocation({
-            gateEntryId: selectedRequestId,
-            nodeId: currentNodeId || null,
-            nodeLabel: routeData?.mapData.nodes.find((node) => node.id === currentNodeId)?.label || 'GPS location',
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            source: 'GPS',
-          });
-          toast.success('GPS location check-in recorded');
-          await Promise.all([
-            loadVisitorExperienceContext(selectedPlantId),
-            handleLoadSessionStatus({ gateEntryId: selectedRequestId }),
-          ]);
-        } catch (error: unknown) {
-          toast.error(resolveErrorMessage(error, 'Failed to save GPS location'));
-        } finally {
-          setUpdatingLocation(false);
-        }
-      },
-      () => {
-        toast.error('Unable to capture GPS location');
-      },
-      { enableHighAccuracy: true, timeout: 8000 },
+    const user = useAuthStore((state) => state.user);
+    const userIsSuperAdmin = isSuperAdmin(user);
+    const [activeTab, setActiveTab] = useState<VisitorTab>("profile");
+
+    const [plants, setPlants] = useState<Plant[]>([]);
+    const [selectedPlantId, setSelectedPlantId] = useState<string>(user?.plantId || "");
+
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+
+    const [profile, setProfile] = useState<VisitorProfileResponse | null>(null);
+    const [requests, setRequests] = useState<VisitorRequestRecord[]>([]);
+    const [selectedRequestId, setSelectedRequestId] = useState<string>("");
+    const [routeData, setRouteData] = useState<VisitorNavigationRoute | null>(null);
+    const [routeLoading, setRouteLoading] = useState(false);
+
+    const [passData, setPassData] = useState<VisitorPassData | null>(null);
+    const [passLoading, setPassLoading] = useState(false);
+    const [trackingData, setTrackingData] = useState<VisitorTrackingResponse | null>(null);
+    const [trackingLoading, setTrackingLoading] = useState(false);
+
+    const [approvalComments, setApprovalComments] = useState("");
+    const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
+
+    const [safetyGateOpen, setSafetyGateOpen] = useState(false);
+    const [safetyChecked, setSafetyChecked] = useState(false);
+    const [safetyScrolled, setSafetyScrolled] = useState(false);
+    const [savingSafetyConsent, setSavingSafetyConsent] = useState(false);
+    const [safetyConsentAcknowledged, setSafetyConsentAcknowledged] = useState(false);
+    const safetyContentRef = useRef<HTMLDivElement | null>(null);
+
+    const [sosNote, setSosNote] = useState("");
+    const [sosSending, setSosSending] = useState(false);
+
+    const canApproveRequests = useMemo(() => (user?.roles ?? []).some((role) => isApprovalRole(role)), [user?.roles]);
+    const requestScope = canApproveRequests ? "all" : "my-requests";
+
+    const plantOptions = useMemo(
+        () => plants.map((plant) => ({ value: plant.id, label: `${plant.plantCode} - ${plant.plantName}` })),
+        [plants],
     );
-  };
 
-  if (loading) {
-    return (
-      <PageShell>
-        <Card>
-          <CardContent className="py-16 text-center text-sm text-muted-foreground">Loading visitor experience...</CardContent>
-        </Card>
-      </PageShell>
+    const approvedNavigationRequests = useMemo(
+        () => requests.filter((request) => request.approvalStatus === "APPROVED" && request.navigationEnabled),
+        [requests],
     );
-  }
 
-  return (
-    <PageShell>
-      <PageHeader
-        title="Visitor Experience"
-        subtitle="Plant visitor page, smart approval flow, and digital navigation integrated with Gate Entry and Asset hierarchy."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <SelectField label="" value={selectedPlantId} onChange={setSelectedPlantId} options={plantOptions} placeholder="Select plant" className="w-[250px]" />
-            <Button variant="outline" onClick={() => void refreshAll()}>
-              Refresh
-            </Button>
-          </div>
+    const summary = useMemo(() => {
+        return {
+            total: requests.length,
+            pending: requests.filter((request) => request.approvalStatus === "PENDING").length,
+            approved: requests.filter((request) => request.approvalStatus === "APPROVED").length,
+            active: requests.filter((request) => request.status === "IN").length,
+        };
+    }, [requests]);
+
+    useEffect(() => {
+        if (user?.plantId) {
+            setSelectedPlantId((current) => current || user.plantId || "");
         }
-      />
+    }, [user?.plantId]);
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{insights?.pendingApprovals || 0}</p><p className="text-xs text-muted-foreground">Pending Approvals</p></CardContent></Card>
-        <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{insights?.approvedToday || 0}</p><p className="text-xs text-muted-foreground">Approved Today</p></CardContent></Card>
-        <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{insights?.rejectedToday || 0}</p><p className="text-xs text-muted-foreground">Rejected Today</p></CardContent></Card>
-        <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{insights?.activeVisitors || 0}</p><p className="text-xs text-muted-foreground">Active Visitors</p></CardContent></Card>
-        <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{insights?.navigationEnabled || 0}</p><p className="text-xs text-muted-foreground">Navigation Enabled</p></CardContent></Card>
-        <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{insights?.liveTracked || 0}</p><p className="text-xs text-muted-foreground">Live Tracking Points</p></CardContent></Card>
-      </div>
+    useEffect(() => {
+        let cancelled = false;
 
-      <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle>{content?.pageTitle || 'Welcome to JK Fenner'}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm leading-relaxed text-muted-foreground">{content?.companyOverview || 'Company overview is being updated for this plant.'}</p>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {(content?.products || []).map((product) => (
-                <button
-                  key={product.id || product.name}
-                  type="button"
-                  className="rounded-2xl border border-border/70 bg-background p-4 text-left transition hover:border-primary/40 hover:bg-primary/5"
-                  onClick={() => setSelectedProduct(product)}
-                >
-                  <p className="font-semibold text-foreground">{product.name}</p>
-                  <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">{product.description || 'Click to view product details and linked departments.'}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {(product.linkedDepartments || []).slice(0, 2).map((department) => (
-                      <Badge key={department.id} variant="secondary">{department.code}</Badge>
-                    ))}
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-              <p className="text-sm font-semibold">Contact</p>
-              <p className="mt-2 text-sm text-muted-foreground">{content?.contactName || 'Front Office'} • {content?.contactEmail || 'frontdesk@jkfenner.com'}</p>
-              <p className="text-sm text-muted-foreground">{content?.contactPhone || '+91-00000-00000'}</p>
-              <p className="text-sm text-muted-foreground">{content?.contactAddress || selectedPlant?.location || 'Plant contact address unavailable.'}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle>Smart Visitor Flow</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <SelectField label="Gate" value={requestForm.gateId} onChange={(value) => setRequestForm((current) => ({ ...current, gateId: value }))} options={gateOptions} placeholder="Select gate" />
-            <SelectField label="Department" value={requestForm.departmentId} onChange={(value) => setRequestForm((current) => ({ ...current, departmentId: value, moduleId: '' }))} options={filteredDepartments.map((department) => ({ value: department.id, label: `${department.code} - ${department.name}` }))} placeholder="Select department" />
-            <SelectField label="Module" value={requestForm.moduleId} onChange={(value) => setRequestForm((current) => ({ ...current, moduleId: value }))} options={filteredModules.map((module) => ({ value: module.id, label: module.code ? `${module.code} - ${module.name}` : module.name }))} placeholder="Select module" />
-            <SelectField label="Employee to Visit" value={requestForm.personToMeetUserId} onChange={(value) => setRequestForm((current) => ({ ...current, personToMeetUserId: value }))} options={employeeOptions} placeholder="Select employee" required />
-            <InputField label="Visitor Name" value={requestForm.visitorName} onChange={(value) => setRequestForm((current) => ({ ...current, visitorName: value }))} required />
-            <InputField label="Company" value={requestForm.visitorCompany} onChange={(value) => setRequestForm((current) => ({ ...current, visitorCompany: value }))} />
-            <InputField label="Phone" value={requestForm.visitorPhone} onChange={(value) => setRequestForm((current) => ({ ...current, visitorPhone: value }))} />
-            <TextareaField label="Purpose of Visit" value={requestForm.purpose} onChange={(value) => setRequestForm((current) => ({ ...current, purpose: value }))} rows={3} required />
-            <InputField
-              label="Desired Visit Time"
-              type="datetime-local"
-              value={requestForm.desiredVisitAt}
-              onChange={(value) => setRequestForm((current) => ({ ...current, desiredVisitAt: value }))}
-              placeholder="Select desired visit date and time"
-            />
-            <div className="grid gap-2 sm:grid-cols-2">
-              <InputField label="ID Proof Type" value={requestForm.idProofType} onChange={(value) => setRequestForm((current) => ({ ...current, idProofType: value }))} />
-              <InputField label="ID Proof Number" value={requestForm.idProofNumber} onChange={(value) => setRequestForm((current) => ({ ...current, idProofNumber: value }))} />
-            </div>
-            <InputField label="Vehicle Number" value={requestForm.vehicleNumber} onChange={(value) => setRequestForm((current) => ({ ...current, vehicleNumber: value }))} />
-            <TextareaField label="Additional Remarks" value={requestForm.remarks} onChange={(value) => setRequestForm((current) => ({ ...current, remarks: value }))} rows={2} />
-            <Button className="w-full" onClick={() => void handleSubmitVisitorRequest()} disabled={submittingRequest}>
-              {submittingRequest ? 'Submitting request...' : 'Submit Visitor Request'}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle>Plant Digital Map</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">Phase 1 static layout is enabled. Phase 2 live navigation uses GPS or checkpoint updates after approval.</p>
-
-            <div className="rounded-2xl border border-border/70 bg-slate-50 p-3">
-              {layout?.svgMarkup ? (
-                <div className="max-h-[420px] overflow-auto rounded-xl bg-white p-3" dangerouslySetInnerHTML={{ __html: layout.svgMarkup }} />
-              ) : (
-                <div className="py-8 text-center text-sm text-muted-foreground">No plant layout published yet.</div>
-              )}
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-              <SelectField label="Approved Request" value={selectedRequestId} onChange={setSelectedRequestId} options={requestOptions} placeholder="Select approved visitor request" />
-              <Button className="md:mt-7" onClick={() => void handleGenerateRoute()} disabled={!selectedRequestId}>
-                Generate Route
-              </Button>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-              <Input
-                placeholder="Session token / QR token (optional)"
-                value={sessionTokenInput}
-                onChange={(event) => setSessionTokenInput(event.target.value)}
-              />
-              <Button
-                className="md:mt-0"
-                variant="outline"
-                onClick={() =>
-                  void handleLoadSessionStatus(
-                    sessionTokenInput.trim()
-                      ? { sessionToken: sessionTokenInput.trim() }
-                      : selectedRequestId
-                        ? { gateEntryId: selectedRequestId }
-                        : undefined,
-                  )
+        const loadPlantsForContext = async () => {
+            if (!userIsSuperAdmin) {
+                if (!cancelled) {
+                    if (user?.plantId && user?.plantCode && user?.plantName) {
+                        setPlants([
+                            {
+                                id: user.plantId,
+                                plantCode: user.plantCode,
+                                plantName: user.plantName,
+                                location: null,
+                                plantAdminId: null,
+                                organizationId: user.organizationId || "",
+                                isActive: true,
+                                createdAt: "",
+                                updatedAt: "",
+                            },
+                        ]);
+                    } else {
+                        setPlants([]);
+                    }
                 }
-                disabled={loadingSessionStatus && !selectedRequestId && !sessionTokenInput.trim()}
-              >
-                {loadingSessionStatus ? 'Loading Session...' : 'Check Session'}
-              </Button>
-            </div>
+                return;
+            }
 
-            {sessionStatus ? (
-              <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold">Session Status</p>
-                  <StatusBadge variant={sessionStatus.accessAllowed ? 'active' : 'warning'}>
-                    {sessionStatus.status}
-                  </StatusBadge>
-                </div>
-                <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                  <p>Access: {sessionStatus.accessAllowed ? 'Allowed' : 'Restricted'}</p>
-                  <p>Approval: {sessionStatus.approvalStatus}</p>
-                  <p>Start: {sessionStatus.startTime ? format(new Date(sessionStatus.startTime), 'dd MMM yyyy, HH:mm') : '-'}</p>
-                  <p>End: {sessionStatus.endTime ? format(new Date(sessionStatus.endTime), 'dd MMM yyyy, HH:mm') : '-'}</p>
-                  <p>Remaining: {Math.max(0, Math.floor(sessionStatus.remainingSeconds / 60))} mins</p>
-                  <p>Last Node: {sessionStatus.currentLocation.nodeLabel || '-'}</p>
-                </div>
-              </div>
-            ) : null}
+            try {
+                const response = await listPlants({ page: 1, limit: 500, includeInactive: false });
+                if (cancelled) return;
+                setPlants(response.data || []);
+                if (!selectedPlantId && (response.data || []).length > 0) {
+                    setSelectedPlantId(response.data[0].id);
+                }
+            } catch (error: unknown) {
+                if (!cancelled) {
+                    setPlants([]);
+                    toast.error(resolveErrorMessage(error, "Failed to load plants"));
+                }
+            }
+        };
 
-            {routeData ? (
-              <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
-                <p className="text-sm font-semibold">Navigation Instructions</p>
-                <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
-                  {routeData.instructions.map((instruction, index) => (
-                    <li key={`instruction-${index}`}>{instruction}</li>
-                  ))}
-                </ol>
+        void loadPlantsForContext();
 
-                <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
-                  <SelectField
-                    label="Checkpoint"
-                    value={currentNodeId}
-                    onChange={setCurrentNodeId}
-                    options={routeData.mapData.nodes.map((node) => ({ value: node.id, label: `${node.nodeType}: ${node.label}` }))}
-                    placeholder="Select checkpoint"
-                  />
-                  <Button className="md:mt-7" variant="outline" onClick={() => void handleManualCheckIn()}>
-                    {updatingLocation ? 'Updating...' : 'Manual Check-in'}
-                  </Button>
-                  <Button className="md:mt-7" variant="outline" onClick={() => void handleGpsCheckIn()} disabled={updatingLocation}>
-                    GPS Check-in
-                  </Button>
-                </div>
-              </div>
-            ) : null}
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedPlantId, user?.organizationId, user?.plantCode, user?.plantId, user?.plantName, userIsSuperAdmin]);
 
-            <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-              <p className="text-sm font-semibold">Department Details (Assets Hierarchy)</p>
-              {destinationDepartmentId ? (
-                <div className="mt-2 space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    Department: {filteredDepartments.find((department) => department.id === destinationDepartmentId)?.name || destinationDepartmentId}
-                  </p>
-                  <div className="max-h-40 space-y-2 overflow-auto pr-1">
-                    {departmentMachines.map((machine) => (
-                      <div key={machine.id} className="rounded-xl border border-border/60 bg-background p-2 text-xs">
-                        <p className="font-medium text-foreground">{machine.code} - {machine.name}</p>
-                        <p className="text-muted-foreground">Type: {machine.assetType} · Status: {machine.status}</p>
-                      </div>
-                    ))}
-                    {departmentMachines.length === 0 ? <p className="text-xs text-muted-foreground">No mapped machines found for destination department.</p> : null}
-                  </div>
-                </div>
-              ) : (
-                <p className="mt-2 text-xs text-muted-foreground">Generate a route to load department-level product and machine details.</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+    const loadVisitorContext = useCallback(
+        async (showRefreshLoader = false) => {
+            if (showRefreshLoader) {
+                setRefreshing(true);
+            } else {
+                setLoading(true);
+            }
 
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle>Visitor Requests & Approvals</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid gap-2 sm:grid-cols-[1fr_220px]">
-              <Input placeholder="Search visitor, company, purpose..." value={requestSearch} onChange={(event) => setRequestSearch(event.target.value)} />
-              <SelectField label="" value={requestScope} onChange={(value) => setRequestScope(value as 'my-requests' | 'approvals' | 'all')} options={requestScopeOptions} />
-            </div>
+            try {
+                const [profileResponse, requestResponse] = await Promise.all([
+                    getVisitorProfile(selectedPlantId || undefined),
+                    listVisitorRequests({
+                        plantId: selectedPlantId || undefined,
+                        scope: requestScope,
+                        page: 1,
+                        limit: 100,
+                    }),
+                ]);
 
-            <div className="max-h-[520px] space-y-3 overflow-auto pr-1">
-              {requests.map((request) => (
-                <div key={request.id} className="rounded-2xl border border-border/70 bg-background p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-foreground">{request.visitorName}</p>
-                      <p className="text-xs text-muted-foreground">{request.visitorCompany || 'Independent Visitor'} • {request.department?.name || 'Department not selected'}</p>
+                setProfile(profileResponse.data);
+                const requestRows = requestResponse.data || [];
+                setRequests(requestRows);
+
+                setSelectedRequestId((current) => {
+                    if (current && requestRows.some((request) => request.id === current)) {
+                        return current;
+                    }
+                    const approved = requestRows.find((request) => request.approvalStatus === "APPROVED" && request.navigationEnabled);
+                    return approved?.id || requestRows[0]?.id || "";
+                });
+
+                const serverHasConsent = Boolean(profileResponse.data.latestSafetyConsent?.consentGiven);
+                if (serverHasConsent) {
+                    setSafetyConsentAcknowledged(true);
+                }
+                const hasConsent = safetyConsentAcknowledged || serverHasConsent;
+                setSafetyGateOpen(!hasConsent);
+                setSafetyChecked(hasConsent);
+                setSafetyScrolled(hasConsent);
+            } catch (error: unknown) {
+                toast.error(resolveErrorMessage(error, "Failed to load visitor experience"));
+            } finally {
+                setLoading(false);
+                setRefreshing(false);
+            }
+        },
+        [requestScope, safetyConsentAcknowledged, selectedPlantId],
+    );
+
+    useEffect(() => {
+        void loadVisitorContext();
+    }, [loadVisitorContext]);
+
+    const loadRoute = async () => {
+        if (!selectedRequestId) {
+            toast.error("Select an approved request to load navigation");
+            return;
+        }
+
+        setRouteLoading(true);
+        try {
+            const response = await getVisitorNavigation({ gateEntryId: selectedRequestId });
+            setRouteData(response.data);
+            setActiveTab("navigation");
+        } catch (error: unknown) {
+            toast.error(resolveErrorMessage(error, "Failed to load navigation route"));
+        } finally {
+            setRouteLoading(false);
+        }
+    };
+
+    const loadPassAndTracking = useCallback(async () => {
+        if (!selectedRequestId) {
+            setPassData(null);
+            setTrackingData(null);
+            return;
+        }
+
+        setPassLoading(true);
+        setTrackingLoading(true);
+
+        try {
+            const passResponse = await getVisitorPass({ gateEntryId: selectedRequestId });
+            setPassData(passResponse.data);
+        } catch {
+            setPassData(null);
+        } finally {
+            setPassLoading(false);
+        }
+
+        try {
+            const trackingResponse = await getVisitorTracking({ gateEntryId: selectedRequestId, page: 1, limit: 50 });
+            setTrackingData(trackingResponse.data);
+        } catch {
+            setTrackingData(null);
+        } finally {
+            setTrackingLoading(false);
+        }
+    }, [selectedRequestId]);
+
+    useEffect(() => {
+        void loadPassAndTracking();
+    }, [loadPassAndTracking]);
+
+    const handleRequestReview = async (requestId: string, action: "APPROVE" | "REJECT") => {
+        setReviewingRequestId(requestId);
+        try {
+            await reviewVisitorRequest(requestId, {
+                action,
+                comments: approvalComments.trim() || null,
+            });
+            toast.success(action === "APPROVE" ? "Visitor request approved" : "Visitor request rejected");
+            setApprovalComments("");
+            await loadVisitorContext(true);
+        } catch (error: unknown) {
+            toast.error(resolveErrorMessage(error, `Failed to ${action.toLowerCase()} request`));
+        } finally {
+            setReviewingRequestId(null);
+        }
+    };
+
+    const handleSafetyScroll = () => {
+        const element = safetyContentRef.current;
+        if (!element || safetyScrolled) return;
+
+        const reachedBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 6;
+        if (reachedBottom) {
+            setSafetyScrolled(true);
+        }
+    };
+
+    const handleAcceptSafety = async () => {
+        if (savingSafetyConsent) {
+            return;
+        }
+
+        // Close immediately after explicit consent to avoid flicker/reopen while profile refresh catches up.
+        setSafetyConsentAcknowledged(true);
+        setSafetyGateOpen(false);
+        setSafetyChecked(true);
+        setSafetyScrolled(true);
+        setSavingSafetyConsent(true);
+        try {
+            await logVisitorSafetyConsent({
+                plantId: selectedPlantId || null,
+                gateEntryId: selectedRequestId || null,
+                consentGiven: true,
+                deviceInfo: typeof navigator !== "undefined" ? navigator.userAgent : null,
+            });
+            setSafetyGateOpen(false);
+            toast.success("Safety acknowledgement captured");
+            await loadVisitorContext(true);
+        } catch (error: unknown) {
+            setSafetyConsentAcknowledged(false);
+            setSafetyGateOpen(true);
+            toast.error(resolveErrorMessage(error, "Failed to record safety consent"));
+        } finally {
+            setSavingSafetyConsent(false);
+        }
+    };
+
+    const handleSendSos = async () => {
+        setSosSending(true);
+        try {
+            const location = await captureCurrentPosition();
+            await sendVisitorSos({
+                gateEntryId: selectedRequestId || null,
+                plantId: selectedPlantId || null,
+                latitude: location?.latitude ?? null,
+                longitude: location?.longitude ?? null,
+                note: sosNote.trim() || null,
+            });
+            toast.success("SOS alert sent to security teams");
+            setSosNote("");
+        } catch (error: unknown) {
+            toast.error(resolveErrorMessage(error, "Failed to send SOS alert"));
+        } finally {
+            setSosSending(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <PageShell>
+                <Card>
+                    <CardContent className="py-16 text-center text-sm text-muted-foreground">Loading visitor experience...</CardContent>
+                </Card>
+            </PageShell>
+        );
+    }
+
+    return (
+        <PageShell className="space-y-4 sm:space-y-6">
+            <PageHeader
+                title="Visitor Experience"
+                subtitle="Unified view for visitor profile, approvals, digital pass, route navigation, and safety controls."
+                actions={(
+                    <div className="flex flex-wrap items-end gap-2">
+                        {userIsSuperAdmin ? (
+                            <SelectField
+                                label="Plant"
+                                value={selectedPlantId}
+                                onChange={(value) => setSelectedPlantId(value)}
+                                options={plantOptions}
+                                placeholder="Select plant"
+                            />
+                        ) : null}
+                        <Button variant="outline" className="gap-2" onClick={() => void loadVisitorContext(true)} disabled={refreshing}>
+                            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                            Refresh
+                        </Button>
                     </div>
-                    <StatusBadge variant={getStatusVariant(request.approvalStatus)}>{formatVisitorStatus(request.approvalStatus)}</StatusBadge>
-                  </div>
+                )}
+            />
 
-                  <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
-                    <p>Purpose: {request.purpose || '-'}</p>
-                    <p>To Meet: {request.personToMeetUser?.fullName || request.personToMeet || '-'}</p>
-                    <p>Requested: {request.approvalRequestedAt ? format(new Date(request.approvalRequestedAt), 'dd MMM yyyy, HH:mm') : '-'}</p>
-                    <p>Status: {formatVisitorStatus(request.status)}</p>
-                    {request.approvalComments ? <p>Comments: {request.approvalComments}</p> : null}
-                  </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{summary.total}</p><p className="text-xs text-muted-foreground">Total Requests</p></CardContent></Card>
+                <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{summary.pending}</p><p className="text-xs text-muted-foreground">Pending Approvals</p></CardContent></Card>
+                <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{summary.approved}</p><p className="text-xs text-muted-foreground">Approved</p></CardContent></Card>
+                <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{summary.active}</p><p className="text-xs text-muted-foreground">Active Visitors</p></CardContent></Card>
+            </div>
 
-                  {canReviewRequest(request) ? (
-                    <div className="mt-3 flex gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => void handleReviewVisitorRequest(request, 'APPROVE')}
-                        disabled={reviewingRequestId === request.id}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void handleReviewVisitorRequest(request, 'REJECT')}
-                        disabled={reviewingRequestId === request.id}
-                      >
-                        Reject
-                      </Button>
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as VisitorTab)} className="space-y-4">
+                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 md:grid-cols-5">
+                    <TabsTrigger value="profile" className="gap-2"><UserCheck className="h-4 w-4" /> Company Profile</TabsTrigger>
+                    <TabsTrigger value="navigation" className="gap-2"><Navigation className="h-4 w-4" /> Plant Navigation</TabsTrigger>
+                    <TabsTrigger value="approval" className="gap-2"><CheckCircle2 className="h-4 w-4" /> Visitor Approval</TabsTrigger>
+                    <TabsTrigger value="pass" className="gap-2"><IdCard className="h-4 w-4" /> Pass / Status</TabsTrigger>
+                    <TabsTrigger value="safety" className="gap-2"><ShieldAlert className="h-4 w-4" /> Emergency & Safety</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="profile" className="space-y-4">
+                    <Card className="shadow-card">
+                        <CardHeader>
+                            <CardTitle>{profile?.pageTitle || "Visitor Experience"}</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <p className="text-sm text-muted-foreground">{profile?.companyOverview || "Company profile details will appear here."}</p>
+
+                            <div className="flex flex-wrap gap-2">
+                                {(profile?.certifications || []).map((item) => (
+                                    <Badge key={item} variant="outline">{item}</Badge>
+                                ))}
+                                {(profile?.certifications || []).length === 0 ? <p className="text-xs text-muted-foreground">No certifications configured.</p> : null}
+                            </div>
+
+                            <div className="grid gap-4 lg:grid-cols-2">
+                                <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                                    <p className="text-sm font-medium">Plant Capabilities</p>
+                                    <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                                        {(profile?.plantCapabilities || []).map((capability) => (
+                                            <li key={capability}>• {capability}</li>
+                                        ))}
+                                        {(profile?.plantCapabilities || []).length === 0 ? <li>Not configured</li> : null}
+                                    </ul>
+                                </div>
+                                <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                                    <p className="text-sm font-medium">Contact</p>
+                                    <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                                        <p>{profile?.contactName || "Front Office"}</p>
+                                        <p>{profile?.contactEmail || "-"}</p>
+                                        <p>{profile?.contactPhone || "-"}</p>
+                                        <p>{profile?.contactAddress || "-"}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="navigation" className="space-y-4">
+                    <Card className="shadow-card">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2"><MapPinned className="h-5 w-5 text-primary" /> Plant Navigation Route</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                                <SelectField
+                                    label="Approved Request"
+                                    value={selectedRequestId}
+                                    onChange={(value) => setSelectedRequestId(value)}
+                                    options={approvedNavigationRequests.map((request) => ({
+                                        value: request.id,
+                                        label: `${request.visitorName} • ${request.purpose || "Visit"}`,
+                                    }))}
+                                    placeholder="Select approved request"
+                                />
+                                <Button className="md:mt-7" onClick={() => void loadRoute()} disabled={routeLoading || !selectedRequestId}>
+                                    {routeLoading ? "Loading Route..." : "Generate Route"}
+                                </Button>
+                            </div>
+
+                            {routeData ? (
+                                <div className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-4">
+                                    <p className="text-sm font-medium">Navigation Instructions</p>
+                                    <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
+                                        {routeData.instructions.map((instruction, index) => (
+                                            <li key={`${instruction}-${index}`}>{instruction}</li>
+                                        ))}
+                                    </ol>
+
+                                    <div className="space-y-2 rounded-lg border border-border/60 bg-background/70 p-3">
+                                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Path Nodes</p>
+                                        {routeData.pathNodes.map((node) => (
+                                            <div key={node.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 py-1 text-sm last:border-b-0">
+                                                <div>
+                                                    <p className="font-medium">{node.label}</p>
+                                                    <p className="text-xs text-muted-foreground">{node.nodeType}</p>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">
+                                                    GPS: {node.latitude ?? "-"}, {node.longitude ?? "-"}
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">Choose an approved request to generate the visitor route.</p>
+                            )}
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="approval" className="space-y-4">
+                    <Card className="shadow-card">
+                        <CardHeader>
+                            <CardTitle>Visitor Requests & Approval Queue</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <Textarea
+                                value={approvalComments}
+                                onChange={(event) => setApprovalComments(event.target.value)}
+                                placeholder="Optional approval/rejection comments"
+                                rows={3}
+                            />
+
+                            <div className="space-y-3">
+                                {requests.map((request) => (
+                                    <div key={request.id} className="rounded-xl border border-border/70 p-3">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <p className="font-medium">{request.visitorName}</p>
+                                            <Badge variant={request.approvalStatus === "APPROVED" ? "default" : request.approvalStatus === "REJECTED" ? "destructive" : "outline"}>
+                                                {request.approvalStatus}
+                                            </Badge>
+                                        </div>
+                                        <p className="mt-1 text-xs text-muted-foreground">Purpose: {request.purpose || "-"}</p>
+                                        <p className="text-xs text-muted-foreground">Requested: {formatDateTime(request.approvalRequestedAt)}</p>
+                                        <p className="text-xs text-muted-foreground">Host: {request.personToMeetUser?.fullName || request.personToMeet || "-"}</p>
+
+                                        {canApproveRequests && request.approvalStatus === "PENDING" ? (
+                                            <div className="mt-3 flex gap-2">
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        void handleRequestReview(request.id, "APPROVE");
+                                                    }}
+                                                    disabled={reviewingRequestId === request.id}
+                                                >
+                                                    Approve
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => {
+                                                        void handleRequestReview(request.id, "REJECT");
+                                                    }}
+                                                    disabled={reviewingRequestId === request.id}
+                                                >
+                                                    Reject
+                                                </Button>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                ))}
+
+                                {requests.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground">No visitor requests available for this scope.</p>
+                                ) : null}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="pass" className="space-y-4">
+                    <Card className="shadow-card">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2"><IdCard className="h-5 w-5 text-primary" /> Visitor Pass / Status</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="flex flex-wrap gap-2">
+                                <Button variant="outline" onClick={() => void loadPassAndTracking()} disabled={passLoading || trackingLoading || !selectedRequestId}>
+                                    Refresh Pass
+                                </Button>
+                                {!selectedRequestId ? <p className="text-xs text-muted-foreground">Select a request in Plant Navigation to view pass status.</p> : null}
+                            </div>
+
+                            {passLoading ? <p className="text-sm text-muted-foreground">Loading pass details...</p> : null}
+
+                            {passData ? (
+                                <div className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-4">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="text-sm font-medium">{passData.visitor.name}</p>
+                                        <Badge variant={passData.validity.status === "VALID" ? "default" : passData.validity.status === "EXPIRED" ? "destructive" : "outline"}>
+                                            {passData.validity.status}
+                                        </Badge>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">Host: {passData.host.name || "-"}</p>
+                                    <p className="text-xs text-muted-foreground">Gate: {passData.location.gate || "-"}</p>
+                                    <p className="text-xs text-muted-foreground">Valid To: {formatDateTime(passData.validity.validTo)}</p>
+                                    <p className="text-xs text-muted-foreground">Remaining: {passData.validity.remainingSeconds} sec</p>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">No pass data available yet.</p>
+                            )}
+
+                            <div className="rounded-xl border border-border/70 p-4">
+                                <p className="text-sm font-medium">Recent Tracking</p>
+                                {trackingLoading ? (
+                                    <p className="mt-2 text-xs text-muted-foreground">Loading tracking points...</p>
+                                ) : trackingData?.path?.length ? (
+                                    <div className="mt-2 space-y-2">
+                                        {trackingData.path.slice(0, 8).map((point) => (
+                                            <div key={point.id} className="rounded-md border border-border/60 bg-muted/20 p-2 text-xs text-muted-foreground">
+                                                <p>{formatDateTime(point.trackedAt)}</p>
+                                                <p>Node: {point.nodeLabel || point.nodeId || "-"}</p>
+                                                <p>GPS: {point.latitude || "-"}, {point.longitude || "-"}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="mt-2 text-xs text-muted-foreground">No tracking data available.</p>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="safety" className="space-y-4">
+                    <Card className="shadow-card">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2"><ShieldAlert className="h-5 w-5 text-primary" /> Emergency & Safety</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                                <p className="text-sm font-medium">Safety Instructions</p>
+                                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                                    {(profile?.safetyInstructions || []).map((instruction, index) => (
+                                        <li key={`${instruction}-${index}`}>• {instruction}</li>
+                                    ))}
+                                    {(profile?.safetyInstructions || []).length === 0 ? <li>Safety instructions are not configured.</li> : null}
+                                </ul>
+                            </div>
+
+                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                                <p className="text-sm font-medium">Emergency Contacts</p>
+                                <div className="mt-2 space-y-2">
+                                    {(profile?.emergencyContacts || []).map((contact) => (
+                                        <div key={`${contact.name}-${contact.phone}`} className="rounded-md border border-border/60 bg-background/80 p-2 text-sm">
+                                            <p className="font-medium">{contact.name}</p>
+                                            <p className="text-xs text-muted-foreground">{contact.role || "Emergency Contact"} • {contact.phone}</p>
+                                        </div>
+                                    ))}
+                                    {(profile?.emergencyContacts || []).length === 0 ? <p className="text-xs text-muted-foreground">No emergency contacts configured.</p> : null}
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4">
+                                <div className="mb-2 flex items-center gap-2 text-rose-700">
+                                    <Siren className="h-4 w-4" />
+                                    <p className="text-sm font-medium">SOS Alert</p>
+                                </div>
+                                <Textarea
+                                    value={sosNote}
+                                    onChange={(event) => setSosNote(event.target.value)}
+                                    rows={3}
+                                    placeholder="Describe the emergency briefly"
+                                />
+                                <Button className="mt-3" variant="destructive" onClick={() => void handleSendSos()} disabled={sosSending}>
+                                    {sosSending ? "Sending SOS..." : "Send SOS Alert"}
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+            </Tabs>
+
+            <Dialog open={safetyGateOpen} onOpenChange={() => { }}>
+                <DialogContent className="sm:max-w-2xl [&>button]:hidden">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-rose-600"><AlertTriangle className="h-5 w-5" /> Mandatory Safety Acknowledgement</DialogTitle>
+                        <DialogDescription>
+                            Read the complete safety instructions before entering the visitor experience workspace.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div
+                        ref={safetyContentRef}
+                        onScroll={handleSafetyScroll}
+                        className="max-h-72 space-y-3 overflow-y-auto rounded-md border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground"
+                    >
+                        <p>1. Always wear required PPE in designated zones.</p>
+                        <p>2. Follow escort and security instructions without exception.</p>
+                        <p>3. Do not enter restricted or hazardous areas without authorization.</p>
+                        <p>4. Report spills, alarms, and unsafe conditions immediately.</p>
+                        <p>5. Emergency exits and assembly points must remain unobstructed.</p>
+                        <p>6. Photography, recording, and device usage may be restricted by zone.</p>
+                        <p>7. Visitors must carry visible pass badges throughout their visit.</p>
+                        <p>8. In case of siren or emergency broadcast, stop work and evacuate safely.</p>
+                        <p>9. Any safety violation may result in immediate visit termination.</p>
+                        <p>10. Consent details (time, IP, device) are logged for compliance.</p>
                     </div>
-                  ) : null}
-                </div>
-              ))}
 
-              {requests.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                  No visitor requests found for the selected scope.
-                </div>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                    <label className="flex items-center gap-2 rounded-md border border-border/70 px-3 py-2 text-sm">
+                        <Checkbox checked={safetyChecked} onCheckedChange={(checked) => setSafetyChecked(Boolean(checked))} />
+                        <span>I confirm that I have read and will follow all safety instructions.</span>
+                    </label>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle>Visitors Per Employee</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {(insights?.visitorsPerEmployee || []).map((row) => (
-              <div key={row.userId}>
-                <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{row.employeeName}</span>
-                  <span>{row.total}</span>
-                </div>
-                <Progress
-                  className="h-2 bg-muted"
-                  value={Math.min(100, (row.total / Math.max(1, (insights?.visitorsPerEmployee?.[0]?.total || 1))) * 100)}
-                />
-              </div>
-            ))}
-            {(insights?.visitorsPerEmployee || []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">No employee-wise visitor records yet.</p>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        {canConfigureExperience ? (
-          <Card className="shadow-card">
-            <CardHeader>
-              <CardTitle>Admin Configuration</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-3 rounded-2xl border border-border/70 p-3">
-                <p className="text-sm font-semibold">Visitor Page Content</p>
-                <InputField label="Page Title" value={contentDraft.pageTitle} onChange={(value) => setContentDraft((current) => ({ ...current, pageTitle: value }))} />
-                <TextareaField label="Company Overview" value={contentDraft.companyOverview} onChange={(value) => setContentDraft((current) => ({ ...current, companyOverview: value }))} rows={4} />
-                <InputField label="Contact Name" value={contentDraft.contactName} onChange={(value) => setContentDraft((current) => ({ ...current, contactName: value }))} />
-                <InputField label="Contact Email" value={contentDraft.contactEmail} onChange={(value) => setContentDraft((current) => ({ ...current, contactEmail: value }))} />
-                <InputField label="Contact Phone" value={contentDraft.contactPhone} onChange={(value) => setContentDraft((current) => ({ ...current, contactPhone: value }))} />
-                <TextareaField label="Contact Address" value={contentDraft.contactAddress} onChange={(value) => setContentDraft((current) => ({ ...current, contactAddress: value }))} rows={2} />
-                <TextareaField
-                  label="Products JSON"
-                  value={contentDraft.productsJson}
-                  onChange={(value) => setContentDraft((current) => ({ ...current, productsJson: value }))}
-                  rows={8}
-                />
-                <Button onClick={() => void handleSaveContent()} disabled={savingContent}>{savingContent ? 'Saving content...' : 'Save Visitor Content'}</Button>
-              </div>
-
-              <div className="space-y-3 rounded-2xl border border-border/70 p-3">
-                <p className="text-sm font-semibold">Plant Layout</p>
-                <InputField label="Layout Name" value={layoutDraft.layoutName} onChange={(value) => setLayoutDraft((current) => ({ ...current, layoutName: value }))} />
-                <TextareaField
-                  label="SVG Markup"
-                  value={layoutDraft.svgMarkup}
-                  onChange={(value) => setLayoutDraft((current) => ({ ...current, svgMarkup: value }))}
-                  rows={8}
-                />
-                <TextareaField
-                  label="Map Data JSON"
-                  value={layoutDraft.mapDataJson}
-                  onChange={(value) => setLayoutDraft((current) => ({ ...current, mapDataJson: value }))}
-                  rows={10}
-                />
-                <Button onClick={() => void handleSaveLayout()} disabled={savingLayout}>{savingLayout ? 'Saving layout...' : 'Save Plant Layout'}</Button>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
-      </div>
-
-      <Dialog open={Boolean(selectedProduct)} onOpenChange={(open) => { if (!open) setSelectedProduct(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{selectedProduct?.name || 'Product'}</DialogTitle>
-            <DialogDescription>Linked to existing plant hierarchy for guided visitor navigation.</DialogDescription>
-          </DialogHeader>
-          {selectedProduct ? (
-            <div className="space-y-3 text-sm">
-              <p className="text-muted-foreground">{selectedProduct.description || 'No description provided.'}</p>
-              <div className="flex flex-wrap gap-2">
-                {(selectedProduct.linkedDepartments || []).map((department) => (
-                  <Badge key={department.id} variant="secondary">{department.code} - {department.name}</Badge>
-                ))}
-              </div>
-              {(selectedProduct.linkedDepartments || []).length === 0 ? (
-                <p className="text-xs text-muted-foreground">No linked departments configured for this product yet.</p>
-              ) : null}
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-    </PageShell>
-  );
+                    <Button
+                        onClick={() => void handleAcceptSafety()}
+                        disabled={!safetyScrolled || !safetyChecked || savingSafetyConsent}
+                    >
+                        {savingSafetyConsent ? "Saving Consent..." : "I Agree & Enter"}
+                    </Button>
+                    {!safetyScrolled ? <p className="text-xs text-muted-foreground">Scroll to the end of safety instructions to continue.</p> : null}
+                </DialogContent>
+            </Dialog>
+        </PageShell>
+    );
 }

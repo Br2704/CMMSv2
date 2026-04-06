@@ -60,6 +60,12 @@ function normalizeRoleKey(role: string) {
   return normalized;
 }
 
+const BULK_UPLOAD_BLOCKED_ROLE_KEYS = new Set(["SUPERADMIN", "ROOT_ADMIN", "ADMIN"]);
+
+function isBulkUploadBlockedRole(role: string) {
+  return BULK_UPLOAD_BLOCKED_ROLE_KEYS.has(normalizeRoleKey(role));
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (typeof error === "object" && error && "message" in error && typeof error.message === "string" && error.message) {
     return error.message;
@@ -211,6 +217,10 @@ export default function UsersMaster() {
         return allowedTargets.includes(normalized);
       }),
     [allRoles, allowedRoleTargetsForCreate, allowedRoleTargetsForEdit, currentIsRootAdmin, selectedUser],
+  );
+  const allowedBulkRoleOptions = useMemo(
+    () => roleOptions.filter((role) => !isBulkUploadBlockedRole(role.value)),
+    [roleOptions],
   );
   const filterRoleOptions = useMemo(
     () =>
@@ -515,8 +525,8 @@ export default function UsersMaster() {
   };
 
   const handleBulkUsersCsv = async (content: string) => {
-    if (roleOptions.length === 0) {
-      toast.error("Roles are still loading. Try bulk upload again in a moment.");
+    if (allowedBulkRoleOptions.length === 0) {
+      toast.error("No bulk-uploadable roles are available. Contact your administrator.");
       return;
     }
 
@@ -564,9 +574,11 @@ export default function UsersMaster() {
     };
 
     const roleValueByNormalized = new Map<string, string>();
-    roleOptions.forEach((roleOption) => {
+    allowedBulkRoleOptions.forEach((roleOption) => {
       roleValueByNormalized.set(normalizeRoleKey(roleOption.value), roleOption.value === "SUPER_ADMIN" ? "SUPERADMIN" : roleOption.value);
     });
+    const allowedRoleList = Array.from(roleValueByNormalized.values());
+    const allowedRoleText = allowedRoleList.join(", ");
 
     const parseIsActive = (value: string) => {
       if (!value) return true;
@@ -611,6 +623,8 @@ export default function UsersMaster() {
       return trimmed;
     };
 
+    const existingCodeKeys = new Set(users.map((item) => normalizeLookupValue(item.userCode)));
+    const existingEmailKeys = new Set(users.map((item) => item.email.trim().toLowerCase()));
     const seenCodes = new Set<string>();
     const seenEmails = new Set<string>();
     const failures: string[] = [];
@@ -636,6 +650,14 @@ export default function UsersMaster() {
 
         const normalizedEmail = emailRaw.toLowerCase();
         const userCodeKey = normalizeLookupValue(userCode);
+        if (existingCodeKeys.has(userCodeKey)) {
+          failures.push(`Row ${rowIndex + 1}: user_code already exists (${userCode})`);
+          continue;
+        }
+        if (existingEmailKeys.has(normalizedEmail)) {
+          failures.push(`Row ${rowIndex + 1}: email already exists (${emailRaw})`);
+          continue;
+        }
         if (seenCodes.has(userCodeKey)) {
           failures.push(`Row ${rowIndex + 1}: duplicate user_code in CSV (${userCode})`);
           continue;
@@ -647,24 +669,35 @@ export default function UsersMaster() {
         seenCodes.add(userCodeKey);
         seenEmails.add(normalizedEmail);
 
-        const roleRaw = pickCell(row, ["role"]) || "USER";
-        const normalizedRole = normalizeRoleKey(roleRaw);
-        const roleValue = roleValueByNormalized.get(normalizedRole);
-        if (!roleValue) {
-          failures.push(`Row ${rowIndex + 1}: role '${roleRaw}' is not allowed`);
+        if (password.trim().length < 8) {
+          failures.push(`Row ${rowIndex + 1}: password must be at least 8 characters`);
           continue;
         }
 
-        const systemRole = normalizedRole === "SUPERADMIN" || normalizedRole === "ROOT_ADMIN";
+        const roleRaw = pickCell(row, ["role"]) || allowedRoleList[0] || "";
+        if (isBulkUploadBlockedRole(roleRaw)) {
+          failures.push(`Row ${rowIndex + 1}: role '${roleRaw}' is blocked for bulk upload`);
+          continue;
+        }
+        const normalizedRole = normalizeRoleKey(roleRaw);
+        const roleValue = roleValueByNormalized.get(normalizedRole);
+        if (!roleValue) {
+          failures.push(`Row ${rowIndex + 1}: role '${roleRaw}' is not allowed. Allowed roles: ${allowedRoleText}`);
+          continue;
+        }
+
         const rowPlantValue = pickCell(row, ["plant_id", "plant_code", "plant"]);
         const resolvedPlantId =
-          systemRole
-            ? null
-            : canSelectPlant
-              ? (rowPlantValue ? plantLookup.get(normalizeLookupValue(rowPlantValue)) || rowPlantValue : defaultPlantId || null)
-              : defaultPlantId || null;
+          canSelectPlant
+            ? (rowPlantValue ? plantLookup.get(normalizeLookupValue(rowPlantValue)) || null : defaultPlantId || null)
+            : defaultPlantId || null;
 
-        if (!systemRole && !resolvedPlantId) {
+        if (canSelectPlant && rowPlantValue && !resolvedPlantId) {
+          failures.push(`Row ${rowIndex + 1}: plant '${rowPlantValue}' is not recognized`);
+          continue;
+        }
+
+        if (!resolvedPlantId) {
           failures.push(`Row ${rowIndex + 1}: plant is required for role '${roleValue}'`);
           continue;
         }
@@ -685,6 +718,8 @@ export default function UsersMaster() {
             roles: [roleValue],
             isActive: parseIsActive(pickCell(row, ["is_active", "active", "status"])),
           });
+          existingCodeKeys.add(userCodeKey);
+          existingEmailKeys.add(normalizedEmail);
           createdCount += 1;
         } catch (error: unknown) {
           failures.push(`Row ${rowIndex + 1}: ${getErrorMessage(error, "failed to create user")}`);
@@ -722,15 +757,32 @@ export default function UsersMaster() {
   };
 
   const handleDownloadUsersSampleCsv = () => {
+    const sampleRoleValues = allowedBulkRoleOptions
+      .map((role) => (role.value === "SUPER_ADMIN" ? "SUPERADMIN" : role.value))
+      .slice(0, 4);
+
+    const sampleRows =
+      sampleRoleValues.length > 0
+        ? sampleRoleValues.map((roleValue, index) => [
+            `USR00${index + 1}`,
+            `Sample ${roleValue.replace(/_/g, " ")}`,
+            `sample.${index + 1}@example.com`,
+            "TempPass@123",
+            roleValue,
+            "PLANT_CODE_OR_ID",
+            "Maintenance",
+            `+91-90000000${String(index + 1).padStart(2, "0")}`,
+            "true",
+          ])
+        : [["USR001", "Sample User", "sample.user@example.com", "TempPass@123", "USER", "PLANT_CODE_OR_ID", "Maintenance", "+91-9000000001", "true"]];
+
     downloadCsvTemplate(
       "user_bulk_upload_sample.csv",
       ["user_code", "full_name", "email", "password", "role", "plant", "department", "phone", "is_active"],
-      [
-        ["USR001", "Anita Sharma", "anita.sharma@example.com", "TempPass@123", "USER", "PLANT_CODE_OR_ID", "Maintenance", "+91-9000000001", "true"],
-        ["SEC001", "Ravi Security", "ravi.security@example.com", "TempPass@123", "SECURITY", "PLANT_CODE_OR_ID", "Security", "+91-9000000002", "true"],
-      ],
+      sampleRows,
     );
-    toast.success("User sample CSV downloaded");
+    const allowedRolesText = sampleRoleValues.join(", ");
+    toast.success(allowedRolesText ? `User sample CSV downloaded. Allowed roles: ${allowedRolesText}` : "User sample CSV downloaded");
   };
 
   const confirmDelete = async () => {
@@ -833,7 +885,7 @@ export default function UsersMaster() {
                 variant="outline"
                 className="w-full gap-2 sm:w-auto"
                 onClick={() => bulkUploadInputRef.current?.click()}
-                disabled={bulkUploading || roleOptions.length === 0}
+                disabled={bulkUploading || allowedBulkRoleOptions.length === 0}
               >
                 <Upload className="h-4 w-4" />
                 {bulkUploading ? "Uploading..." : "Bulk Upload CSV"}

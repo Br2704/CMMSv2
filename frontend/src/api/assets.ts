@@ -154,9 +154,17 @@ export interface AssetEnergyMeterConfig {
   driverType: "DOTNET_RS485_BRIDGE" | "NATIVE_MODBUS_TCP";
   bridgeEndpoint: string | null;
   notes: string | null;
+  dataPoints: AssetEnergyMeterDataPoint[];
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AssetEnergyMeterDataPoint {
+  label: string;
+  register: string;
+  unit: string | null;
+  multiplier: number | null;
 }
 
 export interface AssetEnergyMeterConfigPayload {
@@ -174,6 +182,7 @@ export interface AssetEnergyMeterConfigPayload {
   driverType?: "DOTNET_RS485_BRIDGE" | "NATIVE_MODBUS_TCP";
   bridgeEndpoint?: string | null;
   notes?: string | null;
+  dataPoints?: AssetEnergyMeterDataPoint[];
   isActive?: boolean;
 }
 

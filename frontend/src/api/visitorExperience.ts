@@ -1,5 +1,5 @@
 import { getApiBaseUrl, httpRequest } from '@/api/http';
-import type { ApiListResponse, ApiResponse } from '@/api/types';
+import type { ApiListResponse, ApiResponse, Pagination } from '@/api/types';
 
 function buildQuery(params: Record<string, string | number | boolean | undefined | null> = {}) {
   const searchParams = new URLSearchParams();
@@ -11,6 +11,10 @@ function buildQuery(params: Record<string, string | number | boolean | undefined
   });
   const query = searchParams.toString();
   return query ? `?${query}` : '';
+}
+
+export interface ApiResponseWithPagination<T> extends ApiResponse<T> {
+  pagination?: Pagination;
 }
 
 export interface VisitorExperienceProduct {
@@ -39,7 +43,91 @@ export interface VisitorExperienceContent {
   contactAddress: string | null;
   heroHighlights: Array<Record<string, unknown>>;
   products: VisitorExperienceProduct[];
+  experienceMeta?: VisitorExperienceMeta;
+  certifications?: string[];
+  esgInitiatives?: string[];
+  plantCapabilities?: string[];
+  introVideoUrl?: string | null;
+  galleryImages?: string[];
+  whyVisitHighlights?: string[];
+  safetyInstructions?: string[];
+  ppeRequirements?: string[];
+  restrictedZonesWarning?: string | null;
+  emergencyContacts?: VisitorEmergencyContact[];
+  evacuationRoutes?: VisitorEvacuationRoute[];
   updatedAt?: string | null;
+}
+
+export interface VisitorEmergencyContact {
+  name: string;
+  role: string | null;
+  phone: string;
+}
+
+export interface VisitorEvacuationRoute {
+  id: string;
+  label: string;
+  description: string | null;
+}
+
+export interface VisitorExperienceMeta {
+  certifications: string[];
+  esgInitiatives: string[];
+  plantCapabilities: string[];
+  introVideoUrl: string | null;
+  galleryImages: string[];
+  whyVisitHighlights: string[];
+  safetyInstructions: string[];
+  ppeRequirements: string[];
+  restrictedZonesWarning: string | null;
+  emergencyContacts: VisitorEmergencyContact[];
+  evacuationRoutes: VisitorEvacuationRoute[];
+}
+
+export interface VisitorProfileResponse {
+  plantId: string | null;
+  pageTitle: string;
+  companyOverview: string;
+  heroHighlights: Array<Record<string, unknown>>;
+  products: VisitorExperienceProduct[];
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  contactAddress: string | null;
+  certifications: string[];
+  esgInitiatives: string[];
+  plantCapabilities: string[];
+  introVideoUrl: string | null;
+  galleryImages: string[];
+  whyVisitHighlights: string[];
+  safetyInstructions: string[];
+  ppeRequirements: string[];
+  restrictedZonesWarning: string | null;
+  emergencyContacts: VisitorEmergencyContact[];
+  evacuationRoutes: VisitorEvacuationRoute[];
+  latestSafetyConsent: {
+    id: string;
+    consentGiven: boolean;
+    consentedAt: string;
+    gateEntryId: string | null;
+  } | null;
+}
+
+export interface VisitorSafetyConsentPayload {
+  plantId?: string | null;
+  gateEntryId?: string | null;
+  consentGiven?: boolean;
+  deviceInfo?: string | null;
+}
+
+export interface VisitorSafetyConsentRecord {
+  id: string;
+  visitorId: string;
+  consentGiven: boolean;
+  timestamp: string;
+  ipAddress: string | null;
+  gateEntryId: string | null;
+  plantId: string | null;
 }
 
 export interface PlantLayoutNode {
@@ -49,6 +137,8 @@ export interface PlantLayoutNode {
   refId?: string | null;
   x?: number;
   y?: number;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface PlantLayoutEdge {
@@ -125,6 +215,69 @@ export interface VisitorNavigationRoute {
   };
 }
 
+export interface VisitorPassData {
+  gateEntryId: string;
+  sessionId: string;
+  sessionToken: string;
+  visitor: {
+    name: string;
+    company: string | null;
+    phone: string | null;
+    purpose: string | null;
+  };
+  host: {
+    userId: string | null;
+    name: string | null;
+  };
+  location: {
+    gate: string | null;
+    department: string | null;
+    module: string | null;
+    meetingNodeId: string | null;
+    meetingNodeLabel: string | null;
+  };
+  validity: {
+    status: 'VALID' | 'EXPIRED' | 'PENDING';
+    approved: boolean;
+    validFrom: string;
+    validTo: string;
+    remainingSeconds: number;
+  };
+  qrPayload: Record<string, unknown>;
+  gateScanValidation: {
+    allowed: boolean;
+    reason: string | null;
+  };
+  safetyConsent: {
+    consentGiven: boolean;
+    consentedAt: string;
+  } | null;
+}
+
+export interface VisitorTrackingPoint {
+  id: string;
+  visitorSessionId: string;
+  gateEntryId: string;
+  plantId: string | null;
+  latitude: string | null;
+  longitude: string | null;
+  nodeId: string | null;
+  nodeLabel: string | null;
+  geoFenceStatus: string;
+  alertType: string | null;
+  routeDeviation: boolean;
+  source: string;
+  trackedAt: string;
+  createdAt: string;
+}
+
+export interface VisitorTrackingResponse {
+  sessionId: string;
+  gateEntryId: string;
+  path: VisitorTrackingPoint[];
+  latest: VisitorTrackingPoint | null;
+}
+
 export interface VisitorInsights {
   pendingApprovals: number;
   approvedToday: number;
@@ -159,6 +312,17 @@ export interface VisitorRequestPayload {
 
 export function getVisitorExperienceContent(plantId?: string) {
   return httpRequest<ApiResponse<VisitorExperienceContent>>(`/visitor-experience/content${buildQuery({ plantId })}`, { method: 'GET' });
+}
+
+export function getVisitorProfile(plantId?: string) {
+  return httpRequest<ApiResponse<VisitorProfileResponse>>(`/visitor/profile${buildQuery({ plantId })}`, { method: 'GET' });
+}
+
+export function logVisitorSafetyConsent(payload: VisitorSafetyConsentPayload) {
+  return httpRequest<ApiResponse<VisitorSafetyConsentRecord>>('/visitor/consent', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function saveVisitorExperienceContent(payload: {
@@ -242,6 +406,12 @@ export function addVisitorNavigationCheckIn(
 
 export function getVisitorNavigationRoute(id: string, params: { fromNodeId?: string; toNodeId?: string } = {}) {
   return httpRequest<ApiResponse<VisitorNavigationRoute>>(`/visitor-requests/${id}/navigation${buildQuery(params)}`, {
+    method: 'GET',
+  });
+}
+
+export function getVisitorNavigation(params: { gateEntryId?: string; sessionToken?: string; sessionId?: string; fromNodeId?: string; toNodeId?: string } = {}) {
+  return httpRequest<ApiResponse<VisitorNavigationRoute>>(`/visitor/navigation${buildQuery(params)}`, {
     method: 'GET',
   });
 }
@@ -407,6 +577,10 @@ export interface VisitorApprovalPayload {
   sessionId?: string | null;
   action: 'APPROVE' | 'REJECT';
   comments?: string | null;
+  meetingLocationNodeId?: string | null;
+  meetingLocationLabel?: string | null;
+  meetingDepartmentId?: string | null;
+  escortUserId?: string | null;
 }
 
 export interface VisitorSessionStatus {
@@ -510,9 +684,42 @@ export function approveSmartVisitor(payload: VisitorApprovalPayload) {
   });
 }
 
+export function submitVisitorApproval(payload: VisitorApprovalPayload) {
+  return httpRequest<ApiResponse<Record<string, unknown>>>('/visitor/approval', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getVisitorSessionStatus(params: { sessionToken?: string; sessionId?: string; gateEntryId?: string } = {}) {
   return httpRequest<ApiResponse<VisitorSessionStatus>>(`/visitor/session-status${buildQuery(params)}`, {
     method: 'GET',
+  });
+}
+
+export function getVisitorPass(params: { sessionToken?: string; sessionId?: string; gateEntryId?: string } = {}) {
+  return httpRequest<ApiResponse<VisitorPassData>>(`/visitor/pass${buildQuery(params)}`, {
+    method: 'GET',
+  });
+}
+
+export function getVisitorTracking(params: { sessionToken?: string; sessionId?: string; gateEntryId?: string; page?: number; limit?: number } = {}) {
+  return httpRequest<ApiResponseWithPagination<VisitorTrackingResponse>>(`/visitor/tracking${buildQuery(params)}`, {
+    method: 'GET',
+  });
+}
+
+export function sendVisitorSos(payload: {
+  gateEntryId?: string | null;
+  sessionId?: string | null;
+  plantId?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  note?: string | null;
+}) {
+  return httpRequest<ApiResponse<{ alertRaised: boolean; notificationsSent: number; gateEntryId: string | null; plantId: string | null }>>('/visitor/sos', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 

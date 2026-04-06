@@ -96,6 +96,7 @@ function rolePrecedence(roleKey: string): number {
   if (normalized === "VIEWER") return 110;
   if (normalized === "VENDOR") return 105;
   if (normalized === "SECURITY") return 102;
+  if (normalized === "TEMPORARY_VISITOR") return 94;
   return 100;
 }
 
@@ -110,17 +111,17 @@ function getPrimaryRole(roles: string[]): string {
 
 function allowedRoleTargetsForCreate(roleKey: string): string[] {
   const role = normalizeRole(roleKey);
-  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "USER"];
-  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "USER"];
-  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "USER", "VENDOR", "VISITOR"];
+  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
+  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
+  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "USER", "VENDOR", "VISITOR", "TEMPORARY_VISITOR"];
   return [];
 }
 
 function allowedRoleTargetsForEdit(roleKey: string): string[] {
   const role = normalizeRole(roleKey);
-  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "USER"];
-  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "USER"];
-  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "USER", "VENDOR", "VISITOR"];
+  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
+  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
+  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "USER", "VENDOR", "VISITOR", "TEMPORARY_VISITOR"];
   return [];
 }
 

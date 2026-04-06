@@ -147,6 +147,10 @@ const visitorApprovalSchema = z.object({
   sessionId: optionalUuid,
   action: z.enum(['APPROVE', 'REJECT']),
   comments: optionalString,
+  meetingLocationNodeId: optionalString,
+  meetingLocationLabel: optionalString,
+  meetingDepartmentId: optionalUuid,
+  escortUserId: optionalUuid,
 });
 
 const sessionLookupSchema = z.object({
@@ -295,8 +299,8 @@ async function createTemporaryVisitorIdentity(input: {
   const userRoleRepo = input.manager.getRepository(UserRoleEntity);
   const plantRepo = input.manager.getRepository(PlantEntity);
 
-  const visitorRole = await ensureRoleCatalogEntry(roleRepo, 'VISITOR', {
-    description: 'Temporary visitor access role',
+  const visitorRole = await ensureRoleCatalogEntry(roleRepo, 'TEMPORARY_VISITOR', {
+    description: 'Temporary visitor access role created from smart gate workflow',
     isSystem: true,
   });
 
@@ -341,7 +345,7 @@ async function createTemporaryVisitorIdentity(input: {
   const userRole = userRoleRepo.create({
     userId: createdUser.id,
     roleId: visitorRole.id,
-    role: 'VISITOR',
+    role: 'TEMPORARY_VISITOR',
     plantId: input.plantId,
   });
   await userRoleRepo.save(userRole);
@@ -491,7 +495,10 @@ async function findSessionByLookup(input: {
     return sessionRepo.findOneBy({ gateEntryId: input.lookup.gateEntryId });
   }
 
-  const isVisitor = (input.auth.roles ?? []).some((role) => role.toUpperCase() === 'VISITOR');
+  const isVisitor = (input.auth.roles ?? []).some((role) => {
+    const normalized = role.toUpperCase();
+    return normalized === 'VISITOR' || normalized === 'TEMPORARY_VISITOR';
+  });
   if (isVisitor) {
     return sessionRepo.findOne({
       where: { visitorUserId: input.auth.userId },
@@ -977,7 +984,7 @@ smartVisitorRouter.post('/admin/geo-fences', requireRole(['SUPERADMIN', 'ADMIN']
   }
 });
 
-smartVisitorRouter.post('/visitor/create', requireRole(['SECURITY']), requirePermission('GATES', 'CREATE'), async (req, res, next) => {
+smartVisitorRouter.post('/visitor/create', requireRole(['SECURITY', 'SECURITY_USER']), requirePermission('GATES', 'CREATE'), async (req, res, next) => {
   try {
     const body = visitorCreateSchema.parse(req.body);
     const plantId = await resolvePlant(req, body.plantId);
@@ -1168,7 +1175,7 @@ smartVisitorRouter.post('/visitor/create', requireRole(['SECURITY']), requirePer
   }
 });
 
-smartVisitorRouter.post('/visitor/approve', requirePermission('GATES', 'READ'), async (req, res, next) => {
+smartVisitorRouter.post(['/visitor/approve', '/visitor/approval'], requirePermission('GATES', 'READ'), async (req, res, next) => {
   try {
     const body = visitorApprovalSchema.parse(req.body);
     if (!body.gateEntryId && !body.sessionId) {
@@ -1235,11 +1242,51 @@ smartVisitorRouter.post('/visitor/approve', requirePermission('GATES', 'READ'), 
       entry.navigationEnabled = isApprove;
       entry.navigationEnabledAt = isApprove ? now : null;
       entry.status = isApprove ? 'APPROVED' : 'REJECTED';
+
+      if (isApprove) {
+        if (body.meetingLocationNodeId) {
+          entry.currentLocationNodeId = body.meetingLocationNodeId;
+        }
+        if (body.meetingLocationLabel) {
+          entry.currentLocationLabel = body.meetingLocationLabel;
+        }
+        if (body.meetingDepartmentId) {
+          entry.departmentId = body.meetingDepartmentId;
+        }
+
+        const nextEntryData = Array.isArray(entry.entryData) ? [...entry.entryData] : [];
+        if (body.meetingLocationNodeId) {
+          nextEntryData.push({
+            fieldName: 'meeting_location_node_id',
+            fieldLabel: 'Meeting Location Node',
+            fieldType: 'TEXT',
+            value: body.meetingLocationNodeId,
+          });
+        }
+        if (body.meetingLocationLabel) {
+          nextEntryData.push({
+            fieldName: 'meeting_location_label',
+            fieldLabel: 'Meeting Location Label',
+            fieldType: 'TEXT',
+            value: body.meetingLocationLabel,
+          });
+        }
+        if (body.escortUserId) {
+          nextEntryData.push({
+            fieldName: 'escort_user_id',
+            fieldLabel: 'Escort User',
+            fieldType: 'TEXT',
+            value: body.escortUserId,
+          });
+        }
+        entry.entryData = nextEntryData;
+      }
+
       await entryRepo.save(entry);
 
       const refreshed = await refreshSessionState({ manager, session });
 
-      const notifyUserIds = Array.from(new Set([entry.recordedBy, session.visitorUserId].filter((value): value is string => Boolean(value))));
+      const notifyUserIds = Array.from(new Set([entry.recordedBy, session.visitorUserId, body.escortUserId].filter((value): value is string => Boolean(value))));
 
       if (notifyUserIds.length > 0) {
         const notifications = notifyUserIds.map((userId) =>

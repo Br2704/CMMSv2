@@ -54,6 +54,13 @@ const assetSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
+const energyMeterDataPointSchema = z.object({
+  label: z.string().trim().max(120).optional(),
+  register: z.string().trim().min(1).max(120),
+  unit: z.string().trim().max(40).nullable().optional(),
+  multiplier: z.coerce.number().finite().nullable().optional(),
+});
+
 const energyMeterConfigSchema = z.object({
   checklistName: z.string().trim().min(1).max(120).default('Energy Meter Checklist'),
   meterName: z.string().trim().min(1).max(120),
@@ -69,6 +76,7 @@ const energyMeterConfigSchema = z.object({
   driverType: z.enum(['DOTNET_RS485_BRIDGE', 'NATIVE_MODBUS_TCP']).default('DOTNET_RS485_BRIDGE'),
   bridgeEndpoint: z.string().trim().max(400).nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
+  dataPoints: z.array(energyMeterDataPointSchema).max(100).optional(),
   isActive: z.boolean().default(true),
 });
 
@@ -81,6 +89,17 @@ function normalizeNullableString(value: string | null | undefined) {
   if (!value) return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeEnergyDataPoints(dataPoints: Array<z.infer<typeof energyMeterDataPointSchema>> | undefined) {
+  return (dataPoints ?? [])
+    .map((point, index) => ({
+      label: normalizeNullableString(point.label) ?? `Point ${index + 1}`,
+      register: point.register.trim(),
+      unit: normalizeNullableString(point.unit),
+      multiplier: point.multiplier ?? null,
+    }))
+    .filter((point) => point.register.length > 0);
 }
 
 export const assetsRouter = Router();
@@ -175,6 +194,7 @@ assetsRouter.post('/assets/:id/energy-meter-configs', requirePermission('ASSETS'
     const modbusRegister = normalizeNullableString(body.modbusRegister);
     const bridgeEndpoint = normalizeNullableString(body.bridgeEndpoint);
     const notes = normalizeNullableString(body.notes);
+    const dataPoints = normalizeEnergyDataPoints(body.dataPoints);
 
     if (body.connectionType === 'MODBUS_TCP' && !ipAddress) {
       res.status(400).json(fail('ipAddress is required for MODBUS_TCP connection'));
@@ -183,6 +203,11 @@ assetsRouter.post('/assets/:id/energy-meter-configs', requirePermission('ASSETS'
 
     if (body.connectionType === 'MODBUS_RTU_RS485' && !body.modbusSlaveId) {
       res.status(400).json(fail('modbusSlaveId is required for MODBUS_RTU_RS485 connection'));
+      return;
+    }
+
+    if (dataPoints.length === 0) {
+      res.status(400).json(fail('At least one data point register is required'));
       return;
     }
 
@@ -203,6 +228,7 @@ assetsRouter.post('/assets/:id/energy-meter-configs', requirePermission('ASSETS'
       driverType: body.driverType,
       bridgeEndpoint,
       notes,
+      dataPoints,
       isActive: body.isActive,
     });
 
@@ -250,6 +276,7 @@ assetsRouter.patch('/assets/:id/energy-meter-configs/:configId', requirePermissi
     const nextConnectionType = body.connectionType ?? config.connectionType;
     const nextIpAddress = body.ipAddress === undefined ? config.ipAddress : normalizeNullableString(body.ipAddress);
     const nextSlaveId = body.modbusSlaveId === undefined ? config.modbusSlaveId : body.modbusSlaveId;
+    const nextDataPoints = body.dataPoints === undefined ? (config.dataPoints ?? []) : normalizeEnergyDataPoints(body.dataPoints);
 
     if (nextConnectionType === 'MODBUS_TCP' && !nextIpAddress) {
       res.status(400).json(fail('ipAddress is required for MODBUS_TCP connection'));
@@ -257,6 +284,10 @@ assetsRouter.patch('/assets/:id/energy-meter-configs/:configId', requirePermissi
     }
     if (nextConnectionType === 'MODBUS_RTU_RS485' && !nextSlaveId) {
       res.status(400).json(fail('modbusSlaveId is required for MODBUS_RTU_RS485 connection'));
+      return;
+    }
+    if (nextDataPoints.length === 0) {
+      res.status(400).json(fail('At least one data point register is required'));
       return;
     }
 
@@ -274,6 +305,7 @@ assetsRouter.patch('/assets/:id/energy-meter-configs/:configId', requirePermissi
     if (body.driverType !== undefined) config.driverType = body.driverType;
     if (body.bridgeEndpoint !== undefined) config.bridgeEndpoint = normalizeNullableString(body.bridgeEndpoint);
     if (body.notes !== undefined) config.notes = normalizeNullableString(body.notes);
+    if (body.dataPoints !== undefined) config.dataPoints = nextDataPoints;
     if (body.isActive !== undefined) config.isActive = body.isActive;
 
     await configRepo.save(config);

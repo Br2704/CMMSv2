@@ -4,8 +4,9 @@ import { useAuthStore, isAdmin, isSuperAdmin } from "@/store/auth.store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Plus, Search, Edit, Trash2, Cog, Eye, QrCode, RefreshCcw, Download, Printer, ImagePlus, Image as ImageIcon, Upload } from "lucide-react";
+import { Plus, Search, Edit, Trash2, Cog, Eye, QrCode, RefreshCcw, Download, Printer, ImagePlus, Image as ImageIcon, Upload, Gauge } from "lucide-react";
 import { toast } from "sonner";
 import BackButton from "@/components/masters/BackButton";
 import HierarchyBreadcrumb from "@/components/masters/HierarchyBreadcrumb";
@@ -15,7 +16,19 @@ import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { InputField, SelectField } from "@/components/shared/FormField";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
-import { createAsset, deleteAsset, listAssets, type Asset, updateAsset } from "@/api/assets";
+import {
+  createAsset,
+  createAssetEnergyMeterConfig,
+  deleteAsset,
+  deleteAssetEnergyMeterConfig,
+  listAssetEnergyMeterConfigs,
+  listAssets,
+  type Asset,
+  type AssetEnergyMeterConfig,
+  type AssetEnergyMeterConfigPayload,
+  updateAsset,
+  updateAssetEnergyMeterConfig,
+} from "@/api/assets";
 import { getAssetAmcSummary, type AssetAmcSummary } from "@/api/amc";
 import { getAssetQr, rotateAssetQr, type AssetQrData } from "@/api/qr";
 import { listCostCenters, type CostCenter } from "@/api/costCenters";
@@ -49,6 +62,31 @@ interface MachineFormState {
   warrantyExpiry: string;
 }
 
+interface EnergyMeterDataPointFormState {
+  label: string;
+  register: string;
+  unit: string;
+  multiplier: string;
+}
+
+interface EnergyMeterFormState {
+  checklistName: string;
+  meterName: string;
+  connectionType: "MODBUS_TCP" | "MODBUS_RTU_RS485";
+  ipAddress: string;
+  port: string;
+  modbusSlaveId: string;
+  modbusRegister: string;
+  baudRate: string;
+  parity: "NONE" | "EVEN" | "ODD";
+  stopBits: string;
+  pollIntervalSeconds: string;
+  driverType: "DOTNET_RS485_BRIDGE" | "NATIVE_MODBUS_TCP";
+  bridgeEndpoint: string;
+  notes: string;
+  dataPoints: EnergyMeterDataPointFormState[];
+}
+
 const emptyForm: MachineFormState = {
   code: "",
   name: "",
@@ -68,6 +106,39 @@ const emptyForm: MachineFormState = {
   commissionDate: "",
   warrantyExpiry: "",
 };
+
+const defaultEnergyMeterForm: EnergyMeterFormState = {
+  checklistName: "Energy Meter Configuration",
+  meterName: "",
+  connectionType: "MODBUS_TCP",
+  ipAddress: "",
+  port: "502",
+  modbusSlaveId: "1",
+  modbusRegister: "40001",
+  baudRate: "9600",
+  parity: "NONE",
+  stopBits: "1",
+  pollIntervalSeconds: "60",
+  driverType: "DOTNET_RS485_BRIDGE",
+  bridgeEndpoint: "",
+  notes: "",
+  dataPoints: [{ label: "Active Energy", register: "40001", unit: "kWh", multiplier: "" }],
+};
+
+function parseOptionalInteger(value: string): number | null | "invalid" {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  if (!/^-?\d+$/.test(normalized)) return "invalid";
+  return Number(normalized);
+}
+
+function parseOptionalNumber(value: string): number | null | "invalid" {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return "invalid";
+  return parsed;
+}
 
 function normalizeLookupValue(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -163,17 +234,36 @@ function nextUniqueCode(prefix: string, source: string, existingCodes: Set<strin
 
 function splitCodeAndName(raw: string) {
   const trimmed = raw.trim();
-  const parts = trimmed.split("-").map((part) => part.trim()).filter(Boolean);
-  if (parts.length >= 2 && /^[A-Za-z0-9_]+$/.test(parts[0])) {
+  const explicitPair = trimmed.match(/^([A-Za-z0-9][A-Za-z0-9_-]*)\s*-\s*(.+)$/);
+  if (explicitPair) {
     return {
-      codeHint: parts[0],
-      name: parts.slice(1).join(" - "),
+      codeHint: explicitPair[1],
+      name: explicitPair[2].trim(),
     };
   }
+
   return {
     codeHint: "",
     name: trimmed,
   };
+}
+
+function buildLookupKeys(raw: string, parsed: { codeHint: string; name: string }) {
+  const keys = new Set<string>();
+  const push = (value: string) => {
+    const normalized = normalizeLookupValue(value);
+    if (normalized) keys.add(normalized);
+  };
+
+  push(raw);
+  push(parsed.codeHint);
+  push(parsed.name);
+  if (parsed.codeHint && parsed.name) {
+    push(`${parsed.codeHint} - ${parsed.name}`);
+    push(`${parsed.codeHint}-${parsed.name}`);
+  }
+
+  return Array.from(keys);
 }
 
 export default function MachinesMaster() {
@@ -207,6 +297,15 @@ export default function MachinesMaster() {
   const [qrLoading, setQrLoading] = useState(false);
   const [assetAmcSummary, setAssetAmcSummary] = useState<AssetAmcSummary | null>(null);
   const [assetAmcLoading, setAssetAmcLoading] = useState(false);
+  const [isEnergyMeterDialogOpen, setIsEnergyMeterDialogOpen] = useState(false);
+  const [energyMeterSubmitting, setEnergyMeterSubmitting] = useState(false);
+  const [energyMeterConfigsLoading, setEnergyMeterConfigsLoading] = useState(false);
+  const [energyMeterConfigs, setEnergyMeterConfigs] = useState<AssetEnergyMeterConfig[]>([]);
+  const [energyMeterForm, setEnergyMeterForm] = useState<EnergyMeterFormState>(defaultEnergyMeterForm);
+  const [editingEnergyMeterConfigId, setEditingEnergyMeterConfigId] = useState<string | null>(null);
+  const [energyMeterConfigToDelete, setEnergyMeterConfigToDelete] = useState<AssetEnergyMeterConfig | null>(null);
+  const [energyMeterDeleteSubmitting, setEnergyMeterDeleteSubmitting] = useState(false);
+  const [enableEnergyMeterOnCreate, setEnableEnergyMeterOnCreate] = useState(false);
   const [bulkUploading, setBulkUploading] = useState(false);
   const [bulkPromptHandled, setBulkPromptHandled] = useState(false);
   const bulkUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -274,6 +373,21 @@ export default function MachinesMaster() {
     }
   };
 
+  const refreshEnergyMeterConfigs = async (machineId: string, showErrorToast = false) => {
+    setEnergyMeterConfigsLoading(true);
+    try {
+      const response = await listAssetEnergyMeterConfigs(machineId);
+      setEnergyMeterConfigs(response.data || []);
+    } catch (error: any) {
+      setEnergyMeterConfigs([]);
+      if (showErrorToast) {
+        toast.error(error?.message || "Failed to load energy meter configuration");
+      }
+    } finally {
+      setEnergyMeterConfigsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchAssetsList();
   }, [searchQuery, selectedPlant, defaultPlantId, canSelectPlant]);
@@ -313,6 +427,16 @@ export default function MachinesMaster() {
       .then((response) => setAssetAmcSummary(response.data))
       .catch(() => setAssetAmcSummary(null))
       .finally(() => setAssetAmcLoading(false));
+  }, [selectedMachine?.id, isViewOpen]);
+
+  useEffect(() => {
+    if (!selectedMachine?.id || !isViewOpen) {
+      setEnergyMeterConfigs([]);
+      setEnergyMeterConfigsLoading(false);
+      return;
+    }
+
+    void refreshEnergyMeterConfigs(selectedMachine.id);
   }, [selectedMachine?.id, isViewOpen]);
 
   const filtered = useMemo(
@@ -442,27 +566,56 @@ export default function MachinesMaster() {
 
     const departmentLookup = new Map<string, Department>();
     const departmentCodes = new Set<string>();
+    const registerDepartmentAliases = (department: Department, extraAliases: string[] = []) => {
+      const aliases = [
+        normalizeLookupValue(department.name),
+        normalizeLookupValue(department.code),
+        normalizeLookupValue(`${department.code} - ${department.name}`),
+        ...extraAliases,
+      ].filter(Boolean);
+
+      aliases.forEach((alias) => {
+        departmentLookup.set(alias, department);
+      });
+      departmentCodes.add(department.code.toUpperCase());
+    };
+
     departments
       .filter((department) => department.plantId === resolvedPlantId)
       .forEach((department) => {
-        departmentLookup.set(normalizeLookupValue(department.name), department);
-        departmentLookup.set(normalizeLookupValue(department.code), department);
-        departmentCodes.add(department.code.toUpperCase());
+        registerDepartmentAliases(department);
       });
 
     const moduleLookup = new Map<string, MachineModule>();
     const moduleCodes = new Set<string>();
+    const registerModuleAliases = (module: MachineModule, departmentId: string, extraAliases: string[] = []) => {
+      const prefix = `${departmentId}:`;
+      const aliases = [
+        normalizeLookupValue(module.name),
+        normalizeLookupValue(module.code || ""),
+        normalizeLookupValue(module.code ? `${module.code} - ${module.name}` : ""),
+        ...extraAliases,
+      ].filter(Boolean);
+
+      aliases.forEach((alias) => {
+        moduleLookup.set(`${prefix}${alias}`, module);
+      });
+      if (module.code) {
+        moduleCodes.add(module.code.toUpperCase());
+      }
+    };
+
     modules
       .filter((module) => module.plantId === resolvedPlantId && module.departmentId)
       .forEach((module) => {
-        const prefix = `${module.departmentId}:`;
-        moduleLookup.set(`${prefix}${normalizeLookupValue(module.name)}`, module);
-        if (module.code) {
-          moduleLookup.set(`${prefix}${normalizeLookupValue(module.code)}`, module);
-          moduleCodes.add(module.code.toUpperCase());
-        }
+        registerModuleAliases(module, module.departmentId!);
       });
 
+    const existingMachineCodes = new Set(
+      assets
+        .filter((asset) => asset.plantId === resolvedPlantId)
+        .map((asset) => normalizeLookupValue(asset.code)),
+    );
     const seenCodes = new Set<string>();
     const failures: string[] = [];
     let createdCount = 0;
@@ -490,31 +643,30 @@ export default function MachinesMaster() {
           failures.push(`Row ${rowIndex + 1}: duplicate machine code in CSV (${machineCode})`);
           continue;
         }
+        if (existingMachineCodes.has(machineCodeKey)) {
+          failures.push(`Row ${rowIndex + 1}: machine code already exists (${machineCode})`);
+          continue;
+        }
         seenCodes.add(machineCodeKey);
 
-        const { codeHint: departmentCodeHint, name: departmentName } = splitCodeAndName(departmentRaw);
-        const departmentKeys = [departmentRaw, departmentCodeHint, departmentName]
-          .map((value) => normalizeLookupValue(value))
-          .filter(Boolean);
+        const parsedDepartment = splitCodeAndName(departmentRaw);
+        const departmentKeys = buildLookupKeys(departmentRaw, parsedDepartment);
 
         let department = departmentKeys.map((key) => departmentLookup.get(key)).find((value): value is Department => Boolean(value));
 
         try {
           if (!department) {
             const createdDepartment = await createDepartment({
-              name: departmentName || departmentRaw,
-              code: nextUniqueCode("DEP", departmentCodeHint || departmentName || departmentRaw, departmentCodes),
+              name: parsedDepartment.name || departmentRaw,
+              code: nextUniqueCode("DEP", parsedDepartment.codeHint || parsedDepartment.name || departmentRaw, departmentCodes),
               plantId: resolvedPlantId,
             });
             department = createdDepartment.data;
-            departmentLookup.set(normalizeLookupValue(department.name), department);
-            departmentLookup.set(normalizeLookupValue(department.code), department);
           }
+          registerDepartmentAliases(department, departmentKeys);
 
-          const { codeHint: moduleCodeHint, name: moduleName } = splitCodeAndName(moduleRaw);
-          const moduleKeys = [moduleRaw, moduleCodeHint, moduleName]
-            .map((value) => normalizeLookupValue(value))
-            .filter(Boolean);
+          const parsedModule = splitCodeAndName(moduleRaw);
+          const moduleKeys = buildLookupKeys(moduleRaw, parsedModule);
           const moduleLookupPrefix = `${department.id}:`;
 
           let machineModule = moduleKeys
@@ -523,17 +675,14 @@ export default function MachinesMaster() {
 
           if (!machineModule) {
             const createdModule = await createModule({
-              code: nextUniqueCode("MOD", moduleCodeHint || moduleName || moduleRaw, moduleCodes),
-              name: moduleName || moduleRaw,
+              code: nextUniqueCode("MOD", parsedModule.codeHint || parsedModule.name || moduleRaw, moduleCodes),
+              name: parsedModule.name || moduleRaw,
               plantId: resolvedPlantId,
               departmentId: department.id,
             });
             machineModule = createdModule.data;
-            moduleLookup.set(`${moduleLookupPrefix}${normalizeLookupValue(machineModule.name)}`, machineModule);
-            if (machineModule.code) {
-              moduleLookup.set(`${moduleLookupPrefix}${normalizeLookupValue(machineModule.code)}`, machineModule);
-            }
           }
+          registerModuleAliases(machineModule, department.id, moduleKeys);
 
           await createAsset({
             code: machineCode,
@@ -556,6 +705,7 @@ export default function MachinesMaster() {
             commissionDate: pickCell(row, ["commission_date"]) || null,
             warrantyExpiry: pickCell(row, ["warranty_expiry"]) || null,
           });
+          existingMachineCodes.add(machineCodeKey);
           createdCount += 1;
         } catch (error: any) {
           failures.push(`Row ${rowIndex + 1}: ${error?.message || "failed to create machine"}`);
@@ -785,6 +935,8 @@ export default function MachinesMaster() {
     setFormData({ ...emptyForm, plantId: canSelectPlant ? "" : defaultPlantId });
     setSelectedMachine(null);
     setIsEditing(false);
+    setEnableEnergyMeterOnCreate(false);
+    setEnergyMeterForm(defaultEnergyMeterForm);
     setIsFormOpen(true);
   };
 
@@ -817,6 +969,7 @@ export default function MachinesMaster() {
     });
     setSelectedMachine(asset);
     setIsEditing(true);
+    setEnableEnergyMeterOnCreate(false);
     setIsFormOpen(true);
   };
 
@@ -847,6 +1000,12 @@ export default function MachinesMaster() {
       return;
     }
 
+    const createEnergyMeterConfig = !isEditing && enableEnergyMeterOnCreate;
+    const energyMeterPayload = createEnergyMeterConfig ? buildEnergyMeterConfigPayload() : null;
+    if (createEnergyMeterConfig && !energyMeterPayload) {
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -873,11 +1032,22 @@ export default function MachinesMaster() {
         await updateAsset(selectedMachine.id, payload);
         toast.success("Machine updated");
       } else {
-        await createAsset(payload);
-        toast.success("Machine created");
+        const createdAsset = await createAsset(payload);
+        if (createEnergyMeterConfig && energyMeterPayload) {
+          try {
+            await createAssetEnergyMeterConfig(createdAsset.data.id, energyMeterPayload);
+            toast.success("Machine and energy meter configuration saved");
+          } catch (error: any) {
+            toast.error(error?.message || "Machine created, but failed to save energy meter configuration");
+          }
+        } else {
+          toast.success("Machine created");
+        }
       }
       invalidateOptions(["assets", "modules"]);
       setIsFormOpen(false);
+      setEnableEnergyMeterOnCreate(false);
+      setEnergyMeterForm(defaultEnergyMeterForm);
       await fetchAssetsList();
     } catch (error: any) {
       toast.error(error?.message || "Failed to save machine");
@@ -920,6 +1090,251 @@ export default function MachinesMaster() {
       toast.error(error?.message || "Failed to remove machine image");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openEnergyMeterChecklist = async (machine: Asset) => {
+    setSelectedMachine(machine);
+    setEditingEnergyMeterConfigId(null);
+    setEnergyMeterConfigToDelete(null);
+    setEnergyMeterForm({
+      ...defaultEnergyMeterForm,
+      meterName: `${machine.code} Energy Meter`,
+    });
+    setIsEnergyMeterDialogOpen(true);
+    await refreshEnergyMeterConfigs(machine.id, true);
+  };
+
+  const resetEnergyMeterForm = () => {
+    setEditingEnergyMeterConfigId(null);
+    setEnergyMeterForm(
+      selectedMachine
+        ? {
+            ...defaultEnergyMeterForm,
+            meterName: `${selectedMachine.code} Energy Meter`,
+          }
+        : defaultEnergyMeterForm,
+    );
+  };
+
+  const updateEnergyMeterForm = <K extends keyof EnergyMeterFormState>(key: K, value: EnergyMeterFormState[K]) => {
+    setEnergyMeterForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const addEnergyDataPoint = () => {
+    setEnergyMeterForm((current) => ({
+      ...current,
+      dataPoints: [...current.dataPoints, { label: "", register: "", unit: "", multiplier: "" }],
+    }));
+  };
+
+  const updateEnergyDataPoint = (index: number, key: keyof EnergyMeterDataPointFormState, value: string) => {
+    setEnergyMeterForm((current) => ({
+      ...current,
+      dataPoints: current.dataPoints.map((point, pointIndex) =>
+        pointIndex === index ? { ...point, [key]: value } : point,
+      ),
+    }));
+  };
+
+  const removeEnergyDataPoint = (index: number) => {
+    setEnergyMeterForm((current) => {
+      if (current.dataPoints.length <= 1) {
+        return current;
+      }
+      return {
+        ...current,
+        dataPoints: current.dataPoints.filter((_, pointIndex) => pointIndex !== index),
+      };
+    });
+  };
+
+  const buildEnergyMeterConfigPayload = (): AssetEnergyMeterConfigPayload | null => {
+    const checklistName = energyMeterForm.checklistName.trim() || defaultEnergyMeterForm.checklistName;
+    const meterName = energyMeterForm.meterName.trim();
+    const ipAddress = energyMeterForm.ipAddress.trim();
+    const modbusRegister = energyMeterForm.modbusRegister.trim();
+    const bridgeEndpoint = energyMeterForm.bridgeEndpoint.trim();
+    const notes = energyMeterForm.notes.trim();
+    const normalizedDataPoints: Array<{ label: string; register: string; unit: string | null; multiplier: number | null }> = [];
+
+    for (let index = 0; index < energyMeterForm.dataPoints.length; index += 1) {
+      const point = energyMeterForm.dataPoints[index];
+      const register = point.register.trim();
+      if (!register) {
+        continue;
+      }
+
+      const multiplier = parseOptionalNumber(point.multiplier);
+      if (multiplier === "invalid") {
+        toast.error(`Data point ${index + 1}: multiplier must be a valid number`);
+        return null;
+      }
+
+      normalizedDataPoints.push({
+        label: point.label.trim() || `Point ${index + 1}`,
+        register,
+        unit: point.unit.trim() || null,
+        multiplier,
+      });
+    }
+
+    if (!meterName) {
+      toast.error("Meter name is required");
+      return null;
+    }
+
+    if (normalizedDataPoints.length === 0) {
+      toast.error("At least one data point register is required");
+      return null;
+    }
+
+    if (energyMeterForm.connectionType === "MODBUS_TCP" && !ipAddress) {
+      toast.error("IP address is required for Modbus TCP");
+      return null;
+    }
+
+    const port = Number(energyMeterForm.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      toast.error("Port must be between 1 and 65535");
+      return null;
+    }
+
+    const pollIntervalSeconds = Number(energyMeterForm.pollIntervalSeconds);
+    if (!Number.isInteger(pollIntervalSeconds) || pollIntervalSeconds < 5 || pollIntervalSeconds > 86400) {
+      toast.error("Poll interval must be between 5 and 86400 seconds");
+      return null;
+    }
+
+    const modbusSlaveId = parseOptionalInteger(energyMeterForm.modbusSlaveId);
+    if (modbusSlaveId === "invalid") {
+      toast.error("Slave ID must be a whole number");
+      return null;
+    }
+    if (modbusSlaveId !== null && (modbusSlaveId < 1 || modbusSlaveId > 247)) {
+      toast.error("Slave ID must be between 1 and 247");
+      return null;
+    }
+    if (energyMeterForm.connectionType === "MODBUS_RTU_RS485" && modbusSlaveId === null) {
+      toast.error("Slave ID is required for Modbus RTU RS485");
+      return null;
+    }
+
+    const baudRate = parseOptionalInteger(energyMeterForm.baudRate);
+    if (baudRate === "invalid") {
+      toast.error("Baud rate must be a whole number");
+      return null;
+    }
+    if (baudRate !== null && (baudRate < 300 || baudRate > 115200)) {
+      toast.error("Baud rate must be between 300 and 115200");
+      return null;
+    }
+
+    const stopBits = parseOptionalInteger(energyMeterForm.stopBits);
+    if (stopBits === "invalid") {
+      toast.error("Stop bits must be a whole number");
+      return null;
+    }
+    if (stopBits !== null && (stopBits < 1 || stopBits > 2)) {
+      toast.error("Stop bits must be either 1 or 2");
+      return null;
+    }
+
+    return {
+      checklistName,
+      meterName,
+      connectionType: energyMeterForm.connectionType,
+      ipAddress: energyMeterForm.connectionType === "MODBUS_TCP" ? ipAddress : null,
+      port,
+      modbusSlaveId,
+      modbusRegister: modbusRegister || null,
+      baudRate,
+      parity: energyMeterForm.connectionType === "MODBUS_RTU_RS485" ? energyMeterForm.parity : null,
+      stopBits,
+      pollIntervalSeconds,
+      driverType: energyMeterForm.driverType,
+      bridgeEndpoint: bridgeEndpoint || null,
+      notes: notes || null,
+      dataPoints: normalizedDataPoints,
+      isActive: true,
+    };
+  };
+
+  const editEnergyMeterConfig = (config: AssetEnergyMeterConfig) => {
+    setEditingEnergyMeterConfigId(config.id);
+    setEnergyMeterForm({
+      checklistName: config.checklistName || defaultEnergyMeterForm.checklistName,
+      meterName: config.meterName || "",
+      connectionType: config.connectionType,
+      ipAddress: config.ipAddress || "",
+      port: String(config.port ?? 502),
+      modbusSlaveId: config.modbusSlaveId !== null && config.modbusSlaveId !== undefined ? String(config.modbusSlaveId) : "",
+      modbusRegister: config.modbusRegister || "",
+      baudRate: config.baudRate !== null && config.baudRate !== undefined ? String(config.baudRate) : defaultEnergyMeterForm.baudRate,
+      parity: config.parity || "NONE",
+      stopBits: config.stopBits !== null && config.stopBits !== undefined ? String(config.stopBits) : defaultEnergyMeterForm.stopBits,
+      pollIntervalSeconds: String(config.pollIntervalSeconds ?? 60),
+      driverType: config.driverType,
+      bridgeEndpoint: config.bridgeEndpoint || "",
+      notes: config.notes || "",
+      dataPoints:
+        config.dataPoints && config.dataPoints.length > 0
+          ? config.dataPoints.map((point) => ({
+              label: point.label || "",
+              register: point.register || "",
+              unit: point.unit || "",
+              multiplier: point.multiplier !== null && point.multiplier !== undefined ? String(point.multiplier) : "",
+            }))
+          : [{ label: "", register: "", unit: "", multiplier: "" }],
+    });
+  };
+
+  const handleDeleteEnergyMeterConfig = async (config: AssetEnergyMeterConfig) => {
+    if (!selectedMachine?.id || !config?.id) return;
+
+    setEnergyMeterDeleteSubmitting(true);
+    try {
+      await deleteAssetEnergyMeterConfig(selectedMachine.id, config.id);
+
+      await refreshEnergyMeterConfigs(selectedMachine.id, true);
+      if (editingEnergyMeterConfigId === config.id) {
+        resetEnergyMeterForm();
+      }
+      setEnergyMeterConfigToDelete(null);
+      toast.success("Energy meter configuration deleted");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to delete energy meter configuration");
+    } finally {
+      setEnergyMeterDeleteSubmitting(false);
+    }
+  };
+
+  const handleSubmitEnergyMeterChecklist = async () => {
+    if (!selectedMachine?.id) {
+      toast.error("Select a machine before saving energy meter configuration");
+      return;
+    }
+
+    const configPayload = buildEnergyMeterConfigPayload();
+    if (!configPayload) {
+      return;
+    }
+
+    setEnergyMeterSubmitting(true);
+    try {
+      if (editingEnergyMeterConfigId) {
+        await updateAssetEnergyMeterConfig(selectedMachine.id, editingEnergyMeterConfigId, configPayload);
+      } else {
+        await createAssetEnergyMeterConfig(selectedMachine.id, configPayload);
+      }
+
+      await refreshEnergyMeterConfigs(selectedMachine.id, true);
+      resetEnergyMeterForm();
+      toast.success(editingEnergyMeterConfigId ? "Energy meter configuration updated" : "Energy meter configuration saved");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to save energy meter configuration");
+    } finally {
+      setEnergyMeterSubmitting(false);
     }
   };
 
@@ -1168,7 +1583,13 @@ export default function MachinesMaster() {
 
       <FormDialog
         open={isFormOpen}
-        onOpenChange={setIsFormOpen}
+        onOpenChange={(open) => {
+          setIsFormOpen(open);
+          if (!open && !saving) {
+            setEnableEnergyMeterOnCreate(false);
+            setEnergyMeterForm(defaultEnergyMeterForm);
+          }
+        }}
         title={isEditing ? "Edit Machine" : "Add New Machine"}
         description="Manage machine/equipment"
         onSubmit={handleSubmit}
@@ -1245,6 +1666,219 @@ export default function MachinesMaster() {
             disabled={!formData.departmentId}
             hint={!formData.departmentId ? "Select department first." : costCenterOptions.length === 0 ? "No cost centers for selected scope." : undefined}
           />
+          {!isEditing ? (
+            <div className="col-span-1 sm:col-span-2 space-y-3 rounded-md border border-border/60 bg-muted/20 p-4">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="machine-enable-energy-meter"
+                  checked={enableEnergyMeterOnCreate}
+                  onCheckedChange={(checked) => {
+                    const nextEnabled = Boolean(checked);
+                    setEnableEnergyMeterOnCreate(nextEnabled);
+                    if (nextEnabled) {
+                      setEnergyMeterForm((current) => ({
+                        ...current,
+                        meterName: current.meterName.trim().length > 0
+                          ? current.meterName
+                          : `${formData.code.trim() || "Machine"} Energy Meter`,
+                      }));
+                    }
+                  }}
+                />
+                <div className="space-y-1">
+                  <label htmlFor="machine-enable-energy-meter" className="text-sm font-medium text-foreground">
+                    Enable Energy Meter Configuration
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Turn this on to save machine and energy meter data together in one step.
+                  </p>
+                </div>
+              </div>
+
+              {enableEnergyMeterOnCreate ? (
+                <div className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <InputField
+                      label="Configuration Name"
+                      value={energyMeterForm.checklistName}
+                      onChange={(value) => updateEnergyMeterForm("checklistName", value)}
+                      required
+                    />
+                    <InputField
+                      label="Meter Name"
+                      value={energyMeterForm.meterName}
+                      onChange={(value) => updateEnergyMeterForm("meterName", value)}
+                      required
+                      placeholder="Main incomer meter"
+                    />
+                    <SelectField
+                      label="Connection Type"
+                      value={energyMeterForm.connectionType}
+                      onChange={(value) => updateEnergyMeterForm("connectionType", value as EnergyMeterFormState["connectionType"])}
+                      options={[
+                        { value: "MODBUS_TCP", label: "Modbus TCP" },
+                        { value: "MODBUS_RTU_RS485", label: "Modbus RTU RS485" },
+                      ]}
+                    />
+                    <SelectField
+                      label="Driver Type"
+                      value={energyMeterForm.driverType}
+                      onChange={(value) => updateEnergyMeterForm("driverType", value as EnergyMeterFormState["driverType"])}
+                      options={[
+                        { value: "DOTNET_RS485_BRIDGE", label: ".NET RS485 Bridge" },
+                        { value: "NATIVE_MODBUS_TCP", label: "Native Modbus TCP" },
+                      ]}
+                    />
+                  </div>
+
+                  {energyMeterForm.connectionType === "MODBUS_TCP" ? (
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <InputField
+                        label="IP Address"
+                        value={energyMeterForm.ipAddress}
+                        onChange={(value) => updateEnergyMeterForm("ipAddress", value)}
+                        required
+                        placeholder="192.168.1.20"
+                      />
+                      <InputField
+                        label="Port"
+                        type="number"
+                        value={energyMeterForm.port}
+                        onChange={(value) => updateEnergyMeterForm("port", value)}
+                        required
+                        placeholder="502"
+                      />
+                      <InputField
+                        label="Register"
+                        value={energyMeterForm.modbusRegister}
+                        onChange={(value) => updateEnergyMeterForm("modbusRegister", value)}
+                        placeholder="40001"
+                      />
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <InputField
+                        label="Slave ID"
+                        type="number"
+                        value={energyMeterForm.modbusSlaveId}
+                        onChange={(value) => updateEnergyMeterForm("modbusSlaveId", value)}
+                        required
+                        placeholder="1"
+                      />
+                      <InputField
+                        label="Baud Rate"
+                        type="number"
+                        value={energyMeterForm.baudRate}
+                        onChange={(value) => updateEnergyMeterForm("baudRate", value)}
+                        placeholder="9600"
+                      />
+                      <SelectField
+                        label="Parity"
+                        value={energyMeterForm.parity}
+                        onChange={(value) => updateEnergyMeterForm("parity", value as EnergyMeterFormState["parity"])}
+                        options={[
+                          { value: "NONE", label: "None" },
+                          { value: "EVEN", label: "Even" },
+                          { value: "ODD", label: "Odd" },
+                        ]}
+                      />
+                      <InputField
+                        label="Stop Bits"
+                        type="number"
+                        value={energyMeterForm.stopBits}
+                        onChange={(value) => updateEnergyMeterForm("stopBits", value)}
+                        placeholder="1"
+                      />
+                      <InputField
+                        label="Register"
+                        value={energyMeterForm.modbusRegister}
+                        onChange={(value) => updateEnergyMeterForm("modbusRegister", value)}
+                        placeholder="40001"
+                      />
+                      <InputField
+                        label="Bridge Endpoint"
+                        value={energyMeterForm.bridgeEndpoint}
+                        onChange={(value) => updateEnergyMeterForm("bridgeEndpoint", value)}
+                        placeholder="http://localhost:5001/rs485/read"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-3 rounded-md border border-border/60 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold">Device Data Points</p>
+                      <Button type="button" variant="outline" size="sm" className="gap-2" onClick={addEnergyDataPoint}>
+                        <Plus className="h-3.5 w-3.5" />
+                        Add Data Point
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Map Modbus registers that should be collected for this machine meter.</p>
+                    <div className="space-y-3">
+                      {energyMeterForm.dataPoints.map((point, index) => (
+                        <div key={`create-data-point-${index}`} className="grid gap-3 rounded-md border border-border/50 bg-background/80 p-3 md:grid-cols-[1.2fr_1fr_0.8fr_0.8fr_auto]">
+                          <InputField
+                            label={`Label ${index + 1}`}
+                            value={point.label}
+                            onChange={(value) => updateEnergyDataPoint(index, "label", value)}
+                            placeholder="Active Energy"
+                          />
+                          <InputField
+                            label="Register"
+                            value={point.register}
+                            onChange={(value) => updateEnergyDataPoint(index, "register", value)}
+                            placeholder="40001"
+                            required
+                          />
+                          <InputField
+                            label="Unit"
+                            value={point.unit}
+                            onChange={(value) => updateEnergyDataPoint(index, "unit", value)}
+                            placeholder="kWh"
+                          />
+                          <InputField
+                            label="Multiplier"
+                            value={point.multiplier}
+                            onChange={(value) => updateEnergyDataPoint(index, "multiplier", value)}
+                            placeholder="0.1"
+                          />
+                          <div className="flex items-end">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-10 w-10 text-destructive"
+                              onClick={() => removeEnergyDataPoint(index)}
+                              disabled={energyMeterForm.dataPoints.length <= 1}
+                              aria-label={`Remove create data point ${index + 1}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <InputField
+                      label="Poll Interval (seconds)"
+                      type="number"
+                      value={energyMeterForm.pollIntervalSeconds}
+                      onChange={(value) => updateEnergyMeterForm("pollIntervalSeconds", value)}
+                      required
+                      placeholder="60"
+                    />
+                    <InputField
+                      label="Notes"
+                      value={energyMeterForm.notes}
+                      onChange={(value) => updateEnergyMeterForm("notes", value)}
+                      placeholder="Optional configuration notes"
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <SelectField label="Status" value={formData.status} onChange={(value) => setFormData({ ...formData, status: value })} options={[{ value: "ACTIVE", label: "Active" }, { value: "UNDER_MAINTENANCE", label: "Under Maintenance" }, { value: "INACTIVE", label: "Inactive" }]} />
           <InputField label="Make" value={formData.make} onChange={(value) => setFormData({ ...formData, make: value })} />
           <InputField label="Model" value={formData.model} onChange={(value) => setFormData({ ...formData, model: value })} />
@@ -1392,6 +2026,41 @@ export default function MachinesMaster() {
               ) : null}
             </div>
 
+            <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Energy Meter Configuration</p>
+                  <p className="mt-1 text-sm font-medium text-foreground">
+                    {energyMeterConfigsLoading
+                      ? "Loading configuration..."
+                      : energyMeterConfigs.length > 0
+                        ? `${energyMeterConfigs.length} configuration${energyMeterConfigs.length === 1 ? "" : "s"} saved`
+                        : "No configuration saved yet"}
+                  </p>
+                </div>
+                {canManage ? (
+                  <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => { void openEnergyMeterChecklist(selectedMachine); }}>
+                    <Gauge className="h-4 w-4" />
+                    Configure
+                  </Button>
+                ) : null}
+              </div>
+              {energyMeterConfigs.length > 0 ? (
+                <div className="mt-4 space-y-2">
+                  {energyMeterConfigs.slice(0, 3).map((config) => (
+                    <div key={config.id} className="rounded-lg border border-border/60 bg-background/80 p-3">
+                      <p className="text-sm font-medium text-foreground">{config.meterName}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {config.connectionType === "MODBUS_TCP"
+                          ? `TCP ${config.ipAddress || "-"}:${config.port}`
+                          : `RS485 Slave ${config.modbusSlaveId || "-"}`} | Data points: {config.dataPoints?.length || 0}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
             <div className="flex flex-wrap justify-end gap-2 border-t border-border/60 pt-4">
               <Button variant="outline" onClick={() => setIsViewOpen(false)}>
                 Close
@@ -1415,6 +2084,259 @@ export default function MachinesMaster() {
           </div>
         )}
       </ViewDialog>
+
+      <FormDialog
+        open={isEnergyMeterDialogOpen}
+        onOpenChange={(open) => {
+          setIsEnergyMeterDialogOpen(open);
+          if (!open && !energyMeterSubmitting) {
+            setEnergyMeterConfigToDelete(null);
+            resetEnergyMeterForm();
+          }
+        }}
+        title={`Energy Meter Configuration${selectedMachine ? ` - ${selectedMachine.code}` : ""}`}
+        description="Configure Modbus TCP or RS485 communication and map multiple data points from a single meter device."
+        onSubmit={() => {
+          void handleSubmitEnergyMeterChecklist();
+        }}
+        submitLabel={editingEnergyMeterConfigId ? "Update Configuration" : "Save Configuration"}
+        isLoading={energyMeterSubmitting}
+        size="lg"
+      >
+        {editingEnergyMeterConfigId ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/10 p-3 text-xs">
+            <p className="font-medium text-foreground">Editing existing configuration</p>
+            <Button type="button" variant="outline" size="sm" onClick={resetEnergyMeterForm}>
+              Cancel Edit
+            </Button>
+          </div>
+        ) : null}
+
+        {energyMeterConfigs.length > 0 ? (
+          <div className="space-y-2 rounded-md border border-border/60 bg-muted/20 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Existing Configurations</p>
+            {energyMeterConfigs.map((config) => (
+              <div key={config.id} className="rounded-md border border-border/60 bg-background/80 p-2.5 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-foreground">{config.meterName}</p>
+                    <p className="mt-1 text-muted-foreground">
+                      {config.connectionType === "MODBUS_TCP"
+                        ? `TCP ${config.ipAddress || "-"}:${config.port}`
+                        : `RS485 Slave ${config.modbusSlaveId || "-"}`} | Driver {config.driverType} | Points {config.dataPoints?.length || 0}
+                    </p>
+                    {editingEnergyMeterConfigId === config.id ? (
+                      <p className="mt-1 text-[11px] font-medium text-primary">Currently editing this configuration</p>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => editEnergyMeterConfig(config)}
+                      aria-label={`Edit configuration ${config.meterName}`}
+                    >
+                      <Edit className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive"
+                      onClick={() => setEnergyMeterConfigToDelete(config)}
+                      aria-label={`Delete configuration ${config.meterName}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <InputField
+            label="Configuration Name"
+            value={energyMeterForm.checklistName}
+            onChange={(value) => updateEnergyMeterForm("checklistName", value)}
+            required
+          />
+          <InputField
+            label="Meter Name"
+            value={energyMeterForm.meterName}
+            onChange={(value) => updateEnergyMeterForm("meterName", value)}
+            required
+            placeholder="Main incomer meter"
+          />
+          <SelectField
+            label="Connection Type"
+            value={energyMeterForm.connectionType}
+            onChange={(value) => updateEnergyMeterForm("connectionType", value as EnergyMeterFormState["connectionType"])}
+            options={[
+              { value: "MODBUS_TCP", label: "Modbus TCP" },
+              { value: "MODBUS_RTU_RS485", label: "Modbus RTU RS485" },
+            ]}
+          />
+          <SelectField
+            label="Driver Type"
+            value={energyMeterForm.driverType}
+            onChange={(value) => updateEnergyMeterForm("driverType", value as EnergyMeterFormState["driverType"])}
+            options={[
+              { value: "DOTNET_RS485_BRIDGE", label: ".NET RS485 Bridge" },
+              { value: "NATIVE_MODBUS_TCP", label: "Native Modbus TCP" },
+            ]}
+          />
+        </div>
+
+        {energyMeterForm.connectionType === "MODBUS_TCP" ? (
+          <div className="grid gap-4 md:grid-cols-3">
+            <InputField
+              label="IP Address"
+              value={energyMeterForm.ipAddress}
+              onChange={(value) => updateEnergyMeterForm("ipAddress", value)}
+              required
+              placeholder="192.168.1.20"
+            />
+            <InputField
+              label="Port"
+              type="number"
+              value={energyMeterForm.port}
+              onChange={(value) => updateEnergyMeterForm("port", value)}
+              required
+              placeholder="502"
+            />
+            <InputField
+              label="Register"
+              value={energyMeterForm.modbusRegister}
+              onChange={(value) => updateEnergyMeterForm("modbusRegister", value)}
+              placeholder="40001"
+            />
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-3">
+            <InputField
+              label="Slave ID"
+              type="number"
+              value={energyMeterForm.modbusSlaveId}
+              onChange={(value) => updateEnergyMeterForm("modbusSlaveId", value)}
+              required
+              placeholder="1"
+            />
+            <InputField
+              label="Baud Rate"
+              type="number"
+              value={energyMeterForm.baudRate}
+              onChange={(value) => updateEnergyMeterForm("baudRate", value)}
+              placeholder="9600"
+            />
+            <SelectField
+              label="Parity"
+              value={energyMeterForm.parity}
+              onChange={(value) => updateEnergyMeterForm("parity", value as EnergyMeterFormState["parity"])}
+              options={[
+                { value: "NONE", label: "None" },
+                { value: "EVEN", label: "Even" },
+                { value: "ODD", label: "Odd" },
+              ]}
+            />
+            <InputField
+              label="Stop Bits"
+              type="number"
+              value={energyMeterForm.stopBits}
+              onChange={(value) => updateEnergyMeterForm("stopBits", value)}
+              placeholder="1"
+            />
+            <InputField
+              label="Register"
+              value={energyMeterForm.modbusRegister}
+              onChange={(value) => updateEnergyMeterForm("modbusRegister", value)}
+              placeholder="40001"
+            />
+            <InputField
+              label="Bridge Endpoint"
+              value={energyMeterForm.bridgeEndpoint}
+              onChange={(value) => updateEnergyMeterForm("bridgeEndpoint", value)}
+              placeholder="http://localhost:5001/rs485/read"
+            />
+          </div>
+        )}
+
+        <div className="space-y-3 rounded-md border border-border/60 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold">Device Data Points</p>
+            <Button type="button" variant="outline" size="sm" className="gap-2" onClick={addEnergyDataPoint}>
+              <Plus className="h-3.5 w-3.5" />
+              Add Data Point
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">Map multiple Modbus registers from a single RS485/TCP meter device.</p>
+          <div className="space-y-3">
+            {energyMeterForm.dataPoints.map((point, index) => (
+              <div key={`data-point-${index}`} className="grid gap-3 rounded-md border border-border/50 bg-muted/20 p-3 md:grid-cols-[1.2fr_1fr_0.8fr_0.8fr_auto]">
+                <InputField
+                  label={`Label ${index + 1}`}
+                  value={point.label}
+                  onChange={(value) => updateEnergyDataPoint(index, "label", value)}
+                  placeholder="Active Energy"
+                />
+                <InputField
+                  label="Register"
+                  value={point.register}
+                  onChange={(value) => updateEnergyDataPoint(index, "register", value)}
+                  placeholder="40001"
+                  required
+                />
+                <InputField
+                  label="Unit"
+                  value={point.unit}
+                  onChange={(value) => updateEnergyDataPoint(index, "unit", value)}
+                  placeholder="kWh"
+                />
+                <InputField
+                  label="Multiplier"
+                  value={point.multiplier}
+                  onChange={(value) => updateEnergyDataPoint(index, "multiplier", value)}
+                  placeholder="0.1"
+                />
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 text-destructive"
+                    onClick={() => removeEnergyDataPoint(index)}
+                    disabled={energyMeterForm.dataPoints.length <= 1}
+                    aria-label={`Remove data point ${index + 1}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <InputField
+            label="Poll Interval (seconds)"
+            type="number"
+            value={energyMeterForm.pollIntervalSeconds}
+            onChange={(value) => updateEnergyMeterForm("pollIntervalSeconds", value)}
+            required
+            placeholder="60"
+          />
+          <InputField
+            label="Notes"
+            value={energyMeterForm.notes}
+            onChange={(value) => updateEnergyMeterForm("notes", value)}
+            placeholder="Optional configuration notes"
+          />
+        </div>
+      </FormDialog>
+
       <ViewDialog open={isQrOpen} onOpenChange={setIsQrOpen} title="Asset QR Code" subtitle={selectedMachine?.code}>
         <div className="space-y-4">
           {qrImageDataUrl ? (
@@ -1446,6 +2368,23 @@ export default function MachinesMaster() {
           </div>
         </div>
       </ViewDialog>
+
+      <DeleteConfirmDialog
+        open={Boolean(energyMeterConfigToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !energyMeterDeleteSubmitting) {
+            setEnergyMeterConfigToDelete(null);
+          }
+        }}
+        title="Delete Energy Meter Configuration"
+        itemName={energyMeterConfigToDelete?.meterName}
+        onConfirm={() => {
+          if (!energyMeterConfigToDelete) return;
+          void handleDeleteEnergyMeterConfig(energyMeterConfigToDelete);
+        }}
+        isLoading={energyMeterDeleteSubmitting}
+      />
+
       <DeleteConfirmDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} title="Delete Machine" itemName={selectedMachine?.name} onConfirm={confirmDelete} isLoading={saving} />
     </PageShell>
   );

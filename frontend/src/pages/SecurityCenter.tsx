@@ -208,6 +208,13 @@ export default function SecurityCenter() {
     let cancelled = false;
 
     const fetchWorkflowPlants = async () => {
+      if (!userIsSuperAdmin) {
+        if (!cancelled) {
+          setWorkflowPlants([]);
+        }
+        return;
+      }
+
       try {
         const response = await listPlants({ page: 1, limit: 300 });
         if (cancelled) return;
@@ -227,7 +234,7 @@ export default function SecurityCenter() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userIsSuperAdmin]);
 
   const availablePlantOptions = useMemo(() => {
     if (workflowPlants.length > 0) {
@@ -891,6 +898,8 @@ export default function SecurityCenter() {
             <div>
               <p className="mb-1 text-xs text-muted-foreground">Plant</p>
               <select
+                aria-label="Backup recovery drill plant"
+                title="Backup recovery drill plant"
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={allowPlantSelection ? backupForm.plantId : resolveOperationPlantId(backupForm.plantId)}
                 onChange={(event) => setBackupForm((current) => ({ ...current, plantId: event.target.value }))}
@@ -933,6 +942,8 @@ export default function SecurityCenter() {
             <div>
               <p className="mb-1 text-xs text-muted-foreground">Result</p>
               <select
+                aria-label="Backup recovery drill result"
+                title="Backup recovery drill result"
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={backupForm.result}
                 onChange={(event) => setBackupForm((current) => ({ ...current, result: event.target.value as SecurityReviewResult }))}
@@ -969,6 +980,8 @@ export default function SecurityCenter() {
             <div>
               <p className="mb-1 text-xs text-muted-foreground">Plant</p>
               <select
+                aria-label="File security review plant"
+                title="File security review plant"
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={allowPlantSelection ? fileForm.plantId : resolveOperationPlantId(fileForm.plantId)}
                 onChange={(event) => setFileForm((current) => ({ ...current, plantId: event.target.value }))}
@@ -999,6 +1012,8 @@ export default function SecurityCenter() {
             <div>
               <p className="mb-1 text-xs text-muted-foreground">Result</p>
               <select
+                aria-label="File security review result"
+                title="File security review result"
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={fileForm.result}
                 onChange={(event) => setFileForm((current) => ({ ...current, result: event.target.value as SecurityReviewResult }))}
@@ -1053,6 +1068,8 @@ export default function SecurityCenter() {
             <div>
               <p className="mb-1 text-xs text-muted-foreground">Plant</p>
               <select
+                aria-label="Supplier attestation plant"
+                title="Supplier attestation plant"
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={allowPlantSelection ? supplierForm.plantId : resolveOperationPlantId(supplierForm.plantId)}
                 onChange={(event) => setSupplierForm((current) => ({ ...current, plantId: event.target.value }))}
@@ -1084,6 +1101,8 @@ export default function SecurityCenter() {
               <div>
                 <p className="mb-1 text-xs text-muted-foreground">Attestation Status</p>
                 <select
+                  aria-label="Supplier attestation status"
+                  title="Supplier attestation status"
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={supplierForm.attestationStatus}
                   onChange={(event) => setSupplierForm((current) => ({ ...current, attestationStatus: event.target.value as SupplierAttestationStatus }))}

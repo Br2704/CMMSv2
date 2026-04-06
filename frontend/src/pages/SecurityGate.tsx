@@ -17,8 +17,6 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { subscribeGateSync } from "@/lib/gate-sync";
 import { useAuthStore } from "@/store/auth.store";
-import { listDepartments, type Department } from "@/api/departments";
-import { listModules, type MachineModule } from "@/api/modules";
 import { listProfiles, type UserProfile } from "@/api/users";
 import { createSmartVisitor, getVisitorInsights, type SmartVisitorCreateResponse, type VisitorInsights } from "@/api/visitorExperience";
 import {
@@ -159,24 +157,15 @@ export default function SecurityGate() {
   const [createdEntry, setCreatedEntry] = useState<GateEntry | null>(null);
   const [qrImage, setQrImage] = useState("");
   const [employees, setEmployees] = useState<UserProfile[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [modules, setModules] = useState<MachineModule[]>([]);
   const [creatingSmartVisitor, setCreatingSmartVisitor] = useState(false);
   const [createdSmartVisitor, setCreatedSmartVisitor] = useState<SmartVisitorCreateResponse | null>(null);
   const [smartVisitorForm, setSmartVisitorForm] = useState({
     gateId: "",
-    departmentId: "",
-    moduleId: "",
     personToMeetUserId: "",
     visitorName: "",
-    visitorCompany: "",
     visitorPhone: "",
     purpose: "",
     durationHours: "2",
-    idProofType: "",
-    idProofNumber: "",
-    vehicleNumber: "",
-    remarks: "",
   });
   const [cameraCaptureOpen, setCameraCaptureOpen] = useState(false);
   const [cameraCaptureMode, setCameraCaptureMode] = useState<CameraCaptureMode>("PHOTO");
@@ -255,22 +244,6 @@ export default function SecurityGate() {
     [employees],
   );
 
-  const departmentOptions = useMemo(
-    () => departments.map((department) => ({ value: department.id, label: `${department.code} - ${department.name}` })),
-    [departments],
-  );
-
-  const moduleOptions = useMemo(
-    () =>
-      modules
-        .filter((module) => !smartVisitorForm.departmentId || module.departmentId === smartVisitorForm.departmentId)
-        .map((module) => ({
-          value: module.id,
-          label: module.code ? `${module.code} - ${module.name}` : module.name,
-        })),
-    [modules, smartVisitorForm.departmentId],
-  );
-
   const groupedFields = useMemo(() => {
     const groups = new Map<string, GateTemplateField[]>();
     templateFields.forEach((field) => {
@@ -317,20 +290,20 @@ export default function SecurityGate() {
   }, [plantId]);
 
   const loadMasterData = useCallback(async () => {
-    const [gatesResponse, templatesResponse, profilesResponse, departmentsResponse, modulesResponse] = await Promise.all([
+    const [gatesResponse, templatesResponse, profilesResponse] = await Promise.all([
       listGates({ page: 1, limit: 100, plantId }),
       listGateTemplates({ page: 1, limit: 100, plantId }),
       listProfiles({ page: 1, limit: 300, plantId, includeInactive: false }),
-      listDepartments({ page: 1, limit: 300, plantId, includeInactive: false }),
-      listModules({ page: 1, limit: 400, plantId, includeInactive: false }),
     ]);
     setGates(gatesResponse.data);
     setTemplates(templatesResponse.data);
-    setDepartments(departmentsResponse.data);
-    setModules(modulesResponse.data);
 
     const employeeProfiles = profilesResponse.data.filter(
-      (profile) => !(profile.roles ?? []).some((role) => role.toUpperCase() === "VISITOR"),
+      (profile) =>
+        !(profile.roles ?? []).some((role) => {
+          const normalized = role.toUpperCase();
+          return normalized === "VISITOR" || normalized === "TEMPORARY_VISITOR";
+        }),
     );
     setEmployees(employeeProfiles);
 
@@ -739,7 +712,7 @@ export default function SecurityGate() {
 
   const handleCreateSmartVisitor = async () => {
     if (!canCreateTemporaryVisitor) {
-      toast.error("Only security role users can create temporary visitor access");
+      toast.error("Only security users can create temporary visitor access");
       return;
     }
     if (!plantId) {
@@ -762,18 +735,11 @@ export default function SecurityGate() {
       const response = await createSmartVisitor({
         gateId: smartVisitorForm.gateId,
         plantId,
-        departmentId: smartVisitorForm.departmentId || null,
-        moduleId: smartVisitorForm.moduleId || null,
         personToMeetUserId: smartVisitorForm.personToMeetUserId,
         visitorName: smartVisitorForm.visitorName.trim(),
-        visitorCompany: smartVisitorForm.visitorCompany.trim() || null,
         visitorPhone: smartVisitorForm.visitorPhone.trim() || null,
         purpose: smartVisitorForm.purpose.trim(),
         durationHours,
-        idProofType: smartVisitorForm.idProofType.trim() || null,
-        idProofNumber: smartVisitorForm.idProofNumber.trim() || null,
-        vehicleNumber: smartVisitorForm.vehicleNumber.trim() || null,
-        remarks: smartVisitorForm.remarks.trim() || null,
       });
 
       setCreatedSmartVisitor(response.data);
@@ -781,14 +747,9 @@ export default function SecurityGate() {
       setSmartVisitorForm((current) => ({
         ...current,
         visitorName: "",
-        visitorCompany: "",
         visitorPhone: "",
         purpose: "",
         durationHours: "2",
-        idProofType: "",
-        idProofNumber: "",
-        vehicleNumber: "",
-        remarks: "",
       }));
 
       await Promise.all([loadEntries(), loadDashboard()]);
@@ -1082,6 +1043,10 @@ export default function SecurityGate() {
                   <CardTitle className="text-lg">Approval-Based Visitor Access</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    Create a temporary visitor request with only core details. Access is activated after host approval.
+                  </p>
+
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Gate</Label>
@@ -1114,52 +1079,12 @@ export default function SecurityGate() {
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label>Department</Label>
-                      <Select value={smartVisitorForm.departmentId || "none"} onValueChange={(value) => setSmartVisitorForm((current) => ({ ...current, departmentId: value === "none" ? "" : value, moduleId: "" }))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Optional department" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {departmentOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Module</Label>
-                      <Select value={smartVisitorForm.moduleId || "none"} onValueChange={(value) => setSmartVisitorForm((current) => ({ ...current, moduleId: value === "none" ? "" : value }))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Optional module" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {moduleOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-2">
                       <Label>Visitor Name</Label>
                       <Input value={smartVisitorForm.visitorName} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorName: event.target.value }))} placeholder="Visitor full name" />
                     </div>
                     <div className="space-y-2">
-                      <Label>Visitor Company</Label>
-                      <Input value={smartVisitorForm.visitorCompany} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorCompany: event.target.value }))} placeholder="Company" />
-                    </div>
-                    <div className="space-y-2">
                       <Label>Visitor Phone</Label>
                       <Input value={smartVisitorForm.visitorPhone} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorPhone: event.target.value }))} placeholder="Phone number" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Vehicle Number</Label>
-                      <Input value={smartVisitorForm.vehicleNumber} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, vehicleNumber: event.target.value }))} placeholder="Optional vehicle" />
                     </div>
                   </div>
 
@@ -1183,29 +1108,13 @@ export default function SecurityGate() {
                     <p className="text-xs text-muted-foreground">Access timer begins only after the host employee approves this visitor request.</p>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>ID Proof Type</Label>
-                      <Input value={smartVisitorForm.idProofType} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, idProofType: event.target.value }))} placeholder="Aadhaar / Passport / etc." />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>ID Proof Number</Label>
-                      <Input value={smartVisitorForm.idProofNumber} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, idProofNumber: event.target.value }))} placeholder="ID number" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Security Notes</Label>
-                    <Textarea value={smartVisitorForm.remarks} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, remarks: event.target.value }))} rows={2} placeholder="Optional note for approval flow" />
-                  </div>
-
                   <Button className="w-full" onClick={() => void handleCreateSmartVisitor()} disabled={creatingSmartVisitor || !canCreateTemporaryVisitor}>
                     {creatingSmartVisitor ? "Creating Visitor Session..." : "Create Temporary Visitor + Approval Window"}
                   </Button>
 
                   {!canCreateTemporaryVisitor ? (
                     <p className="text-xs text-rose-600">
-                      Temporary visitor creation is restricted to security roles.
+                      Temporary visitor creation is restricted to security users.
                     </p>
                   ) : null}
 

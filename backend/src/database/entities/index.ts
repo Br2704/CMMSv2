@@ -58,6 +58,7 @@ export * from './geo-fence.entity';
 export * from './visitor-session.entity';
 export * from './visitor-navigation-log.entity';
 export * from './visitor-tracking.entity';
+export * from './visitor-safety-log.entity';
 export * from './notification.entity';
 export * from './security-event.entity';
 export * from './maintenance-team.entity';

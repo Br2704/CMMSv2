@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   Activity,
@@ -14,7 +13,6 @@ import {
   ShieldAlert,
   Timer,
   Users,
-  Upload,
   Workflow,
   Wrench,
 } from "lucide-react";
@@ -32,7 +30,6 @@ import {
 import { RecentWorkOrdersTable } from "@/components/dashboard/RecentWorkOrdersTable";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PageShell } from "@/components/layout/PageShell";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -48,7 +45,6 @@ type PlantRow = {
 };
 
 export default function Dashboard() {
-  const navigate = useNavigate();
   const { user, activePlantId, setActivePlant } = useAuthStore();
   const organizationName = useBrandingStore((state) => state.organizationName);
   const [selectedPlantId, setSelectedPlantId] = useState<string | null>(activePlantId || null);
@@ -302,21 +298,6 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {(userIsAdmin || userIsSuperAdmin) ? (
-        <Card className="border-dashed border-primary/30 bg-primary/5 shadow-sm">
-          <CardContent className="flex flex-wrap items-center gap-2 p-4">
-            <Button type="button" variant="outline" className="gap-2" onClick={() => navigate("/masters/machines?bulk=1")}>
-              <Upload className="h-4 w-4" />
-              Machine List Bulk Upload
-            </Button>
-            <Button type="button" variant="outline" className="gap-2" onClick={() => navigate("/masters/users?bulk=1")}>
-              <Upload className="h-4 w-4" />
-              User List Bulk Upload
-            </Button>
           </CardContent>
         </Card>
       ) : null}

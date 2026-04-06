@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { DoorOpen, Loader2, Plus, Search, Settings2, Trash2 } from "lucide-react";
+import { DoorOpen, Loader2, MapPinned, Plus, Search, Settings2, Trash2 } from "lucide-react";
 import BackButton from "@/components/masters/BackButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -15,6 +16,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { broadcastGateSync, subscribeGateSync } from "@/lib/gate-sync";
 import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
+import {
+  getPlantVisitorLayout,
+  savePlantVisitorLayout,
+  type PlantLayoutEdge,
+  type PlantLayoutNode,
+} from "@/api/visitorExperience";
 import {
   createGate,
   createGateTemplate,
@@ -52,6 +59,36 @@ const visitorTypeOptions = [
 
 const defaultGateType = "MAIN_GATE";
 
+type ActiveTab = "gates" | "templates" | "plant-layout";
+
+type LayoutNodeFormState = {
+  label: string;
+  nodeType: string;
+  refId: string;
+  x: string;
+  y: string;
+  latitude: string;
+  longitude: string;
+};
+
+const emptyLayoutNodeForm: LayoutNodeFormState = {
+  label: "",
+  nodeType: "CHECKPOINT",
+  refId: "",
+  x: "",
+  y: "",
+  latitude: "",
+  longitude: "",
+};
+
+function parseNumericInput(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return undefined;
+  return parsed;
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (error && typeof error === "object" && "message" in error) {
     const message = (error as { message?: unknown }).message;
@@ -74,7 +111,7 @@ export default function GateMaster() {
   const { plantsOptions, fetchPlants } = useMastersOptions();
   const syncVersionRef = useRef<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"gates" | "templates">("gates");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("gates");
 
   const [gatesLoading, setGatesLoading] = useState(true);
   const [templatesLoading, setTemplatesLoading] = useState(true);
@@ -102,6 +139,21 @@ export default function GateMaster() {
   const [templateForm, setTemplateForm] = useState({
     gateId: "",
     visitorTypes: ["VISITOR_ENTRY"] as string[],
+  });
+
+  const [layoutLoading, setLayoutLoading] = useState(false);
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutPlantId, setLayoutPlantId] = useState(canSelectPlant ? "" : defaultPlantId);
+  const [layoutName, setLayoutName] = useState("Plant Layout");
+  const [layoutSvgMarkup, setLayoutSvgMarkup] = useState("");
+  const [layoutNodes, setLayoutNodes] = useState<PlantLayoutNode[]>([]);
+  const [layoutEdges, setLayoutEdges] = useState<PlantLayoutEdge[]>([]);
+  const [newLayoutNode, setNewLayoutNode] = useState<LayoutNodeFormState>(emptyLayoutNodeForm);
+  const [newEdge, setNewEdge] = useState({
+    fromNodeId: "",
+    toNodeId: "",
+    distance: "1",
+    directional: false,
   });
 
   const plantName = useCallback(
@@ -210,6 +262,45 @@ export default function GateMaster() {
 
     return () => window.clearInterval(interval);
   }, [canSelectPlant, defaultPlantId, loadGates, loadTemplates]);
+
+  const loadPlantLayout = useCallback(async (plantId: string) => {
+    if (!plantId) return;
+
+    setLayoutLoading(true);
+    try {
+      const response = await getPlantVisitorLayout(plantId);
+      setLayoutName(response.data.layoutName || "Plant Layout");
+      setLayoutSvgMarkup(response.data.svgMarkup || "");
+      setLayoutNodes(response.data.mapData?.nodes || []);
+      setLayoutEdges(response.data.mapData?.edges || []);
+    } catch (error: unknown) {
+      setLayoutName("Plant Layout");
+      setLayoutSvgMarkup("");
+      setLayoutNodes([]);
+      setLayoutEdges([]);
+      toast.error(getErrorMessage(error, "Failed to load plant layout"));
+    } finally {
+      setLayoutLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (canSelectPlant) {
+      if (!layoutPlantId && plantsOptions.length > 0) {
+        setLayoutPlantId(plantsOptions[0].value);
+      }
+      return;
+    }
+
+    if (defaultPlantId && layoutPlantId !== defaultPlantId) {
+      setLayoutPlantId(defaultPlantId);
+    }
+  }, [canSelectPlant, defaultPlantId, layoutPlantId, plantsOptions]);
+
+  useEffect(() => {
+    if (activeTab !== "plant-layout" || !layoutPlantId) return;
+    void loadPlantLayout(layoutPlantId);
+  }, [activeTab, layoutPlantId, loadPlantLayout]);
 
   const openCreateGateDialog = () => {
     setSelectedGate(null);
@@ -397,6 +488,160 @@ export default function GateMaster() {
     }
   };
 
+  const addLayoutNode = () => {
+    if (!newLayoutNode.label.trim()) {
+      toast.error("Node label is required");
+      return;
+    }
+
+    const generatedId = `NODE_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const nextNode: PlantLayoutNode = {
+      id: generatedId,
+      label: newLayoutNode.label.trim(),
+      nodeType: newLayoutNode.nodeType.trim() || "CHECKPOINT",
+      refId: newLayoutNode.refId.trim() || null,
+      x: parseNumericInput(newLayoutNode.x),
+      y: parseNumericInput(newLayoutNode.y),
+      latitude: parseNumericInput(newLayoutNode.latitude),
+      longitude: parseNumericInput(newLayoutNode.longitude),
+    };
+
+    setLayoutNodes((current) => [...current, nextNode]);
+    setNewLayoutNode(emptyLayoutNodeForm);
+  };
+
+  const updateLayoutNode = (nodeId: string, key: keyof PlantLayoutNode, value: string | boolean) => {
+    setLayoutNodes((current) =>
+      current.map((node) => {
+        if (node.id !== nodeId) return node;
+
+        if (key === "x" || key === "y" || key === "latitude" || key === "longitude") {
+          return {
+            ...node,
+            [key]: typeof value === "string" ? parseNumericInput(value) : undefined,
+          };
+        }
+
+        if (key === "refId") {
+          return {
+            ...node,
+            refId: typeof value === "string" && value.trim().length > 0 ? value.trim() : null,
+          };
+        }
+
+        if (key === "label" || key === "nodeType") {
+          return {
+            ...node,
+            [key]: typeof value === "string" ? value : node[key],
+          };
+        }
+
+        return node;
+      }),
+    );
+  };
+
+  const removeLayoutNode = (nodeId: string) => {
+    setLayoutNodes((current) => current.filter((node) => node.id !== nodeId));
+    setLayoutEdges((current) => current.filter((edge) => edge.fromNodeId !== nodeId && edge.toNodeId !== nodeId));
+  };
+
+  const addLayoutEdge = () => {
+    if (!newEdge.fromNodeId || !newEdge.toNodeId) {
+      toast.error("Select source and destination nodes");
+      return;
+    }
+    if (newEdge.fromNodeId === newEdge.toNodeId) {
+      toast.error("Source and destination cannot be the same node");
+      return;
+    }
+
+    const alreadyExists = layoutEdges.some(
+      (edge) => edge.fromNodeId === newEdge.fromNodeId && edge.toNodeId === newEdge.toNodeId,
+    );
+    if (alreadyExists) {
+      toast.error("This edge already exists");
+      return;
+    }
+
+    setLayoutEdges((current) => [
+      ...current,
+      {
+        fromNodeId: newEdge.fromNodeId,
+        toNodeId: newEdge.toNodeId,
+        distance: parseNumericInput(newEdge.distance) ?? 1,
+        directional: newEdge.directional,
+      },
+    ]);
+    setNewEdge({ fromNodeId: "", toNodeId: "", distance: "1", directional: false });
+  };
+
+  const updateLayoutEdge = (index: number, key: keyof PlantLayoutEdge, value: string | boolean) => {
+    setLayoutEdges((current) =>
+      current.map((edge, edgeIndex) => {
+        if (edgeIndex !== index) return edge;
+
+        if (key === "distance") {
+          return {
+            ...edge,
+            distance: typeof value === "string" ? parseNumericInput(value) ?? 1 : edge.distance,
+          };
+        }
+
+        if (key === "directional") {
+          return {
+            ...edge,
+            directional: Boolean(value),
+          };
+        }
+
+        if (key === "fromNodeId" || key === "toNodeId") {
+          return {
+            ...edge,
+            [key]: typeof value === "string" ? value : edge[key],
+          };
+        }
+
+        return edge;
+      }),
+    );
+  };
+
+  const removeLayoutEdge = (index: number) => {
+    setLayoutEdges((current) => current.filter((_, edgeIndex) => edgeIndex !== index));
+  };
+
+  const saveLayout = async () => {
+    if (!layoutPlantId) {
+      toast.error("Select a plant before saving layout");
+      return;
+    }
+    if (layoutNodes.length === 0) {
+      toast.error("Add at least one layout node");
+      return;
+    }
+
+    setLayoutSaving(true);
+    try {
+      await savePlantVisitorLayout({
+        plantId: layoutPlantId,
+        layoutName: layoutName.trim() || "Plant Layout",
+        svgMarkup: layoutSvgMarkup.trim() || null,
+        mapData: {
+          nodes: layoutNodes,
+          edges: layoutEdges,
+        },
+        publishNow: true,
+      });
+      toast.success("Plant layout saved with GPS coordinates");
+      await loadPlantLayout(layoutPlantId);
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to save plant layout"));
+    } finally {
+      setLayoutSaving(false);
+    }
+  };
+
   const templateNamePreview = useMemo(() => {
     if (!templateForm.gateId) return [] as string[];
     return Array.from(new Set(templateForm.visitorTypes.filter(Boolean))).map((visitorType) =>
@@ -412,10 +657,11 @@ export default function GateMaster() {
         <p className="text-sm text-muted-foreground">Create gates with location details and configure allowed entry types for each gate.</p>
       </motion.div>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "gates" | "templates")} className="space-y-4">
-        <TabsList className="grid h-auto w-full grid-cols-2">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ActiveTab)} className="space-y-4">
+        <TabsList className="grid h-auto w-full grid-cols-3">
           <TabsTrigger value="gates" className="gap-2"><DoorOpen className="h-4 w-4" /> Gates</TabsTrigger>
           <TabsTrigger value="templates" className="gap-2"><Settings2 className="h-4 w-4" /> Template Configuration</TabsTrigger>
+          <TabsTrigger value="plant-layout" className="gap-2"><MapPinned className="h-4 w-4" /> Plant Layout</TabsTrigger>
         </TabsList>
 
         <TabsContent value="gates" className="space-y-4">
@@ -663,6 +909,203 @@ export default function GateMaster() {
               </div>
             </div>
           </FormDialog>
+        </TabsContent>
+
+        <TabsContent value="plant-layout" className="space-y-4">
+          <Card className="shadow-card">
+            <CardHeader className="pb-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <CardTitle className="flex items-center gap-2"><MapPinned className="h-5 w-5 text-primary" /> Plant Layout GPS Mapping</CardTitle>
+                <div className="flex flex-wrap items-end gap-2">
+                  {canSelectPlant ? (
+                    <SelectField
+                      label="Plant"
+                      value={layoutPlantId}
+                      onChange={(value) => setLayoutPlantId(value)}
+                      options={plantsOptions}
+                    />
+                  ) : (
+                    <InputField label="Plant" value={plantName(defaultPlantId)} onChange={() => {}} disabled />
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (!layoutPlantId) {
+                        toast.error("Select a plant first");
+                        return;
+                      }
+                      void loadPlantLayout(layoutPlantId);
+                    }}
+                    disabled={layoutLoading || !layoutPlantId}
+                  >
+                    Reload
+                  </Button>
+                  <Button onClick={() => void saveLayout()} disabled={layoutSaving || layoutLoading || !layoutPlantId}>
+                    {layoutSaving ? "Saving..." : "Save Layout"}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+              {layoutLoading ? (
+                <div className="flex justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
+              ) : !layoutPlantId ? (
+                <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">Select a plant to configure layout and GPS coordinates.</div>
+              ) : (
+                <>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <InputField
+                      label="Layout Name"
+                      value={layoutName}
+                      onChange={(value) => setLayoutName(value)}
+                      required
+                    />
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Optional SVG Markup</p>
+                      <Textarea
+                        value={layoutSvgMarkup}
+                        onChange={(event) => setLayoutSvgMarkup(event.target.value)}
+                        placeholder="Paste SVG layout markup if available"
+                        rows={4}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/70 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium">Add Layout Node</p>
+                      <Button type="button" variant="outline" onClick={addLayoutNode}>Add Node</Button>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <InputField label="Label" value={newLayoutNode.label} onChange={(value) => setNewLayoutNode((current) => ({ ...current, label: value }))} required />
+                      <InputField label="Node Type" value={newLayoutNode.nodeType} onChange={(value) => setNewLayoutNode((current) => ({ ...current, nodeType: value }))} />
+                      <InputField label="Reference Id" value={newLayoutNode.refId} onChange={(value) => setNewLayoutNode((current) => ({ ...current, refId: value }))} />
+                      <InputField label="X" value={newLayoutNode.x} onChange={(value) => setNewLayoutNode((current) => ({ ...current, x: value }))} type="number" />
+                      <InputField label="Y" value={newLayoutNode.y} onChange={(value) => setNewLayoutNode((current) => ({ ...current, y: value }))} type="number" />
+                      <InputField label="Latitude" value={newLayoutNode.latitude} onChange={(value) => setNewLayoutNode((current) => ({ ...current, latitude: value }))} type="number" />
+                      <InputField label="Longitude" value={newLayoutNode.longitude} onChange={(value) => setNewLayoutNode((current) => ({ ...current, longitude: value }))} type="number" />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/70 p-4">
+                    <p className="mb-3 text-sm font-medium">Layout Nodes ({layoutNodes.length})</p>
+                    {layoutNodes.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No nodes added yet.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {layoutNodes.map((node) => (
+                          <div key={node.id} className="rounded-xl border border-border/60 p-3">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <p className="text-xs font-medium text-muted-foreground">Node Id: {node.id}</p>
+                              <Button type="button" variant="outline" className="text-destructive" onClick={() => removeLayoutNode(node.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                              <InputField label="Label" value={node.label} onChange={(value) => updateLayoutNode(node.id, "label", value)} required />
+                              <InputField label="Node Type" value={node.nodeType} onChange={(value) => updateLayoutNode(node.id, "nodeType", value)} />
+                              <InputField label="Reference Id" value={node.refId || ""} onChange={(value) => updateLayoutNode(node.id, "refId", value)} />
+                              <InputField label="X" value={node.x ?? ""} onChange={(value) => updateLayoutNode(node.id, "x", value)} type="number" />
+                              <InputField label="Y" value={node.y ?? ""} onChange={(value) => updateLayoutNode(node.id, "y", value)} type="number" />
+                              <InputField label="Latitude" value={node.latitude ?? ""} onChange={(value) => updateLayoutNode(node.id, "latitude", value)} type="number" />
+                              <InputField label="Longitude" value={node.longitude ?? ""} onChange={(value) => updateLayoutNode(node.id, "longitude", value)} type="number" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl border border-border/70 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium">Add Path Edge</p>
+                      <Button type="button" variant="outline" onClick={addLayoutEdge}>Add Edge</Button>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <SelectField
+                        label="From Node"
+                        value={newEdge.fromNodeId}
+                        onChange={(value) => setNewEdge((current) => ({ ...current, fromNodeId: value }))}
+                        options={layoutNodes.map((node) => ({ value: node.id, label: `${node.label} (${node.nodeType})` }))}
+                      />
+                      <SelectField
+                        label="To Node"
+                        value={newEdge.toNodeId}
+                        onChange={(value) => setNewEdge((current) => ({ ...current, toNodeId: value }))}
+                        options={layoutNodes.map((node) => ({ value: node.id, label: `${node.label} (${node.nodeType})` }))}
+                      />
+                      <InputField
+                        label="Distance"
+                        value={newEdge.distance}
+                        onChange={(value) => setNewEdge((current) => ({ ...current, distance: value }))}
+                        type="number"
+                      />
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">Directional</p>
+                        <label className="flex h-10 items-center gap-2 rounded-md border border-border/70 px-3 text-sm">
+                          <Checkbox
+                            checked={newEdge.directional}
+                            onCheckedChange={(checked) => setNewEdge((current) => ({ ...current, directional: Boolean(checked) }))}
+                          />
+                          <span>One way path</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/70 p-4">
+                    <p className="mb-3 text-sm font-medium">Path Edges ({layoutEdges.length})</p>
+                    {layoutEdges.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No edges configured yet.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {layoutEdges.map((edge, index) => (
+                          <div key={`${edge.fromNodeId}-${edge.toNodeId}-${index}`} className="rounded-xl border border-border/60 p-3">
+                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                              <SelectField
+                                label="From"
+                                value={edge.fromNodeId}
+                                onChange={(value) => updateLayoutEdge(index, "fromNodeId", value)}
+                                options={layoutNodes.map((node) => ({ value: node.id, label: node.label }))}
+                              />
+                              <SelectField
+                                label="To"
+                                value={edge.toNodeId}
+                                onChange={(value) => updateLayoutEdge(index, "toNodeId", value)}
+                                options={layoutNodes.map((node) => ({ value: node.id, label: node.label }))}
+                              />
+                              <InputField
+                                label="Distance"
+                                value={edge.distance ?? 1}
+                                onChange={(value) => updateLayoutEdge(index, "distance", value)}
+                                type="number"
+                              />
+                              <div className="space-y-2">
+                                <p className="text-sm font-medium">Directional</p>
+                                <label className="flex h-10 items-center gap-2 rounded-md border border-border/70 px-3 text-sm">
+                                  <Checkbox
+                                    checked={Boolean(edge.directional)}
+                                    onCheckedChange={(checked) => updateLayoutEdge(index, "directional", Boolean(checked))}
+                                  />
+                                  <span>One way</span>
+                                </label>
+                              </div>
+                              <div className="flex items-end">
+                                <Button type="button" variant="outline" className="text-destructive" onClick={() => removeLayoutEdge(index)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

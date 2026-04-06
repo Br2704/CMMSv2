@@ -214,7 +214,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 function HomeRoute() {
   const { user } = useAuthStore();
   const normalizedRoles = (user?.roles ?? []).map((role) => role.toUpperCase());
-  const isVisitorOnly = normalizedRoles.length > 0 && normalizedRoles.every((role) => role === "VISITOR");
+  const isVisitorOnly = normalizedRoles.length > 0 && normalizedRoles.every((role) => role === "VISITOR" || role === "TEMPORARY_VISITOR");
 
   if (isRootAdmin(user)) {
     return <Navigate to="/root/dashboard" replace />;

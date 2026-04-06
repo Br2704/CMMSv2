@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { format, formatDistanceToNow, subHours } from "date-fns";
 import {
   Plus, Search, Eye, MoreHorizontal, Play, CheckCircle, Loader2, RefreshCw,
-  ClipboardList, Clock, CheckSquare, AlertTriangle, Send, Wrench
+  ClipboardList, Clock, CheckSquare, AlertTriangle, Send, Wrench, QrCode
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -27,6 +27,7 @@ import { getStoredAccessToken } from "@/api/http";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { FilterToolbar } from "@/components/layout/FilterToolbar";
@@ -47,7 +48,7 @@ import {
 import { humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { parseQrContent } from "@/mobile/qr";
-import { resolveQrMachineCode, resolveQrToken } from "@/api/qr";
+import { resolveQrMachineCode, resolveQrToken, type QrResolveData } from "@/api/qr";
 import { compressImage } from "@/mobile/media";
 import { hoursToMinutes } from "@/lib/time";
 import { broadcastWorkOrderSync, subscribeWorkOrderSync } from "@/lib/work-order-sync";
@@ -387,10 +388,14 @@ export default function WorkOrders() {
 
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isRaisingWorkOrder, setIsRaisingWorkOrder] = useState(false);
   const [selectedWO, setSelectedWO] = useState<any>(null);
   const [isOpenFormOpen, setIsOpenFormOpen] = useState(false);
+  const [isStartingWorkOrder, setIsStartingWorkOrder] = useState(false);
   const [openingWOId, setOpeningWOId] = useState<string | null>(null);
   const [isQrVerifyOpen, setIsQrVerifyOpen] = useState(false);
+  const [isRaiseQrScannerOpen, setIsRaiseQrScannerOpen] = useState(false);
+  const [isResolvingRaiseQr, setIsResolvingRaiseQr] = useState(false);
   const [verifyTargetWO, setVerifyTargetWO] = useState<any>(null);
   const [qrMismatchMessage, setQrMismatchMessage] = useState("");
   const [verificationMethod, setVerificationMethod] = useState<"QR_SCAN" | "MANUAL_ENTRY">("QR_SCAN");
@@ -410,10 +415,14 @@ export default function WorkOrders() {
   const [reviewMode, setReviewMode] = useState<"approve" | "reject">("approve");
   const [reviewData, setReviewData] = useState(() => ({ ...EMPTY_REVIEW_DATA }));
   const [photoAttachments, setPhotoAttachments] = useState<PhotoAttachment[]>([]);
-  const raiseCameraInputRef = useRef<HTMLInputElement | null>(null);
   const raiseFileInputRef = useRef<HTMLInputElement | null>(null);
-  const closeCameraInputRef = useRef<HTMLInputElement | null>(null);
   const closeFileInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const [isCameraDialogOpen, setIsCameraDialogOpen] = useState(false);
+  const [cameraTarget, setCameraTarget] = useState<"RAISE" | "CLOSE" | null>(null);
+  const [cameraError, setCameraError] = useState("");
 
   // Raise form
   const [formData, setFormData] = useState(() => getInitialRaiseFormData(user?.plantId || ""));
@@ -941,14 +950,113 @@ export default function WorkOrders() {
     setCloseAttachments((current) => current.filter((_, entryIndex) => entryIndex !== index));
   };
 
-  const openAttachmentPicker = (input: HTMLInputElement | null, source: "camera" | "files") => {
-    if (!input) return;
-
-    if (source === "camera") {
-      input.setAttribute("capture", "environment");
-    } else {
-      input.removeAttribute("capture");
+  const stopCameraStream = () => {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
     }
+    if (cameraVideoRef.current) {
+      cameraVideoRef.current.srcObject = null;
+    }
+  };
+
+  useEffect(() => {
+    if (!isCameraDialogOpen) {
+      stopCameraStream();
+      return;
+    }
+
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError("Live camera is not supported in this browser. Use Select From Files.");
+      return;
+    }
+
+    let disposed = false;
+
+    const startCamera = async () => {
+      try {
+        setCameraError("");
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false,
+        });
+
+        if (disposed) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        cameraStreamRef.current = stream;
+        const video = cameraVideoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          await video.play().catch(() => { });
+        }
+      } catch {
+        setCameraError("Unable to access camera. Allow camera permission and retry.");
+      }
+    };
+
+    void startCamera();
+
+    return () => {
+      disposed = true;
+      stopCameraStream();
+    };
+  }, [isCameraDialogOpen]);
+
+  const openLiveCamera = (target: "RAISE" | "CLOSE") => {
+    setCameraTarget(target);
+    setCameraError("");
+    setIsCameraDialogOpen(true);
+  };
+
+  const captureCameraPhoto = async () => {
+    if (!cameraTarget) return;
+    const video = cameraVideoRef.current;
+    const canvas = cameraCanvasRef.current;
+
+    if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) {
+      toast.error("Camera is not ready yet. Please wait a moment and try again.");
+      return;
+    }
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      toast.error("Unable to capture camera frame");
+      return;
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/jpeg", 0.9);
+    });
+
+    if (!blob) {
+      toast.error("Failed to capture photo");
+      return;
+    }
+
+    const fileName = `camera-${new Date().toISOString().replace(/[:.]/g, "-")}.jpg`;
+    const photo = new File([blob], fileName, { type: "image/jpeg" });
+
+    if (cameraTarget === "CLOSE") {
+      await handleCloseMediaAttachment(photo);
+    } else {
+      await handleMediaAttachment(photo);
+    }
+
+    setIsCameraDialogOpen(false);
+    setCameraTarget(null);
+    setCameraError("");
+    stopCameraStream();
+  };
+
+  const openAttachmentPicker = (input: HTMLInputElement | null) => {
+    if (!input) return;
 
     const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
     try {
@@ -1038,8 +1146,118 @@ export default function WorkOrders() {
     setIsSafetyOpen(true);
   };
 
+  const applyRaiseMachineSelectionFromQr = (resolved: QrResolveData) => {
+    const resolvedPlantId = resolved.hierarchy?.plant?.id || "";
+    const resolvedDepartmentId = resolved.hierarchy?.department?.id || "";
+    const resolvedModuleId = resolved.hierarchy?.module?.id || "";
+    const resolvedAssetId = resolved.asset?.id || "";
+
+    if (!resolvedAssetId || !resolvedPlantId || !resolvedDepartmentId || !resolvedModuleId) {
+      toast.error("Scanned QR does not include complete machine hierarchy for autofill.");
+      return;
+    }
+
+    if (!userIsSuperAdmin && user?.plantId && resolvedPlantId !== user.plantId) {
+      toast.error("Scanned machine belongs to a different plant.");
+      return;
+    }
+
+    setFormData((current) => ({
+      ...current,
+      plant_id: resolvedPlantId,
+      department_id: resolvedDepartmentId,
+      module_id: resolvedModuleId,
+      asset_id: resolvedAssetId,
+    }));
+
+    setIsRaiseQrScannerOpen(false);
+    toast.success(`Machine ${resolved.asset.code || resolved.asset.name || resolvedAssetId} selected from QR`);
+  };
+
+  const handleQrDecodedForRaiseForm = async (rawValue: string) => {
+    if (isResolvingRaiseQr) return;
+
+    setIsResolvingRaiseQr(true);
+    try {
+      const parsed = parseQrContent(rawValue);
+      let resolved: QrResolveData | null = null;
+
+      if (parsed.machineCode) {
+        try {
+          const response = await resolveQrMachineCode(parsed.machineCode, parsed.token);
+          resolved = response.data;
+        } catch {
+          // Try other resolver paths.
+        }
+      }
+
+      if (!resolved && parsed.token) {
+        try {
+          const response = await resolveQrToken(parsed.token);
+          resolved = response.data;
+        } catch {
+          // Try fallback by raw content.
+        }
+      }
+
+      if (!resolved && parsed.machineId) {
+        try {
+          const response = await getAsset(parsed.machineId);
+          const asset = response.data as any;
+          const plantId = String(asset?.plantId || "");
+          const departmentId = String(asset?.departmentId || "");
+          const moduleId = String(asset?.moduleId || "");
+          const assetId = String(asset?.id || "");
+
+          if (assetId && plantId && departmentId && moduleId) {
+            resolved = {
+              token: parsed.token || "",
+              asset: {
+                id: assetId,
+                code: String(asset?.code || ""),
+                name: String(asset?.name || ""),
+                assetType: String(asset?.assetType || "MACHINE"),
+                qrCodeId: asset?.qrCodeId || null,
+              },
+              hierarchy: {
+                plant: { id: plantId, code: asset?.plant?.code || null, name: asset?.plant?.name || null },
+                department: { id: departmentId, code: asset?.department?.code || null, name: asset?.department?.name || null },
+                module: { id: moduleId, code: asset?.module?.code || null, name: asset?.module?.name || null },
+              },
+            };
+          }
+        } catch {
+          // Continue fallback attempts.
+        }
+      }
+
+      if (!resolved) {
+        const rawCandidate = rawValue.trim();
+        if (rawCandidate) {
+          try {
+            const response = await resolveQrMachineCode(rawCandidate);
+            resolved = response.data;
+          } catch {
+            // Final failure handled below.
+          }
+        }
+      }
+
+      if (!resolved) {
+        toast.error("Unable to resolve machine from scanned QR.");
+        return;
+      }
+
+      applyRaiseMachineSelectionFromQr(resolved);
+    } catch {
+      toast.error("Unable to process scanned QR for machine autofill.");
+    } finally {
+      setIsResolvingRaiseQr(false);
+    }
+  };
+
   const confirmSafetyAndStartWork = async () => {
-    if (!verifyTargetWO) return;
+    if (!verifyTargetWO || isStartingWorkOrder) return;
     if (!safetyChecklist.ppe_worn || !safetyChecklist.machine_isolated || !safetyChecklist.safety_lock_applied) {
       toast.error("Confirm all safety checks before starting work");
       return;
@@ -1048,7 +1266,16 @@ export default function WorkOrders() {
       toast.error("Initial assessment is required before work begins");
       return;
     }
+    if (verificationMethod === "QR_SCAN" && !verifiedAssetId) {
+      toast.error("Scan the assigned machine QR before starting work");
+      return;
+    }
+    if (verificationMethod === "MANUAL_ENTRY" && !manualMachineCode.trim()) {
+      toast.error("Enter the assigned machine code before starting work");
+      return;
+    }
 
+    setIsStartingWorkOrder(true);
     try {
       await startWorkOrder(verifyTargetWO.id, {
         verification_method: verificationMethod,
@@ -1075,10 +1302,14 @@ export default function WorkOrders() {
       triggerWorkOrderLiveSync();
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Failed to start work");
+    } finally {
+      setIsStartingWorkOrder(false);
     }
   };
 
   const handleSubmit = async () => {
+    if (isRaisingWorkOrder) return;
+
     const raisedByUserId = user?.authId || session?.user?.id || "";
     const missingFields = [
       { label: "Plant", value: formData.plant_id },
@@ -1111,6 +1342,8 @@ export default function WorkOrders() {
       toast.error("Logged-in user details are missing. Please sign in again.");
       return;
     }
+
+    setIsRaisingWorkOrder(true);
     try {
       const normalizedLocation =
         (typeof (selectedAsset as any)?.location === "string" ? (selectedAsset as any).location.trim() : "") || null;
@@ -1128,13 +1361,14 @@ export default function WorkOrders() {
 
       await createWorkOrder(payload);
       toast.success("Work order raised successfully");
+      triggerWorkOrderLiveSync();
+      setIsFormOpen(false);
+      setPhotoAttachments([]);
     } catch (error: any) {
       toast.error(error?.message || "Failed to raise work order");
-      return;
+    } finally {
+      setIsRaisingWorkOrder(false);
     }
-    triggerWorkOrderLiveSync();
-    setIsFormOpen(false);
-    setPhotoAttachments([]);
   };
 
   const openOpenForm = (woId: string) => {
@@ -1281,40 +1515,44 @@ export default function WorkOrders() {
   ];
 
   const columns = [
-    { key: "wo", header: "WO Number", render: (wo: any) => (
-      <div>
-        <span className="font-semibold text-primary">{wo.wo_number}</span>
-        <p className="text-xs text-muted-foreground">{resolveWorkOrderLabel("WO_TYPE", wo.wo_type, wo.plant_id)}</p>
-      </div>
-    )},
+    {
+      key: "wo", header: "WO Number", render: (wo: any) => (
+        <div>
+          <span className="font-semibold text-primary">{wo.wo_number}</span>
+          <p className="text-xs text-muted-foreground">{resolveWorkOrderLabel("WO_TYPE", wo.wo_type, wo.plant_id)}</p>
+        </div>
+      )
+    },
     { key: "asset", header: "Asset", render: (wo: any) => (<div><p className="font-medium">{wo.assets?.name || "-"}</p><p className="text-xs text-muted-foreground">{wo.assets?.code}</p></div>) },
     { key: "category", header: "Category", render: (wo: any) => resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id), hideOnMobile: true },
     { key: "priority", header: "Priority", render: (wo: any) => <StatusBadge variant={wo.priority === "CRITICAL" ? "critical" : wo.priority === "HIGH" ? "warning" : "default"}>{wo.priority}</StatusBadge> },
     { key: "status", header: "Status", render: (wo: any) => <StatusBadge status={wo.status} variant={getStatusVariant(wo.status)} /> },
     { key: "raised", header: "Raised", hideOnMobile: true, render: (wo: any) => (<div><p className="text-sm">{format(new Date(wo.created_at), "dd MMM yyyy")}</p><p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(wo.created_at), { addSuffix: true })}</p></div>) },
-    { key: "actions", header: "Actions", className: "text-right", render: (wo: any) => (
-      <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => handleView(wo)}><Eye className="mr-2 h-4 w-4" />View Details</DropdownMenuItem>
-          {canExecuteWO(wo) && (
-            <>
-              {(wo.status === "RAISED" || wo.status === "OPENED") && <DropdownMenuItem onClick={() => openOpenForm(wo.id)}><Play className="mr-2 h-4 w-4" />Open & Assess</DropdownMenuItem>}
-              {wo.status === "IN_PROGRESS" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Submit for Approval</DropdownMenuItem>}
-              {wo.status === "REJECTED" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Revise & Resubmit</DropdownMenuItem>}
-            </>
-          )}
-          {canReviewWO(wo) && (
-            <>
-              <DropdownMenuItem onClick={() => openReviewDialog(wo, "approve")}><CheckCircle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Override Approve" : "Approve"}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => openReviewDialog(wo, "reject")}><AlertTriangle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Override Reject" : "Reject"}</DropdownMenuItem>
-            </>
-          )}
-          {!canReviewWO(wo) && wo.status === "APPROVAL_PENDING" && (
-            <DropdownMenuItem disabled className="text-muted-foreground">Awaiting raiser approval</DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    )},
+    {
+      key: "actions", header: "Actions", className: "text-right", render: (wo: any) => (
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => handleView(wo)}><Eye className="mr-2 h-4 w-4" />View Details</DropdownMenuItem>
+            {canExecuteWO(wo) && (
+              <>
+                {(wo.status === "RAISED" || wo.status === "OPENED") && <DropdownMenuItem onClick={() => openOpenForm(wo.id)}><Play className="mr-2 h-4 w-4" />Open & Assess</DropdownMenuItem>}
+                {wo.status === "IN_PROGRESS" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Submit for Approval</DropdownMenuItem>}
+                {wo.status === "REJECTED" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Revise & Resubmit</DropdownMenuItem>}
+              </>
+            )}
+            {canReviewWO(wo) && (
+              <>
+                <DropdownMenuItem onClick={() => openReviewDialog(wo, "approve")}><CheckCircle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Override Approve" : "Approve"}</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openReviewDialog(wo, "reject")}><AlertTriangle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Override Reject" : "Reject"}</DropdownMenuItem>
+              </>
+            )}
+            {!canReviewWO(wo) && wo.status === "APPROVAL_PENDING" && (
+              <DropdownMenuItem disabled className="text-muted-foreground">Awaiting raiser approval</DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )
+    },
   ];
 
   return (
@@ -1455,7 +1693,7 @@ export default function WorkOrders() {
       </Card>
 
       {/* ===== RAISE WORK ORDER FORM (Enhanced) ===== */}
-      <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title="Raise Work Order" description="Create a detailed maintenance work order" onSubmit={handleSubmit} submitLabel="Raise Work Order" size="xl">
+      <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title="Raise Work Order" description="Create a detailed maintenance work order" onSubmit={handleSubmit} submitLabel="Raise Work Order" isLoading={isRaisingWorkOrder} size="xl">
         <div className="space-y-6">
           <div className="rounded-2xl border border-border/70 bg-card/80 p-4 sm:p-5 shadow-sm">
             <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground"><Wrench className="h-4 w-4" />Machine Scope</h3>
@@ -1508,6 +1746,22 @@ export default function WorkOrders() {
               />
             </div>
 
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-primary/25 bg-primary/5 p-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-2"
+                onClick={() => setIsRaiseQrScannerOpen(true)}
+                disabled={isResolvingRaiseQr}
+              >
+                <QrCode className="h-4 w-4" />
+                {isResolvingRaiseQr ? "Resolving scanned machine..." : "Scan Machine QR"}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Scan machine QR to auto-fill plant, department, module, and machine selection.
+              </p>
+            </div>
+
             <div className="mt-4 grid gap-3 rounded-xl border border-dashed border-primary/20 bg-primary/5 p-3 text-sm sm:grid-cols-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Plant</p>
@@ -1534,14 +1788,14 @@ export default function WorkOrders() {
               <InputField
                 label="Raised By"
                 value={raisedByLabel}
-                onChange={() => {}}
+                onChange={() => { }}
                 disabled
                 hint="Auto-filled from the logged-in user."
               />
               <InputField
                 label="Date & Time"
                 value={raisedAtLabel}
-                onChange={() => {}}
+                onChange={() => { }}
                 disabled
                 hint="Auto-filled from the current system date and time."
               />
@@ -1574,11 +1828,11 @@ export default function WorkOrders() {
                     ? "Choose the department first to see its configured work order categories."
                     : routedCategoryOptions.length === 0
                       ? "No active work order categories are configured for this plant. Update Work Order Config Master first."
-                    : selectedRoutingRule
-                      ? "This category is routed through the department-wise team mapping."
-                      : routedMappingsForDepartment.length > 0
-                        ? "Only categories configured for this department are shown here."
-                        : "All active categories are available because no department-specific routing is configured yet."
+                      : selectedRoutingRule
+                        ? "This category is routed through the department-wise team mapping."
+                        : routedMappingsForDepartment.length > 0
+                          ? "Only categories configured for this department are shown here."
+                          : "All active categories are available because no department-specific routing is configured yet."
                 }
               />
               <SelectField
@@ -1603,19 +1857,6 @@ export default function WorkOrders() {
             <div className="mt-4 space-y-2">
               <Label className="text-xs text-muted-foreground">Attach Photo (auto-compressed)</Label>
               <input
-                ref={raiseCameraInputRef}
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                aria-label="Capture raise work order photo"
-                title="Capture raise work order photo"
-                onChange={(event) => {
-                  const file = event.target.files?.[0] || null;
-                  void handleMediaAttachment(file);
-                  event.target.value = "";
-                }}
-              />
-              <input
                 ref={raiseFileInputRef}
                 type="file"
                 accept="image/*"
@@ -1633,12 +1874,12 @@ export default function WorkOrders() {
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    openAttachmentPicker(raiseCameraInputRef.current, "camera");
+                    openLiveCamera("RAISE");
                   }}
                 >
                   Open Camera
                 </Button>
-                <Button type="button" variant="outline" onClick={() => openAttachmentPicker(raiseFileInputRef.current, "files")}>
+                <Button type="button" variant="outline" onClick={() => openAttachmentPicker(raiseFileInputRef.current)}>
                   Select From Files
                 </Button>
               </div>
@@ -1708,19 +1949,6 @@ export default function WorkOrders() {
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Closure Photo (auto-compressed)</Label>
                 <input
-                  ref={closeCameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="sr-only"
-                  aria-label="Capture closure photo"
-                  title="Capture closure photo"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] || null;
-                    void handleCloseMediaAttachment(file);
-                    event.target.value = "";
-                  }}
-                />
-                <input
                   ref={closeFileInputRef}
                   type="file"
                   accept="image/*"
@@ -1738,12 +1966,12 @@ export default function WorkOrders() {
                     type="button"
                     variant="outline"
                     onClick={() => {
-                      openAttachmentPicker(closeCameraInputRef.current, "camera");
+                      openLiveCamera("CLOSE");
                     }}
                   >
                     Open Camera
                   </Button>
-                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker(closeFileInputRef.current, "files")}>
+                  <Button type="button" variant="outline" onClick={() => openAttachmentPicker(closeFileInputRef.current)}>
                     Select From Files
                   </Button>
                 </div>
@@ -1865,6 +2093,16 @@ export default function WorkOrders() {
       </ViewDialog>
 
       <MobileQrScannerDialog
+        open={isRaiseQrScannerOpen}
+        onOpenChange={setIsRaiseQrScannerOpen}
+        title="Scan Machine QR for Raise Form"
+        description="Scan the machine QR code to auto-fill the machine scope in this work order form."
+        onDecoded={(value) => {
+          void handleQrDecodedForRaiseForm(value);
+        }}
+      />
+
+      <MobileQrScannerDialog
         open={isQrVerifyOpen}
         onOpenChange={setIsQrVerifyOpen}
         title="Scan Machine QR to Start Work"
@@ -1875,6 +2113,67 @@ export default function WorkOrders() {
         secondaryActionLabel="Enter Machine Code"
         onSecondaryAction={openManualVerification}
       />
+
+      <Dialog
+        open={isCameraDialogOpen}
+        onOpenChange={(open) => {
+          setIsCameraDialogOpen(open);
+          if (!open) {
+            setCameraTarget(null);
+            setCameraError("");
+            stopCameraStream();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Capture Photo</DialogTitle>
+            <DialogDescription>
+              Use the live camera to capture an image directly. If camera access is blocked, use file selection.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
+            {cameraError ? (
+              <div className="p-4 text-sm text-muted-foreground">{cameraError}</div>
+            ) : (
+              <video ref={cameraVideoRef} className="h-full w-full bg-black" autoPlay playsInline muted />
+            )}
+            <canvas ref={cameraCanvasRef} className="hidden" />
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsCameraDialogOpen(false);
+                setCameraTarget(null);
+                setCameraError("");
+                stopCameraStream();
+              }}
+            >
+              Cancel
+            </Button>
+            {cameraError ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  const fileInput = cameraTarget === "CLOSE" ? closeFileInputRef.current : raiseFileInputRef.current;
+                  setIsCameraDialogOpen(false);
+                  openAttachmentPicker(fileInput);
+                }}
+              >
+                Select From Files
+              </Button>
+            ) : (
+              <Button type="button" onClick={() => { void captureCameraPhoto(); }}>
+                Capture Photo
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <FormDialog
         open={isManualVerifyOpen}
@@ -1933,6 +2232,7 @@ export default function WorkOrders() {
         description="Confirm mandatory safety checks before starting maintenance"
         onSubmit={() => void confirmSafetyAndStartWork()}
         submitLabel="Confirm and Start Work"
+        isLoading={isStartingWorkOrder}
       >
         <div className="space-y-4">
           {verificationMethod === "MANUAL_ENTRY" ? (

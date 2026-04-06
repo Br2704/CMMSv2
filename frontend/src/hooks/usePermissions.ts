@@ -153,7 +153,7 @@ function policyAllowsModule(moduleId: string, roles: string[]): boolean {
     return upperModuleId === "GATES" || normalizedModuleLower === "security-gate" || normalizedModuleLower === "visitor-experience";
   }
 
-  if (normalizedRoles.includes("VISITOR")) {
+  if (normalizedRoles.includes("VISITOR") || normalizedRoles.includes("TEMPORARY_VISITOR")) {
     return upperModuleId === "GATES" || normalizedModuleLower === "security-gate" || normalizedModuleLower === "visitor-experience";
   }
 
