@@ -1,7 +1,16 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { z } from 'zod';
+import { isStrongPassword } from '../utils/passwordPolicy';
 
 config();
+if (!process.env.JWT_SECRET) {
+  const fallbackEnvPath = resolve(process.cwd(), 'backend/.env');
+  if (existsSync(fallbackEnvPath)) {
+    config({ path: fallbackEnvPath });
+  }
+}
 
 const booleanFromEnv = z.preprocess((value) => {
   if (typeof value === 'boolean') return value;
@@ -17,6 +26,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
   API_PREFIX: z.string().default('/api'),
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
 
   DB_TYPE: z.enum(['postgres', 'mysql', 'mssql']).default('postgres'),
   DB_HOST: z.string().min(1),
@@ -37,7 +47,7 @@ const envSchema = z.object({
   LOGIN_LOCKOUT_THRESHOLD: z.coerce.number().int().positive().default(8),
   LOGIN_LOCKOUT_MINUTES: z.coerce.number().int().positive().default(10),
   MFA_ISSUER: z.string().default('TamOptiX CMMS'),
-  DATA_ENCRYPTION_KEY: z.string().min(32).default('tamoptix-dev-encryption-key-32-bytes'),
+  DATA_ENCRYPTION_KEY: z.string().min(32),
   SECURITY_ALERT_EMAILS: z.string().default(''),
   SECURITY_TEAM_USER_IDS: z.string().default(''),
   SECURITY_ENABLE_REQUEST_SIGNATURE: booleanFromEnv.default(false),
@@ -55,17 +65,69 @@ const envSchema = z.object({
   SMTP_FROM: z.string().optional().default(''),
 
   SUPERADMIN_EMAIL: z.string().email().default('superadmin@cmms.local'),
-  SUPERADMIN_PASSWORD: z.string().min(8).default('ChangeMe123!'),
+  SUPERADMIN_PASSWORD: z.string().min(12),
   SUPERADMIN_FULL_NAME: z.string().default('CMMS Super Admin'),
   ROOT_ADMIN_EMAIL: z.string().email().default('admin@tamoptix.tech'),
-  ROOT_ADMIN_PASSWORD: z.string().min(8).default('Balaji@1410?2004'),
+  ROOT_ADMIN_PASSWORD: z.string().min(12),
   ROOT_ADMIN_FULL_NAME: z.string().default('CMMS Root Admin'),
   SEED_SUPERADMIN: booleanFromEnv.default(true),
+  SEED_DEMO_DATA: booleanFromEnv.default(false),
+  DEMO_SEED_PASSWORD: z.string().default(''),
 
   FEATURE_BENCHMARKING: booleanFromEnv.default(true),
   FEATURE_ESG_ADVANCED: booleanFromEnv.default(true),
   FEATURE_RELIABILITY_ADVANCED: booleanFromEnv.default(true),
 });
+
+const COMMON_WEAK_SECRETS = new Set([
+  'change-me-access-secret',
+  'change-me-refresh-secret',
+  'tamoptix-dev-encryption-key-32-bytes',
+  'changeme123!',
+  'demo@12345',
+  'balaji@1410?2004',
+]);
+
+function isWeakSecret(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return COMMON_WEAK_SECRETS.has(normalized);
+}
+
+function assertProductionSecurityConfig(envConfig: z.infer<typeof envSchema>) {
+  if (envConfig.NODE_ENV !== 'production') {
+    return;
+  }
+
+  const errors: string[] = [];
+
+  if (envConfig.JWT_SECRET.trim().length < 32 || isWeakSecret(envConfig.JWT_SECRET)) {
+    errors.push('JWT_SECRET must be at least 32 characters and must not use weak defaults.');
+  }
+  if (envConfig.JWT_REFRESH_SECRET.trim().length < 32 || isWeakSecret(envConfig.JWT_REFRESH_SECRET)) {
+    errors.push('JWT_REFRESH_SECRET must be at least 32 characters and must not use weak defaults.');
+  }
+  if (envConfig.JWT_SECRET === envConfig.JWT_REFRESH_SECRET) {
+    errors.push('JWT_SECRET and JWT_REFRESH_SECRET must be different values.');
+  }
+  if (envConfig.DATA_ENCRYPTION_KEY.trim().length < 32 || isWeakSecret(envConfig.DATA_ENCRYPTION_KEY)) {
+    errors.push('DATA_ENCRYPTION_KEY must be at least 32 characters and must not use weak defaults.');
+  }
+  if (!isStrongPassword(envConfig.ROOT_ADMIN_PASSWORD)) {
+    errors.push('ROOT_ADMIN_PASSWORD must meet the password policy requirements.');
+  }
+  if (envConfig.SEED_SUPERADMIN && !isStrongPassword(envConfig.SUPERADMIN_PASSWORD)) {
+    errors.push('SUPERADMIN_PASSWORD must meet the password policy requirements when SEED_SUPERADMIN=true.');
+  }
+  if (envConfig.SEED_DEMO_DATA && !isStrongPassword(envConfig.DEMO_SEED_PASSWORD)) {
+    errors.push('DEMO_SEED_PASSWORD must meet the password policy requirements when SEED_DEMO_DATA=true.');
+  }
+
+  if (errors.length > 0) {
+    // eslint-disable-next-line no-console
+    console.error('Insecure production configuration detected', errors);
+    throw new Error('Insecure production configuration');
+  }
+}
 
 function deriveEnv(input: NodeJS.ProcessEnv): Record<string, string | undefined> {
   const out: Record<string, string | undefined> = { ...input };
@@ -105,5 +167,7 @@ if (!parsed.success) {
   console.error('Invalid environment variables', parsed.error.flatten().fieldErrors);
   throw new Error('Invalid environment variables');
 }
+
+assertProductionSecurityConfig(parsed.data);
 
 export const env = parsed.data;
