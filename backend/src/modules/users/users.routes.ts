@@ -20,6 +20,7 @@ import {
 } from '../../utils/policy';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { hashPassword } from '../../utils/password';
+import { isStrongPassword, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_MESSAGE } from '../../utils/passwordPolicy';
 import { applyPlantScope, applySearch } from '../../utils/query';
 import { ensureRoleCatalogEntry } from '../../utils/roleCatalog';
 import { normalizeRoleName } from '../../utils/rbac';
@@ -34,7 +35,11 @@ const profileImageSchema = z
 
 const createUserSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
+  password: z
+    .string()
+    .min(PASSWORD_MIN_LENGTH)
+    .max(PASSWORD_MAX_LENGTH)
+    .refine((value) => isStrongPassword(value), PASSWORD_POLICY_MESSAGE),
   fullName: z.string().min(1),
   phone: z.string().optional().nullable(),
   profileImageUrl: profileImageSchema.optional().nullable(),
@@ -61,7 +66,11 @@ const patchRolesSchema = z.object({
 });
 
 const patchPasswordSchema = z.object({
-  password: z.string().min(8),
+  password: z
+    .string()
+    .min(PASSWORD_MIN_LENGTH)
+    .max(PASSWORD_MAX_LENGTH)
+    .refine((value) => isStrongPassword(value), PASSWORD_POLICY_MESSAGE),
 });
 
 export const usersRouter = Router();

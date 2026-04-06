@@ -538,7 +538,12 @@ export async function runSeed() {
 
   await ensureRolePermissions(rolePermissionRepo, roleMap);
   await ensureRoleKpis(roleDashboardKpiRepo, roleMap);
-  const demoData = await seedJkFennerDemoData(roleMap);
+  const demoData = env.SEED_DEMO_DATA
+    ? await seedJkFennerDemoData(roleMap)
+    : {
+        seeded: false,
+        reason: 'SEED_DEMO_DATA disabled',
+      };
   await repairUserRoleAssignments(roleMap);
 
   return {

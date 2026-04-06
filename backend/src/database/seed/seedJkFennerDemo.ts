@@ -1,5 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { env } from '../../config/env';
 import { hashPassword } from '../../utils/password';
+import { isStrongPassword } from '../../utils/passwordPolicy';
 import { normalizeRoleName } from '../../utils/rbac';
 import { ensureDefaultWorkOrderMasters } from '../../modules/workOrderMasters/work-order-master.helpers';
 import { AppDataSource } from '../data-source';
@@ -45,7 +47,24 @@ import type { DeepPartial, FindOptionsWhere, Repository } from 'typeorm';
 type PlantKey = 'MADURAI' | 'NILAKOTTAI';
 type RoleMap = Map<string, RoleEntity>;
 
-const DEMO_PASSWORD = 'Demo@12345';
+function resolveDemoPassword() {
+    const configured = env.DEMO_SEED_PASSWORD.trim();
+    if (configured) {
+        if (!isStrongPassword(configured)) {
+            throw new Error('DEMO_SEED_PASSWORD must meet the password policy requirements.');
+        }
+        return configured;
+    }
+
+    if (env.NODE_ENV === 'production') {
+        throw new Error('DEMO_SEED_PASSWORD is required when SEED_DEMO_DATA=true in production.');
+    }
+
+    // For non-production demo seeding, generate a random strong password for this run.
+    return `Demo!${randomBytes(12).toString('base64url')}`;
+}
+
+const DEMO_PASSWORD = resolveDemoPassword();
 
 const ORGANIZATION_SEED = {
     name: 'JK Fenner',
@@ -1507,6 +1526,6 @@ export async function seedJkFennerDemoData(roleMap: RoleMap) {
             shifts: context.shifts.size,
             gates: context.gates.size,
         })),
-        defaultPassword: DEMO_PASSWORD,
+        ...(env.NODE_ENV === 'production' ? {} : { defaultPassword: DEMO_PASSWORD }),
     };
 }

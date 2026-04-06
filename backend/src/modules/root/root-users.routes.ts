@@ -7,6 +7,7 @@ import { requireRole } from '../../middlewares/permissions';
 import { fail, ok } from '../../utils/apiResponse';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { hashPassword } from '../../utils/password';
+import { isStrongPassword, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_MESSAGE } from '../../utils/passwordPolicy';
 import { getPrimaryRoleKey } from '../../utils/policy';
 import { bumpOrgRbacVersion } from '../../utils/orgRbacVersion';
 import { ensureRoleCatalogEntry } from '../../utils/roleCatalog';
@@ -22,7 +23,11 @@ const profileImageSchema = z
 const rootUserCreateSchema = z.object({
   fullName: z.string().min(1),
   email: z.string().email(),
-  password: z.string().min(8),
+  password: z
+    .string()
+    .min(PASSWORD_MIN_LENGTH)
+    .max(PASSWORD_MAX_LENGTH)
+    .refine((value) => isStrongPassword(value), PASSWORD_POLICY_MESSAGE),
   phone: z.string().nullable().optional(),
   profileImageUrl: profileImageSchema.optional().nullable(),
   userCode: z.string().min(1).nullable().optional(),
@@ -35,7 +40,12 @@ const rootUserCreateSchema = z.object({
 const rootUserPatchSchema = z.object({
   fullName: z.string().min(1).optional(),
   email: z.string().email().optional(),
-  password: z.string().min(8).optional(),
+  password: z
+    .string()
+    .min(PASSWORD_MIN_LENGTH)
+    .max(PASSWORD_MAX_LENGTH)
+    .refine((value) => isStrongPassword(value), PASSWORD_POLICY_MESSAGE)
+    .optional(),
   phone: z.string().nullable().optional(),
   profileImageUrl: profileImageSchema.optional().nullable(),
   roleKey: z.string().min(1).optional(),
