@@ -56,19 +56,19 @@ export default function DepartmentMaster() {
   const [formData, setFormData] = useState<DepartmentFormState>({ ...emptyForm, plantId: defaultPlantId });
   const [isEditing, setIsEditing] = useState(false);
 
-  const fetchDepartments = async () => {
+  const fetchDepartments = async (plantIdOverride?: string) => {
     setLoading(true);
     try {
-      if (canSelectPlant && !selectedPlant) {
+      const scopedPlantId = canSelectPlant ? (plantIdOverride ?? selectedPlant) || undefined : defaultPlantId || undefined;
+      if (canSelectPlant && !scopedPlantId) {
         setDepartments([]);
         return;
       }
-      const effectivePlantId = canSelectPlant ? selectedPlant || undefined : defaultPlantId || undefined;
       const response = await listDepartments({
         page: 1,
         limit: 100,
         search: searchQuery || undefined,
-        plantId: effectivePlantId,
+        plantId: scopedPlantId,
       });
       setDepartments(response.data);
     } catch (error: any) {
@@ -90,6 +90,13 @@ export default function DepartmentMaster() {
     () => plantsOptions,
     [plantsOptions],
   );
+
+  useEffect(() => {
+    if (!canSelectPlant || selectedPlant || plantOptions.length === 0) {
+      return;
+    }
+    setSelectedPlant(plantOptions[0].value);
+  }, [canSelectPlant, selectedPlant, plantOptions]);
 
   const getPlantName = (plantId: string | null) => plantsOptions.find((item) => item.value === plantId)?.label || "-";
 
@@ -148,9 +155,13 @@ export default function DepartmentMaster() {
         toast.success("Department created");
       }
 
+      if (canSelectPlant && selectedPlant !== resolvedPlantId) {
+        setSelectedPlant(resolvedPlantId);
+      }
+
       invalidateOptions(["departments", "modules", "assets"]);
       setIsFormOpen(false);
-      await fetchDepartments();
+      await fetchDepartments(resolvedPlantId);
     } catch (error: any) {
       toast.error(error?.message || "Failed to save department");
     } finally {

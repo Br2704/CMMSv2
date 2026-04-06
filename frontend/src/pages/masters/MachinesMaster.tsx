@@ -424,6 +424,13 @@ export default function MachinesMaster() {
   }, [selectedPlant, canSelectPlant, defaultPlantId]);
 
   useEffect(() => {
+    if (!canSelectPlant || selectedPlant || plantsOptions.length === 0) {
+      return;
+    }
+    setSelectedPlant(plantsOptions[0].value);
+  }, [canSelectPlant, selectedPlant, plantsOptions]);
+
+  useEffect(() => {
     const assetId = searchParams.get("assetId");
     if (!assetId || assets.length === 0) return;
     const target = assets.find((item) => item.id === assetId);
@@ -1068,11 +1075,18 @@ export default function MachinesMaster() {
           toast.success("Machine created");
         }
       }
+      if (canSelectPlant && selectedPlant !== resolvedPlantId) {
+        setSelectedPlant(resolvedPlantId);
+        setSelectedDepartmentFilter("all");
+        setSelectedModuleFilter("all");
+      } else {
+        await fetchAssetsList();
+      }
+
       invalidateOptions(["assets", "modules"]);
       setIsFormOpen(false);
       setEnableEnergyMeterOnCreate(false);
       setEnergyMeterForm(defaultEnergyMeterForm);
-      await fetchAssetsList();
     } catch (error: any) {
       toast.error(error?.message || "Failed to save machine");
     } finally {
