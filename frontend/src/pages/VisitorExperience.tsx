@@ -189,7 +189,7 @@ export default function VisitorExperience() {
     }, [selectedPlantId, user?.organizationId, user?.plantCode, user?.plantId, user?.plantName, userIsSuperAdmin]);
 
     const loadVisitorContext = useCallback(
-        async (showRefreshLoader = false) => {
+        async (showRefreshLoader = false, forceSafetyConsent = false) => {
             if (showRefreshLoader) {
                 setRefreshing(true);
             } else {
@@ -223,7 +223,7 @@ export default function VisitorExperience() {
                 if (serverHasConsent) {
                     setSafetyConsentAcknowledged(true);
                 }
-                const hasConsent = safetyConsentAcknowledged || serverHasConsent;
+                const hasConsent = forceSafetyConsent || safetyConsentAcknowledged || serverHasConsent;
                 setSafetyGateOpen(!hasConsent);
                 setSafetyChecked(hasConsent);
                 setSafetyScrolled(hasConsent);
@@ -301,7 +301,7 @@ export default function VisitorExperience() {
             });
             toast.success(action === "APPROVE" ? "Visitor request approved" : "Visitor request rejected");
             setApprovalComments("");
-            await loadVisitorContext(true);
+            await loadVisitorContext(true, true);
         } catch (error: unknown) {
             toast.error(resolveErrorMessage(error, `Failed to ${action.toLowerCase()} request`));
         } finally {

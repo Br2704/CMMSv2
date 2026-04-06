@@ -1,10 +1,11 @@
 function escapeCell(value: unknown): string {
   if (value === null || value === undefined) return '';
   const text = String(value);
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
+  const normalized = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  if (/[",\n\r]/.test(normalized)) {
+    return `"${normalized.replace(/"/g, '""')}"`;
   }
-  return text;
+  return normalized;
 }
 
 export function toCsv(headers: string[], rows: Array<Array<unknown>>): string {

@@ -116,6 +116,13 @@ export default function ModulesMaster() {
     fetchData();
   }, [searchQuery, selectedPlant, selectedDepartment, defaultPlantId, canSelectPlant]);
 
+  useEffect(() => {
+    if (!canSelectPlant || selectedPlant || plantsOptions.length === 0) {
+      return;
+    }
+    setSelectedPlant(plantsOptions[0].value);
+  }, [canSelectPlant, selectedPlant, plantsOptions]);
+
   const departmentFilterOptions = useMemo(() => {
     const rows = !selectedPlant ? [] : departments.filter((department) => department.plantId === selectedPlant);
     return rows.map((department) => ({ value: department.id, label: `${department.code} - ${department.name}` }));
@@ -189,6 +196,11 @@ export default function ModulesMaster() {
         await createModule(payload);
         toast.success("Module created");
       }
+
+      if (canSelectPlant && selectedPlant !== resolvedPlantId) {
+        setSelectedPlant(resolvedPlantId);
+      }
+      setSelectedDepartment("all");
 
       invalidateOptions(["modules", "assets"]);
       setIsFormOpen(false);
