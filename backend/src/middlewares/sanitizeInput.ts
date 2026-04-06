@@ -1,5 +1,8 @@
 import type { NextFunction, Request, Response } from 'express';
 
+const BLOCKED_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+const MAX_SANITIZE_DEPTH = 20;
+
 function sanitizeString(input: string): string {
   return input
     .replace(/\u0000/g, '')
@@ -7,18 +10,25 @@ function sanitizeString(input: string): string {
     .trim();
 }
 
-function sanitizeValue(value: unknown): unknown {
+function sanitizeValue(value: unknown, depth = 0): unknown {
+  if (depth > MAX_SANITIZE_DEPTH) {
+    return null;
+  }
+
   if (typeof value === 'string') {
     return sanitizeString(value);
   }
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeValue(item));
+    return value.map((item) => sanitizeValue(item, depth + 1));
   }
   if (value && typeof value === 'object') {
     const obj = value as Record<string, unknown>;
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(obj)) {
-      out[key] = sanitizeValue(item);
+      if (BLOCKED_KEYS.has(key)) {
+        continue;
+      }
+      out[key] = sanitizeValue(item, depth + 1);
     }
     return out;
   }

@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { randomBytes, randomUUID } from 'crypto';
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import type { Repository } from 'typeorm';
 import { z } from 'zod';
 import { env } from '../../config/env';
@@ -167,11 +167,7 @@ function normalizeRole(role: string) {
 }
 
 function getClientIp(req: Request) {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    return forwarded.split(',')[0].trim();
-  }
-  return req.ip ?? null;
+  return req.ip ?? req.socket.remoteAddress ?? null;
 }
 
 function normalizeClientIp(value: string | null) {
@@ -263,31 +259,61 @@ function getUserAgent(req: Request) {
   return typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
 }
 
-function buildCaptchaChallenge(email: string) {
+export function buildCaptchaChallenge(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
   const left = Math.floor(Math.random() * 9) + 1;
   const right = Math.floor(Math.random() * 9) + 1;
   const answer = String(left + right);
+  const captchaNonce = randomBytes(16).toString('base64url');
+  const captchaMac = createHmac('sha256', env.JWT_SECRET)
+    .update(`${normalizedEmail}|${captchaNonce}|${answer}`)
+    .digest('base64url');
+
   return {
     question: `What is ${left} + ${right}?`,
     token: signChallengeToken(
       {
-        sub: email.trim().toLowerCase(),
+        sub: normalizedEmail,
         type: 'captcha',
-        email: email.trim().toLowerCase(),
-        answer,
+        email: normalizedEmail,
+        captchaNonce,
+        captchaMac,
       },
       '10m',
     ),
   };
 }
 
-function verifyCaptchaChallenge(email: string, token?: string, answer?: string) {
+function secureCompareText(left: string, right: string) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+export function verifyCaptchaChallenge(email: string, token?: string, answer?: string) {
   if (!token || !answer) {
     return false;
   }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedAnswer = answer.trim();
+
   try {
     const payload = verifyChallengeToken(token);
-    return payload.type === 'captcha' && payload.email === email.trim().toLowerCase() && payload.answer === answer.trim();
+    if (payload.type !== 'captcha' || payload.email !== normalizedEmail || !payload.captchaNonce || !payload.captchaMac) {
+      return false;
+    }
+
+    const expectedMac = createHmac('sha256', env.JWT_SECRET)
+      .update(`${normalizedEmail}|${payload.captchaNonce}|${normalizedAnswer}`)
+      .digest('base64url');
+
+    return secureCompareText(payload.captchaMac, expectedMac);
   } catch {
     return false;
   }

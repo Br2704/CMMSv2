@@ -49,7 +49,8 @@ export type ChallengeTokenPayload = {
   sub: string;
   type: 'captcha' | 'mfa_setup';
   email?: string;
-  answer?: string;
+  captchaNonce?: string;
+  captchaMac?: string;
   secret?: string;
 };
 
