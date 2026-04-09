@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="640" height="200" viewBox="0 0 640 200">
-  <rect width="640" height="200" rx="20" fill="#ffffff" />
-  <rect x="10" y="10" width="620" height="180" rx="16" fill="none" stroke="#0f766e" stroke-width="6" />
-  <circle cx="88" cy="100" r="54" fill="#0f766e" />
-  <text x="88" y="114" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" font-weight="700" fill="#ffffff">JKF</text>
-  <text x="170" y="95" font-family="Arial, sans-serif" font-size="54" font-weight="700" fill="#0f766e">JK Fenner</text>
-  <text x="170" y="132" font-family="Arial, sans-serif" font-size="24" fill="#0f172a">Computerized Maintenance Management System</text>
-</svg>
