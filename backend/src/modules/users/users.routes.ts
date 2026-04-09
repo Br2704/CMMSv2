@@ -493,81 +493,81 @@ usersRouter.patch(
     ADMIN: ['email', 'plantId', 'isActive'],
   }),
   async (req, res, next) => {
-  try {
-    const actor = getActor(req);
-    const params = z.object({ id: z.string().uuid() }).parse(req.params);
-    const body = patchUserSchema.parse(req.body);
+    try {
+      const actor = getActor(req);
+      const params = z.object({ id: z.string().uuid() }).parse(req.params);
+      const body = patchUserSchema.parse(req.body);
 
-    const userRepo = AppDataSource.getRepository(UserEntity);
-    const profileRepo = AppDataSource.getRepository(ProfileEntity);
-    const roleRepo = AppDataSource.getRepository(UserRoleEntity);
+      const userRepo = AppDataSource.getRepository(UserEntity);
+      const profileRepo = AppDataSource.getRepository(ProfileEntity);
+      const roleRepo = AppDataSource.getRepository(UserRoleEntity);
 
-    const user = await userRepo.findOneBy({ id: params.id });
-    if (!user) {
-      res.status(404).json(fail('User not found'));
-      return;
-    }
-
-    const profile = await profileRepo.findOneBy({ userId: user.id });
-    if (!profile) {
-      res.status(404).json(fail('Profile not found'));
-      return;
-    }
-
-    const targetRoles = await roleRepo.find({ where: { userId: user.id } });
-    const target = toTargetUser(user.id, targetRoles.map((row) => row.role), profile.plantId);
-    if (!canEditUser(actor, target)) {
-      res.status(403).json(fail('No permission'));
-      return;
-    }
-
-    const nextPlantId = body.plantId === undefined ? profile.plantId : body.plantId;
-    enforcePlantScope(actor, nextPlantId ?? null);
-
-    if (body.email !== undefined) {
-      const normalizedEmail = body.email.toLowerCase();
-      const existingUser = await userRepo.findOne({ where: { email: normalizedEmail } });
-      if (existingUser && existingUser.id !== user.id) {
-        res.status(409).json(fail('Email already exists'));
+      const user = await userRepo.findOneBy({ id: params.id });
+      if (!user) {
+        res.status(404).json(fail('User not found'));
         return;
       }
-      user.email = normalizedEmail;
-      profile.email = user.email;
-    }
-    if (body.fullName !== undefined) {
-      user.fullName = body.fullName;
-      profile.fullName = body.fullName;
-    }
-    if (body.phone !== undefined) {
-      user.phone = body.phone ?? null;
-      profile.phone = body.phone ?? null;
-    }
-    if (body.profileImageUrl !== undefined) {
-      profile.profileImageUrl = body.profileImageUrl?.trim() || null;
-    }
-    if (body.department !== undefined) {
-      profile.department = body.department ?? null;
-    }
-    if (body.plantId !== undefined) {
-      profile.plantId = body.plantId ?? null;
-      const targetRoleKeys = targetRoles.map((row) => normalizeRoleInput(row.role));
-      const hasRootRole = targetRoleKeys.includes('ROOT_ADMIN');
-      user.organizationId = hasRootRole ? null : await resolveOrganizationIdForPlant(profile.plantId);
-      user.orgRoleId = hasRootRole ? null : await resolveOrgRoleIdForOrganization(user.organizationId, targetRoleKeys);
-    }
-    if (body.isActive !== undefined) {
-      user.isActive = body.isActive;
-      profile.isActive = body.isActive;
-    }
 
-    await userRepo.save(user);
-    await profileRepo.save(profile);
+      const profile = await profileRepo.findOneBy({ userId: user.id });
+      if (!profile) {
+        res.status(404).json(fail('Profile not found'));
+        return;
+      }
 
-    await audit('user.update', { actorUserId: req.auth!.userId, userId: user.id });
-    res.json(ok({ user, profile }, 'User updated'));
-  } catch (error) {
-    next(error);
-  }
+      const targetRoles = await roleRepo.find({ where: { userId: user.id } });
+      const target = toTargetUser(user.id, targetRoles.map((row) => row.role), profile.plantId);
+      if (!canEditUser(actor, target)) {
+        res.status(403).json(fail('No permission'));
+        return;
+      }
+
+      const nextPlantId = body.plantId === undefined ? profile.plantId : body.plantId;
+      enforcePlantScope(actor, nextPlantId ?? null);
+
+      if (body.email !== undefined) {
+        const normalizedEmail = body.email.toLowerCase();
+        const existingUser = await userRepo.findOne({ where: { email: normalizedEmail } });
+        if (existingUser && existingUser.id !== user.id) {
+          res.status(409).json(fail('Email already exists'));
+          return;
+        }
+        user.email = normalizedEmail;
+        profile.email = user.email;
+      }
+      if (body.fullName !== undefined) {
+        user.fullName = body.fullName;
+        profile.fullName = body.fullName;
+      }
+      if (body.phone !== undefined) {
+        user.phone = body.phone ?? null;
+        profile.phone = body.phone ?? null;
+      }
+      if (body.profileImageUrl !== undefined) {
+        profile.profileImageUrl = body.profileImageUrl?.trim() || null;
+      }
+      if (body.department !== undefined) {
+        profile.department = body.department ?? null;
+      }
+      if (body.plantId !== undefined) {
+        profile.plantId = body.plantId ?? null;
+        const targetRoleKeys = targetRoles.map((row) => normalizeRoleInput(row.role));
+        const hasRootRole = targetRoleKeys.includes('ROOT_ADMIN');
+        user.organizationId = hasRootRole ? null : await resolveOrganizationIdForPlant(profile.plantId);
+        user.orgRoleId = hasRootRole ? null : await resolveOrgRoleIdForOrganization(user.organizationId, targetRoleKeys);
+      }
+      if (body.isActive !== undefined) {
+        user.isActive = body.isActive;
+        profile.isActive = body.isActive;
+      }
+
+      await userRepo.save(user);
+      await profileRepo.save(profile);
+
+      await audit('user.update', { actorUserId: req.auth!.userId, userId: user.id });
+      res.json(ok({ user, profile }, 'User updated'));
+    } catch (error) {
+      next(error);
+    }
   },
 );
 

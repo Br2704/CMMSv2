@@ -244,24 +244,24 @@ export function toResolvedPayload(
     hierarchy: {
       plant: row.plant_id
         ? {
-            ...(includeSensitiveIds ? { id: row.plant_id } : {}),
-            code: row.plant_code,
-            name: row.plant_name,
-          }
+          ...(includeSensitiveIds ? { id: row.plant_id } : {}),
+          code: row.plant_code,
+          name: row.plant_name,
+        }
         : null,
       department: row.department_id
         ? {
-            ...(includeSensitiveIds ? { id: row.department_id } : {}),
-            code: row.department_code,
-            name: row.department_name,
-          }
+          ...(includeSensitiveIds ? { id: row.department_id } : {}),
+          code: row.department_code,
+          name: row.department_name,
+        }
         : null,
       module: row.module_id
         ? {
-            ...(includeSensitiveIds ? { id: row.module_id } : {}),
-            code: row.module_code,
-            name: row.module_name,
-          }
+          ...(includeSensitiveIds ? { id: row.module_id } : {}),
+          code: row.module_code,
+          name: row.module_name,
+        }
         : null,
     },
     links: toScanLinks(req, token, {

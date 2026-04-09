@@ -159,10 +159,10 @@ function buildKpiSeeds(): KpiSeed[] {
       kpiKey,
       isVisible:
         role === 'SUPERADMIN' ||
-        role === 'ROOT_ADMIN' ||
-        role === 'ADMIN' ||
-        role === 'PLANT_ADMIN' ||
-        role === 'MAINTENANCE_MANAGER'
+          role === 'ROOT_ADMIN' ||
+          role === 'ADMIN' ||
+          role === 'PLANT_ADMIN' ||
+          role === 'MAINTENANCE_MANAGER'
           ? true
           : userVisibleKpi(kpiKey),
       displayOrder: index,
@@ -369,8 +369,8 @@ async function ensurePlatformUser(input: {
   let existingProfile =
     !user
       ? await profileRepo.findOne({
-          where: [{ userCode: input.userCode }, { email: normalizedEmail }],
-        })
+        where: [{ userCode: input.userCode }, { email: normalizedEmail }],
+      })
       : null;
   if (!user && existingProfile?.userId) {
     user = await userRepo.findOne({ where: { id: existingProfile.userId } });
@@ -431,8 +431,8 @@ async function ensurePlatformUser(input: {
   await profileRepo.save(profile);
 
   const targetRole = input.role;
-    const existingRoles = await userRoleRepo.find({ where: { userId: user.id } });
-    const hasTarget = existingRoles.some((item) => normalizeRoleName(item.role) === targetRole);
+  const existingRoles = await userRoleRepo.find({ where: { userId: user.id } });
+  const hasTarget = existingRoles.some((item) => normalizeRoleName(item.role) === targetRole);
   if (!hasTarget) {
     await userRoleRepo.save(
       userRoleRepo.create({
@@ -515,14 +515,14 @@ export async function runSeed() {
 
   const superadminUser = env.SEED_SUPERADMIN
     ? await ensurePlatformUser({
-        email: env.SUPERADMIN_EMAIL,
-        password: env.SUPERADMIN_PASSWORD,
-        fullName: env.SUPERADMIN_FULL_NAME,
-        role: 'SUPERADMIN',
-        userCode: 'SUPER001',
-        department: 'ADMINISTRATION',
-        roleMap,
-      })
+      email: env.SUPERADMIN_EMAIL,
+      password: env.SUPERADMIN_PASSWORD,
+      fullName: env.SUPERADMIN_FULL_NAME,
+      role: 'SUPERADMIN',
+      userCode: 'SUPER001',
+      department: 'ADMINISTRATION',
+      roleMap,
+    })
     : null;
 
   const rootAdminUser = await ensurePlatformUser({
@@ -541,9 +541,9 @@ export async function runSeed() {
   const demoData = env.SEED_DEMO_DATA
     ? await seedJkFennerDemoData(roleMap)
     : {
-        seeded: false,
-        reason: 'SEED_DEMO_DATA disabled',
-      };
+      seeded: false,
+      reason: 'SEED_DEMO_DATA disabled',
+    };
   await repairUserRoleAssignments(roleMap);
 
   return {

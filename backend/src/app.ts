@@ -66,21 +66,21 @@ function sanitizePublicQrPayload(payload: Awaited<ReturnType<typeof enrichPublic
     hierarchy: {
       plant: payload.hierarchy.plant
         ? {
-            code: payload.hierarchy.plant.code,
-            name: payload.hierarchy.plant.name,
-          }
+          code: payload.hierarchy.plant.code,
+          name: payload.hierarchy.plant.name,
+        }
         : null,
       department: payload.hierarchy.department
         ? {
-            code: payload.hierarchy.department.code,
-            name: payload.hierarchy.department.name,
-          }
+          code: payload.hierarchy.department.code,
+          name: payload.hierarchy.department.name,
+        }
         : null,
       module: payload.hierarchy.module
         ? {
-            code: payload.hierarchy.module.code,
-            name: payload.hierarchy.module.name,
-          }
+          code: payload.hierarchy.module.code,
+          name: payload.hierarchy.module.name,
+        }
         : null,
     },
     links: safeLinks,

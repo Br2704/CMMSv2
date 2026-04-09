@@ -141,9 +141,9 @@ function buildAuthTokenPayload(accessToken: string, csrfToken?: string) {
     access_token: accessToken,
     ...(csrfToken
       ? {
-          csrfToken,
-          csrf_token: csrfToken,
-        }
+        csrfToken,
+        csrf_token: csrfToken,
+      }
       : {}),
   };
 }
@@ -417,21 +417,21 @@ async function buildMePayload(userId: string) {
   const plantIds =
     scopeType === 'ORGANIZATION' && organization?.id
       ? (
-          await plantRepo.find({
-            where: { organizationId: organization.id, isActive: true },
-            select: ['id'],
-          })
-        ).map((item) => item.id)
+        await plantRepo.find({
+          where: { organizationId: organization.id, isActive: true },
+          select: ['id'],
+        })
+      ).map((item) => item.id)
       : effectivePlantId
         ? [effectivePlantId]
         : [];
   const permissions = normalizedRoles.length || roleIds.length
     ? await permissionRepo.find({
-        where: [
-          ...normalizedRoles.map((role) => ({ role })),
-          ...roleIds.map((roleId) => ({ roleId })),
-        ],
-      })
+      where: [
+        ...normalizedRoles.map((role) => ({ role })),
+        ...roleIds.map((roleId) => ({ roleId })),
+      ],
+    })
     : [];
 
   const permissionMap: Record<string, string[]> = {};
@@ -456,9 +456,9 @@ async function buildMePayload(userId: string) {
 
   const roleKpis = roleIds.length
     ? await roleKpiRepo.find({
-        where: roleIds.map((roleId) => ({ roleId })),
-        order: { displayOrder: 'ASC', createdAt: 'ASC' },
-      })
+      where: roleIds.map((roleId) => ({ roleId })),
+      order: { displayOrder: 'ASC', createdAt: 'ASC' },
+    })
     : [];
   const kpiVisibility = Array.from(
     roleKpis.reduce((acc, item) => {
@@ -528,21 +528,21 @@ async function buildMePayload(userId: string) {
     plantId: effectivePlantId,
     plant: plant
       ? {
-          id: plant.id,
-          plantCode: plant.plantCode,
-          plantName: plant.plantName,
-        }
+        id: plant.id,
+        plantCode: plant.plantCode,
+        plantName: plant.plantName,
+      }
       : null,
     organizationId: resolvedOrganizationId,
     plantIds,
     accessAllPlants: scopeType !== 'PLANT',
     organization: organization
       ? {
-          id: organization.id,
-          name: organization.name,
-          code: organization.code,
-          logoUrl: organization.logoUrl,
-        }
+        id: organization.id,
+        name: organization.name,
+        code: organization.code,
+        logoUrl: organization.logoUrl,
+      }
       : null,
   };
 }
@@ -765,17 +765,17 @@ authRouter.post('/auth/login', authLoginRateLimiter, validateRequest({ body: log
         },
         profile: fallbackProfile
           ? {
-              id: fallbackProfile.id,
-              userId: fallbackProfile.userId,
-              userCode: fallbackProfile.userCode,
-              fullName: fallbackProfile.fullName,
-              email: fallbackProfile.email,
-              phone: fallbackProfile.phone,
-              profileImageUrl: fallbackProfile.profileImageUrl,
-              plantId: fallbackProfile.plantId,
-              department: fallbackProfile.department,
-              isActive: fallbackProfile.isActive,
-            }
+            id: fallbackProfile.id,
+            userId: fallbackProfile.userId,
+            userCode: fallbackProfile.userCode,
+            fullName: fallbackProfile.fullName,
+            email: fallbackProfile.email,
+            phone: fallbackProfile.phone,
+            profileImageUrl: fallbackProfile.profileImageUrl,
+            plantId: fallbackProfile.plantId,
+            department: fallbackProfile.department,
+            isActive: fallbackProfile.isActive,
+          }
           : null,
         roles: [],
         security: {

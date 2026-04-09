@@ -6,14 +6,14 @@ import { verifyAccessToken } from '../utils/jwt';
 
 type DashboardSocketEvent =
   | {
-      type: 'dashboard.connected';
-      timestamp: string;
-    }
+    type: 'dashboard.connected';
+    timestamp: string;
+  }
   | {
-      type: 'dashboard.refresh';
-      reason: 'mutation' | 'interval' | 'manual';
-      timestamp: string;
-    };
+    type: 'dashboard.refresh';
+    reason: 'mutation' | 'interval' | 'manual';
+    timestamp: string;
+  };
 
 const DASHBOARD_SOCKET_PATH = '/ws/dashboard';
 
