@@ -141,9 +141,9 @@ export default function Dashboard() {
           variant: "success" as const,
         },
         {
-          title: "Pending Approval",
+          title: "Pending Verification",
           value: kpis.pendingApproval,
-          subtitle: "Awaiting closure approval",
+          subtitle: "Awaiting raiser confirmation",
           icon: ShieldAlert,
           variant: "destructive" as const,
         },

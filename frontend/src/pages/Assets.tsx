@@ -19,13 +19,14 @@ import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { ViewDialog } from "@/components/shared/ViewDialog";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
-import { EnterpriseAssetMindmap } from "@/components/assets/EnterpriseAssetMindmap";
+import { EnterpriseAssetGraph } from "@/components/assets/EnterpriseAssetGraph";
 import { parseQrContent } from "@/mobile/qr";
 import { toast } from "sonner";
 
 interface WorkOrderSummary {
   id: string;
   assetId: string | null;
+  relatedAssetId?: string | null;
   status: string | null;
 }
 
@@ -110,34 +111,25 @@ function AssetOverviewPanel({
                 {qrLoading ? (
                   <Loader2 className="h-6 w-6 animate-spin text-primary" />
                 ) : qrImageUrl ? (
-                  <img src={qrImageUrl} alt={`${overview.asset.code} QR`} className="h-40 w-40 object-contain" />
+                  <button
+                    type="button"
+                    className="rounded-lg transition-transform hover:scale-[1.01] focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:cursor-default disabled:hover:scale-100"
+                    onClick={() => void handleCopyResolverUrl()}
+                    disabled={!resolverUrl}
+                    aria-label="Copy QR resolver link"
+                    title={resolverUrl ? "Copy QR resolver link" : "QR link unavailable"}
+                  >
+                    <img src={qrImageUrl} alt={`${overview.asset.code} QR`} className="h-40 w-40 object-contain" />
+                  </button>
                 ) : (
                   <div className="text-center text-xs text-muted-foreground">
                     QR preview is not available.
                   </div>
                 )}
               </div>
-              <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-                <p>
-                  <span className="font-medium text-foreground">QR Code ID:</span> {qrData?.qrCodeId || overview.asset.qrCodeId || "-"}
-                </p>
-                {resolverUrl ? (
-                  <>
-                    <button
-                      type="button"
-                      className="break-all text-left transition-colors hover:text-primary"
-                      onClick={() => void handleCopyResolverUrl()}
-                    >
-                      <span className="font-medium text-foreground">Resolver:</span> {resolverUrl}
-                    </button>
-                    <p className="pt-1 text-[11px] text-muted-foreground">Click the resolver link to copy it to the clipboard.</p>
-                  </>
-                ) : (
-                  <p>
-                    <span className="font-medium text-foreground">Resolver:</span> -
-                  </p>
-                )}
-              </div>
+              <p className="mt-3 text-center text-[11px] text-muted-foreground">
+                {resolverUrl ? "Click the QR image to copy the asset link." : "QR link is not available for this asset."}
+              </p>
             </div>
           </div>
 
@@ -376,6 +368,13 @@ export default function Assets() {
   const workOrders = ((workOrdersQuery.data?.data || []) as Array<Record<string, unknown>>).map((row) => ({
     id: String(row.id || ""),
     assetId: row.assetId ? String(row.assetId) : row.asset_id ? String(row.asset_id) : null,
+    relatedAssetId: row.relatedAssetId
+      ? String(row.relatedAssetId)
+      : row.related_asset_id
+        ? String(row.related_asset_id)
+        : row.linkedAssetId
+          ? String(row.linkedAssetId)
+          : null,
     status: row.status ? String(row.status) : null,
   })) as WorkOrderSummary[];
 
@@ -720,7 +719,7 @@ export default function Assets() {
             </CardContent>
           </Card>
 
-          <EnterpriseAssetMindmap
+          <EnterpriseAssetGraph
             plants={plants}
             departments={departments}
             modules={modules}
@@ -759,46 +758,90 @@ export default function Assets() {
         </TabsContent>
 
         <TabsContent value="list" className="space-y-4">
-          <Card className="border-border/70 bg-gradient-to-br from-card to-muted/30 shadow-card">
+          <Card className="border-border/70 bg-gradient-to-br from-card to-muted/30 shadow-sm">
             <CardContent className="space-y-4 pt-5">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                <div className="xl:col-span-2">
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Search machine code, name, model, serial..." />
+              <div className="rounded-lg border bg-card p-4 shadow-sm">
+                <div className="grid items-center gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                  <div className="w-full">
+                    <label className="mb-1 block text-xs text-muted-foreground">Search</label>
+                    <div className="relative w-full">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        className="h-10 w-full pl-9"
+                        placeholder="Search machine code, name, model, serial..."
+                      />
+                    </div>
+                  </div>
+
+                  <div className="w-full">
+                    <label className="mb-1 block text-xs text-muted-foreground">Plant</label>
+                    {userIsSuperAdmin ? (
+                      <select
+                        aria-label="Machine list plant filter"
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        value={selectedPlantId}
+                        onChange={(event) => {
+                          setSelectedPlantId(event.target.value);
+                          setSelectedDepartmentId("");
+                          setSelectedModuleId("");
+                        }}
+                      >
+                        <option value="">All Plants</option>
+                        {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode}</option>)}
+                      </select>
+                    ) : (
+                      <div className="flex h-10 w-full items-center rounded-md border border-input bg-background px-3 text-sm">
+                        {selectedPlant ? (selectedPlant.plantCode || selectedPlant.plantName) : "Plant Not Assigned"}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="w-full">
+                    <label className="mb-1 block text-xs text-muted-foreground">Department</label>
+                    <select
+                      aria-label="Machine list department filter"
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={selectedDepartmentId}
+                      onChange={(event) => {
+                        setSelectedDepartmentId(event.target.value);
+                        setSelectedModuleId("");
+                      }}
+                    >
+                      <option value="">All Departments</option>
+                      {departmentsForPlant.map((department) => <option key={department.id} value={department.id}>{department.code} - {department.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="w-full">
+                    <label className="mb-1 block text-xs text-muted-foreground">Module</label>
+                    <select
+                      aria-label="Machine list module filter"
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={selectedModuleId}
+                      onChange={(event) => setSelectedModuleId(event.target.value)}
+                    >
+                      <option value="">All Modules</option>
+                      {modulesForScope.map((module) => <option key={module.id} value={module.id}>{module.code ? `${module.code} - ` : ""}{module.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="w-full">
+                    <label className="mb-1 block text-xs text-muted-foreground">Status</label>
+                    <select
+                      aria-label="Machine list status filter"
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={statusFilter}
+                      onChange={(event) => setStatusFilter(event.target.value as AssetStatusFilter)}
+                    >
+                      <option value="all">All Status</option>
+                      <option value="ACTIVE">Active</option>
+                      <option value="UNDER_MAINTENANCE">Under Maintenance</option>
+                      <option value="INACTIVE">Inactive</option>
+                    </select>
                   </div>
                 </div>
-
-                {userIsSuperAdmin ? (
-                  <select aria-label="Machine list plant filter" className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={selectedPlantId} onChange={(event) => {
-                    setSelectedPlantId(event.target.value);
-                    setSelectedDepartmentId("");
-                    setSelectedModuleId("");
-                  }}>
-                    <option value="">All Plants</option>
-                    {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode}</option>)}
-                  </select>
-                ) : null}
-
-                <select aria-label="Machine list department filter" className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={selectedDepartmentId} onChange={(event) => {
-                  setSelectedDepartmentId(event.target.value);
-                  setSelectedModuleId("");
-                }}>
-                  <option value="">All Departments</option>
-                  {departmentsForPlant.map((department) => <option key={department.id} value={department.id}>{department.code} - {department.name}</option>)}
-                </select>
-
-                <select aria-label="Machine list module filter" className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={selectedModuleId} onChange={(event) => setSelectedModuleId(event.target.value)}>
-                  <option value="">All Modules</option>
-                  {modulesForScope.map((module) => <option key={module.id} value={module.id}>{module.code ? `${module.code} - ` : ""}{module.name}</option>)}
-                </select>
-
-                <select aria-label="Machine list status filter" className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as AssetStatusFilter)}>
-                  <option value="all">All Status</option>
-                  <option value="ACTIVE">Active</option>
-                  <option value="UNDER_MAINTENANCE">Under Maintenance</option>
-                  <option value="INACTIVE">Inactive</option>
-                </select>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">

@@ -301,7 +301,18 @@ export default function Reports() {
   });
 
   const categoryOptions = useMemo(() => getMasterCodes(workOrderMasters, "CATEGORY"), [workOrderMasters]);
-  const statusOptions = ["RAISED", "OPENED", "IN_PROGRESS", "PARTIALLY_CLOSED", "APPROVAL_PENDING", "REJECTED", "CLOSED"];
+  const statusOptions = [
+    "RAISED",
+    "TRIAGED",
+    "ASSIGNED",
+    "OPENED",
+    "IN_PROGRESS",
+    "PARTIALLY_CLOSED",
+    "USER_VERIFICATION",
+    "APPROVAL_PENDING",
+    "REJECTED",
+    "CLOSED",
+  ];
   const typeOptions = useMemo(() => getMasterCodes(workOrderMasters, "WO_TYPE"), [workOrderMasters]);
   const categoryLabelMap = useMemo(() => {
     const map: Record<string, string> = {};

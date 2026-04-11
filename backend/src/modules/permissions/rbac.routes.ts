@@ -201,9 +201,15 @@ rbacRouter.get('/rbac/permissions/me', async (req, res, next) => {
       }
     });
 
-    if (isRootAdmin) {
-      // ROOT_ADMIN is restricted to governance-only dashboards.
+    if (isRootAdmin || isSuperAdmin) {
       kpiVisibilityMap.clear();
+      DASHBOARD_KPI_KEYS.forEach((kpiKey, index) => {
+        kpiVisibilityMap.set(kpiKey, {
+          kpiKey,
+          isVisible: true,
+          displayOrder: index,
+        });
+      });
     }
 
     const kpis = Array.from(kpiVisibilityMap.values()).sort((a, b) => a.displayOrder - b.displayOrder);

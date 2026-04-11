@@ -8,10 +8,13 @@ const statusBadgeVariants = cva(
     variants: {
       variant: {
         raised: "bg-info/10 text-info",
+        triaged: "bg-info/10 text-info",
+        assigned: "bg-primary/10 text-primary",
         opened: "bg-warning/10 text-warning",
         in_progress: "bg-accent text-accent-foreground",
         partially_closed: "bg-warning/20 text-warning",
         approval_pending: "bg-warning/15 text-warning",
+        user_verification: "bg-warning/15 text-warning",
         rejected: "bg-destructive/10 text-destructive",
         closed: "bg-success/10 text-success",
         critical: "bg-destructive/10 text-destructive",
@@ -46,10 +49,13 @@ interface StatusBadgeProps extends VariantProps<typeof statusBadgeVariants> {
 
 const statusLabels: Record<string, string> = {
   RAISED: "Raised",
+  TRIAGED: "Triaged",
+  ASSIGNED: "Assigned",
   OPENED: "Opened",
   IN_PROGRESS: "In Progress",
   PARTIALLY_CLOSED: "Partially Closed",
   APPROVAL_PENDING: "Submitted for Approval",
+  USER_VERIFICATION: "Waiting for User Verification",
   REJECTED: "Rejected",
   CLOSED: "Completed",
   CRITICAL: "Critical",

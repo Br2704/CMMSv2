@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-cmms}
+      POSTGRES_DB: postgres
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     ports:
@@ -11,7 +11,7 @@ services:
     volumes:
       - cmms_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-cmms}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -24,7 +24,6 @@ services:
     restart: unless-stopped
     command: >
       sh -c "npm run migration:run:prod &&
-             npm run seed:prod &&
              npm run start"
     env_file:
       - backend/.env
@@ -33,7 +32,6 @@ services:
       PORT: 3001
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-cmms}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_SSL: "false"

@@ -220,6 +220,12 @@ const startWorkOrderBodySchema = z
     }
   });
 
+const triageWorkOrderBodySchema = z.object({
+  initial_assessment: nullableTrimmedString.optional(),
+  assigned_to_notes: nullableTrimmedString.optional(),
+  estimated_time_minutes: z.coerce.number().int().min(0).optional(),
+});
+
 const submitWorkOrderForApprovalBodySchema = z
   .object({
     work_performed_description: requiredTrimmedString,
@@ -253,6 +259,7 @@ const reviewWorkOrderBodySchema = z.object({
 });
 
 export const startWorkOrderSchema = z.preprocess(normalizeObjectKeys, startWorkOrderBodySchema);
+export const triageWorkOrderSchema = z.preprocess(normalizeObjectKeys, triageWorkOrderBodySchema);
 export const submitWorkOrderForApprovalSchema = z.preprocess(normalizeObjectKeys, submitWorkOrderForApprovalBodySchema);
 export const reviewWorkOrderSchema = z.preprocess(normalizeObjectKeys, reviewWorkOrderBodySchema);
 

@@ -11,7 +11,7 @@ import { getOrgRbacVersion } from '../../utils/orgRbacVersion';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { allowedRoleTargetsForCreate, allowedRoleTargetsForEdit, rolePrecedence } from '../../utils/policy';
 import { applySearch } from '../../utils/query';
-import { isRootAdminRole, isSuperAdminRole, normalizeRoleName, permissionKeysFromMap } from '../../utils/rbac';
+import { DASHBOARD_KPI_KEYS, isRootAdminRole, isSuperAdminRole, normalizeRoleName, permissionKeysFromMap } from '../../utils/rbac';
 import { bumpRbacVersion, getRbacVersion } from '../../utils/rbacVersion';
 
 const permissionSchema = z.object({
@@ -84,10 +84,17 @@ permissionsRouter.get('/permissions/me', async (req, res, next) => {
     const isSuperAdmin = normalizedRoles.some((role) => isSuperAdminRole(role));
     const permissions = auth.permissions;
     const permissionKeys = permissionKeysFromMap(permissions);
-    if (isRootAdmin) {
-      // ROOT_ADMIN sees governance metrics only, not CMMS KPI widgets.
+    if (isRootAdmin || isSuperAdmin) {
       kpiVisibilityMap.clear();
+      DASHBOARD_KPI_KEYS.forEach((kpiKey, index) => {
+        kpiVisibilityMap.set(kpiKey, {
+          kpiKey,
+          isVisible: true,
+          displayOrder: index,
+        });
+      });
     }
+
     const kpiVisibility = Array.from(kpiVisibilityMap.values()).sort((a, b) => a.displayOrder - b.displayOrder);
     const resolvedOrganizationId = organizationId ?? auth.organizationId ?? null;
     const resolvedPlantId = profilePlantId ?? auth.activePlantId ?? auth.plantIds[0] ?? null;

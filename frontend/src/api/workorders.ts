@@ -53,6 +53,12 @@ export const startWorkOrder = (id: string, payload: Record<string, unknown>) =>
     body: JSON.stringify(payload),
   });
 
+export const triageWorkOrder = (id: string, payload: Record<string, unknown>) =>
+  httpRequest<{ success: true; data: WorkOrder }>(`/work-orders/${id}/triage`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
 export const submitWorkOrderForApproval = (id: string, payload: Record<string, unknown>) =>
   httpRequest<{ success: true; data: WorkOrder }>(`/work-orders/${id}/submit-for-approval`, {
     method: 'POST',

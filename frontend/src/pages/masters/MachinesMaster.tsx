@@ -217,14 +217,18 @@ function downloadCsvTemplate(fileName: string, headers: string[], rows: string[]
 }
 
 function nextUniqueCode(prefix: string, source: string, existingCodes: Set<string>) {
-  const cleaned = source.toUpperCase().replace(/[^A-Z0-9]+/g, "");
-  const base = (cleaned || prefix).slice(0, 10);
+  const cleaned = source
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+  const base = (cleaned || prefix).slice(0, 20);
   let candidate = base;
   let counter = 1;
 
   while (existingCodes.has(candidate)) {
     const suffix = String(counter);
-    candidate = `${base.slice(0, Math.max(1, 10 - suffix.length))}${suffix}`;
+    candidate = `${base.slice(0, Math.max(1, 20 - suffix.length))}${suffix}`;
     counter += 1;
   }
 
@@ -264,6 +268,23 @@ function buildLookupKeys(raw: string, parsed: { codeHint: string; name: string }
   }
 
   return Array.from(keys);
+}
+
+function buildHierarchyImportValue(rawCombined: string, rawCode: string, rawName: string) {
+  const combined = rawCombined.trim();
+  const code = rawCode.trim();
+  const name = rawName.trim();
+  const parsedCombined = combined ? splitCodeAndName(combined) : { codeHint: "", name: "" };
+  const codeHint = code || parsedCombined.codeHint;
+  const resolvedName = name || parsedCombined.name || combined || code;
+  const raw =
+    combined || (codeHint && resolvedName && codeHint !== resolvedName ? `${codeHint} - ${resolvedName}` : resolvedName || codeHint);
+
+  return {
+    raw,
+    codeHint,
+    name: resolvedName,
+  };
 }
 
 export default function MachinesMaster() {
@@ -342,7 +363,7 @@ export default function MachinesMaster() {
       }
       const response = await listDepartments({
         page: 1,
-        limit: 100,
+        limit: 1000,
         plantId: resolvedPlantId,
       });
       setDepartments(response.data);
@@ -360,7 +381,7 @@ export default function MachinesMaster() {
       }
       const response = await listModules({
         page: 1,
-        limit: 100,
+        limit: 1000,
         plantId: resolvedPlantId,
         departmentId: departmentId || undefined,
       });
@@ -565,8 +586,8 @@ export default function MachinesMaster() {
     const requiredHeaders: Array<{ label: string; aliases: string[] }> = [
       { label: "machine_code", aliases: ["machine_code", "code", "machine"] },
       { label: "machine_name", aliases: ["machine_name", "name"] },
-      { label: "department", aliases: ["department", "department_name", "department_code"] },
-      { label: "module", aliases: ["module", "module_name", "module_code"] },
+      { label: "department / department_name", aliases: ["department", "department_name"] },
+      { label: "module / module_name", aliases: ["module", "module_name"] },
     ];
 
     const missingHeaders = requiredHeaders
@@ -661,10 +682,18 @@ export default function MachinesMaster() {
 
         const machineCode = pickCell(row, ["machine_code", "code", "machine"]);
         const machineName = pickCell(row, ["machine_name", "name"]);
-        const departmentRaw = pickCell(row, ["department", "department_name", "department_code"]);
-        const moduleRaw = pickCell(row, ["module", "module_name", "module_code"]);
+        const departmentValue = buildHierarchyImportValue(
+          pickCell(row, ["department"]),
+          pickCell(row, ["department_code"]),
+          pickCell(row, ["department_name"]),
+        );
+        const moduleValue = buildHierarchyImportValue(
+          pickCell(row, ["module"]),
+          pickCell(row, ["module_code"]),
+          pickCell(row, ["module_name"]),
+        );
 
-        if (!machineCode || !machineName || !departmentRaw || !moduleRaw) {
+        if (!machineCode || !machineName || !departmentValue.raw || !moduleValue.raw) {
           failures.push(`Row ${rowIndex + 1}: machine_code, machine_name, department, and module are required`);
           continue;
         }
@@ -680,24 +709,24 @@ export default function MachinesMaster() {
         }
         seenCodes.add(machineCodeKey);
 
-        const parsedDepartment = splitCodeAndName(departmentRaw);
-        const departmentKeys = buildLookupKeys(departmentRaw, parsedDepartment);
+        const parsedDepartment = { codeHint: departmentValue.codeHint, name: departmentValue.name };
+        const departmentKeys = buildLookupKeys(departmentValue.raw, parsedDepartment);
 
         let department = departmentKeys.map((key) => departmentLookup.get(key)).find((value): value is Department => Boolean(value));
 
         try {
           if (!department) {
             const createdDepartment = await createDepartment({
-              name: parsedDepartment.name || departmentRaw,
-              code: nextUniqueCode("DEP", parsedDepartment.codeHint || parsedDepartment.name || departmentRaw, departmentCodes),
+              name: parsedDepartment.name || departmentValue.raw,
+              code: nextUniqueCode("DEP", parsedDepartment.codeHint || parsedDepartment.name || departmentValue.raw, departmentCodes),
               plantId: resolvedPlantId,
             });
             department = createdDepartment.data;
           }
           registerDepartmentAliases(department, departmentKeys);
 
-          const parsedModule = splitCodeAndName(moduleRaw);
-          const moduleKeys = buildLookupKeys(moduleRaw, parsedModule);
+          const parsedModule = { codeHint: moduleValue.codeHint, name: moduleValue.name };
+          const moduleKeys = buildLookupKeys(moduleValue.raw, parsedModule);
           const moduleLookupPrefix = `${department.id}:`;
 
           let machineModule = moduleKeys
@@ -706,8 +735,8 @@ export default function MachinesMaster() {
 
           if (!machineModule) {
             const createdModule = await createModule({
-              code: nextUniqueCode("MOD", parsedModule.codeHint || parsedModule.name || moduleRaw, moduleCodes),
-              name: parsedModule.name || moduleRaw,
+              code: nextUniqueCode("MOD", parsedModule.codeHint || parsedModule.name || moduleValue.raw, moduleCodes),
+              name: parsedModule.name || moduleValue.raw,
               plantId: resolvedPlantId,
               departmentId: department.id,
             });
@@ -780,8 +809,10 @@ export default function MachinesMaster() {
       [
         "machine_code",
         "machine_name",
-        "department",
-        "module",
+        "department_code",
+        "department_name",
+        "module_code",
+        "module_name",
         "type",
         "asset_type",
         "criticality",
@@ -797,8 +828,10 @@ export default function MachinesMaster() {
         [
           "MCH-001",
           "Air Compressor 01",
-          "DEP-UTILITY - Utility",
-          "MOD-AIR - Air System",
+          "DEP-UTILITY",
+          "Utility",
+          "MOD-AIR",
+          "Air System",
           "MACHINE",
           "COMPRESSOR",
           "HIGH",
@@ -812,9 +845,29 @@ export default function MachinesMaster() {
         ],
         [
           "MCH-002",
+          "Air Compressor 02",
+          "DEP-UTILITY",
+          "Utility",
+          "MOD-AIR",
+          "Air System",
+          "MACHINE",
+          "COMPRESSOR",
+          "HIGH",
+          "ACTIVE",
+          "Atlas Copco",
+          "GA75",
+          "AC-2024-0002",
+          "",
+          "2024-01-12",
+          "2028-01-12",
+        ],
+        [
+          "MCH-003",
           "Cooling Tower 02",
-          "DEP-UTILITY - Utility",
-          "MOD-CT - Cooling",
+          "DEP-UTILITY",
+          "Utility",
+          "MOD-CT",
+          "Cooling",
           "UTILITY",
           "COOLING_TOWER",
           "MEDIUM",
@@ -1501,11 +1554,11 @@ export default function MachinesMaster() {
                 disabled={bulkUploading}
               >
                 <Upload className="h-4 w-4" />
-                {bulkUploading ? "Uploading..." : "Bulk Upload CSV"}
+                {bulkUploading ? "Uploading..." : "Bulk Upload Machines"}
               </Button>
               <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={handleDownloadMachineSampleCsv}>
                 <Download className="h-4 w-4" />
-                Download Sample CSV
+                Download Upload Template
               </Button>
               <Button onClick={handleAdd} className="w-full gap-2 gradient-primary text-primary-foreground shadow-glow sm:w-auto">
                 <Plus className="h-4 w-4" />
@@ -2428,8 +2481,3 @@ export default function MachinesMaster() {
     </PageShell>
   );
 }
-
-
-
-
-

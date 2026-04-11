@@ -447,7 +447,11 @@ async function buildMePayload(userId: string) {
     });
   });
 
-  if (normalizedRoles.some((role) => isSuperAdminRole(role))) {
+  if (normalizedRoles.some((role) => isRootAdminRole(role))) {
+    RBAC_MODULE_KEYS.forEach((moduleKey) => {
+      permissionMap[moduleKey] = [...RBAC_ACTIONS];
+    });
+  } else if (normalizedRoles.some((role) => isSuperAdminRole(role))) {
     RBAC_MODULE_KEYS.forEach((moduleKey) => {
       permissionMap[moduleKey] = [...RBAC_ACTIONS];
     });
@@ -475,7 +479,7 @@ async function buildMePayload(userId: string) {
   )
     .map(([, value]) => value)
     .sort((a, b) => a.displayOrder - b.displayOrder);
-  if (normalizedRoles.some((role) => isSuperAdminRole(role))) {
+  if (normalizedRoles.some((role) => isRootAdminRole(role)) || normalizedRoles.some((role) => isSuperAdminRole(role))) {
     kpiVisibility.length = 0;
     DASHBOARD_KPI_KEYS.forEach((kpiKey, index) => {
       kpiVisibility.push({
@@ -484,9 +488,6 @@ async function buildMePayload(userId: string) {
         displayOrder: index,
       });
     });
-  } else if (normalizedRoles.some((role) => isRootAdminRole(role))) {
-    // ROOT_ADMIN is governance-only; CMMS operational KPIs are hidden.
-    kpiVisibility.length = 0;
   }
   const permissionKeys = permissionKeysFromMap(permissionMap);
 

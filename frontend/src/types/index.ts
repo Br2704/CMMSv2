@@ -44,9 +44,12 @@ export interface Asset {
 // Work Order Types
 export type WorkOrderStatus = 
   | 'RAISED'
+  | 'TRIAGED'
+  | 'ASSIGNED'
   | 'OPENED'
   | 'IN_PROGRESS'
   | 'PARTIALLY_CLOSED'
+  | 'USER_VERIFICATION'
   | 'APPROVAL_PENDING'
   | 'REJECTED'
   | 'CLOSED';

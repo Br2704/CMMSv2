@@ -3,7 +3,7 @@ import { asyncHandler } from '../../utils/asyncHandler';
 import { toPagination } from '../../utils/pagination';
 import { ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
-import { CrudService } from './crud.service';
+import type { CrudLikeService } from './crud.types';
 
 function toCamelKey(input: string) {
   return input.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
@@ -30,7 +30,7 @@ function toCamelCase<T>(value: T): T {
   return value;
 }
 
-export function createCrudController(service: CrudService, moduleName = 'resource') {
+export function createCrudController(service: CrudLikeService, moduleName = 'resource') {
   return {
     list: asyncHandler(async (req: Request, res: Response) => {
       const result = await service.list(req.query as never, req.auth!);

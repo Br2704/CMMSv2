@@ -13,8 +13,6 @@ import { recordSecurityEvent } from '../utils/securityEvents';
 import { resolveUserOrganizationScope } from '../utils/userOrganization';
 import { applySystemRolePermissionPolicy } from '../utils/systemRolePermissionPolicy';
 
-const ROOT_GOVERNANCE_MODULES = new Set(['ORGANIZATIONS', 'PLANTS', 'USERS', 'ROLE_ACCESS', 'MASTERS', 'MODULES']);
-
 function normalizeRole(role: string) {
   return normalizeRoleName(role);
 }
@@ -42,7 +40,7 @@ function buildFallbackPermissionsForRole(role: string): Record<string, string[]>
     return map;
   }
   if (normalized === 'ROOT_ADMIN') {
-    return fromModules([...ROOT_GOVERNANCE_MODULES], allActions);
+    return fromModules([...RBAC_MODULE_KEYS], allActions);
   }
   if (normalized === 'ADMIN') {
     const map = Object.fromEntries(RBAC_MODULE_KEYS.map((moduleKey) => [moduleKey, allActions])) as Record<string, string[]>;
@@ -369,13 +367,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     if (isRootAdmin) {
       const rootScopedPermissions: Record<string, string[]> = {};
       RBAC_MODULE_KEYS.forEach((moduleKey) => {
-        const actions = (permissionMap[moduleKey] ?? []).map((action) => action.toUpperCase());
-        rootScopedPermissions[moduleKey] =
-          actions.length > 0
-            ? Array.from(new Set(actions))
-            : ROOT_GOVERNANCE_MODULES.has(moduleKey)
-              ? [...RBAC_ACTIONS]
-              : ['READ'];
+        rootScopedPermissions[moduleKey] = [...RBAC_ACTIONS];
       });
       permissionMap = rootScopedPermissions;
     }

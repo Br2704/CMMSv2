@@ -76,8 +76,12 @@ function uniqueIds(values: Array<string | null | undefined>): string[] {
 
 const WORKFLOW_STATUSES = {
   RAISED: 'RAISED',
+  TRIAGED: 'TRIAGED',
+  ASSIGNED: 'ASSIGNED',
   OPENED: 'OPENED',
   IN_PROGRESS: 'IN_PROGRESS',
+  COMPLETED: 'COMPLETED',
+  USER_VERIFICATION: 'USER_VERIFICATION',
   APPROVAL_PENDING: 'APPROVAL_PENDING',
   REJECTED: 'REJECTED',
   CLOSED: 'CLOSED',
@@ -360,7 +364,7 @@ class WorkOrdersService extends CrudService {
     }
 
     if (effectiveScope === 'approval_required') {
-      qb.andWhere('t.status = :pendingStatus', { pendingStatus: WORKFLOW_STATUSES.APPROVAL_PENDING });
+      qb.andWhere('t.status = :pendingStatus', { pendingStatus: WORKFLOW_STATUSES.USER_VERIFICATION });
       if (!canApproveAny) {
         qb.andWhere('t.raised_by = :actorUserId', { actorUserId: auth.userId });
       }
@@ -477,7 +481,7 @@ class WorkOrdersService extends CrudService {
         actorUserId: auth.userId,
         inchargeCategories,
         closedStatus: WORKFLOW_STATUSES.CLOSED,
-        approvalPendingStatus: WORKFLOW_STATUSES.APPROVAL_PENDING,
+        approvalPendingStatus: WORKFLOW_STATUSES.USER_VERIFICATION,
         recentThreshold,
       });
 
@@ -710,12 +714,14 @@ class WorkOrdersService extends CrudService {
       : null;
 
     const woNumber = typeof normalized.wo_number === 'string' ? normalized.wo_number.trim() : '';
+    const initialStatus = assignedTeam?.teamLeaderId ? WORKFLOW_STATUSES.ASSIGNED : WORKFLOW_STATUSES.RAISED;
     const payload: GenericRecord = {
       ...normalized,
       wo_number: woNumber || generateWorkOrderNumber(),
       category: normalizedCategory,
       wo_type: normalizedWorkOrderType,
       failure_code: normalizedFailureCode,
+      status: initialStatus,
       raised_by: normalized.raised_by ?? auth.userId,
       assigned_to: normalized.assigned_to ?? assignedTeam?.teamLeaderId ?? null,
       plant_id: plantId,
@@ -745,7 +751,7 @@ class WorkOrdersService extends CrudService {
       createdWorkOrder,
       auth,
       {
-        eventType: 'RAISED',
+        eventType: initialStatus,
         notes: normalizeText(problemDescription),
         attachments: parseJsonArray(payload.attachments),
         occurredAt: new Date().toISOString(),
@@ -843,8 +849,14 @@ class WorkOrdersService extends CrudService {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
       const status = String(existing.status ?? '').toUpperCase();
-      if (status !== WORKFLOW_STATUSES.RAISED && status !== WORKFLOW_STATUSES.OPENED) {
-        conflict('Work order can only be started from Raised or Opened status');
+      const allowedStartStatuses: string[] = [
+        WORKFLOW_STATUSES.RAISED,
+        WORKFLOW_STATUSES.TRIAGED,
+        WORKFLOW_STATUSES.ASSIGNED,
+        WORKFLOW_STATUSES.OPENED,
+      ];
+      if (!allowedStartStatuses.includes(status)) {
+        conflict('Work order can only be started from Raised, Triaged, Assigned, or Opened status');
       }
 
       this.ensureExecutionAccess(existing, auth);
@@ -952,12 +964,89 @@ class WorkOrdersService extends CrudService {
     });
   }
 
+  async triageWorkOrder(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+    return AppDataSource.transaction(async (manager) => {
+      const existing = await this.loadExistingWorkOrder(id, auth, manager);
+      const status = String(existing.status ?? '').toUpperCase();
+      const allowedTriageStatuses: string[] = [
+        WORKFLOW_STATUSES.RAISED,
+        WORKFLOW_STATUSES.ASSIGNED,
+        WORKFLOW_STATUSES.OPENED,
+        WORKFLOW_STATUSES.TRIAGED,
+      ];
+      if (!allowedTriageStatuses.includes(status)) {
+        conflict('Only raised or assigned work orders can be triaged');
+      }
+
+      this.ensureExecutionAccess(existing, auth);
+
+      const normalized = normalizeKeys(input);
+      const now = new Date().toISOString();
+      const technicianVerification = {
+        ...(parseJsonObject(existing.technician_verification) ?? {}),
+        triaged_at: now,
+        initial_assessment: normalizeText(normalized.initial_assessment),
+        assigned_to_notes: normalizeText(normalized.assigned_to_notes),
+        estimated_time_minutes: Number.isFinite(Number(normalized.estimated_time_minutes))
+          ? Math.max(0, Math.round(Number(normalized.estimated_time_minutes)))
+          : null,
+      };
+
+      const nextStatus = normalizeText(existing.assigned_to) ? WORKFLOW_STATUSES.ASSIGNED : WORKFLOW_STATUSES.TRIAGED;
+      const updated = await this.persistWorkOrderUpdate(
+        id,
+        {
+          status: nextStatus,
+          opened_at: existing.opened_at ?? now,
+          technician_verification: technicianVerification,
+        },
+        auth,
+        { manager, allowWorkflowMutation: true, existing },
+      );
+
+      await this.writeActivityLog(
+        updated,
+        auth,
+        {
+          eventType: 'TRIAGED',
+          notes: normalizeText(normalized.initial_assessment),
+          eventMeta: {
+            assignedToNotes: normalizeText(normalized.assigned_to_notes),
+            estimatedTimeMinutes: technicianVerification.estimated_time_minutes,
+            postTriageStatus: nextStatus,
+          },
+          occurredAt: now,
+        },
+        manager,
+      );
+
+      const raisedBy = normalizeText(existing.raised_by);
+      if (raisedBy && raisedBy !== auth.userId) {
+        await this.createNotifications(
+          [
+            {
+              userId: raisedBy,
+              title: 'Work Order Triaged',
+              message: `${String(existing.wo_number)} was triaged and is ready for execution.`,
+              type: 'info',
+              link: '/work-orders',
+              woId: String(existing.id),
+            },
+          ],
+          manager,
+        );
+      }
+
+      return updated;
+    });
+  }
+
   async submitForApproval(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
       const status = String(existing.status ?? '').toUpperCase();
       if (status !== WORKFLOW_STATUSES.IN_PROGRESS && status !== WORKFLOW_STATUSES.REJECTED) {
-        conflict('Only in-progress or rejected work orders can be submitted for approval');
+        conflict('Only in-progress or reopened work orders can be completed for user verification');
       }
 
       this.ensureExecutionAccess(existing, auth);
@@ -1030,7 +1119,7 @@ class WorkOrdersService extends CrudService {
 
       const lifecycleUpdate = followUpRequired
         ? {
-          status: WORKFLOW_STATUSES.OPENED,
+          status: WORKFLOW_STATUSES.ASSIGNED,
           opened_at: existing.opened_at ?? now,
           started_at: null,
           resolved_at: null,
@@ -1048,7 +1137,7 @@ class WorkOrdersService extends CrudService {
           admin_override_reason: null,
         }
         : {
-          status: WORKFLOW_STATUSES.APPROVAL_PENDING,
+          status: WORKFLOW_STATUSES.USER_VERIFICATION,
           resolved_at: now,
           closed_at: null,
           submitted_for_approval_at: now,
@@ -1092,7 +1181,7 @@ class WorkOrdersService extends CrudService {
         updated,
         auth,
         {
-          eventType: followUpRequired ? 'FOLLOW_UP_ROUTED' : 'SUBMITTED_FOR_APPROVAL',
+          eventType: followUpRequired ? 'FOLLOW_UP_ROUTED' : 'USER_VERIFICATION_REQUESTED',
           notes: remarks,
           attachments,
           eventMeta: {
@@ -1150,8 +1239,8 @@ class WorkOrdersService extends CrudService {
           [
             {
               userId: raisedBy,
-              title: 'Work Order Submitted for Approval',
-              message: `${String(existing.wo_number)} is waiting for your approval.`,
+              title: 'Work Order Completed',
+              message: `${String(existing.wo_number)} is waiting for your confirmation.`,
               type: 'warning',
               link: '/work-orders',
               woId: String(existing.id),
@@ -1169,8 +1258,8 @@ class WorkOrdersService extends CrudService {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
       const status = String(existing.status ?? '').toUpperCase();
-      if (status !== WORKFLOW_STATUSES.APPROVAL_PENDING) {
-        conflict('Only work orders submitted for approval can be approved');
+      if (status !== WORKFLOW_STATUSES.USER_VERIFICATION && status !== WORKFLOW_STATUSES.APPROVAL_PENDING) {
+        conflict('Only work orders waiting for user verification can be closed');
       }
 
       const { isAdminOverride } = this.ensureApprovalAccess(existing, auth);
@@ -1203,7 +1292,7 @@ class WorkOrdersService extends CrudService {
         updated,
         auth,
         {
-          eventType: isAdminOverride ? 'ADMIN_OVERRIDE_APPROVED' : 'APPROVED',
+          eventType: isAdminOverride ? 'ADMIN_FORCE_CLOSED' : 'USER_CONFIRMED_CLOSE',
           notes: comments,
           eventMeta: {
             reviewedByRaiser: !isAdminOverride,
@@ -1220,8 +1309,8 @@ class WorkOrdersService extends CrudService {
       await this.createNotifications(
         recipients.map((userId) => ({
           userId,
-          title: 'Work Order Approved',
-          message: `${String(existing.wo_number)} has been approved${isAdminOverride ? ' by admin override' : ''}.`,
+          title: 'Work Order Closed',
+          message: `${String(existing.wo_number)} has been closed${isAdminOverride ? ' by admin override' : ''}.`,
           type: 'success',
           link: '/work-orders',
           woId: String(existing.id),
@@ -1237,8 +1326,8 @@ class WorkOrdersService extends CrudService {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
       const status = String(existing.status ?? '').toUpperCase();
-      if (status !== WORKFLOW_STATUSES.APPROVAL_PENDING) {
-        conflict('Only work orders submitted for approval can be rejected');
+      if (status !== WORKFLOW_STATUSES.USER_VERIFICATION && status !== WORKFLOW_STATUSES.APPROVAL_PENDING) {
+        conflict('Only work orders waiting for user verification can be reopened');
       }
 
       const { isAdminOverride } = this.ensureApprovalAccess(existing, auth);
@@ -1252,13 +1341,17 @@ class WorkOrdersService extends CrudService {
       const updated = await this.persistWorkOrderUpdate(
         id,
         {
-          status: WORKFLOW_STATUSES.REJECTED,
+          status: WORKFLOW_STATUSES.ASSIGNED,
+          started_at: null,
           closed_at: null,
           approved_by: null,
           approved_at: null,
+          resolved_at: null,
           rejected_by: auth.userId,
           rejected_at: now,
           approval_comments: comments,
+          submitted_for_approval_at: null,
+          submitted_for_approval_by: null,
           admin_override_by: isAdminOverride ? auth.userId : null,
           admin_override_at: isAdminOverride ? now : null,
           admin_override_reason: isAdminOverride ? comments : null,
@@ -1271,7 +1364,7 @@ class WorkOrdersService extends CrudService {
         updated,
         auth,
         {
-          eventType: isAdminOverride ? 'ADMIN_OVERRIDE_REJECTED' : 'REJECTED',
+          eventType: isAdminOverride ? 'ADMIN_REOPENED' : 'USER_REOPENED',
           notes: comments,
           occurredAt: now,
         },
@@ -1285,8 +1378,8 @@ class WorkOrdersService extends CrudService {
       await this.createNotifications(
         recipients.map((userId) => ({
           userId,
-          title: 'Work Order Rejected',
-          message: `${String(existing.wo_number)} was rejected. Comments: ${comments}`,
+          title: 'Work Order Reopened',
+          message: `${String(existing.wo_number)} was reopened. Comments: ${comments}`,
           type: 'critical',
           link: '/work-orders',
           woId: String(existing.id),

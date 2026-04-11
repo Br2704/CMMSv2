@@ -319,6 +319,21 @@ export default function VisitorExperience() {
         }
     };
 
+    useEffect(() => {
+        if (!safetyGateOpen || safetyScrolled) {
+            return;
+        }
+
+        const element = safetyContentRef.current;
+        if (!element) {
+            return;
+        }
+
+        if (element.scrollHeight <= element.clientHeight + 6) {
+            setSafetyScrolled(true);
+        }
+    }, [safetyGateOpen, safetyScrolled]);
+
     const handleAcceptSafety = async () => {
         if (savingSafetyConsent) {
             return;
@@ -339,7 +354,7 @@ export default function VisitorExperience() {
             });
             setSafetyGateOpen(false);
             toast.success("Safety acknowledgement captured");
-            await loadVisitorContext(true);
+            await loadVisitorContext(true, true);
         } catch (error: unknown) {
             setSafetyConsentAcknowledged(false);
             setSafetyGateOpen(true);

@@ -101,6 +101,8 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
                               ? "completed"
                               : wo.status === "IN_PROGRESS"
                                 ? "in_progress"
+                                : wo.status === "USER_VERIFICATION"
+                                  ? "critical"
                                 : wo.status === "APPROVAL_PENDING"
                                   ? "critical"
                                   : wo.status === "REJECTED"

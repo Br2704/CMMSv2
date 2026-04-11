@@ -9,7 +9,7 @@ This repository currently contains:
 - Frontend: React 18, TypeScript, Vite, React Router, React Query, Tailwind, Radix UI, PWA packaging
 - Backend: Express, TypeScript, TypeORM, Zod, JWT auth, refresh-token flow, RBAC, audit logging
 - Database: PostgreSQL 16
-- Deployment: Docker Compose, Nginx reverse proxy
+- Deployment: Docker Compose, secure Nginx frontend container
 
 ## 2. Current Architecture Snapshot
 
@@ -50,8 +50,7 @@ This repository currently contains:
 - Local and production-style Docker orchestration in:
   - [docker-compose.yml](/d:/CMMSv2/docker-compose.yml)
   - [docker-compose.prod.yml](/d:/CMMSv2/docker-compose.prod.yml)
-- Nginx proxy and API forwarding in:
-  - [nginx/default.conf](/d:/CMMSv2/nginx/default.conf)
+- Frontend static hosting and API forwarding in:
   - [frontend/nginx.prod.conf](/d:/CMMSv2/frontend/nginx.prod.conf)
 
 ## 3. Security Controls Already Present
@@ -81,8 +80,8 @@ These are the highest-value issues to address before certification or production
 2. Shared-network usage is currently HTTP-based.
    QR resolver links and LAN access are designed around `http://` endpoints in the current Docker environment. For production and compliance, move to HTTPS everywhere, including QR resolver links and API access.
 
-3. Camera use can be blocked behind the proxy profile.
-   [nginx/default.conf](/d:/CMMSv2/nginx/default.conf) sets `Permissions-Policy` with `camera=()`, which conflicts with mobile QR scanning when traffic goes through the reverse proxy.
+3. Camera policy must remain aligned with mobile QR requirements.
+   [frontend/nginx.prod.conf](/d:/CMMSv2/frontend/nginx.prod.conf) should keep `Permissions-Policy` configured to allow camera use for same-origin QR scanning journeys.
 
 4. Centralized monitoring and log integrity controls are incomplete.
    The app records useful events, but there is no repo-level evidence of immutable log storage, SIEM integration, alert routing, or tamper-evident retention controls.

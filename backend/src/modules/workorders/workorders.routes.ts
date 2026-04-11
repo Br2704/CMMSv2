@@ -13,6 +13,7 @@ import {
   reviewWorkOrderSchema,
   startWorkOrderSchema,
   submitWorkOrderForApprovalSchema,
+  triageWorkOrderSchema,
   updateWorkOrderSchema,
   workOrdersListQuerySchema,
   workOrdersSummaryQuerySchema,
@@ -83,6 +84,20 @@ workordersRouter.get(
 );
 
 workordersRouter.post(
+  '/work-orders/:id/triage',
+  requirePermission('WORK_ORDERS', 'UPDATE'),
+  validateRequest({ params: idParamSchema, body: triageWorkOrderSchema }),
+  async (req, res, next) => {
+    try {
+      const record = await workordersService.triageWorkOrder(req.params.id, req.body as Record<string, unknown>, req.auth!);
+      res.json(ok(record, 'Work order triaged'));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+workordersRouter.post(
   '/work-orders/:id/start',
   requirePermission('WORK_ORDERS', 'UPDATE'),
   validateRequest({ params: idParamSchema, body: startWorkOrderSchema }),
@@ -105,7 +120,7 @@ workordersRouter.post(
   async (req, res, next) => {
     try {
       const record = await workordersService.submitForApproval(req.params.id, req.body as Record<string, unknown>, req.auth!);
-      res.json(ok(record, 'Work order submitted for approval'));
+      res.json(ok(record, 'Work order completed and sent for user verification'));
     } catch (error) {
       next(error);
     }
@@ -119,7 +134,7 @@ workordersRouter.post(
   async (req, res, next) => {
     try {
       const record = await workordersService.approveWorkOrder(req.params.id, req.body as Record<string, unknown>, req.auth!);
-      res.json(ok(record, 'Work order approved'));
+      res.json(ok(record, 'Work order closed'));
     } catch (error) {
       next(error);
     }
@@ -133,7 +148,7 @@ workordersRouter.post(
   async (req, res, next) => {
     try {
       const record = await workordersService.rejectWorkOrder(req.params.id, req.body as Record<string, unknown>, req.auth!);
-      res.json(ok(record, 'Work order rejected'));
+      res.json(ok(record, 'Work order reopened'));
     } catch (error) {
       next(error);
     }

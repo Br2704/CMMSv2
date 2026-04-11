@@ -1,3 +1,4 @@
+import { Brackets } from 'typeorm';
 import { AppDataSource } from '../../database/data-source';
 import { AssetEntity, DepartmentEntity, MachineModuleEntity } from '../../database/entities';
 import type { AuthContext } from '../../types/auth';
@@ -14,6 +15,10 @@ function enforceAuthPlantScope(auth: AuthContext, plantId: string | null | undef
   } catch {
     forbidden('Plant access denied');
   }
+}
+
+function normalizeDuplicateValue(value: string | null | undefined) {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 export class ModulesService {
@@ -48,6 +53,49 @@ export class ModulesService {
     }
   }
 
+  private async ensureUniqueModule(params: {
+    plantId: string;
+    departmentId: string;
+    code: string | null | undefined;
+    name: string;
+    excludeId?: string;
+  }) {
+    const normalizedCode = normalizeDuplicateValue(params.code);
+    const normalizedName = normalizeDuplicateValue(params.name);
+    const qb = this.modulesRepo
+      .createQueryBuilder('module')
+      .where('module.plant_id = :plantId', { plantId: params.plantId })
+      .andWhere('module.department_id = :departmentId', { departmentId: params.departmentId });
+
+    if (params.excludeId) {
+      qb.andWhere('module.id <> :excludeId', { excludeId: params.excludeId });
+    }
+
+    qb.andWhere(
+      new Brackets((where) => {
+        let hasClause = false;
+
+        if (normalizedCode) {
+          where.where('LOWER(TRIM(COALESCE(module.code, \'\'))) = :normalizedCode', { normalizedCode });
+          hasClause = true;
+        }
+
+        if (normalizedName) {
+          if (hasClause) {
+            where.orWhere('LOWER(TRIM(module.name)) = :normalizedName', { normalizedName });
+          } else {
+            where.where('LOWER(TRIM(module.name)) = :normalizedName', { normalizedName });
+          }
+        }
+      }),
+    );
+
+    const duplicate = await qb.getOne();
+    if (duplicate) {
+      conflict('Module code or name already exists in this department');
+    }
+  }
+
   async create(input: CreateModuleInput, auth: AuthContext) {
     const scopedPlantId = resolveScopedPlantId(auth, input.plantId);
     if (!scopedPlantId) {
@@ -55,12 +103,18 @@ export class ModulesService {
     }
     enforceAuthPlantScope(auth, scopedPlantId);
     await this.validateDepartmentPlant(scopedPlantId, input.departmentId);
+    await this.ensureUniqueModule({
+      plantId: scopedPlantId,
+      departmentId: input.departmentId,
+      code: input.code,
+      name: input.name,
+    });
 
     const created = this.modulesRepo.create({
       plantId: scopedPlantId,
       departmentId: input.departmentId,
-      name: input.name,
-      code: input.code ?? null,
+      name: input.name.trim(),
+      code: input.code?.trim() || null,
       description: input.description ?? null,
       isActive: input.isActive ?? true,
     });
@@ -82,12 +136,22 @@ export class ModulesService {
 
     enforceAuthPlantScope(auth, nextPlantId);
     await this.validateDepartmentPlant(nextPlantId, nextDepartmentId);
+    const nextCode = input.code === undefined ? row.code : input.code?.trim() || null;
+    const nextName = input.name === undefined ? row.name : input.name.trim();
+    await this.ensureUniqueModule({
+      plantId: nextPlantId,
+      departmentId: nextDepartmentId,
+      code: nextCode,
+      name: nextName,
+      excludeId: row.id,
+    });
 
     Object.assign(row, {
       ...input,
       plantId: nextPlantId,
       departmentId: nextDepartmentId,
-      code: input.code === undefined ? row.code : input.code,
+      name: nextName,
+      code: nextCode,
       description: input.description === undefined ? row.description : input.description,
     });
     await this.modulesRepo.save(row);

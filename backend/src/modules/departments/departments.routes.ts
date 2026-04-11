@@ -1,4 +1,3 @@
-
 import { createCrudRouter } from '../_core/crud.routes';
 import { departmentsService } from './departments.service';
 import { createDepartmentSchema, updateDepartmentSchema } from './departments.validators';

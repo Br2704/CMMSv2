@@ -14,12 +14,12 @@ const DEFAULT_BRANDING = {
   organizationName: null as string | null,
   organizationLogoUrl: null as string | null,
   organizationLogoAssetUrl: '/api/branding/logo',
-  organizationFaviconUrl: '/icons/jkfenner-favicon.svg' as string | null,
+  organizationFaviconUrl: '/jkfenner/jkfenner-favicon.svg' as string | null,
   sidebarTitle: 'JK Fenner',
   browserTitle: 'JK Fenner CMMS',
   brandColor: DEFAULT_THEME_COLOR,
-  fallbackLogoUrl: '/icons/jkfenner-logo.svg',
-  fallbackFaviconUrl: '/icons/jkfenner-favicon.svg',
+  fallbackLogoUrl: '/jkfenner/jkfenner-logo.svg',
+  fallbackFaviconUrl: '/jkfenner/jkfenner-favicon.svg',
   updatedAt: null as string | null,
 };
 
@@ -46,9 +46,16 @@ function normalizeThemeColor(value: string | null | undefined) {
   return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed : DEFAULT_THEME_COLOR;
 }
 
-async function sendDefaultLogo(res: Response, size: number) {
+function getDefaultBrandingAsset(kind: 'logo' | 'favicon', size: number) {
+  if (kind === 'favicon') {
+    return '/jkfenner/jkfenner-favicon.svg';
+  }
+  return size >= 512 ? '/jkfenner/jkfenner-logo.png' : '/jkfenner/jkfenner-logo.svg';
+}
+
+async function sendDefaultAsset(res: Response, kind: 'logo' | 'favicon', size: number) {
   res.setHeader('Cache-Control', 'public, max-age=300');
-  res.redirect(size >= 512 ? '/icons/icon-512x512.png' : '/icons/icon-192x192.png');
+  res.redirect(getDefaultBrandingAsset(kind, size));
 }
 
 function getBrandingAssetUrl(kind: 'logo' | 'favicon', organizationId: string | null, version: number, size: number) {
@@ -73,8 +80,8 @@ function getAppleTouchIconUrl(organizationId: string | null, version: number) {
   return getFaviconAssetUrl(organizationId, version, 192);
 }
 
-function getManifestIconUrl(size: 192 | 512) {
-  return size === 512 ? '/icons/icon-512x512.png' : '/icons/icon-192x192.png';
+function getManifestIconUrl() {
+  return '/jkfenner/jkfenner-favicon.svg';
 }
 
 async function resolveOrganizationIdForUser(userId: string, authPlantIds: string[] = []): Promise<string | null> {
@@ -140,7 +147,7 @@ async function sendOrganizationAsset(
 
   const rawAsset = (kind === 'favicon' ? organization?.faviconUrl : organization?.logoUrl)?.trim();
   if (!rawAsset) {
-    await sendDefaultLogo(res, size);
+    await sendDefaultAsset(res, kind, size);
     return;
   }
 
@@ -159,14 +166,14 @@ async function sendOrganizationAsset(
 
   if (rawAsset.startsWith('/')) {
     if (rawAsset.startsWith('/api/branding/logo') || rawAsset.startsWith('/api/branding/favicon')) {
-      await sendDefaultLogo(res, size);
+      await sendDefaultAsset(res, kind, size);
       return;
     }
     res.redirect(rawAsset);
     return;
   }
 
-  await sendDefaultLogo(res, size);
+  await sendDefaultAsset(res, kind, size);
 }
 
 export const brandingRouter = Router();
@@ -176,7 +183,7 @@ brandingRouter.get('/branding/logo', async (req, res, next) => {
   const fallbackSize = parsedQuery.success ? parsedQuery.data.size : 192;
   try {
     if (!parsedQuery.success) {
-      await sendDefaultLogo(res, fallbackSize);
+      await sendDefaultAsset(res, 'logo', fallbackSize);
       return;
     }
 
@@ -187,7 +194,7 @@ brandingRouter.get('/branding/logo', async (req, res, next) => {
     await sendOrganizationAsset(res, 'logo', organization, version, parsedQuery.data.size);
   } catch (error) {
     if (!res.headersSent) {
-      await sendDefaultLogo(res, fallbackSize);
+      await sendDefaultAsset(res, 'logo', fallbackSize);
       return;
     }
     next(error);
@@ -199,7 +206,7 @@ brandingRouter.get('/branding/favicon', async (req, res, next) => {
   const fallbackSize = parsedQuery.success ? parsedQuery.data.size : 192;
   try {
     if (!parsedQuery.success) {
-      await sendDefaultLogo(res, fallbackSize);
+      await sendDefaultAsset(res, 'favicon', fallbackSize);
       return;
     }
 
@@ -210,7 +217,7 @@ brandingRouter.get('/branding/favicon', async (req, res, next) => {
     await sendOrganizationAsset(res, 'favicon', organization, version, parsedQuery.data.size);
   } catch (error) {
     if (!res.headersSent) {
-      await sendDefaultLogo(res, fallbackSize);
+      await sendDefaultAsset(res, 'favicon', fallbackSize);
       return;
     }
     next(error);
@@ -271,16 +278,14 @@ brandingRouter.get('/branding/version', async (_req, res, next) => {
 brandingRouter.get('/branding/manifest', async (req, res, next) => {
   try {
     const parsedQuery = manifestQuerySchema.safeParse(req.query);
-    const { organization, version } = parsedQuery.success
+    const { organization } = parsedQuery.success
       ? await resolveBrandingForLogoRequest({ organizationId: parsedQuery.data.organizationId ?? null })
       : await resolveBrandingForLogoRequest();
-    const organizationName = organization?.name || 'JK Fenner';
     const themeColor = normalizeThemeColor(organization?.brandColor);
-    const hasOrganizationFavicon = Boolean(organization?.faviconUrl?.trim());
     const manifest = {
       id: '/',
-      name: organization ? `${organizationName} CMMS` : 'JK Fenner CMMS',
-      short_name: organization ? `${organizationName} CMMS` : 'JK Fenner CMMS',
+      name: 'JK Fenner CMMS',
+      short_name: 'JK Fenner CMMS',
       description: 'Industrial CMMS Platform',
       start_url: '/',
       display: 'standalone',
@@ -288,15 +293,9 @@ brandingRouter.get('/branding/manifest', async (req, res, next) => {
       theme_color: themeColor,
       icons: [
         {
-          src: hasOrganizationFavicon ? getFaviconAssetUrl(organization?.id ?? null, version, 192) : getManifestIconUrl(192),
-          sizes: '192x192',
-          type: 'image/png',
-          purpose: 'any maskable',
-        },
-        {
-          src: hasOrganizationFavicon ? getFaviconAssetUrl(organization?.id ?? null, version, 512) : getManifestIconUrl(512),
-          sizes: '512x512',
-          type: 'image/png',
+          src: getManifestIconUrl(),
+          sizes: 'any',
+          type: 'image/svg+xml',
           purpose: 'any maskable',
         },
       ],

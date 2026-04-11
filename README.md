@@ -17,10 +17,15 @@ Copy-Item backend/.env.example backend/.env
 Copy-Item frontend/.env.example frontend/.env.local
 ```
 
+Database setup:
+
+- Select the database engine and default app database name in [backend/src/config/database.selection.ts](backend/src/config/database.selection.ts).
+- Configure only connection credentials in [backend/.env.example](backend/.env.example) copied to `backend/.env`.
+
 Run the production-style stack:
 
 ```powershell
-docker compose -f docker-compose.prod.yml --profile proxy up --build -d
+docker compose -f docker-compose.prod.yml up --build -d
 ```
 
 ## Access From Other Devices On Same Network
@@ -38,7 +43,7 @@ Production-style (recommended):
 ```powershell
 $env:APP_BASE_URL = "http://<HOST_LAN_IP>"
 $env:APP_CORS_ORIGINS = "http://<HOST_LAN_IP>,http://<HOST_LAN_IP>:8080,http://localhost,http://localhost:8080,http://127.0.0.1,http://127.0.0.1:8080"
-docker compose -f docker-compose.prod.yml --profile proxy up --build -d
+docker compose -f docker-compose.prod.yml up --build -d
 ```
 
 Open from another device:

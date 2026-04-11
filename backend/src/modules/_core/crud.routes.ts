@@ -3,11 +3,10 @@ import { requireAuth } from '../../middlewares/authMiddleware';
 import { requirePermission } from '../../middlewares/permissions';
 import { validateRequest } from '../../middlewares/validate';
 import { createCrudController } from './crud.controller';
-import { CrudService } from './crud.service';
-import type { ModuleConfig } from './crud.types';
+import type { CrudLikeService, ModuleConfig } from './crud.types';
 import { idParamSchema, listQuerySchema } from './crud.validators';
 
-export function createCrudRouter(config: ModuleConfig, service: CrudService, validators: { createSchema: unknown; updateSchema: unknown }) {
+export function createCrudRouter(config: ModuleConfig, service: CrudLikeService, validators: { createSchema: unknown; updateSchema: unknown }) {
   const controller = createCrudController(service, config.moduleName);
   const router = Router();
   const basePath = config.basePath.startsWith('/api/') ? config.basePath.slice('/api'.length) : config.basePath;

@@ -145,7 +145,10 @@ function getCloseDraftStorageKey(workOrderId: string) {
 function getStatusVariant(status: string) {
   if (status === "CLOSED") return "completed" as const;
   if (status === "IN_PROGRESS") return "in_progress" as const;
+  if (status === "USER_VERIFICATION") return "critical" as const;
   if (status === "APPROVAL_PENDING") return "critical" as const;
+  if (status === "ASSIGNED") return "primary" as const;
+  if (status === "TRIAGED") return "info" as const;
   if (status === "REJECTED") return "error" as const;
   if (status === "OPENED") return "opened" as const;
   if (status === "RAISED") return "warning" as const;
@@ -296,7 +299,7 @@ export default function WorkOrders() {
 
   const approvalQueueWorkOrders = useMemo(() => {
     return allWorkOrders.filter(
-      (wo: any) => wo.status === "APPROVAL_PENDING" && (userIsAdmin || isOwnedByCurrentUser(wo.raised_by)),
+      (wo: any) => ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status) && (userIsAdmin || isOwnedByCurrentUser(wo.raised_by)),
     );
   }, [allWorkOrders, userIsAdmin]);
 
@@ -347,7 +350,7 @@ export default function WorkOrders() {
   const now24h = subHours(new Date(), 24);
   const openWOs = kpiSource.filter((wo: any) => !["CLOSED"].includes(wo.status)).length;
   const closedLast24h = kpiSource.filter((wo: any) => wo.status === "CLOSED" && wo.closed_at && new Date(wo.closed_at) > now24h).length;
-  const pendingApproval = kpiSource.filter((wo: any) => wo.status === "APPROVAL_PENDING").length;
+  const pendingApproval = kpiSource.filter((wo: any) => ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status)).length;
   const totalWOs = kpiSource.length;
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -370,8 +373,12 @@ export default function WorkOrders() {
       [wo.wo_number, wo.assets?.name, wo.assets?.code, wo.category, wo.status]
         .filter((value): value is string => typeof value === "string")
         .some((value) => value.toLowerCase().includes(normalizedSearch));
-    const effectiveStatusFilter = activeTab === "approval" ? "APPROVAL_PENDING" : statusFilter;
-    const matchesStatus = effectiveStatusFilter === "all" || wo.status === effectiveStatusFilter;
+    const effectiveStatusFilter = activeTab === "approval" ? "USER_VERIFICATION" : statusFilter;
+    const matchesStatus =
+      effectiveStatusFilter === "all" ||
+      (effectiveStatusFilter === "USER_VERIFICATION"
+        ? ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status)
+        : wo.status === effectiveStatusFilter);
     const matchesCat = categoryFilter === "all" || wo.category === categoryFilter;
     const matchesType = typeFilter === "all" || wo.wo_type === typeFilter;
     return matchesAsset && matchesSearch && matchesStatus && matchesCat && matchesType;
@@ -1471,10 +1478,10 @@ export default function WorkOrders() {
         follow_up_notes: followUpNotes || null,
       });
     } catch (error: any) {
-      toast.error(error?.message || "Failed to submit work order for approval");
+      toast.error(error?.message || "Failed to complete work order");
       return;
     }
-    toast.success(closeData.follow_up_required ? "Work order routed for follow-up" : "Work order submitted for approval");
+    toast.success(closeData.follow_up_required ? "Work order routed for follow-up" : "Work order sent for user verification");
     triggerWorkOrderLiveSync();
     void queryClient.invalidateQueries({ queryKey: ["dashboard_metrics"] });
     void queryClient.invalidateQueries({ queryKey: ["spare-maintenance-items"] });
@@ -1513,7 +1520,7 @@ export default function WorkOrders() {
         await approveWorkOrder(reviewTargetWO.id, {
           comments: reviewData.approve_comments.trim() || null,
         });
-        toast.success("Work order approved");
+        toast.success("Work order closed");
       } else {
         if (!reviewData.reject_comments.trim()) {
           toast.error("Rejection comments are required");
@@ -1522,7 +1529,7 @@ export default function WorkOrders() {
         await rejectWorkOrder(reviewTargetWO.id, {
           comments: reviewData.reject_comments.trim(),
         });
-        toast.success("Work order rejected");
+        toast.success("Work order reopened");
       }
     } catch (error: any) {
       toast.error(error?.message || `Failed to ${reviewMode} work order`);
@@ -1544,7 +1551,7 @@ export default function WorkOrders() {
 
   const canReviewWO = (wo: any) => {
     if (!user) return false;
-    return wo.status === "APPROVAL_PENDING" && (isOwnedByCurrentUser(wo.raised_by) || userIsAdmin);
+    return ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status) && (isOwnedByCurrentUser(wo.raised_by) || userIsAdmin);
   };
 
   const reviewRequiresComments = Boolean(reviewTargetWO && userIsAdmin && !isOwnedByCurrentUser(reviewTargetWO.raised_by));
@@ -1552,7 +1559,7 @@ export default function WorkOrders() {
   const kpiCards = [
     { label: "Open Work Orders", value: openWOs, icon: ClipboardList, color: "text-blue-500" },
     { label: "Completed (24h)", value: closedLast24h, icon: CheckSquare, color: "text-green-500" },
-    { label: "Pending Approval", value: pendingApproval, icon: AlertTriangle, color: "text-amber-500" },
+    { label: "Pending Verification", value: pendingApproval, icon: AlertTriangle, color: "text-amber-500" },
     { label: "Total", value: totalWOs, icon: Clock, color: "text-primary" },
   ];
 
@@ -1577,19 +1584,19 @@ export default function WorkOrders() {
             <DropdownMenuItem onClick={() => handleView(wo)}><Eye className="mr-2 h-4 w-4" />View Details</DropdownMenuItem>
             {canExecuteWO(wo) && (
               <>
-                {(wo.status === "RAISED" || wo.status === "OPENED") && <DropdownMenuItem onClick={() => openOpenForm(wo.id)}><Play className="mr-2 h-4 w-4" />Open & Assess</DropdownMenuItem>}
-                {wo.status === "IN_PROGRESS" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Submit for Approval</DropdownMenuItem>}
+                {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED"].includes(wo.status)) && <DropdownMenuItem onClick={() => openOpenForm(wo.id)}><Play className="mr-2 h-4 w-4" />Open & Assess</DropdownMenuItem>}
+                {wo.status === "IN_PROGRESS" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Complete & Send for Verification</DropdownMenuItem>}
                 {wo.status === "REJECTED" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Revise & Resubmit</DropdownMenuItem>}
               </>
             )}
             {canReviewWO(wo) && (
               <>
-                <DropdownMenuItem onClick={() => openReviewDialog(wo, "approve")}><CheckCircle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Override Approve" : "Approve"}</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openReviewDialog(wo, "reject")}><AlertTriangle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Override Reject" : "Reject"}</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openReviewDialog(wo, "approve")}><CheckCircle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Force Close" : "Accept & Close"}</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openReviewDialog(wo, "reject")}><AlertTriangle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Reopen" : "Reject & Reopen"}</DropdownMenuItem>
               </>
             )}
-            {!canReviewWO(wo) && wo.status === "APPROVAL_PENDING" && (
-              <DropdownMenuItem disabled className="text-muted-foreground">Awaiting raiser approval</DropdownMenuItem>
+            {!canReviewWO(wo) && ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status) && (
+              <DropdownMenuItem disabled className="text-muted-foreground">Awaiting raiser verification</DropdownMenuItem>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -1639,7 +1646,7 @@ export default function WorkOrders() {
             size="sm"
             onClick={() => setActiveTab("approval")}
           >
-            Approval Queue ({myApprovalQueueCount})
+            Verification Queue ({myApprovalQueueCount})
           </Button>
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
             <span>{isFetching ? "Syncing updates..." : `Last synced ${lastSyncedLabel}`}</span>
@@ -1680,8 +1687,8 @@ export default function WorkOrders() {
               <>
                 <SelectField label="" value={statusFilter} onChange={setStatusFilter} options={[
                   { value: "all", label: "All Status" },
-                  { value: "RAISED", label: "Raised" }, { value: "OPENED", label: "Opened" },
-                  { value: "IN_PROGRESS", label: "In Progress" }, { value: "APPROVAL_PENDING", label: "Submitted for Approval" },
+                  { value: "RAISED", label: "Raised" }, { value: "TRIAGED", label: "Triaged" }, { value: "ASSIGNED", label: "Assigned" }, { value: "OPENED", label: "Opened" },
+                  { value: "IN_PROGRESS", label: "In Progress" }, { value: "USER_VERIFICATION", label: "Waiting for Verification" },
                   { value: "REJECTED", label: "Rejected" }, { value: "CLOSED", label: "Completed" },
                 ]} className="w-full sm:w-[160px] min-w-[140px] flex-shrink-0" />
                 <SelectField label="" value={categoryFilter} onChange={setCategoryFilter} options={[
@@ -1704,7 +1711,7 @@ export default function WorkOrders() {
               : activeTab === "incharge"
                 ? "Category Work Orders"
                 : activeTab === "approval"
-                  ? "Approval Queue"
+                    ? "User Verification Queue"
                   : activeTab === "all"
                     ? "All Work Orders"
                     : activeTab === "raised"
@@ -1960,9 +1967,9 @@ export default function WorkOrders() {
         open={isCloseFormOpen}
         onOpenChange={setIsCloseFormOpen}
         title="Close Work Order"
-        description="Complete closure details and either submit for approval or route to a follow-up team."
+        description="Complete closure details and either send to raiser verification or route to a follow-up team."
         onSubmit={handleCloseWithDetails}
-        submitLabel={closeData.follow_up_required ? "Route Follow-up Team" : "Submit for Approval"}
+        submitLabel={closeData.follow_up_required ? "Route Follow-up Team" : "Send for User Verification"}
         size="xl"
       >
         <div className="space-y-6">
@@ -2090,7 +2097,7 @@ export default function WorkOrders() {
         {selectedWO && (
           <div className="space-y-6">
             <div className="flex flex-wrap justify-end gap-2">
-              {(selectedWO.status === "RAISED" || selectedWO.status === "OPENED") && canExecuteWO(selectedWO) ? (
+              {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED"].includes(selectedWO.status)) && canExecuteWO(selectedWO) ? (
                 <Button className="gap-2" onClick={() => openOpenForm(selectedWO.id)}>
                   <Play className="h-4 w-4" />
                   Open & Assess
@@ -2099,18 +2106,18 @@ export default function WorkOrders() {
               {(selectedWO.status === "IN_PROGRESS" || selectedWO.status === "REJECTED") && canExecuteWO(selectedWO) ? (
                 <Button className="gap-2" onClick={() => openCloseForm(selectedWO.id)}>
                   <Send className="h-4 w-4" />
-                  {selectedWO.status === "REJECTED" ? "Revise & Resubmit" : "Submit for Approval"}
+                  {selectedWO.status === "REJECTED" ? "Revise & Resubmit" : "Complete & Send for Verification"}
                 </Button>
               ) : null}
-              {selectedWO.status === "APPROVAL_PENDING" && canReviewWO(selectedWO) ? (
+              {(["USER_VERIFICATION", "APPROVAL_PENDING"].includes(selectedWO.status)) && canReviewWO(selectedWO) ? (
                 <>
                   <Button className="gap-2" onClick={() => openReviewDialog(selectedWO, "approve")}>
                     <CheckCircle className="h-4 w-4" />
-                    Approve
+                    Accept & Close
                   </Button>
                   <Button variant="outline" className="gap-2" onClick={() => openReviewDialog(selectedWO, "reject")}>
                     <AlertTriangle className="h-4 w-4" />
-                    Reject
+                    Reject & Reopen
                   </Button>
                 </>
               ) : null}
@@ -2153,7 +2160,7 @@ export default function WorkOrders() {
               <DetailRow label="Raised" value={format(new Date(selectedWO.created_at), "dd MMM yyyy HH:mm")} />
               {selectedWO.opened_at && <DetailRow label="Opened" value={format(new Date(selectedWO.opened_at), "dd MMM yyyy HH:mm")} />}
               {selectedWO.started_at && <DetailRow label="Started" value={format(new Date(selectedWO.started_at), "dd MMM yyyy HH:mm")} />}
-              {selectedWO.submitted_for_approval_at && <DetailRow label="Submitted for Approval" value={format(new Date(selectedWO.submitted_for_approval_at), "dd MMM yyyy HH:mm")} />}
+              {selectedWO.submitted_for_approval_at && <DetailRow label="Submitted for Verification" value={format(new Date(selectedWO.submitted_for_approval_at), "dd MMM yyyy HH:mm")} />}
               {selectedWO.rejected_at && <DetailRow label="Rejected" value={format(new Date(selectedWO.rejected_at), "dd MMM yyyy HH:mm")} />}
               {selectedWO.closed_at && <DetailRow label="Completed" value={format(new Date(selectedWO.closed_at), "dd MMM yyyy HH:mm")} />}
               {selectedWO.remarks && <DetailRow label="Remarks" value={selectedWO.remarks} />}
@@ -2346,22 +2353,22 @@ export default function WorkOrders() {
       <FormDialog
         open={isReviewOpen}
         onOpenChange={setIsReviewOpen}
-        title={reviewMode === "approve" ? "Approve Work Order" : "Reject Work Order"}
+        title={reviewMode === "approve" ? "Accept & Close Work Order" : "Reject & Reopen Work Order"}
         description={
           reviewMode === "approve"
             ? reviewRequiresComments
-              ? "This is an admin override approval. Enter comments for the audit trail."
-              : "Review the technician submission and approve completion."
+              ? "This is an admin force close action. Enter comments for the audit trail."
+              : "Review technician completion details and confirm closure."
             : reviewRequiresComments
-              ? "This is an admin override rejection. Enter comments for the audit trail."
-              : "Add rejection comments so the technician can revise and resubmit."
+              ? "This is an admin reopen action. Enter comments for the audit trail."
+              : "Add comments so the technician can revise and resubmit."
         }
         onSubmit={handleReviewWorkOrder}
-        submitLabel={reviewMode === "approve" ? "Approve" : "Reject"}
+        submitLabel={reviewMode === "approve" ? "Accept & Close" : "Reject & Reopen"}
         size="md"
       >
         <TextareaField
-          label={reviewMode === "approve" ? "Approval Comments" : "Rejection Comments"}
+          label={reviewMode === "approve" ? "Closure Comments" : "Reopen Comments"}
           value={reviewMode === "approve" ? reviewData.approve_comments : reviewData.reject_comments}
           onChange={(value) =>
             setReviewData((current) => ({
@@ -2369,7 +2376,7 @@ export default function WorkOrders() {
               [reviewMode === "approve" ? "approve_comments" : "reject_comments"]: value,
             }))
           }
-          placeholder={reviewMode === "approve" ? "Optional comments for the technician or audit log" : "Explain what must be corrected before resubmission"}
+          placeholder={reviewMode === "approve" ? "Optional comments for closure confirmation or audit log" : "Explain what must be corrected before resubmission"}
           required={reviewMode === "reject" || reviewRequiresComments}
         />
       </FormDialog>

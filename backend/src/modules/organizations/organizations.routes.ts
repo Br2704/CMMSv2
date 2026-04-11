@@ -6,6 +6,7 @@ import { requirePermission } from '../../middlewares/permissions';
 import { validateRequest } from '../../middlewares/validate';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { fail, ok } from '../../utils/apiResponse';
+import { isProtectedOrganizationIdentity } from '../../config/protectedRootAdmin';
 import { toPagination } from '../../utils/pagination';
 import { createCrudController } from '../_core/crud.controller';
 import { idParamSchema, listQuerySchema } from '../_core/crud.validators';
@@ -237,11 +238,31 @@ organizationsRouter.patch(
   '/organizations/:id',
   requirePermission('ORGANIZATIONS', 'UPDATE'),
   validateRequest({ params: idParamSchema, body: updateOrganizationSchema }),
-  organizationsController.update,
+  asyncHandler(async (req, res, next) => {
+    const organization = await AppDataSource.getRepository(OrganizationEntity).findOne({
+      where: { id: req.params.id },
+      select: ['id', 'name', 'code'],
+    });
+    if (organization && isProtectedOrganizationIdentity(organization)) {
+      res.status(403).json(fail('Protected organization cannot be modified'));
+      return;
+    }
+    await organizationsController.update(req, res, next);
+  }),
 );
 organizationsRouter.delete(
   '/organizations/:id',
   requirePermission('ORGANIZATIONS', 'DELETE'),
   validateRequest({ params: idParamSchema }),
-  organizationsController.remove,
+  asyncHandler(async (req, res, next) => {
+    const organization = await AppDataSource.getRepository(OrganizationEntity).findOne({
+      where: { id: req.params.id },
+      select: ['id', 'name', 'code'],
+    });
+    if (organization && isProtectedOrganizationIdentity(organization)) {
+      res.status(403).json(fail('Protected organization cannot be deleted'));
+      return;
+    }
+    await organizationsController.remove(req, res, next);
+  }),
 );

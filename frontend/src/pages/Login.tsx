@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { buildBrandingFaviconUrlByCode, buildBrandingLogoUrlByCode, buildBrandingManifestUrl } from "@/api/branding";
+import { buildBrandingManifestUrl } from "@/api/branding";
 import { ApiError, clearSessionBootstrapHint, clearStoredAccessToken } from "@/api/http";
 import { login } from "@/api/auth";
 import { useAuthStore, fetchUserProfile, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
@@ -12,7 +12,11 @@ import { useBrandingStore } from "@/store/branding.store";
 import { Eye, EyeOff, LogIn, Factory, ShieldCheck, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
-import tamoptixLogo from "@/assets/tamoptix-logo.png";
+
+const JK_FENNER_FAVICON = "/jkfenner/jkfenner-favicon.svg";
+const JK_FENNER_LOGO = "/jkfenner/jkfenner-logo.svg";
+const JK_FENNER_LOGO_FALLBACK = "/jkfenner/jkfenner-logo.png";
+const TAMOPTIX_LOGO = "/tamoptix/tamoptix-logo.svg";
 
 type LoginBrand = {
   name: string;
@@ -48,9 +52,7 @@ export default function Login() {
   const resetBranding = useBrandingStore((state) => state.reset);
   const primeBranding = useBrandingStore((state) => state.primeFromSeed);
   const { toast } = useToast();
-  const localFavicon = useMemo(() => buildBrandingFaviconUrlByCode("JKF", null, 192), []);
   const loginBrand = useMemo(() => resolveLoginBrand(), []);
-  const loginOrganizationLogo = useMemo(() => buildBrandingLogoUrlByCode("JKF", null, 512), []);
   const returnTo = useMemo(() => {
     const candidate = searchParams.get("returnTo") || "";
     if (!candidate.startsWith("/") || candidate.startsWith("//")) {
@@ -101,13 +103,13 @@ export default function Login() {
         if (id) element.id = id;
         document.head.appendChild(element);
       }
-      element.href = localFavicon;
+      element.href = JK_FENNER_FAVICON;
       return element;
     };
 
     ensureLink("icon");
     ensureLink("shortcut icon");
-    ensureLink("apple-touch-icon", "dynamic-apple-touch-icon").href = localFavicon;
+    ensureLink("apple-touch-icon", "dynamic-apple-touch-icon").href = JK_FENNER_FAVICON;
     ensureLink("manifest", "dynamic-manifest-link").href = buildBrandingManifestUrl(null, null);
   }, [loginBrand]);
 
@@ -259,12 +261,12 @@ export default function Login() {
               <div className="w-full max-w-sm space-y-4">
                 <div className="rounded-3xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 px-6 py-5 shadow-sm">
                   <img
-                    src={loginOrganizationLogo}
+                    src={JK_FENNER_LOGO}
                     alt={`${loginBrand.name} Logo`}
                     className="mx-auto h-16 w-auto object-contain"
                     onError={(event) => {
                       event.currentTarget.onerror = null;
-                      event.currentTarget.src = "/icons/jkfenner-logo.svg";
+                      event.currentTarget.src = JK_FENNER_LOGO_FALLBACK;
                     }}
                   />
                 </div>
@@ -442,7 +444,7 @@ export default function Login() {
               transition={{ delay: 0.5 }}
             >
               <div className="flex flex-col items-center gap-3 text-center">
-                <img src={tamoptixLogo} alt="TamOptiX" className="h-8 w-auto object-contain" />
+                <img src={TAMOPTIX_LOGO} alt="TamOptiX" className="h-8 w-auto object-contain" />
                 <div className="flex items-center gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Organization Aware Login</p>

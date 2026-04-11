@@ -3,12 +3,14 @@ import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { BottomNav } from "./BottomNav";
-import { buildBrandingFaviconUrlByCode, buildBrandingManifestUrl } from "@/api/branding";
+import { buildBrandingManifestUrl } from "@/api/branding";
 import { useAuthStore } from "@/store/auth.store";
 import { useBrandingStore } from "@/store/branding.store";
 import { useFeaturesStore } from "@/store/features.store";
-import tamoptixLogo from "@/assets/tamoptix-logo.png";
 import { cn } from "@/lib/utils";
+
+const JK_FENNER_FAVICON = "/jkfenner/jkfenner-favicon.svg";
+const TAMOPTIX_LOGO = "/tamoptix/tamoptix-logo.svg";
 
 export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -24,8 +26,6 @@ export function MainLayout() {
   const organizationName = useBrandingStore((state) => state.organizationName);
   const sidebarTitle = useBrandingStore((state) => state.sidebarTitle);
   const organizationId = useBrandingStore((state) => state.organizationId);
-  const faviconUrl = useBrandingStore((state) => state.faviconUrl);
-  const fallbackFaviconUrl = useBrandingStore((state) => state.fallbackFaviconUrl);
   const browserTitle = useBrandingStore((state) => state.browserTitle);
   const brandColor = useBrandingStore((state) => state.brandColor);
   const brandingVersion = useBrandingStore((state) => state.version);
@@ -126,7 +126,7 @@ export function MainLayout() {
     updateMetaContent('meta[name="theme-color"]', brandColor || "#0f172a");
     updateMetaContent('meta[name="msapplication-TileColor"]', brandColor || "#0f172a");
 
-    const resolvedFavicon = buildBrandingFaviconUrlByCode("JKF", brandingVersion || null, 192);
+    const resolvedFavicon = JK_FENNER_FAVICON;
     const ensureLink = (rel: string, id?: string) => {
       let element = id
         ? document.querySelector<HTMLLinkElement>(`#${id}`)
@@ -145,7 +145,7 @@ export function MainLayout() {
     ensureLink("shortcut icon");
     ensureLink("apple-touch-icon", "dynamic-apple-touch-icon").href = resolvedFavicon;
     ensureLink("manifest", "dynamic-manifest-link").href = buildBrandingManifestUrl(organizationId, brandingVersion);
-  }, [brandColor, brandingVersion, browserTitle, fallbackFaviconUrl, faviconUrl, organizationId, organizationName, sidebarTitle]);
+  }, [brandColor, brandingVersion, browserTitle, organizationId, organizationName, sidebarTitle]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -170,15 +170,14 @@ export function MainLayout() {
         </main>
 
         <footer className="border-t border-border/70 bg-card/80 px-4 py-3 backdrop-blur-sm sm:px-6 lg:px-8">
-          <div className="mx-auto flex w-full max-w-[1720px] items-center justify-center gap-2 text-[11px] text-muted-foreground">
-            <img src={tamoptixLogo} alt="TamOptiX" className="h-3.5 w-3.5 rounded-sm object-contain" />
-            <span>TamOptiX Technologies</span>
+          <div className="mx-auto flex w-full max-w-[1720px] items-center justify-center">
+            <img src={TAMOPTIX_LOGO} alt="TamOptiX" className="h-5 w-auto object-contain" />
           </div>
         </footer>
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <BottomNav />
+      <BottomNav isSidebarOpen={sidebarOpen} />
     </div>
   );
 }

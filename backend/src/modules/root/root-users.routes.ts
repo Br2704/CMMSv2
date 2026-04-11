@@ -5,6 +5,7 @@ import { OrgRoleEntity, OrganizationEntity, PlantEntity, ProfileEntity, RefreshT
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { requireRole } from '../../middlewares/permissions';
 import { fail, ok } from '../../utils/apiResponse';
+import { isProtectedRootAdminEmail } from '../../config/protectedRootAdmin';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { hashPassword } from '../../utils/password';
 import { isStrongPassword, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_MESSAGE } from '../../utils/passwordPolicy';
@@ -531,6 +532,10 @@ rootUsersRouter.patch('/root/users/:id', async (req, res, next) => {
       res.status(404).json(fail('User not found'));
       return;
     }
+    if (isProtectedRootAdminEmail(user.email)) {
+      res.status(403).json(fail('Protected root admin account cannot be modified'));
+      return;
+    }
 
     const existingRoles = await roleRepo.find({ where: { userId: user.id } });
     const existingOrgRole = user.orgRoleId && user.organizationId
@@ -676,6 +681,10 @@ rootUsersRouter.delete('/root/users/:id', async (req, res, next) => {
     const user = await userRepo.findOneBy({ id: params.id });
     if (!user) {
       res.status(404).json(fail('User not found'));
+      return;
+    }
+    if (isProtectedRootAdminEmail(user.email)) {
+      res.status(403).json(fail('Protected root admin account cannot be deleted'));
       return;
     }
 

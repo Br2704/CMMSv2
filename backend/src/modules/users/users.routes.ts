@@ -8,6 +8,7 @@ import { forbidFieldsByRole } from '../../middlewares/fieldAuthorization';
 import { ensurePlantAccess, requirePermission } from '../../middlewares/permissions';
 import { fail, ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
+import { isProtectedRootAdminEmail } from '../../config/protectedRootAdmin';
 import {
   canAssignRole,
   canCreateUser,
@@ -427,6 +428,10 @@ usersRouter.patch('/profiles/:id', requirePermission('USERS', 'UPDATE'), async (
       res.status(404).json(fail('User not found'));
       return;
     }
+    if (isProtectedRootAdminEmail(user.email)) {
+      res.status(403).json(fail('Protected root admin account cannot be modified'));
+      return;
+    }
 
     const targetRoles = await roleRepo.find({ where: { userId: user.id } });
     const target = toTargetUser(user.id, targetRoles.map((row) => row.role), profile.plantId);
@@ -505,6 +510,10 @@ usersRouter.patch(
       const user = await userRepo.findOneBy({ id: params.id });
       if (!user) {
         res.status(404).json(fail('User not found'));
+        return;
+      }
+      if (isProtectedRootAdminEmail(user.email)) {
+        res.status(403).json(fail('Protected root admin account cannot be modified'));
         return;
       }
 
@@ -594,6 +603,10 @@ usersRouter.patch('/users/:id/roles', requirePermission('USERS', 'UPDATE'), asyn
       res.status(404).json(fail('User not found'));
       return;
     }
+    if (isProtectedRootAdminEmail(user.email)) {
+      res.status(403).json(fail('Protected root admin account roles cannot be changed'));
+      return;
+    }
 
     const existingRoles = await roleRepo.find({ where: { userId: user.id } });
 
@@ -659,6 +672,10 @@ usersRouter.patch('/users/:id/password', requirePermission('USERS', 'UPDATE'), a
       res.status(404).json(fail('User not found'));
       return;
     }
+    if (isProtectedRootAdminEmail(user.email)) {
+      res.status(403).json(fail('Protected root admin password cannot be changed'));
+      return;
+    }
 
     const profile = await profileRepo.findOneBy({ userId: user.id });
     const targetRoles = await roleRepo.find({ where: { userId: user.id } });
@@ -693,6 +710,10 @@ usersRouter.delete('/users/:id', requirePermission('USERS', 'DELETE'), async (re
     const user = await userRepo.findOneBy({ id: params.id });
     if (!user) {
       res.status(404).json(fail('User not found'));
+      return;
+    }
+    if (isProtectedRootAdminEmail(user.email)) {
+      res.status(403).json(fail('Protected root admin account cannot be deleted'));
       return;
     }
 

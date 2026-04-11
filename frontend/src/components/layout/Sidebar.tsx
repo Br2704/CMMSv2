@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
-import { buildBrandingLogoUrlByCode } from "@/api/branding";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useIsMobilePwaMode } from "@/hooks/use-mobile-pwa";
 import { isRootAdmin, useAuthStore } from "@/store/auth.store";
 import { useBrandingStore } from "@/store/branding.store";
 import {
@@ -101,11 +101,11 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
   const { user } = useAuthStore();
   const isRootUser = isRootAdmin(user);
   const brandingOrganizationName = useBrandingStore((state) => state.organizationName);
-  const brandingSidebarTitle = useBrandingStore((state) => state.sidebarTitle);
+  const brandingLogoUrl = useBrandingStore((state) => state.logoUrl);
+  const brandingLogoAssetUrl = useBrandingStore((state) => state.logoAssetUrl);
   const { hasModuleAccess, loading } = usePermissions();
-  const jkFennerLogoUrl = useMemo(() => buildBrandingLogoUrlByCode("JKF", null, 512), []);
+  const isMobilePwaMode = useIsMobilePwaMode();
   const organizationName = user?.organizationName || brandingOrganizationName || null;
-  const sidebarTitle = brandingSidebarTitle || user?.organizationName || null;
 
   const toggleExpand = (title: string) => {
     setExpandedItems((prev) => (prev.includes(title) ? prev.filter((item) => item !== title) : [...prev, title]));
@@ -133,11 +133,17 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
 
                 const filteredChildren = item.children.filter((child) => hasModuleAccess(child.moduleId, "view"));
                 const parentAllowed = hasModuleAccess(item.moduleId, "view");
+
+                if (isMobilePwaMode && item.href === "/masters") {
+                  if (!parentAllowed) return null;
+                  return { ...item, children: undefined };
+                }
+
                 if (!parentAllowed && filteredChildren.length === 0) return null;
                 return { ...item, children: filteredChildren };
               })
               .filter(Boolean) as NavItem[]),
-    [hasModuleAccess, isRootUser, showNavSkeleton],
+    [hasModuleAccess, isMobilePwaMode, isRootUser, showNavSkeleton],
   );
 
   useEffect(() => {
@@ -152,8 +158,8 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
     });
   }, [filteredNavigation, location.pathname]);
 
-  const resolvedLogo = jkFennerLogoUrl;
-  const resolvedTitle = sidebarTitle || organizationName || "JK Fenner CMMS Platform";
+  const resolvedLogo = user?.organizationLogoUrl || brandingLogoUrl || brandingLogoAssetUrl || "/jkfenner/jkfenner-logo.svg";
+  const resolvedTitle = organizationName || "Organization";
   const homeHref = isRootUser ? "/root/dashboard" : "/";
   const collapseNavItems = isCollapsed && typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches;
   const handleNavItemClick = () => {
@@ -178,8 +184,8 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
 
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-border bg-card shadow-lg transition-[width,transform] duration-300",
-          "w-[280px]",
+          "fixed left-0 top-0 z-[60] flex h-screen flex-col border-r border-border bg-card shadow-lg transition-[width,transform] duration-300",
+          "w-[min(88vw,320px)] sm:w-[300px] lg:w-[280px]",
           isOpen ? "translate-x-0" : "-translate-x-full",
           "lg:translate-x-0",
           isCollapsed ? "lg:w-24" : "lg:w-[280px]",
@@ -189,7 +195,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
           <Link
             to={homeHref}
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-3 overflow-hidden",
+              "flex min-w-0 flex-1 items-center overflow-hidden",
               isCollapsed && "lg:justify-center",
             )}
             onClick={handleNavItemClick}
@@ -197,23 +203,19 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
           >
             <div
               className={cn(
-                "flex h-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/70 bg-background/80 px-3",
-                isCollapsed ? "w-11" : "w-24",
+                "flex h-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/70 bg-background/80",
+                isCollapsed ? "w-11" : "w-28",
               )}
             >
               <img
                 src={resolvedLogo}
-                alt="JK Fenner"
+                alt={organizationName ? `${organizationName} logo` : "Organization logo"}
                 className="max-h-8 w-full object-contain"
                 onError={(event) => {
                   event.currentTarget.onerror = null;
-                  event.currentTarget.src = "/icons/jkfenner-logo.svg";
+                  event.currentTarget.src = "/jkfenner/jkfenner-logo.svg";
                 }}
               />
-            </div>
-            <div className={cn("min-w-0", isCollapsed && "lg:hidden")}>
-              <p className="truncate text-sm font-semibold text-foreground">{organizationName || "Organization"}</p>
-              <p className="truncate text-xs text-muted-foreground">{sidebarTitle || "JK Fenner CMMS"}</p>
             </div>
           </Link>
 
@@ -227,7 +229,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
 
         </div>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+        <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-24 pt-3 sm:pb-28 lg:pb-6">
           {showNavSkeleton
             ? Array.from({ length: 8 }).map((_, index) => (
                 <div key={`sidebar-skeleton-${index}`} className="animate-pulse rounded-lg border border-border/50 bg-muted/40 px-3 py-3">
@@ -241,10 +243,16 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
             const parentAccessible = isRootUser || hasModuleAccess(item.moduleId, "view");
             const parentTarget = parentAccessible ? item.href || "/masters" : item.children?.[0]?.href || item.href || "/masters";
             const itemIsActive = isActive(item.href) || item.children?.some((child) => isActive(child.href));
+            const showSectionLabel = !isRootUser && item.href === "/masters";
 
-            if (item.children && !collapseNavItems) {
+            if (item.children?.length && !collapseNavItems) {
               return (
                 <div key={item.title}>
+                  {showSectionLabel ? (
+                    <p className="mb-2 mt-3 px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      Masters
+                    </p>
+                  ) : null}
                   <div className="flex items-center">
                     <Link
                       to={parentTarget}
@@ -315,6 +323,11 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
 
             return (
               <div key={item.title}>
+                {showSectionLabel ? (
+                  <p className="mb-2 mt-3 px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Masters
+                  </p>
+                ) : null}
                 <Link
                   to={parentTarget}
                   onClick={handleNavItemClick}
@@ -334,12 +347,6 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
             );
           })}
         </nav>
-
-        <div className="border-t border-border p-4">
-          <p className={cn("text-center text-[11px] text-muted-foreground", isCollapsed && "lg:hidden")}>
-            TamOptiX Technologies
-          </p>
-        </div>
       </aside>
     </>
   );

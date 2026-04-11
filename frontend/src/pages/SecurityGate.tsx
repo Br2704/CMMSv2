@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { AlertTriangle, Camera, Download, DoorOpen, FileScan, Loader2, LogIn, LogOut, QrCode, ShieldAlert, Truck, UserCheck, Users } from "lucide-react";
+import { AlertTriangle, Camera, Check, ChevronsUpDown, Download, DoorOpen, FileScan, Loader2, LogIn, LogOut, QrCode, ShieldAlert, Truck, UserCheck, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
@@ -172,6 +174,7 @@ export default function SecurityGate() {
   const [cameraCaptureField, setCameraCaptureField] = useState<GateTemplateField | null>(null);
   const [cameraCaptureStatus, setCameraCaptureStatus] = useState<"idle" | "starting" | "ready">("idle");
   const [cameraCaptureError, setCameraCaptureError] = useState("");
+  const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const syncVersionRef = useRef<string | null>(null);
@@ -239,9 +242,17 @@ export default function SecurityGate() {
         .filter((employee) => employee.isActive)
         .map((employee) => ({
           value: employee.userId,
-          label: `${employee.fullName} (${employee.userCode})`,
+          label: employee.fullName,
+          code: employee.userCode,
+          secondary: [employee.userCode, employee.department || null, employee.email].filter(Boolean).join(" • "),
+          searchText: `${employee.fullName} ${employee.userCode} ${employee.department || ""} ${employee.email}`,
         })),
     [employees],
+  );
+
+  const selectedEmployeeOption = useMemo(
+    () => employeeOptions.find((option) => option.value === smartVisitorForm.personToMeetUserId) || null,
+    [employeeOptions, smartVisitorForm.personToMeetUserId],
   );
 
   const groupedFields = useMemo(() => {
@@ -380,6 +391,20 @@ export default function SecurityGate() {
       }
     })();
   }, [selectedTemplateId]);
+
+  useEffect(() => {
+    if (employeeOptions.length === 0) {
+      setSmartVisitorForm((current) => (current.personToMeetUserId ? { ...current, personToMeetUserId: "" } : current));
+      return;
+    }
+
+    setSmartVisitorForm((current) => {
+      if (current.personToMeetUserId && employeeOptions.some((option) => option.value === current.personToMeetUserId)) {
+        return current;
+      }
+      return { ...current, personToMeetUserId: employeeOptions[0].value };
+    });
+  }, [employeeOptions]);
 
   useEffect(() => {
     const template = templates.find((item) => item.id === selectedTemplateId);
@@ -1064,16 +1089,49 @@ export default function SecurityGate() {
 
                     <div className="space-y-2">
                       <Label>Employee to Visit</Label>
-                      <Select value={smartVisitorForm.personToMeetUserId} onValueChange={(value) => setSmartVisitorForm((current) => ({ ...current, personToMeetUserId: value }))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select employee" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {employeeOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Popover open={employeePickerOpen} onOpenChange={setEmployeePickerOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={employeePickerOpen}
+                            className="w-full justify-between font-normal"
+                          >
+                            <span className="truncate text-left">
+                              {selectedEmployeeOption ? `${selectedEmployeeOption.label} (${selectedEmployeeOption.code})` : "Search employee by name or code"}
+                            </span>
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-[--radix-popover-trigger-width] p-0">
+                          <Command>
+                            <CommandInput placeholder="Search by name, code, department, email..." />
+                            <CommandList>
+                              <CommandEmpty>No active employees found for this plant.</CommandEmpty>
+                              <CommandGroup>
+                                {employeeOptions.map((option) => (
+                                  <CommandItem
+                                    key={option.value}
+                                    value={option.searchText}
+                                    onSelect={() => {
+                                      setSmartVisitorForm((current) => ({ ...current, personToMeetUserId: option.value }));
+                                      setEmployeePickerOpen(false);
+                                    }}
+                                  >
+                                    <Check className={`mr-2 h-4 w-4 ${smartVisitorForm.personToMeetUserId === option.value ? "opacity-100" : "opacity-0"}`} />
+                                    <div className="min-w-0">
+                                      <p className="truncate">{option.label}</p>
+                                      <p className="truncate text-xs text-muted-foreground">{option.secondary}</p>
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <p className="text-xs text-muted-foreground">{employeeOptions.length} active employee(s) available for this plant.</p>
                     </div>
                   </div>
 

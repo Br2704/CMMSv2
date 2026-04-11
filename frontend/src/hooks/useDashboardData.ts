@@ -265,7 +265,7 @@ export function useDashboardData(selectedPlantId?: string | null) {
     (wo: any) => wo.status === "CLOSED" && wo.closed_at && new Date(wo.closed_at) > now24h
   ).length;
   const overduePM = scopedPmSchedules.filter((pm: any) => pm.status === "OVERDUE").length;
-  const pendingApproval = filteredWOs.filter((wo: any) => wo.status === "APPROVAL_PENDING").length;
+  const pendingApproval = filteredWOs.filter((wo: any) => ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status)).length;
   const overdueCalibrations = scopedCalibrations.filter((c: any) => c.status === "OVERDUE").length;
   const visitorsToday = gateSummary.visitorsToday;
   const vehiclesEntered = gateSummary.vehiclesEntered;

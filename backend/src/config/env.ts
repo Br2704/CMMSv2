@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { z } from 'zod';
+import { databaseSelection } from './database.selection';
 import { isStrongPassword } from '../utils/passwordPolicy';
 
 config();
@@ -22,18 +23,39 @@ const booleanFromEnv = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
+const optionalStringFromEnv = z.preprocess((value) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  return value;
+}, z.string().optional());
+
+const optionalPortFromEnv = z.preprocess((value) => {
+  if (value === '' || value === null || value === undefined) return undefined;
+  return value;
+}, z.coerce.number().int().positive().optional());
+
+const optionalUrlFromEnv = z.preprocess((value) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  return value;
+}, z.string().url().optional());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
   API_PREFIX: z.string().default('/api'),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
 
-  DB_TYPE: z.enum(['postgres', 'mysql', 'mssql']).default('postgres'),
-  DB_HOST: z.string().min(1),
-  DB_PORT: z.coerce.number().int().positive(),
-  DB_USER: z.string().min(1),
+  DATABASE_URL: optionalUrlFromEnv,
+  DB_HOST: optionalStringFromEnv,
+  DB_PORT: optionalPortFromEnv,
+  DB_USER: optionalStringFromEnv,
   DB_PASSWORD: z.string().default(''),
-  DB_NAME: z.string().min(1),
+  DB_FILE: optionalStringFromEnv,
   DB_SSL: booleanFromEnv.default(false),
 
   JWT_SECRET: z.string().min(8),
@@ -65,19 +87,42 @@ const envSchema = z.object({
   SMTP_FROM: z.string().optional().default(''),
 
   SUPERADMIN_EMAIL: z.string().email().default('superadmin@cmms.local'),
-  SUPERADMIN_PASSWORD: z.string().min(12),
+  SUPERADMIN_PASSWORD: optionalStringFromEnv,
   SUPERADMIN_FULL_NAME: z.string().default('CMMS Super Admin'),
   ROOT_ADMIN_EMAIL: z.string().email().default('admin@tamoptix.tech'),
-  ROOT_ADMIN_PASSWORD: z.string().min(12),
-  ROOT_ADMIN_FULL_NAME: z.string().default('CMMS Root Admin'),
-  SEED_SUPERADMIN: booleanFromEnv.default(true),
-  SEED_DEMO_DATA: booleanFromEnv.default(false),
-  DEMO_SEED_PASSWORD: z.string().default(''),
+  ROOT_ADMIN_PASSWORD: optionalStringFromEnv,
+  ROOT_ADMIN_FULL_NAME: z.string().default('Root Admin'),
 
   FEATURE_BENCHMARKING: booleanFromEnv.default(true),
   FEATURE_ESG_ADVANCED: booleanFromEnv.default(true),
   FEATURE_RELIABILITY_ADVANCED: booleanFromEnv.default(true),
 });
+
+function assertDatabaseConfig(envConfig: z.infer<typeof envSchema>) {
+  const errors: string[] = [];
+  const usesDatabaseUrl = Boolean(envConfig.DATABASE_URL);
+  const dbEngine = databaseSelection.engine;
+  const relationalHostBased = new Set(['postgres', 'mysql', 'mariadb', 'mssql', 'cockroachdb']);
+  const fileBased = new Set(['sqlite', 'better-sqlite3']);
+
+  if (relationalHostBased.has(dbEngine) || dbEngine === 'mongodb') {
+    if (!usesDatabaseUrl) {
+      if (!envConfig.DB_HOST) errors.push('DB_HOST is required when DATABASE_URL is not set.');
+      if (!envConfig.DB_PORT) errors.push('DB_PORT is required when DATABASE_URL is not set.');
+      if (!envConfig.DB_USER) errors.push('DB_USER is required when DATABASE_URL is not set.');
+    }
+  }
+
+  if (fileBased.has(dbEngine) && !usesDatabaseUrl && !envConfig.DB_FILE) {
+    errors.push('DB_FILE is required for sqlite and better-sqlite3 when DATABASE_URL is not set.');
+  }
+
+  if (errors.length > 0) {
+    // eslint-disable-next-line no-console
+    console.error('Invalid database configuration', errors);
+    throw new Error('Invalid database configuration');
+  }
+}
 
 const COMMON_WEAK_SECRETS = new Set([
   'change-me-access-secret',
@@ -112,14 +157,11 @@ function assertProductionSecurityConfig(envConfig: z.infer<typeof envSchema>) {
   if (envConfig.DATA_ENCRYPTION_KEY.trim().length < 32 || isWeakSecret(envConfig.DATA_ENCRYPTION_KEY)) {
     errors.push('DATA_ENCRYPTION_KEY must be at least 32 characters and must not use weak defaults.');
   }
-  if (!isStrongPassword(envConfig.ROOT_ADMIN_PASSWORD)) {
+  if (envConfig.ROOT_ADMIN_PASSWORD && !isStrongPassword(envConfig.ROOT_ADMIN_PASSWORD)) {
     errors.push('ROOT_ADMIN_PASSWORD must meet the password policy requirements.');
   }
-  if (envConfig.SEED_SUPERADMIN && !isStrongPassword(envConfig.SUPERADMIN_PASSWORD)) {
-    errors.push('SUPERADMIN_PASSWORD must meet the password policy requirements when SEED_SUPERADMIN=true.');
-  }
-  if (envConfig.SEED_DEMO_DATA && !isStrongPassword(envConfig.DEMO_SEED_PASSWORD)) {
-    errors.push('DEMO_SEED_PASSWORD must meet the password policy requirements when SEED_DEMO_DATA=true.');
+  if (envConfig.SUPERADMIN_PASSWORD && !isStrongPassword(envConfig.SUPERADMIN_PASSWORD)) {
+    errors.push('SUPERADMIN_PASSWORD must meet the password policy requirements.');
   }
 
   if (errors.length > 0) {
@@ -142,14 +184,16 @@ function deriveEnv(input: NodeJS.ProcessEnv): Record<string, string | undefined>
   if (out.DATABASE_URL) {
     try {
       const parsed = new URL(out.DATABASE_URL);
-      if (!out.DB_TYPE) {
-        out.DB_TYPE = parsed.protocol.replace(':', '') as 'postgres' | 'mysql' | 'mssql';
+      const protocol = parsed.protocol.replace(':', '').toLowerCase();
+      if (protocol === 'sqlite') {
+        const sqlitePath = decodeURIComponent(parsed.pathname || '').replace(/^\/+/, '');
+        if (!out.DB_FILE && sqlitePath) out.DB_FILE = sqlitePath;
+      } else {
+        if (!out.DB_HOST) out.DB_HOST = parsed.hostname;
+        if (!out.DB_PORT) out.DB_PORT = parsed.port || undefined;
+        if (!out.DB_USER) out.DB_USER = decodeURIComponent(parsed.username || '');
+        if (!out.DB_PASSWORD) out.DB_PASSWORD = decodeURIComponent(parsed.password || '');
       }
-      if (!out.DB_HOST) out.DB_HOST = parsed.hostname;
-      if (!out.DB_PORT) out.DB_PORT = parsed.port || undefined;
-      if (!out.DB_USER) out.DB_USER = decodeURIComponent(parsed.username || '');
-      if (!out.DB_PASSWORD) out.DB_PASSWORD = decodeURIComponent(parsed.password || '');
-      if (!out.DB_NAME) out.DB_NAME = parsed.pathname.replace(/^\//, '');
       if (!out.DB_SSL && parsed.searchParams.get('sslmode')) {
         out.DB_SSL = 'true';
       }
@@ -168,6 +212,7 @@ if (!parsed.success) {
   throw new Error('Invalid environment variables');
 }
 
+assertDatabaseConfig(parsed.data);
 assertProductionSecurityConfig(parsed.data);
 
 export const env = parsed.data;

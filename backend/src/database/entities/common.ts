@@ -3,10 +3,14 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { databaseSelection } from '../../config/database.selection';
 
-const dbType = (process.env.DB_TYPE ?? 'postgres').toLowerCase();
-export const DATETIME_COLUMN_TYPE = dbType === 'mssql' ? 'datetime2' : 'timestamp';
-export const LARGE_TEXT_COLUMN_TYPE = dbType === 'mysql' ? 'longtext' : dbType === 'mssql' ? 'ntext' : 'text';
+const dbType = databaseSelection.engine;
+const isMysqlFamily = dbType === 'mysql' || dbType === 'mariadb';
+const isSqliteFamily = dbType === 'sqlite' || dbType === 'better-sqlite3';
+
+export const DATETIME_COLUMN_TYPE = dbType === 'mssql' ? 'datetime2' : isSqliteFamily ? 'datetime' : 'timestamp';
+export const LARGE_TEXT_COLUMN_TYPE = isMysqlFamily ? 'longtext' : dbType === 'mssql' ? 'ntext' : 'text';
 
 export abstract class TimestampedUuidEntity {
   @PrimaryGeneratedColumn('uuid')

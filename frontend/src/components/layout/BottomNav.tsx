@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useIsMobilePwaMode } from "@/hooks/use-mobile-pwa";
 import { isRootAdmin, useAuthStore } from "@/store/auth.store";
 import {
   LayoutDashboard,
@@ -21,7 +22,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 const mainNavItems = [
   { title: "Home", href: "/", icon: LayoutDashboard, moduleId: "dashboard" },
@@ -68,12 +69,17 @@ const rootMoreNavItems: Array<{ title: string; href: string; moduleId: string }>
   { title: "Role Access", href: "/root/role-access", moduleId: "root.role_access" },
 ];
 
-export function BottomNav() {
+interface BottomNavProps {
+  isSidebarOpen?: boolean;
+}
+
+export function BottomNav({ isSidebarOpen = false }: BottomNavProps) {
   const location = useLocation();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const { user } = useAuthStore();
   const isRootUser = isRootAdmin(user);
   const { hasModuleAccess, loading } = usePermissions();
+  const isMobilePwaMode = useIsMobilePwaMode();
   const showNavSkeleton = !isRootUser && loading;
 
   const isActive = (href: string) => {
@@ -86,16 +92,39 @@ export function BottomNav() {
     : showNavSkeleton
       ? []
       : mainNavItems.filter((item) => hasModuleAccess(item.moduleId, "view"));
-  const filteredMore = isRootUser
+  const filteredMoreBase = isRootUser
     ? rootMoreNavItems
     : showNavSkeleton
       ? []
       : moreNavItems.filter((item) => hasModuleAccess(item.moduleId, "view"));
 
+  const filteredMore = useMemo(
+    () =>
+      isMobilePwaMode
+        ? filteredMoreBase.filter((item) => item.href === "/masters" || !item.href.startsWith("/masters/"))
+        : filteredMoreBase,
+    [filteredMoreBase, isMobilePwaMode],
+  );
+
+  const operationsMoreItems = useMemo(
+    () => filteredMore.filter((item) => !item.href.startsWith("/masters")),
+    [filteredMore],
+  );
+
+  const masterMoreItems = useMemo(
+    () => filteredMore.filter((item) => item.href.startsWith("/masters")),
+    [filteredMore],
+  );
+
   const isMoreActive = filteredMore.some((item) => isActive(item.href));
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border lg:hidden safe-area-inset">
+    <nav
+      className={cn(
+        "fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card transition-all duration-200 lg:hidden safe-area-inset",
+        isSidebarOpen && "pointer-events-none translate-y-full opacity-0",
+      )}
+    >
       <div className="flex items-center justify-around h-16">
         {showNavSkeleton ? (
           Array.from({ length: 5 }).map((_, index) => (
@@ -137,27 +166,57 @@ export function BottomNav() {
                 <span>More</span>
               </button>
             </SheetTrigger>
-            <SheetContent side="bottom" className="h-auto max-h-[60vh] rounded-t-xl">
+            <SheetContent side="bottom" className="h-auto max-h-[72vh] overflow-y-auto rounded-t-xl px-4 pb-6 pt-2">
               <SheetHeader className="pb-4">
                 <SheetTitle>More Options</SheetTitle>
                 <SheetDescription>Quick navigation to additional modules.</SheetDescription>
               </SheetHeader>
-              <div className="grid grid-cols-3 gap-3 pb-4">
-                {filteredMore.map((item) => (
-                  <Link
-                    key={item.href}
-                    to={item.href}
-                    onClick={() => setIsMoreOpen(false)}
-                    className={cn(
-                      "flex flex-col items-center justify-center p-4 rounded-lg border transition-all",
-                      isActive(item.href)
-                        ? "bg-primary/10 border-primary/30 text-primary"
-                        : "bg-muted/50 border-transparent hover:bg-muted"
-                    )}
-                  >
-                    <span className="text-sm font-medium text-center">{item.title}</span>
-                  </Link>
-                ))}
+              <div className="space-y-4 pb-4">
+                {operationsMoreItems.length > 0 ? (
+                  <section className="space-y-2">
+                    <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Operations</p>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {operationsMoreItems.map((item) => (
+                        <Link
+                          key={item.href}
+                          to={item.href}
+                          onClick={() => setIsMoreOpen(false)}
+                          className={cn(
+                            "flex min-h-[68px] items-center justify-center rounded-lg border px-3 py-3 text-center transition-all",
+                            isActive(item.href)
+                              ? "border-primary/30 bg-primary/10 text-primary"
+                              : "border-transparent bg-muted/50 hover:bg-muted",
+                          )}
+                        >
+                          <span className="text-sm font-medium leading-tight">{item.title}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
+                {masterMoreItems.length > 0 ? (
+                  <section className="space-y-2">
+                    <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Masters</p>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {masterMoreItems.map((item) => (
+                        <Link
+                          key={item.href}
+                          to={item.href}
+                          onClick={() => setIsMoreOpen(false)}
+                          className={cn(
+                            "flex min-h-[68px] items-center justify-center rounded-lg border px-3 py-3 text-center transition-all",
+                            isActive(item.href)
+                              ? "border-primary/30 bg-primary/10 text-primary"
+                              : "border-transparent bg-muted/50 hover:bg-muted",
+                          )}
+                        >
+                          <span className="text-sm font-medium leading-tight">{item.title}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
               </div>
             </SheetContent>
           </Sheet>

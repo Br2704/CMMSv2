@@ -45,10 +45,10 @@ function getDefaultSnapshot(): BrandingSnapshot {
     organizationName: null,
     sidebarTitle: "JK Fenner",
     logoUrl: null,
-    logoAssetUrl: "/icons/jkfenner-logo.svg",
-    faviconUrl: "/icons/jkfenner-favicon.svg",
-    fallbackLogoUrl: "/icons/jkfenner-logo.svg",
-    fallbackFaviconUrl: "/icons/jkfenner-favicon.svg",
+    logoAssetUrl: "/jkfenner/jkfenner-logo.svg",
+    faviconUrl: "/jkfenner/jkfenner-favicon.svg",
+    fallbackLogoUrl: "/jkfenner/jkfenner-logo.svg",
+    fallbackFaviconUrl: "/jkfenner/jkfenner-favicon.svg",
     browserTitle: "JK Fenner CMMS",
     brandColor: "#0f172a",
     updatedAt: null,
@@ -154,7 +154,7 @@ export const useBrandingStore = create<BrandingState>((set, get) => ({
           : (payload.organizationLogoAssetUrl || buildBrandingLogoUrl(payload.organizationId || null, current.version, 192)),
         faviconUrl: preserveSeededOrganization ? current.faviconUrl : (payload.organizationFaviconUrl || null),
         fallbackLogoUrl: payload.fallbackLogoUrl || null,
-        fallbackFaviconUrl: payload.fallbackFaviconUrl || payload.fallbackLogoUrl || "/icons/jkfenner-favicon.svg",
+        fallbackFaviconUrl: payload.fallbackFaviconUrl || payload.fallbackLogoUrl || "/jkfenner/jkfenner-favicon.svg",
         browserTitle: preserveSeededOrganization
           ? (current.browserTitle || (current.organizationName ? `${current.organizationName} CMMS` : null))
           : (payload.browserTitle || null),

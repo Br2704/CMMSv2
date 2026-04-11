@@ -5,6 +5,8 @@ import { startAmcScheduler } from './modules/amc/amc.scheduler';
 import { env } from './config/env';
 import { logger } from './config/logger';
 import { AppDataSource } from './database/data-source';
+import { ensureSelectedDatabaseExists } from './database/ensure-database';
+import { ensureProtectedRootAdminBootstrap } from './bootstrap/protected-root-admin.bootstrap';
 import {
   LogEntryEntity,
   LogTemplateAssignmentEntity,
@@ -17,6 +19,7 @@ import { publishNotificationChange } from './modules/notifications/notification-
 import { startOrganizationSubscriptionScheduler } from './modules/organizations/organizations.scheduler';
 import { startPmSchedulesScheduler } from './modules/pmSchedules/pmschedules.scheduler';
 import { startReportsScheduler } from './modules/reports/reports.scheduler';
+import { startWorkOrdersScheduler } from './modules/workorders/workorders.scheduler';
 import { startDashboardSocketServer, stopDashboardSocketServer } from './realtime/dashboard-socket';
 
 let logSchedulerStarted = false;
@@ -194,13 +197,16 @@ function startLogTemplateScheduler() {
 }
 
 async function bootstrap() {
+  await ensureSelectedDatabaseExists();
   await AppDataSource.initialize();
+  await ensureProtectedRootAdminBootstrap();
   startReportsScheduler();
   startPmSchedulesScheduler();
   startCalibrationScheduler();
   startLogTemplateScheduler();
   startAmcScheduler();
   startOrganizationSubscriptionScheduler();
+  startWorkOrdersScheduler();
 
   const server = createServer(app);
   startDashboardSocketServer(server);
