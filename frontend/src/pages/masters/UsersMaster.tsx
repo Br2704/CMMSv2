@@ -49,6 +49,61 @@ interface RoleOption {
   label: string;
 }
 
+const PASSWORD_POLICY_MESSAGE = "Password must be 12-128 characters and include uppercase, lowercase, number, and special character.";
+
+function isStrongPassword(password: string) {
+  if (password.length < 12 || password.length > 128) {
+    return false;
+  }
+
+  if (/\s/.test(password)) {
+    return false;
+  }
+
+  return /[a-z]/.test(password)
+    && /[A-Z]/.test(password)
+    && /\d/.test(password)
+    && /[^A-Za-z0-9]/.test(password);
+}
+
+function getValidationIssueMessage(error: unknown) {
+  if (!error || typeof error !== "object") return null;
+
+  const payload = (error as { payload?: unknown }).payload;
+  if (!payload || typeof payload !== "object") return null;
+
+  const details = (payload as { details?: unknown }).details;
+  if (!details || typeof details !== "object") return null;
+
+  const flattened = (details as { flattened?: unknown }).flattened;
+  if (flattened && typeof flattened === "object") {
+    const fieldErrors = (flattened as { fieldErrors?: unknown }).fieldErrors;
+    if (fieldErrors && typeof fieldErrors === "object") {
+      for (const messages of Object.values(fieldErrors as Record<string, unknown>)) {
+        if (Array.isArray(messages)) {
+          const first = messages.find((message) => typeof message === "string" && message.trim().length > 0);
+          if (typeof first === "string") {
+            return first;
+          }
+        }
+      }
+    }
+  }
+
+  const issues = (details as { issues?: unknown }).issues;
+  if (Array.isArray(issues)) {
+    for (const issue of issues) {
+      if (!issue || typeof issue !== "object") continue;
+      const message = (issue as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim().length > 0) {
+        return message;
+      }
+    }
+  }
+
+  return null;
+}
+
 function normalizeRoleKey(role: string) {
   const normalized = role.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   if (normalized === "SUPER_ADMIN" || normalized === "SUPERADMIN") return "SUPERADMIN";
@@ -67,6 +122,11 @@ function isBulkUploadBlockedRole(role: string) {
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
+  const validationIssue = getValidationIssueMessage(error);
+  if (validationIssue) {
+    return validationIssue;
+  }
+
   if (typeof error === "object" && error && "message" in error && typeof error.message === "string" && error.message) {
     return error.message;
   }
@@ -219,8 +279,13 @@ export default function UsersMaster() {
     [allRoles, allowedRoleTargetsForCreate, allowedRoleTargetsForEdit, currentIsRootAdmin, selectedUser],
   );
   const allowedBulkRoleOptions = useMemo(
-    () => roleOptions.filter((role) => !isBulkUploadBlockedRole(role.value)),
-    [roleOptions],
+    () =>
+      allRoles.filter((role) => {
+        if (isBulkUploadBlockedRole(role.value)) return false;
+        if (currentIsRootAdmin) return true;
+        return allowedRoleTargetsForCreate.includes(normalizeRoleKey(role.value));
+      }),
+    [allRoles, allowedRoleTargetsForCreate, currentIsRootAdmin],
   );
   const filterRoleOptions = useMemo(
     () =>
@@ -289,8 +354,10 @@ export default function UsersMaster() {
         label: role.description?.trim() ? role.description : toRoleLabel(role.name),
       }));
       setAllRoles(options);
+      return options;
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, "Failed to load roles"));
+      return [] as RoleOption[];
     } finally {
       setRolesLoading(false);
     }
@@ -484,8 +551,8 @@ export default function UsersMaster() {
         await updateUserRoles(selectedUser.userId, { roles: [selectedRole], plantId: resolvedPlantId });
 
         if (formData.password.trim()) {
-          if (formData.password.trim().length < 8) {
-            toast.error("Password must be at least 8 characters");
+          if (!isStrongPassword(formData.password.trim())) {
+            toast.error(PASSWORD_POLICY_MESSAGE);
             setSubmitting(false);
             return;
           }
@@ -493,8 +560,8 @@ export default function UsersMaster() {
         }
         toast.success("User updated successfully");
       } else {
-        if (!formData.password || formData.password.trim().length < 8) {
-          toast.error("Password must be at least 8 characters");
+        if (!formData.password || !isStrongPassword(formData.password.trim())) {
+          toast.error(PASSWORD_POLICY_MESSAGE);
           setSubmitting(false);
           return;
         }
@@ -669,8 +736,8 @@ export default function UsersMaster() {
         seenCodes.add(userCodeKey);
         seenEmails.add(normalizedEmail);
 
-        if (password.trim().length < 8) {
-          failures.push(`Row ${rowIndex + 1}: password must be at least 8 characters`);
+        if (!isStrongPassword(password)) {
+          failures.push(`Row ${rowIndex + 1}: ${PASSWORD_POLICY_MESSAGE}`);
           continue;
         }
 
@@ -756,10 +823,15 @@ export default function UsersMaster() {
     }
   };
 
-  const handleDownloadUsersSampleCsv = () => {
-    const sampleRoleValues = allowedBulkRoleOptions
-      .map((role) => (role.value === "SUPER_ADMIN" ? "SUPERADMIN" : role.value))
-      .slice(0, 4);
+  const handleDownloadUsersSampleCsv = async () => {
+    const latestRoles = await fetchRoles();
+    const sourceRoles = latestRoles.length > 0 ? latestRoles : allRoles;
+    const latestAllowedBulkRoleOptions = sourceRoles.filter((role) => {
+      if (isBulkUploadBlockedRole(role.value)) return false;
+      if (currentIsRootAdmin) return true;
+      return allowedRoleTargetsForCreate.includes(normalizeRoleKey(role.value));
+    });
+    const sampleRoleValues = latestAllowedBulkRoleOptions.map((role) => (role.value === "SUPER_ADMIN" ? "SUPERADMIN" : role.value));
 
     const sampleRows =
       sampleRoleValues.length > 0

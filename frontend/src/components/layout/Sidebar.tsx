@@ -48,10 +48,10 @@ const navigation: NavItem[] = [
   { title: "ESG", href: "/esg", icon: Leaf, moduleId: "esg" },
   { title: "Spare Maintenance", href: "/inventory", icon: Package, moduleId: "inventory" },
   { title: "Reports", href: "/reports", icon: BarChart3, moduleId: "reports" },
-  { title: "Security Center", href: "/security-center", icon: ShieldAlert, moduleId: "security-center" },
   { title: "Gate Entry", href: "/security-gate", icon: DoorOpen, moduleId: "security-gate" },
   { title: "Visitor Experience", href: "/visitor-experience", icon: MapPinned, moduleId: "visitor-experience" },
   { title: "Logs", href: "/logs", icon: ScrollText, moduleId: "logs" },
+  { title: "Security Center", href: "/security-center", icon: ShieldAlert, moduleId: "security-center" },
   {
     title: "Masters",
     href: "/masters",
@@ -177,14 +177,14 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onToggleMobile}
-            className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
+            className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm lg:hidden"
           />
         )}
       </AnimatePresence>
 
       <aside
         className={cn(
-          "fixed left-0 top-0 z-[60] flex h-screen flex-col border-r border-border bg-card shadow-lg transition-[width,transform] duration-300",
+          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-card shadow-lg transition-[width,transform] duration-300",
           "w-[min(88vw,320px)] sm:w-[300px] lg:w-[280px]",
           isOpen ? "translate-x-0" : "-translate-x-full",
           "lg:translate-x-0",

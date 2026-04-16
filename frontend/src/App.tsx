@@ -283,6 +283,30 @@ function normalizeSecurityCenterRole(role: string): string {
   return normalized;
 }
 
+function normalizeSecurityGateRole(role: string): string {
+  return role
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function SecurityGateRoute() {
+  const { user } = useAuthStore();
+  const roleCandidates = [user?.roleKey ?? "", ...(user?.roles ?? [])].map(normalizeSecurityGateRole);
+  const canAccess = roleCandidates.some((role) => role === "SECURITY" || role === "SECURITY_USER");
+
+  if (!canAccess) {
+    return <Navigate to="/403" replace />;
+  }
+
+  return (
+    <ModuleGuard moduleId="security-gate">
+      <SecurityGate />
+    </ModuleGuard>
+  );
+}
+
 function SecurityCenterRoute() {
   const { user } = useAuthStore();
   const roleCandidates = [user?.roleKey ?? "", ...(user?.roles ?? [])].map(normalizeSecurityCenterRole);
@@ -349,7 +373,7 @@ function App() {
                   <Route path="/inventory" element={<ModuleGuard moduleId="inventory"><Inventory /></ModuleGuard>} />
                   <Route path="/reports" element={<ModuleGuard moduleId="reports"><Reports /></ModuleGuard>} />
                   <Route path="/security-center" element={<SecurityCenterRoute />} />
-                  <Route path="/security-gate" element={<ModuleGuard moduleId="security-gate"><SecurityGate /></ModuleGuard>} />
+                  <Route path="/security-gate" element={<SecurityGateRoute />} />
                   <Route path="/visitor-experience" element={<ModuleGuard moduleId="visitor-experience"><VisitorExperience /></ModuleGuard>} />
                   <Route path="/logs" element={<ModuleGuard moduleId="logs"><Logs /></ModuleGuard>} />
                   <Route path="/403" element={<Forbidden />} />

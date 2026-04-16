@@ -58,6 +58,10 @@ function normalizeKey(value: string | null | undefined) {
     .replace(/^_+|_+$/g, "");
 }
 
+function normalizePhoneDigits(value: string | null | undefined) {
+  return String(value ?? "").replace(/[^0-9]/g, "");
+}
+
 function isSecurityRole(role: string) {
   const normalized = role
     .trim()
@@ -123,6 +127,14 @@ const visitorDurationOptions = [1, 2, 3, 4, 6, 8, 12, 24].map((hours) => ({
   label: `${hours} hour${hours > 1 ? "s" : ""}`,
 }));
 
+interface RepeatedVisitorProfile {
+  phoneDigits: string;
+  visitorName: string;
+  visitorCompany: string | null;
+  purpose: string | null;
+  lastVisitAt: string;
+}
+
 export default function SecurityGate() {
   const { user } = useAuthStore();
   const plantId = user?.plantId || undefined;
@@ -165,6 +177,7 @@ export default function SecurityGate() {
     gateId: "",
     personToMeetUserId: "",
     visitorName: "",
+    visitorCompany: "",
     visitorPhone: "",
     purpose: "",
     durationHours: "2",
@@ -253,6 +266,54 @@ export default function SecurityGate() {
   const selectedEmployeeOption = useMemo(
     () => employeeOptions.find((option) => option.value === smartVisitorForm.personToMeetUserId) || null,
     [employeeOptions, smartVisitorForm.personToMeetUserId],
+  );
+
+  const repeatedVisitorProfiles = useMemo(() => {
+    const byPhone = new Map<string, RepeatedVisitorProfile>();
+
+    for (const entry of entries) {
+      const phoneDigits = normalizePhoneDigits(entry.visitorPhone);
+      if (!phoneDigits) continue;
+      if (!entry.visitorName?.trim()) continue;
+
+      const existing = byPhone.get(phoneDigits);
+      const existingTs = existing ? Date.parse(existing.lastVisitAt) : Number.NEGATIVE_INFINITY;
+      const nextTs = Date.parse(entry.entryTime);
+
+      if (!existing || nextTs > existingTs) {
+        byPhone.set(phoneDigits, {
+          phoneDigits,
+          visitorName: entry.visitorName,
+          visitorCompany: entry.visitorCompany,
+          purpose: entry.purpose,
+          lastVisitAt: entry.entryTime,
+        });
+      }
+    }
+
+    return Array.from(byPhone.values()).sort((left, right) => Date.parse(right.lastVisitAt) - Date.parse(left.lastVisitAt));
+  }, [entries]);
+
+  const normalizedSmartVisitorPhone = useMemo(
+    () => normalizePhoneDigits(smartVisitorForm.visitorPhone),
+    [smartVisitorForm.visitorPhone],
+  );
+
+  const matchedRepeatedVisitors = useMemo(() => {
+    if (!normalizedSmartVisitorPhone || normalizedSmartVisitorPhone.length < 4) {
+      return [] as RepeatedVisitorProfile[];
+    }
+
+    return repeatedVisitorProfiles.filter(
+      (profile) =>
+        profile.phoneDigits.startsWith(normalizedSmartVisitorPhone)
+        || normalizedSmartVisitorPhone.startsWith(profile.phoneDigits),
+    );
+  }, [normalizedSmartVisitorPhone, repeatedVisitorProfiles]);
+
+  const exactRepeatedVisitor = useMemo(
+    () => matchedRepeatedVisitors.find((profile) => profile.phoneDigits === normalizedSmartVisitorPhone) || null,
+    [matchedRepeatedVisitors, normalizedSmartVisitorPhone],
   );
 
   const groupedFields = useMemo(() => {
@@ -762,6 +823,7 @@ export default function SecurityGate() {
         plantId,
         personToMeetUserId: smartVisitorForm.personToMeetUserId,
         visitorName: smartVisitorForm.visitorName.trim(),
+        visitorCompany: smartVisitorForm.visitorCompany.trim() || null,
         visitorPhone: smartVisitorForm.visitorPhone.trim() || null,
         purpose: smartVisitorForm.purpose.trim(),
         durationHours,
@@ -772,6 +834,7 @@ export default function SecurityGate() {
       setSmartVisitorForm((current) => ({
         ...current,
         visitorName: "",
+        visitorCompany: "",
         visitorPhone: "",
         purpose: "",
         durationHours: "2",
@@ -783,6 +846,32 @@ export default function SecurityGate() {
     } finally {
       setCreatingSmartVisitor(false);
     }
+  };
+
+  const applyRepeatedVisitorProfile = (profile: RepeatedVisitorProfile) => {
+    setSmartVisitorForm((current) => ({
+      ...current,
+      visitorPhone: profile.phoneDigits,
+      visitorName: current.visitorName.trim() ? current.visitorName : profile.visitorName,
+      visitorCompany: current.visitorCompany.trim() ? current.visitorCompany : (profile.visitorCompany || ""),
+      purpose: current.purpose.trim() ? current.purpose : (profile.purpose || ""),
+    }));
+  };
+
+  const handleSmartVisitorPhoneChange = (nextPhone: string) => {
+    const normalizedPhone = normalizePhoneDigits(nextPhone);
+    const matchedProfile = normalizedPhone
+      ? repeatedVisitorProfiles.find((profile) => profile.phoneDigits === normalizedPhone) || null
+      : null;
+
+    setSmartVisitorForm((current) => ({
+      ...current,
+      visitorPhone: nextPhone,
+      visitorName: matchedProfile && !current.visitorName.trim() ? matchedProfile.visitorName : current.visitorName,
+      visitorCompany:
+        matchedProfile && !current.visitorCompany.trim() ? (matchedProfile.visitorCompany || "") : current.visitorCompany,
+      purpose: matchedProfile && !current.purpose.trim() ? (matchedProfile.purpose || "") : current.purpose,
+    }));
   };
 
   const handleDownloadQrPass = () => {
@@ -1135,16 +1224,44 @@ export default function SecurityGate() {
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <div className="space-y-2">
                       <Label>Visitor Name</Label>
                       <Input value={smartVisitorForm.visitorName} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorName: event.target.value }))} placeholder="Visitor full name" />
                     </div>
                     <div className="space-y-2">
                       <Label>Visitor Phone</Label>
-                      <Input value={smartVisitorForm.visitorPhone} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorPhone: event.target.value }))} placeholder="Phone number" />
+                      <Input value={smartVisitorForm.visitorPhone} onChange={(event) => handleSmartVisitorPhoneChange(event.target.value)} placeholder="Phone number" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Visitor Company</Label>
+                      <Input value={smartVisitorForm.visitorCompany} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorCompany: event.target.value }))} placeholder="Company name (optional)" />
                     </div>
                   </div>
+
+                  {matchedRepeatedVisitors.length > 0 ? (
+                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+                      <p className="text-xs font-medium text-emerald-700">Returning visitor match found by mobile number</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {matchedRepeatedVisitors.slice(0, 4).map((profile) => (
+                          <Button
+                            key={`${profile.phoneDigits}-${profile.lastVisitAt}`}
+                            type="button"
+                            size="sm"
+                            variant={profile.phoneDigits === normalizedSmartVisitorPhone ? "secondary" : "outline"}
+                            onClick={() => applyRepeatedVisitorProfile(profile)}
+                          >
+                            {profile.visitorName} · {profile.phoneDigits}
+                          </Button>
+                        ))}
+                      </div>
+                      {exactRepeatedVisitor ? (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Last visit: {format(new Date(exactRepeatedVisitor.lastVisitAt), "dd MMM yyyy, HH:mm")}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   <div className="space-y-2">
                     <Label>Purpose</Label>

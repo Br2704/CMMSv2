@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { Router } from 'express';
 import { Brackets, SelectQueryBuilder } from 'typeorm';
 import { z } from 'zod';
@@ -853,6 +853,7 @@ gatesRouter.post('/gate-templates', requireRole(['SUPERADMIN', 'ADMIN']), async 
     ensurePlantAccess(req, resolvedPlantId);
     const repo = AppDataSource.getRepository(GateEntryTypeEntity);
     const created = repo.create({
+      id: randomUUID(),
       ...body,
       plantId: resolvedPlantId,
       gateId: gate.id,

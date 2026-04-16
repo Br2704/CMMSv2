@@ -28,19 +28,49 @@ import { applyPlantScope, applySearch } from '../../utils/query';
 import { generateQrCodeId } from '../../utils/qr';
 import { isSafeImageValue } from '../../utils/fileValidation';
 
+const ASSET_TYPE_OPTIONS = [
+  'BOILER',
+  'COMPRESSOR',
+  'CHILLER',
+  'HVAC',
+  'PUMP',
+  'MOTOR',
+  'GENERATOR',
+  'FAN',
+  'CONVEYOR',
+  'ROBOT',
+  'CNC',
+  'TRANSFORMER',
+  'GEARBOX',
+  'COOLING_TOWER',
+] as const;
+
+const ASSET_BULK_TEMPLATE_OPTIONS = {
+  types: ['MACHINE', 'UTILITY'] as const,
+  assetTypes: ASSET_TYPE_OPTIONS,
+  criticalities: ['HIGH', 'MEDIUM', 'LOW'] as const,
+  statuses: ['ACTIVE', 'UNDER_MAINTENANCE', 'INACTIVE'] as const,
+  defaults: {
+    type: 'MACHINE',
+    assetType: 'PUMP',
+    criticality: 'MEDIUM',
+    status: 'ACTIVE',
+  } as const,
+};
+
 const assetSchema = z.object({
   code: z.string().min(1),
   name: z.string().min(1),
-  type: z.string().default('MACHINE'),
-  assetType: z.enum(['BOILER', 'COMPRESSOR', 'CHILLER', 'HVAC', 'PUMP', 'MOTOR', 'GENERATOR', 'FAN', 'CONVEYOR', 'ROBOT', 'CNC', 'TRANSFORMER', 'GEARBOX', 'COOLING_TOWER']).default('PUMP'),
+  type: z.string().default(ASSET_BULK_TEMPLATE_OPTIONS.defaults.type),
+  assetType: z.enum(ASSET_TYPE_OPTIONS).default(ASSET_BULK_TEMPLATE_OPTIONS.defaults.assetType),
   departmentId: z.string().uuid().nullable().optional(),
   moduleId: z.string().uuid().nullable().optional(),
   costCenterId: z.string().uuid().nullable().optional(),
   plantId: z.string().uuid().nullable().optional(),
-  criticality: z.string().default('MEDIUM'),
+  criticality: z.string().default(ASSET_BULK_TEMPLATE_OPTIONS.defaults.criticality),
   commissionDate: z.string().nullable().optional(),
   warrantyExpiry: z.string().nullable().optional(),
-  status: z.string().default('ACTIVE'),
+  status: z.string().default(ASSET_BULK_TEMPLATE_OPTIONS.defaults.status),
   make: z.string().nullable().optional(),
   manufacturer: z.string().nullable().optional(),
   model: z.string().nullable().optional(),
@@ -127,6 +157,18 @@ assetsRouter.get('/assets', requirePermission('ASSETS', 'READ'), async (req, res
   } catch (error) {
     next(error);
   }
+});
+
+assetsRouter.get('/assets/template-options', requirePermission('ASSETS', 'READ'), (_req, res) => {
+  res.json(
+    ok({
+      types: [...ASSET_BULK_TEMPLATE_OPTIONS.types],
+      assetTypes: [...ASSET_BULK_TEMPLATE_OPTIONS.assetTypes],
+      criticalities: [...ASSET_BULK_TEMPLATE_OPTIONS.criticalities],
+      statuses: [...ASSET_BULK_TEMPLATE_OPTIONS.statuses],
+      defaults: { ...ASSET_BULK_TEMPLATE_OPTIONS.defaults },
+    }, 'Asset template options fetched'),
+  );
 });
 
 assetsRouter.get('/assets/:id', requirePermission('ASSETS', 'READ'), async (req, res, next) => {

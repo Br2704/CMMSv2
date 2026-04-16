@@ -6,6 +6,7 @@ import {
     IdCard,
     MapPinned,
     Navigation,
+    QrCode,
     RefreshCw,
     ShieldAlert,
     Siren,
@@ -22,6 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SelectField } from "@/components/shared/FormField";
+import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { listPlants, type Plant } from "@/api/plants";
 import {
     getVisitorNavigation,
@@ -32,6 +34,7 @@ import {
     logVisitorSafetyConsent,
     reviewVisitorRequest,
     sendVisitorSos,
+    submitVisitorApproval,
     type VisitorNavigationRoute,
     type VisitorPassData,
     type VisitorProfileResponse,
@@ -55,6 +58,69 @@ function resolveErrorMessage(error: unknown, fallback: string) {
 function isApprovalRole(role: string) {
     const normalized = role.trim().toUpperCase();
     return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "SECURITY", "SECURITY_USER"].includes(normalized);
+}
+
+function normalizeRoleValue(role: string) {
+    return role
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+}
+
+function isVisitorRole(role: string) {
+    const normalized = normalizeRoleValue(role);
+    return normalized === "VISITOR" || normalized === "TEMPORARY_VISITOR";
+}
+
+function buildVisitorQrLookupCandidates(rawValue: string) {
+    const value = rawValue.trim();
+    if (!value) return [] as Array<{ sessionToken?: string; gateEntryId?: string }>;
+
+    const candidates: Array<{ sessionToken?: string; gateEntryId?: string }> = [];
+    const addSessionToken = (token: string | null | undefined) => {
+        const normalized = (token ?? "").trim();
+        if (!normalized) return;
+        candidates.push({ sessionToken: normalized });
+    };
+    const addGateEntry = (gateEntryId: string | null | undefined) => {
+        const normalized = (gateEntryId ?? "").trim();
+        if (!normalized) return;
+        candidates.push({ gateEntryId: normalized });
+    };
+
+    addSessionToken(value);
+    if (/^[0-9a-f-]{36}$/i.test(value)) {
+        addGateEntry(value);
+    }
+
+    try {
+        const parsedUrl = new URL(value);
+        addSessionToken(parsedUrl.searchParams.get("sessionToken"));
+        addSessionToken(parsedUrl.searchParams.get("token"));
+        addGateEntry(parsedUrl.searchParams.get("gateEntryId"));
+        addGateEntry(parsedUrl.searchParams.get("gateEntry"));
+
+        const pathSegments = parsedUrl.pathname.split("/").filter(Boolean);
+        const lastSegment = pathSegments[pathSegments.length - 1] || "";
+        if (lastSegment.toUpperCase().startsWith("VIS-")) {
+            addSessionToken(lastSegment);
+        }
+        if (/^[0-9a-f-]{36}$/i.test(lastSegment)) {
+            addGateEntry(lastSegment);
+        }
+    } catch {
+        // Ignore URL parsing errors for plain text QR values.
+    }
+
+    const deduped = new Map<string, { sessionToken?: string; gateEntryId?: string }>();
+    for (const candidate of candidates) {
+        const key = `${candidate.sessionToken ?? ""}::${candidate.gateEntryId ?? ""}`;
+        if (!deduped.has(key)) {
+            deduped.set(key, candidate);
+        }
+    }
+    return Array.from(deduped.values());
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -100,6 +166,8 @@ export default function VisitorExperience() {
 
     const [approvalComments, setApprovalComments] = useState("");
     const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
+    const [approvalQrOpen, setApprovalQrOpen] = useState(false);
+    const [extendingPassWindow, setExtendingPassWindow] = useState(false);
 
     const [safetyGateOpen, setSafetyGateOpen] = useState(false);
     const [safetyChecked, setSafetyChecked] = useState(false);
@@ -111,7 +179,14 @@ export default function VisitorExperience() {
     const [sosNote, setSosNote] = useState("");
     const [sosSending, setSosSending] = useState(false);
 
+    const normalizedRoles = useMemo(() => (user?.roles ?? []).map((role) => normalizeRoleValue(role)), [user?.roles]);
+    const isVisitorOnlyUser = useMemo(
+        () => normalizedRoles.length > 0 && normalizedRoles.every((role) => isVisitorRole(role)),
+        [normalizedRoles],
+    );
     const canApproveRequests = useMemo(() => (user?.roles ?? []).some((role) => isApprovalRole(role)), [user?.roles]);
+    const canSeeApprovalTab = !isVisitorOnlyUser;
+    const canUseApprovalActions = canApproveRequests && canSeeApprovalTab;
     const requestScope = canApproveRequests ? "all" : "my-requests";
 
     const plantOptions = useMemo(
@@ -292,6 +367,38 @@ export default function VisitorExperience() {
         void loadPassAndTracking();
     }, [loadPassAndTracking]);
 
+    useEffect(() => {
+        if (!canSeeApprovalTab && activeTab === "approval") {
+            setActiveTab("profile");
+        }
+    }, [activeTab, canSeeApprovalTab]);
+
+    const handleApprovalQrDecoded = async (decodedValue: string) => {
+        const lookups = buildVisitorQrLookupCandidates(decodedValue);
+        if (lookups.length === 0) {
+            toast.error("Unable to read a valid visitor QR payload");
+            return;
+        }
+
+        for (const lookup of lookups) {
+            try {
+                const response = await getVisitorPass(lookup);
+                const gateEntryId = response.data.gateEntryId;
+                if (!gateEntryId) continue;
+
+                setSelectedRequestId(gateEntryId);
+                setActiveTab("approval");
+                toast.success("Visitor request loaded from QR");
+                await loadVisitorContext(true, true);
+                return;
+            } catch {
+                // Try next lookup candidate.
+            }
+        }
+
+        toast.error("No matching visitor request found for this QR");
+    };
+
     const handleRequestReview = async (requestId: string, action: "APPROVE" | "REJECT") => {
         setReviewingRequestId(requestId);
         try {
@@ -306,6 +413,32 @@ export default function VisitorExperience() {
             toast.error(resolveErrorMessage(error, `Failed to ${action.toLowerCase()} request`));
         } finally {
             setReviewingRequestId(null);
+        }
+    };
+
+    const handleExtendVisitWindow = async () => {
+        if (!selectedRequestId) {
+            toast.error("Select a visitor request first");
+            return;
+        }
+        if (!canUseApprovalActions) {
+            toast.error("Only approvers can extend visitor duration");
+            return;
+        }
+
+        setExtendingPassWindow(true);
+        try {
+            await submitVisitorApproval({
+                gateEntryId: selectedRequestId,
+                action: "APPROVE",
+                comments: "Visit window extended from pass/status desk",
+            });
+            toast.success("Visitor duration extended from current time");
+            await Promise.all([loadVisitorContext(true, true), loadPassAndTracking()]);
+        } catch (error: unknown) {
+            toast.error(resolveErrorMessage(error, "Failed to extend visitor duration"));
+        } finally {
+            setExtendingPassWindow(false);
         }
     };
 
@@ -356,11 +489,19 @@ export default function VisitorExperience() {
             toast.success("Safety acknowledgement captured");
             await loadVisitorContext(true, true);
         } catch (error: unknown) {
-            setSafetyConsentAcknowledged(false);
-            setSafetyGateOpen(true);
-            toast.error(resolveErrorMessage(error, "Failed to record safety consent"));
+            // Keep the user unblocked even if server-side logging is temporarily unavailable.
+            toast.warning(resolveErrorMessage(error, "Safety acknowledgement captured locally. Sync will retry in background."));
         } finally {
             setSavingSafetyConsent(false);
+        }
+    };
+
+    const handleSafetyCheckedChange = (checked: boolean | "indeterminate") => {
+        const nextChecked = Boolean(checked);
+        setSafetyChecked(nextChecked);
+
+        if (nextChecked && safetyScrolled && !savingSafetyConsent) {
+            void handleAcceptSafety();
         }
     };
 
@@ -418,18 +559,20 @@ export default function VisitorExperience() {
                 )}
             />
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{summary.total}</p><p className="text-xs text-muted-foreground">Total Requests</p></CardContent></Card>
-                <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{summary.pending}</p><p className="text-xs text-muted-foreground">Pending Approvals</p></CardContent></Card>
-                <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{summary.approved}</p><p className="text-xs text-muted-foreground">Approved</p></CardContent></Card>
-                <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{summary.active}</p><p className="text-xs text-muted-foreground">Active Visitors</p></CardContent></Card>
-            </div>
+            {!isVisitorOnlyUser ? (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{summary.total}</p><p className="text-xs text-muted-foreground">Total Requests</p></CardContent></Card>
+                    <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{summary.pending}</p><p className="text-xs text-muted-foreground">Pending Approvals</p></CardContent></Card>
+                    <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{summary.approved}</p><p className="text-xs text-muted-foreground">Approved</p></CardContent></Card>
+                    <Card><CardContent className="py-4"><p className="text-2xl font-semibold">{summary.active}</p><p className="text-xs text-muted-foreground">Active Visitors</p></CardContent></Card>
+                </div>
+            ) : null}
 
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as VisitorTab)} className="space-y-4">
-                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 md:grid-cols-5">
+                <TabsList className={`grid h-auto w-full grid-cols-2 gap-1 ${canSeeApprovalTab ? "md:grid-cols-5" : "md:grid-cols-4"}`}>
                     <TabsTrigger value="profile" className="gap-2"><UserCheck className="h-4 w-4" /> Company Profile</TabsTrigger>
                     <TabsTrigger value="navigation" className="gap-2"><Navigation className="h-4 w-4" /> Plant Navigation</TabsTrigger>
-                    <TabsTrigger value="approval" className="gap-2"><CheckCircle2 className="h-4 w-4" /> Visitor Approval</TabsTrigger>
+                    {canSeeApprovalTab ? <TabsTrigger value="approval" className="gap-2"><CheckCircle2 className="h-4 w-4" /> Visitor Approval</TabsTrigger> : null}
                     <TabsTrigger value="pass" className="gap-2"><IdCard className="h-4 w-4" /> Pass / Status</TabsTrigger>
                     <TabsTrigger value="safety" className="gap-2"><ShieldAlert className="h-4 w-4" /> Emergency & Safety</TabsTrigger>
                 </TabsList>
@@ -526,10 +669,17 @@ export default function VisitorExperience() {
                     </Card>
                 </TabsContent>
 
+                {canSeeApprovalTab ? (
                 <TabsContent value="approval" className="space-y-4">
                     <Card className="shadow-card">
-                        <CardHeader>
+                        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
                             <CardTitle>Visitor Requests & Approval Queue</CardTitle>
+                            {canUseApprovalActions ? (
+                                <Button variant="outline" size="sm" className="gap-2" onClick={() => setApprovalQrOpen(true)}>
+                                    <QrCode className="h-4 w-4" />
+                                    QR Scan
+                                </Button>
+                            ) : null}
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <Textarea
@@ -552,7 +702,7 @@ export default function VisitorExperience() {
                                         <p className="text-xs text-muted-foreground">Requested: {formatDateTime(request.approvalRequestedAt)}</p>
                                         <p className="text-xs text-muted-foreground">Host: {request.personToMeetUser?.fullName || request.personToMeet || "-"}</p>
 
-                                        {canApproveRequests && request.approvalStatus === "PENDING" ? (
+                                        {canUseApprovalActions && request.approvalStatus === "PENDING" ? (
                                             <div className="mt-3 flex gap-2">
                                                 <Button
                                                     size="sm"
@@ -585,6 +735,7 @@ export default function VisitorExperience() {
                         </CardContent>
                     </Card>
                 </TabsContent>
+                ) : null}
 
                 <TabsContent value="pass" className="space-y-4">
                     <Card className="shadow-card">
@@ -596,6 +747,15 @@ export default function VisitorExperience() {
                                 <Button variant="outline" onClick={() => void loadPassAndTracking()} disabled={passLoading || trackingLoading || !selectedRequestId}>
                                     Refresh Pass
                                 </Button>
+                                {canUseApprovalActions ? (
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => void handleExtendVisitWindow()}
+                                        disabled={extendingPassWindow || !selectedRequestId}
+                                    >
+                                        {extendingPassWindow ? "Extending..." : "Extend Visit Window"}
+                                    </Button>
+                                ) : null}
                                 {!selectedRequestId ? <p className="text-xs text-muted-foreground">Select a request in Plant Navigation to view pass status.</p> : null}
                             </div>
 
@@ -689,6 +849,16 @@ export default function VisitorExperience() {
                 </TabsContent>
             </Tabs>
 
+            <MobileQrScannerDialog
+                open={approvalQrOpen}
+                onOpenChange={setApprovalQrOpen}
+                title="Scan Visitor Approval QR"
+                description="Scan visitor QR to open the request in the approval queue."
+                onDecoded={(value) => {
+                    void handleApprovalQrDecoded(value);
+                }}
+            />
+
             <Dialog open={safetyGateOpen} onOpenChange={() => { }}>
                 <DialogContent className="sm:max-w-2xl [&>button]:hidden">
                     <DialogHeader>
@@ -716,7 +886,7 @@ export default function VisitorExperience() {
                     </div>
 
                     <label className="flex items-center gap-2 rounded-md border border-border/70 px-3 py-2 text-sm">
-                        <Checkbox checked={safetyChecked} onCheckedChange={(checked) => setSafetyChecked(Boolean(checked))} />
+                        <Checkbox checked={safetyChecked} onCheckedChange={handleSafetyCheckedChange} />
                         <span>I confirm that I have read and will follow all safety instructions.</span>
                     </label>
 

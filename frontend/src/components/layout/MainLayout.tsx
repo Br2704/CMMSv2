@@ -170,8 +170,9 @@ export function MainLayout() {
         </main>
 
         <footer className="border-t border-border/70 bg-card/80 px-4 py-3 backdrop-blur-sm sm:px-6 lg:px-8">
-          <div className="mx-auto flex w-full max-w-[1720px] items-center justify-center">
+          <div className="mx-auto flex w-full max-w-[1720px] items-center justify-center gap-2 text-center">
             <img src={TAMOPTIX_LOGO} alt="TamOptiX" className="h-5 w-auto object-contain" />
+            <span className="text-xs font-medium tracking-wide text-muted-foreground">TamOptiX Technologies</span>
           </div>
         </footer>
       </div>

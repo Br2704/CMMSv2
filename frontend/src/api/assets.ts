@@ -91,6 +91,19 @@ export interface AssetPayload {
   isActive?: boolean;
 }
 
+export interface AssetBulkTemplateOptions {
+  types: string[];
+  assetTypes: string[];
+  criticalities: string[];
+  statuses: string[];
+  defaults: {
+    type: string;
+    assetType: string;
+    criticality: string;
+    status: string;
+  };
+}
+
 export interface AssetWorkOrder {
   id: string;
   woNumber: string;
@@ -215,6 +228,10 @@ export interface AssetOverview {
 
 export function listAssets(params: ListParams = {}) {
   return httpRequest<ApiListResponse<Asset>>(`/assets${toQueryString(params)}`, { method: "GET" });
+}
+
+export function getAssetBulkTemplateOptions() {
+  return httpRequest<ApiResponse<AssetBulkTemplateOptions>>("/assets/template-options", { method: "GET" });
 }
 
 export function getAsset(id: string) {

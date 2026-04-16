@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore, isAdmin, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,10 +20,12 @@ import {
   createAsset,
   createAssetEnergyMeterConfig,
   deleteAsset,
+  getAssetBulkTemplateOptions,
   deleteAssetEnergyMeterConfig,
   listAssetEnergyMeterConfigs,
   listAssets,
   type Asset,
+  type AssetBulkTemplateOptions,
   type AssetEnergyMeterConfig,
   type AssetEnergyMeterConfigPayload,
   updateAsset,
@@ -106,6 +108,75 @@ const emptyForm: MachineFormState = {
   commissionDate: "",
   warrantyExpiry: "",
 };
+
+const DEFAULT_ASSET_TEMPLATE_OPTIONS: AssetBulkTemplateOptions = {
+  types: ["MACHINE", "UTILITY"],
+  assetTypes: [
+    "BOILER",
+    "COMPRESSOR",
+    "CHILLER",
+    "HVAC",
+    "PUMP",
+    "MOTOR",
+    "GENERATOR",
+    "FAN",
+    "CONVEYOR",
+    "ROBOT",
+    "CNC",
+    "TRANSFORMER",
+    "GEARBOX",
+    "COOLING_TOWER",
+  ],
+  criticalities: ["HIGH", "MEDIUM", "LOW"],
+  statuses: ["ACTIVE", "UNDER_MAINTENANCE", "INACTIVE"],
+  defaults: {
+    type: "MACHINE",
+    assetType: "PUMP",
+    criticality: "MEDIUM",
+    status: "ACTIVE",
+  },
+};
+
+function normalizeTemplateOptionValues(values: string[] | undefined, fallback: string[]) {
+  if (!Array.isArray(values)) return [...fallback];
+  const normalized = values
+    .map((value) => (typeof value === "string" ? value.trim().toUpperCase() : ""))
+    .filter((value) => value.length > 0);
+  if (normalized.length === 0) return [...fallback];
+  return Array.from(new Set(normalized));
+}
+
+function sanitizeTemplateOptions(input: Partial<AssetBulkTemplateOptions> | null | undefined): AssetBulkTemplateOptions {
+  const types = normalizeTemplateOptionValues(input?.types, DEFAULT_ASSET_TEMPLATE_OPTIONS.types);
+  const assetTypes = normalizeTemplateOptionValues(input?.assetTypes, DEFAULT_ASSET_TEMPLATE_OPTIONS.assetTypes);
+  const criticalities = normalizeTemplateOptionValues(input?.criticalities, DEFAULT_ASSET_TEMPLATE_OPTIONS.criticalities);
+  const statuses = normalizeTemplateOptionValues(input?.statuses, DEFAULT_ASSET_TEMPLATE_OPTIONS.statuses);
+
+  const rawTypeDefault = (input?.defaults?.type || "").trim().toUpperCase();
+  const rawAssetTypeDefault = (input?.defaults?.assetType || "").trim().toUpperCase();
+  const rawCriticalityDefault = (input?.defaults?.criticality || "").trim().toUpperCase();
+  const rawStatusDefault = (input?.defaults?.status || "").trim().toUpperCase();
+
+  const defaults = {
+    type: types.includes(rawTypeDefault) ? rawTypeDefault : DEFAULT_ASSET_TEMPLATE_OPTIONS.defaults.type,
+    assetType: assetTypes.includes(rawAssetTypeDefault) ? rawAssetTypeDefault : DEFAULT_ASSET_TEMPLATE_OPTIONS.defaults.assetType,
+    criticality: criticalities.includes(rawCriticalityDefault) ? rawCriticalityDefault : DEFAULT_ASSET_TEMPLATE_OPTIONS.defaults.criticality,
+    status: statuses.includes(rawStatusDefault) ? rawStatusDefault : DEFAULT_ASSET_TEMPLATE_OPTIONS.defaults.status,
+  };
+
+  if (!types.includes(defaults.type)) defaults.type = types[0];
+  if (!assetTypes.includes(defaults.assetType)) defaults.assetType = assetTypes[0];
+  if (!criticalities.includes(defaults.criticality)) defaults.criticality = criticalities[0];
+  if (!statuses.includes(defaults.status)) defaults.status = statuses[0];
+
+  return {
+    types,
+    assetTypes,
+    criticalities,
+    statuses,
+    defaults,
+  };
+}
 
 const defaultEnergyMeterForm: EnergyMeterFormState = {
   checklistName: "Energy Meter Configuration",
@@ -330,6 +401,7 @@ export default function MachinesMaster() {
   const [bulkUploading, setBulkUploading] = useState(false);
   const [bulkPromptHandled, setBulkPromptHandled] = useState(false);
   const bulkUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [assetTemplateOptions, setAssetTemplateOptions] = useState<AssetBulkTemplateOptions>(DEFAULT_ASSET_TEMPLATE_OPTIONS);
 
   const fetchAssetsList = async () => {
     setLoading(true);
@@ -414,6 +486,17 @@ export default function MachinesMaster() {
     }
   };
 
+  const fetchAssetTemplateOptions = useCallback(async () => {
+    try {
+      const response = await getAssetBulkTemplateOptions();
+      const nextOptions = sanitizeTemplateOptions(response.data);
+      setAssetTemplateOptions(nextOptions);
+      return nextOptions;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const refreshEnergyMeterConfigs = async (machineId: string, showErrorToast = false) => {
     setEnergyMeterConfigsLoading(true);
     try {
@@ -436,6 +519,10 @@ export default function MachinesMaster() {
   useEffect(() => {
     fetchPlants();
   }, []);
+
+  useEffect(() => {
+    void fetchAssetTemplateOptions();
+  }, [fetchAssetTemplateOptions]);
 
   useEffect(() => {
     const scopedPlantId = canSelectPlant ? selectedPlant : defaultPlantId;
@@ -616,6 +703,15 @@ export default function MachinesMaster() {
       return allowed.includes(normalized) ? normalized : fallback;
     };
 
+    const allowedTypes = assetTemplateOptions.types;
+    const allowedAssetTypes = assetTemplateOptions.assetTypes;
+    const allowedCriticalities = assetTemplateOptions.criticalities;
+    const allowedStatuses = assetTemplateOptions.statuses;
+    const defaultType = assetTemplateOptions.defaults.type;
+    const defaultAssetType = assetTemplateOptions.defaults.assetType;
+    const defaultCriticality = assetTemplateOptions.defaults.criticality;
+    const defaultStatus = assetTemplateOptions.defaults.status;
+
     const departmentLookup = new Map<string, Department>();
     const departmentCodes = new Set<string>();
     const registerDepartmentAliases = (department: Department, extraAliases: string[] = []) => {
@@ -747,17 +843,17 @@ export default function MachinesMaster() {
           await createAsset({
             code: machineCode,
             name: machineName,
-            type: normalizeEnum(pickCell(row, ["type"]), ["MACHINE", "UTILITY"], "MACHINE"),
+            type: normalizeEnum(pickCell(row, ["type"]), allowedTypes, defaultType),
             assetType: normalizeEnum(
               pickCell(row, ["asset_type", "assettype"]),
-              ["BOILER", "COMPRESSOR", "CHILLER", "HVAC", "PUMP", "MOTOR", "GENERATOR", "FAN", "CONVEYOR", "ROBOT", "CNC", "TRANSFORMER", "GEARBOX", "COOLING_TOWER"],
-              "PUMP",
-            ) as "BOILER" | "COMPRESSOR" | "CHILLER" | "HVAC" | "PUMP" | "MOTOR" | "GENERATOR" | "FAN" | "CONVEYOR" | "ROBOT" | "CNC" | "TRANSFORMER" | "GEARBOX" | "COOLING_TOWER",
+              allowedAssetTypes,
+              defaultAssetType,
+            ) as Asset["assetType"],
             departmentId: department.id,
             moduleId: machineModule.id,
             plantId: resolvedPlantId,
-            criticality: normalizeEnum(pickCell(row, ["criticality"]), ["HIGH", "MEDIUM", "LOW"], "MEDIUM"),
-            status: normalizeEnum(pickCell(row, ["status"]), ["ACTIVE", "UNDER_MAINTENANCE", "INACTIVE"], "ACTIVE"),
+            criticality: normalizeEnum(pickCell(row, ["criticality"]), allowedCriticalities, defaultCriticality),
+            status: normalizeEnum(pickCell(row, ["status"]), allowedStatuses, defaultStatus),
             make: pickCell(row, ["make"]) || null,
             model: pickCell(row, ["model"]) || null,
             serialNumber: pickCell(row, ["serial_number", "serial"]) || null,
@@ -803,7 +899,27 @@ export default function MachinesMaster() {
     }
   };
 
-  const handleDownloadMachineSampleCsv = () => {
+  const handleDownloadMachineSampleCsv = async () => {
+    const latestTemplateOptions = (await fetchAssetTemplateOptions()) || assetTemplateOptions;
+    const allowedTypes = latestTemplateOptions.types;
+    const allowedAssetTypes = latestTemplateOptions.assetTypes;
+    const allowedCriticalities = latestTemplateOptions.criticalities;
+    const allowedStatuses = latestTemplateOptions.statuses;
+
+    const defaultType = latestTemplateOptions.defaults.type;
+    const defaultAssetType = latestTemplateOptions.defaults.assetType;
+    const defaultCriticality = latestTemplateOptions.defaults.criticality;
+    const defaultStatus = latestTemplateOptions.defaults.status;
+
+    const utilityType = allowedTypes.includes("UTILITY") ? "UTILITY" : defaultType;
+    const secondaryAssetType = allowedAssetTypes.find((value) => value !== defaultAssetType) || defaultAssetType;
+    const tertiaryAssetType = allowedAssetTypes.includes("COOLING_TOWER") ? "COOLING_TOWER" : secondaryAssetType;
+
+    const typeOptionsText = allowedTypes.join(" | ");
+    const assetTypeOptionsText = allowedAssetTypes.join(" | ");
+    const criticalityOptionsText = allowedCriticalities.join(" | ");
+    const statusOptionsText = allowedStatuses.join(" | ");
+
     downloadCsvTemplate(
       "machine_bulk_upload_sample.csv",
       [
@@ -823,6 +939,10 @@ export default function MachinesMaster() {
         "refrigerant_gas_type",
         "commission_date",
         "warranty_expiry",
+        "allowed_types",
+        "allowed_asset_types",
+        "allowed_criticality",
+        "allowed_status",
       ],
       [
         [
@@ -832,16 +952,20 @@ export default function MachinesMaster() {
           "Utility",
           "MOD-AIR",
           "Air System",
-          "MACHINE",
-          "COMPRESSOR",
-          "HIGH",
-          "ACTIVE",
+          defaultType,
+          defaultAssetType,
+          defaultCriticality,
+          defaultStatus,
           "Atlas Copco",
           "GA55",
           "AC-2024-0001",
           "",
           "2024-01-10",
           "2028-01-10",
+          typeOptionsText,
+          assetTypeOptionsText,
+          criticalityOptionsText,
+          statusOptionsText,
         ],
         [
           "MCH-002",
@@ -850,16 +974,20 @@ export default function MachinesMaster() {
           "Utility",
           "MOD-AIR",
           "Air System",
-          "MACHINE",
-          "COMPRESSOR",
-          "HIGH",
-          "ACTIVE",
+          defaultType,
+          secondaryAssetType,
+          defaultCriticality,
+          defaultStatus,
           "Atlas Copco",
           "GA75",
           "AC-2024-0002",
           "",
           "2024-01-12",
           "2028-01-12",
+          "",
+          "",
+          "",
+          "",
         ],
         [
           "MCH-003",
@@ -868,20 +996,24 @@ export default function MachinesMaster() {
           "Utility",
           "MOD-CT",
           "Cooling",
-          "UTILITY",
-          "COOLING_TOWER",
-          "MEDIUM",
-          "ACTIVE",
+          utilityType,
+          tertiaryAssetType,
+          defaultCriticality,
+          defaultStatus,
           "BAC",
           "VXT-180",
           "CT-2024-0002",
           "",
           "2023-06-01",
           "2027-06-01",
+          "",
+          "",
+          "",
+          "",
         ],
       ],
     );
-    toast.success("Machine sample CSV downloaded");
+    toast.success("Machine template downloaded with backend option lists");
   };
 
   const fileToDataUrl = (file: File) =>
