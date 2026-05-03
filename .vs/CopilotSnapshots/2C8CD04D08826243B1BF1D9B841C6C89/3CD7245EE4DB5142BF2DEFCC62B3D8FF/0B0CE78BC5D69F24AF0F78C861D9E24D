@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -163,7 +163,7 @@ export function MainLayout() {
       >
         <Topbar onMenuClick={handleSidebarToggle} sidebarCollapsed={sidebarCollapsed} />
         
-        <main tabIndex={-1} data-app-main className="min-w-0 flex-1 px-3 py-4 pb-24 sm:px-6 sm:py-5 sm:pb-24 lg:px-8 lg:py-6 lg:pb-8">
+        <main className="min-w-0 flex-1 px-3 py-4 pb-24 sm:px-6 sm:py-5 sm:pb-24 lg:px-8 lg:py-6 lg:pb-8">
           <div className="mx-auto w-full min-w-0 max-w-[1720px]">
             <Outlet />
           </div>

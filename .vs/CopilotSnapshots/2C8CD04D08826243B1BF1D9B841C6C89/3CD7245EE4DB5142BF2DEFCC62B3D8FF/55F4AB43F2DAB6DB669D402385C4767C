@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
     AlertTriangle,
@@ -178,9 +178,6 @@ export default function VisitorExperience() {
 
     const [sosNote, setSosNote] = useState("");
     const [sosSending, setSosSending] = useState(false);
-    const [routeError, setRouteError] = useState<string | null>(null);
-    const [passError, setPassError] = useState<string | null>(null);
-    const [trackingError, setTrackingError] = useState<string | null>(null);
 
     const normalizedRoles = useMemo(() => (user?.roles ?? []).map((role) => normalizeRoleValue(role)), [user?.roles]);
     const isVisitorOnlyUser = useMemo(
@@ -275,9 +272,6 @@ export default function VisitorExperience() {
             }
 
             try {
-                setRouteError(null);
-                setPassError(null);
-                setTrackingError(null);
                 const [profileResponse, requestResponse] = await Promise.all([
                     getVisitorProfile(selectedPlantId || undefined),
                     listVisitorRequests({
@@ -332,12 +326,9 @@ export default function VisitorExperience() {
         try {
             const response = await getVisitorNavigation({ gateEntryId: selectedRequestId });
             setRouteData(response.data);
-            setRouteError(null);
             setActiveTab("navigation");
         } catch (error: unknown) {
-            const message = resolveErrorMessage(error, "Failed to load navigation route");
-            setRouteError(message);
-            toast.error(message);
+            toast.error(resolveErrorMessage(error, "Failed to load navigation route"));
         } finally {
             setRouteLoading(false);
         }
@@ -356,10 +347,8 @@ export default function VisitorExperience() {
         try {
             const passResponse = await getVisitorPass({ gateEntryId: selectedRequestId });
             setPassData(passResponse.data);
-            setPassError(null);
-        } catch (error: unknown) {
+        } catch {
             setPassData(null);
-            setPassError(resolveErrorMessage(error, "Failed to load pass details"));
         } finally {
             setPassLoading(false);
         }
@@ -367,10 +356,8 @@ export default function VisitorExperience() {
         try {
             const trackingResponse = await getVisitorTracking({ gateEntryId: selectedRequestId, page: 1, limit: 50 });
             setTrackingData(trackingResponse.data);
-            setTrackingError(null);
-        } catch (error: unknown) {
+        } catch {
             setTrackingData(null);
-            setTrackingError(resolveErrorMessage(error, "Failed to load tracking history"));
         } finally {
             setTrackingLoading(false);
         }
@@ -400,9 +387,6 @@ export default function VisitorExperience() {
                 if (!gateEntryId) continue;
 
                 setSelectedRequestId(gateEntryId);
-                setRouteError(null);
-                setPassError(null);
-                setTrackingError(null);
                 setActiveTab("approval");
                 toast.success("Visitor request loaded from QR");
                 await loadVisitorContext(true, true);
@@ -678,8 +662,6 @@ export default function VisitorExperience() {
                                         ))}
                                     </div>
                                 </div>
-                            ) : routeError ? (
-                                <p className="text-sm text-destructive">{routeError}</p>
                             ) : (
                                 <p className="text-sm text-muted-foreground">Choose an approved request to generate the visitor route.</p>
                             )}
@@ -792,8 +774,6 @@ export default function VisitorExperience() {
                                     <p className="text-xs text-muted-foreground">Valid To: {formatDateTime(passData.validity.validTo)}</p>
                                     <p className="text-xs text-muted-foreground">Remaining: {passData.validity.remainingSeconds} sec</p>
                                 </div>
-                            ) : passError ? (
-                                <p className="text-sm text-destructive">{passError}</p>
                             ) : (
                                 <p className="text-sm text-muted-foreground">No pass data available yet.</p>
                             )}
@@ -812,8 +792,6 @@ export default function VisitorExperience() {
                                             </div>
                                         ))}
                                     </div>
-                                ) : trackingError ? (
-                                    <p className="mt-2 text-xs text-destructive">{trackingError}</p>
                                 ) : (
                                     <p className="mt-2 text-xs text-muted-foreground">No tracking data available.</p>
                                 )}

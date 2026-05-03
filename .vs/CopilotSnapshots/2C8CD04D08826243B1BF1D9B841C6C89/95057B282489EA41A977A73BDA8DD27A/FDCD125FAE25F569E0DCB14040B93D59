@@ -1,4 +1,4 @@
-services:
+﻿services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -9,15 +9,14 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - cmms_postgres_prod:/var/lib/postgresql/data
-      - ./backups:/backups
-    networks:
-      - internal
+      - cmms_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 12
+    networks:
+      - app
 
   backend:
     build:
@@ -26,6 +25,8 @@ services:
     command: >
       sh -c "npm run migration:run:prod &&
              npm run start"
+    env_file:
+      - backend/.env
     environment:
       NODE_ENV: production
       PORT: 3001
@@ -34,24 +35,26 @@ services:
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_SSL: "false"
-      JWT_SECRET: ${JWT_SECRET:-cmms-docker-jwt-secret-2026-rotate-me-32-chars}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-cmms-docker-refresh-secret-2026-rotate-me-32-chars}
-      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-cmms-docker-encryption-key-2026-rotate-me-32}
-      FRONTEND_URL: ${APP_BASE_URL:-http://localhost:8080}
-      CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:8080,http://localhost,http://127.0.0.1:8080,http://127.0.0.1}
+      FRONTEND_URL: ${APP_BASE_URL:-http://localhost}
+      CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost,http://127.0.0.1}
     ports:
       - "3001:3001"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health >/dev/null 2>&1 || exit 1"]
-      interval: 10s
+      test:
+        - CMD
+        - node
+        - -e
+        - >
+          require('http').get('http://127.0.0.1:3001/api/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))
+      interval: 15s
       timeout: 5s
       retries: 12
-      start_period: 20s
+      start_period: 25s
     networks:
-      - internal
+      - app
 
   frontend:
     build:
@@ -64,13 +67,13 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "8080:80"
+      - "${FRONTEND_PORT:-8080}:80"
     networks:
-      - internal
+      - app
 
 networks:
-  internal:
+  app:
     driver: bridge
 
 volumes:
-  cmms_postgres_prod:
+  cmms_postgres_data:

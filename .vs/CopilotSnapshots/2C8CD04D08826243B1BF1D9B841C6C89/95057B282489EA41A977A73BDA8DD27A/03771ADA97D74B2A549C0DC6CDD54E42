@@ -1,4 +1,4 @@
-# TamOptiX CMMS Platform
+﻿# TamOptiX CMMS Platform
 
 CMMSv2 is a full-stack CMMS platform for multi-organization and multi-plant maintenance operations. The codebase includes a React frontend, Express backend, PostgreSQL persistence, Docker deployment, RBAC, notifications, QR-based asset access, audit logging, and PWA support.
 
@@ -27,14 +27,6 @@ Run the production-style stack:
 ```powershell
 docker compose -f docker-compose.prod.yml up --build -d
 ```
-
-Run the single production Docker stack from the repository root:
-
-```powershell
-docker compose up --build -d
-```
-
-This starts only the frontend, backend, and PostgreSQL database services.
 
 ## Access From Other Devices On Same Network
 

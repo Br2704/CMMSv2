@@ -1,4 +1,4 @@
-services:
+﻿services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -26,6 +26,8 @@ services:
     command: >
       sh -c "npm run migration:run:prod &&
              npm run start"
+    env_file:
+      - backend/.env
     environment:
       NODE_ENV: production
       PORT: 3001
@@ -34,11 +36,8 @@ services:
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_SSL: "false"
-      JWT_SECRET: ${JWT_SECRET:-cmms-docker-jwt-secret-2026-rotate-me-32-chars}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-cmms-docker-refresh-secret-2026-rotate-me-32-chars}
-      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-cmms-docker-encryption-key-2026-rotate-me-32}
       FRONTEND_URL: ${APP_BASE_URL:-http://localhost:8080}
-      CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:8080,http://localhost,http://127.0.0.1:8080,http://127.0.0.1}
+      CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost,http://localhost:8080,http://127.0.0.1,http://127.0.0.1:8080}
     ports:
       - "3001:3001"
     depends_on:

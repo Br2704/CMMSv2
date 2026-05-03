@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+﻿import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -85,7 +85,6 @@ function debugLog(...args: unknown[]) {
 
 function DevRouteLogger() {
   const location = useLocation();
-  const lastLoggedRef = useRef<string>("");
 
   useEffect(() => {
     debugLog("[MOUNT] RouteLogger");
@@ -93,12 +92,6 @@ function DevRouteLogger() {
   }, []);
 
   useEffect(() => {
-    const routeKey = `${location.pathname}${location.search}`;
-    if (lastLoggedRef.current === routeKey) {
-      return;
-    }
-
-    lastLoggedRef.current = routeKey;
     debugLog("[ROUTE]", location.pathname);
     queueWebappLog({
       level: "INFO",
@@ -110,23 +103,6 @@ function DevRouteLogger() {
       },
     });
   }, [location.pathname, location.search]);
-
-  return null;
-}
-
-function RouteFlowManager() {
-  const location = useLocation();
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.scrollTo(0, 0);
-
-    const mainContent = document.querySelector<HTMLElement>("main[data-app-main]");
-    mainContent?.focus();
-  }, [location.pathname, location.search, location.hash]);
 
   return null;
 }
@@ -370,7 +346,6 @@ function App() {
         <Sonner />
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <AppErrorBoundary>
-            <RouteFlowManager />
             <DevRouteLogger />
             <WebappErrorLogger />
             <AuthProvider>

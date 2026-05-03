@@ -1,4 +1,4 @@
-NODE_ENV=development
+﻿NODE_ENV=development
 PORT=3001
 API_PREFIX=/api
 TRUST_PROXY_HOPS=0
@@ -52,10 +52,5 @@ SMTP_FROM=
 FEATURE_BENCHMARKING=true
 FEATURE_ESG_ADVANCED=true
 FEATURE_RELIABILITY_ADVANCED=true
-
-# Docker-friendly defaults for local container startup (override with secure values in real deployments)
-# JWT_SECRET=change-this-to-a-strong-32-plus-character-secret
-# JWT_REFRESH_SECRET=change-this-to-a-strong-32-plus-character-refresh-secret
-# DATA_ENCRYPTION_KEY=change-this-to-a-strong-32-plus-character-encryption-key
 
 

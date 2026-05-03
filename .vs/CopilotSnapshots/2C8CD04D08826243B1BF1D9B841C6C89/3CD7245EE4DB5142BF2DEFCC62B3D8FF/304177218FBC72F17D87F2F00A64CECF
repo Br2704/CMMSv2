@@ -1,4 +1,4 @@
-{
+﻿{
   "compilerOptions": {
     "types": ["vitest/globals"],
     "target": "ES2020",
@@ -8,7 +8,6 @@
     "skipLibCheck": true,
 
     /* Bundler mode */
-    "baseUrl": ".",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "isolatedModules": true,

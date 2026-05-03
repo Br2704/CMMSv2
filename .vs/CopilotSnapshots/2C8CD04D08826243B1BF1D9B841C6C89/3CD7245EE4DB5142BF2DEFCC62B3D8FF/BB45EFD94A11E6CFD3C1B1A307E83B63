@@ -1,4 +1,4 @@
-services:
+﻿services:
   postgres:
     image: postgres:16-alpine
     container_name: cmms-postgres
@@ -39,9 +39,6 @@ services:
       CORS_ORIGINS: ${DEV_CORS_ORIGINS:-http://localhost:5173,http://localhost:4173,http://127.0.0.1:5173,http://127.0.0.1:4173}
       NODE_ENV: development
       TS_NODE_TRANSPILE_ONLY: "true"
-      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-32-chars}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me-32-chars}
-      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-dev-encryption-key-change-me-32-chars}
     ports:
       - "3001:3001"
     volumes:
@@ -61,7 +58,6 @@ services:
       sh -c "npm install &&
              npm run dev -- --host 0.0.0.0 --port 5173"
     environment:
-      VITE_API_BASE_URL: ${DEV_VITE_API_URL:-http://localhost:3001/api}
       VITE_API_URL: ${DEV_VITE_API_URL:-http://localhost:3001/api}
       VITE_PROXY_TARGET: http://backend:3001
       CHOKIDAR_USEPOLLING: "true"
