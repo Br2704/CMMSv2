@@ -18,6 +18,12 @@ export class NotificationEntity extends TimestampedUuidEntity {
   @Column({ type: 'varchar', default: 'info' })
   type!: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  category!: string | null;
+
+  @Column({ name: 'group_key', type: 'varchar', nullable: true })
+  groupKey!: string | null;
+
   @Column({ name: 'is_read', type: 'boolean', default: false })
   isRead!: boolean;
 

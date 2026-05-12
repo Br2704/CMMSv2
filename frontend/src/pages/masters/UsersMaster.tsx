@@ -37,6 +37,13 @@ import { DataTableShell } from "@/components/layout/DataTableShell";
 import { FormGrid } from "@/components/layout/FormGrid";
 import { EmptyState } from "@/components/app-shell/EmptyState";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
+import {
+  downloadEnterpriseExcelTemplate,
+  isCsvHelperRow,
+  parseExcelXmlRows,
+  normalizeHeaderName,
+  parseCsvRows,
+} from "@/lib/import-template";
 
 type AppRole = string;
 
@@ -138,78 +145,6 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function normalizeLookupValue(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function normalizeHeaderName(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-}
-
-function parseCsvRows(content: string): string[][] {
-  const rows: string[][] = [];
-  let currentCell = "";
-  let currentRow: string[] = [];
-  let inQuotes = false;
-
-  const pushCell = () => {
-    currentRow.push(currentCell.trim());
-    currentCell = "";
-  };
-
-  const pushRow = () => {
-    if (currentRow.length === 0) return;
-    rows.push(currentRow);
-    currentRow = [];
-  };
-
-  for (let index = 0; index < content.length; index += 1) {
-    const char = content[index];
-    const nextChar = content[index + 1];
-
-    if (char === '"') {
-      if (inQuotes && nextChar === '"') {
-        currentCell += '"';
-        index += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (!inQuotes && char === ",") {
-      pushCell();
-      continue;
-    }
-
-    if (!inQuotes && (char === "\n" || char === "\r")) {
-      pushCell();
-      pushRow();
-      if (char === "\r" && nextChar === "\n") {
-        index += 1;
-      }
-      continue;
-    }
-
-    currentCell += char;
-  }
-
-  pushCell();
-  pushRow();
-
-  return rows.filter((row) => row.some((cell) => cell.length > 0));
-}
-
-function downloadCsvTemplate(fileName: string, headers: string[], rows: string[][]) {
-  const toCell = (value: string) => `"${String(value).replace(/"/g, '""')}"`;
-  const csv = [headers.map(toCell).join(","), ...rows.map((row) => row.map(toCell).join(","))].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
 }
 
 const emptyForm = {
@@ -597,9 +532,9 @@ export default function UsersMaster() {
       return;
     }
 
-    const rows = parseCsvRows(content);
+    const rows = parseExcelXmlRows(content, "user_code") || parseCsvRows(content);
     if (rows.length < 2) {
-      toast.error("CSV must include a header and at least one user row");
+      toast.error("Upload file must include a header and at least one user row");
       return;
     }
 
@@ -652,7 +587,7 @@ export default function UsersMaster() {
       const normalized = value.trim().toLowerCase();
       if (["true", "1", "yes", "active"].includes(normalized)) return true;
       if (["false", "0", "no", "inactive"].includes(normalized)) return false;
-      return true;
+      return null;
     };
 
     const plantLookup = new Map<string, string>();
@@ -697,10 +632,19 @@ export default function UsersMaster() {
     const failures: string[] = [];
     let createdCount = 0;
 
+    const importRows = rows
+      .map((row, index) => ({ row, csvRowNumber: index + 1 }))
+      .slice(1)
+      .filter(({ row }) => !isCsvHelperRow(row));
+
+    if (importRows.length === 0) {
+      toast.error("CSV must include at least one importable user row");
+      return;
+    }
+
     setBulkUploading(true);
     try {
-      for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
-        const row = rows[rowIndex];
+      for (const { row, csvRowNumber } of importRows) {
         if (!row || row.every((value) => value.trim().length === 0)) {
           continue;
         }
@@ -711,45 +655,45 @@ export default function UsersMaster() {
         const password = pickCell(row, ["password"]);
 
         if (!userCode || !fullName || !emailRaw || !password) {
-          failures.push(`Row ${rowIndex + 1}: user_code, full_name, email, and password are required`);
+          failures.push(`Row ${csvRowNumber}: user_code, full_name, email, and password are required`);
           continue;
         }
 
         const normalizedEmail = emailRaw.toLowerCase();
         const userCodeKey = normalizeLookupValue(userCode);
         if (existingCodeKeys.has(userCodeKey)) {
-          failures.push(`Row ${rowIndex + 1}: user_code already exists (${userCode})`);
+          failures.push(`Row ${csvRowNumber}: user_code already exists (${userCode})`);
           continue;
         }
         if (existingEmailKeys.has(normalizedEmail)) {
-          failures.push(`Row ${rowIndex + 1}: email already exists (${emailRaw})`);
+          failures.push(`Row ${csvRowNumber}: email already exists (${emailRaw})`);
           continue;
         }
         if (seenCodes.has(userCodeKey)) {
-          failures.push(`Row ${rowIndex + 1}: duplicate user_code in CSV (${userCode})`);
+          failures.push(`Row ${csvRowNumber}: duplicate user_code in CSV (${userCode})`);
           continue;
         }
         if (seenEmails.has(normalizedEmail)) {
-          failures.push(`Row ${rowIndex + 1}: duplicate email in CSV (${emailRaw})`);
+          failures.push(`Row ${csvRowNumber}: duplicate email in CSV (${emailRaw})`);
           continue;
         }
         seenCodes.add(userCodeKey);
         seenEmails.add(normalizedEmail);
 
         if (!isStrongPassword(password)) {
-          failures.push(`Row ${rowIndex + 1}: ${PASSWORD_POLICY_MESSAGE}`);
+          failures.push(`Row ${csvRowNumber}: ${PASSWORD_POLICY_MESSAGE}`);
           continue;
         }
 
         const roleRaw = pickCell(row, ["role"]) || allowedRoleList[0] || "";
         if (isBulkUploadBlockedRole(roleRaw)) {
-          failures.push(`Row ${rowIndex + 1}: role '${roleRaw}' is blocked for bulk upload`);
+          failures.push(`Row ${csvRowNumber}: role '${roleRaw}' is blocked for bulk upload`);
           continue;
         }
         const normalizedRole = normalizeRoleKey(roleRaw);
         const roleValue = roleValueByNormalized.get(normalizedRole);
         if (!roleValue) {
-          failures.push(`Row ${rowIndex + 1}: role '${roleRaw}' is not allowed. Allowed roles: ${allowedRoleText}`);
+          failures.push(`Row ${csvRowNumber}: role '${roleRaw}' is not allowed. Allowed roles: ${allowedRoleText}`);
           continue;
         }
 
@@ -760,18 +704,23 @@ export default function UsersMaster() {
             : defaultPlantId || null;
 
         if (canSelectPlant && rowPlantValue && !resolvedPlantId) {
-          failures.push(`Row ${rowIndex + 1}: plant '${rowPlantValue}' is not recognized`);
+          failures.push(`Row ${csvRowNumber}: plant '${rowPlantValue}' is not recognized`);
           continue;
         }
 
         if (!resolvedPlantId) {
-          failures.push(`Row ${rowIndex + 1}: plant is required for role '${roleValue}'`);
+          failures.push(`Row ${csvRowNumber}: plant is required for role '${roleValue}'`);
           continue;
         }
 
         try {
           const departmentRaw = pickCell(row, ["department", "department_name", "department_code"]);
           const departmentName = await resolveDepartmentName(resolvedPlantId, departmentRaw);
+          const isActive = parseIsActive(pickCell(row, ["is_active", "active", "status"]));
+          if (isActive === null) {
+            failures.push(`Row ${csvRowNumber}: is_active must be one of true, false, active, inactive, yes, no`);
+            continue;
+          }
 
           await createUser({
             email: normalizedEmail,
@@ -783,13 +732,13 @@ export default function UsersMaster() {
             plantId: resolvedPlantId,
             department: departmentName,
             roles: [roleValue],
-            isActive: parseIsActive(pickCell(row, ["is_active", "active", "status"])),
+            isActive,
           });
           existingCodeKeys.add(userCodeKey);
           existingEmailKeys.add(normalizedEmail);
           createdCount += 1;
         } catch (error: unknown) {
-          failures.push(`Row ${rowIndex + 1}: ${getErrorMessage(error, "failed to create user")}`);
+          failures.push(`Row ${csvRowNumber}: ${getErrorMessage(error, "failed to create user")}`);
         }
       }
 
@@ -823,7 +772,7 @@ export default function UsersMaster() {
     }
   };
 
-  const handleDownloadUsersSampleCsv = async () => {
+  const handleDownloadUsersTemplate = async (includeDemoRows: boolean) => {
     const latestRoles = await fetchRoles();
     const sourceRoles = latestRoles.length > 0 ? latestRoles : allRoles;
     const latestAllowedBulkRoleOptions = sourceRoles.filter((role) => {
@@ -833,28 +782,120 @@ export default function UsersMaster() {
     });
     const sampleRoleValues = latestAllowedBulkRoleOptions.map((role) => (role.value === "SUPER_ADMIN" ? "SUPERADMIN" : role.value));
 
-    const sampleRows =
-      sampleRoleValues.length > 0
+    const sampleRows = includeDemoRows
+      ? sampleRoleValues.length > 0
         ? sampleRoleValues.map((roleValue, index) => [
-            `USR00${index + 1}`,
-            `Sample ${roleValue.replace(/_/g, " ")}`,
-            `sample.${index + 1}@example.com`,
-            "TempPass@123",
-            roleValue,
-            "PLANT_CODE_OR_ID",
-            "Maintenance",
-            `+91-90000000${String(index + 1).padStart(2, "0")}`,
-            "true",
-          ])
-        : [["USR001", "Sample User", "sample.user@example.com", "TempPass@123", "USER", "PLANT_CODE_OR_ID", "Maintenance", "+91-9000000001", "true"]];
+          `USR00${index + 1}`,
+          `Sample ${roleValue.replace(/_/g, " ")}`,
+          `sample.${index + 1}@example.com`,
+          "TempPass@123",
+          roleValue,
+          "PLANT_CODE_OR_ID",
+          "Maintenance",
+          `+91-90000000${String(index + 1).padStart(2, "0")}`,
+          "true",
+        ])
+        : [["USR001", "Sample User", "sample.user@example.com", "TempPass@123", "USER", "PLANT_CODE_OR_ID", "Maintenance", "+91-9000000001", "true"]]
+      : [];
 
-    downloadCsvTemplate(
-      "user_bulk_upload_sample.csv",
-      ["user_code", "full_name", "email", "password", "role", "plant", "department", "phone", "is_active"],
-      sampleRows,
-    );
-    const allowedRolesText = sampleRoleValues.join(", ");
-    toast.success(allowedRolesText ? `User sample CSV downloaded. Allowed roles: ${allowedRolesText}` : "User sample CSV downloaded");
+    const plantValues = plantsOptions.map((plant) => plant.label || plant.value).filter(Boolean);
+    const departmentValues = departments
+      .map((department) => [department.code, department.name].filter(Boolean).join(" - "))
+      .filter(Boolean);
+
+    downloadEnterpriseExcelTemplate({
+      fileName: "user_bulk_upload_demo.xls",
+      title: "CMMS User Management Demo Upload Template",
+      uploadSheetName: "User Upload",
+      columns: [
+        {
+          key: "user_code",
+          label: "User code",
+          required: true,
+          example: "USR001",
+          description: "Unique employee or login code.",
+          width: 120,
+        },
+        {
+          key: "full_name",
+          label: "Full name",
+          required: true,
+          example: "Sample User",
+          description: "Display name for the user.",
+          width: 180,
+        },
+        {
+          key: "email",
+          label: "Email",
+          required: true,
+          example: "sample.user@example.com",
+          format: "Valid unique email address.",
+          width: 220,
+        },
+        {
+          key: "password",
+          label: "Temporary password",
+          required: true,
+          example: "TempPass@123",
+          format: PASSWORD_POLICY_MESSAGE,
+          width: 180,
+        },
+        {
+          key: "role",
+          label: "Role",
+          required: true,
+          example: sampleRoleValues[0] || "USER",
+          allowedValues: sampleRoleValues,
+          description: "Use one allowed role exactly as listed.",
+          width: 140,
+        },
+        {
+          key: "plant",
+          label: "Plant",
+          required: true,
+          example: plantValues[0] || "PLANT_CODE_OR_ID",
+          allowedValues: plantValues,
+          description: "Accepts plant code, name, or id when available.",
+          width: 180,
+        },
+        {
+          key: "department",
+          label: "Department",
+          example: departmentValues[0] || "Maintenance",
+          allowedValues: departmentValues,
+          description: "Accepts department code or name.",
+          width: 180,
+        },
+        {
+          key: "phone",
+          label: "Phone",
+          example: "+91-9000000001",
+          format: "Optional contact number.",
+          width: 140,
+        },
+        {
+          key: "is_active",
+          label: "Status",
+          example: "true",
+          allowedValues: ["true", "false", "active", "inactive", "yes", "no"],
+          description: "Defaults to true when left blank.",
+          width: 120,
+        },
+      ],
+      rows: sampleRows,
+      instructions: [
+        "Fill data in the User Upload sheet only.",
+        "Required columns are marked with * and highlighted.",
+        "Use dropdown values where available. Do not rename database column headers.",
+        "Save the workbook as .xls after editing the template.",
+      ],
+      referenceSections: [
+        { title: "Allowed roles", values: sampleRoleValues },
+        { title: "Plant reference", values: plantValues.length > 0 ? plantValues : ["PLANT_CODE_OR_ID"] },
+        { title: "Department reference", values: departmentValues.length > 0 ? departmentValues : ["Maintenance"] },
+      ],
+    });
+    toast.success("User demo Excel template downloaded");
   };
 
   const confirmDelete = async () => {
@@ -942,10 +983,10 @@ export default function UsersMaster() {
               <input
                 ref={bulkUploadInputRef}
                 type="file"
-                accept=".csv,text/csv"
+                accept=".xls,.csv,text/csv,application/vnd.ms-excel,text/xml"
                 className="hidden"
-                aria-label="Bulk upload users CSV"
-                title="Bulk upload users CSV"
+                aria-label="Bulk upload users Excel or CSV"
+                title="Bulk upload users Excel or CSV"
                 onChange={(event) => {
                   const file = event.target.files?.[0] || null;
                   void handleBulkUsersFileChange(file);
@@ -960,11 +1001,11 @@ export default function UsersMaster() {
                 disabled={bulkUploading || allowedBulkRoleOptions.length === 0}
               >
                 <Upload className="h-4 w-4" />
-                {bulkUploading ? "Uploading..." : "Bulk Upload CSV"}
+                {bulkUploading ? "Uploading..." : "Bulk Upload Users"}
               </Button>
-              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={handleDownloadUsersSampleCsv}>
+              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={() => void handleDownloadUsersTemplate(true)}>
                 <Download className="h-4 w-4" />
-                Download Sample CSV
+                Demo File
               </Button>
               {roleOptions.length > 0 ? (
                 <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
@@ -1099,7 +1140,7 @@ export default function UsersMaster() {
               disabled={isSystemRoleWithoutPlant(formData.role)}
             />
           ) : (
-            <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => {}} disabled />
+            <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => { }} disabled />
           )}
           <SelectField
             label="Department"

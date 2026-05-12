@@ -73,7 +73,7 @@ export function enforcePlantScope(auth: AuthContext, plantId: string | null | un
   if (scopeType === 'ORGANIZATION' || auth.accessAllPlants) {
     if (!plantId) return;
     if (auth.plantIds.length === 0) {
-      return;
+      forbidden('Plant scope violation');
     }
     if (!auth.plantIds.includes(plantId)) {
       forbidden('Plant scope violation');

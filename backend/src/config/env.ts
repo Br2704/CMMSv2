@@ -48,7 +48,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
   API_PREFIX: z.string().default('/api'),
-  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
 
   DATABASE_URL: optionalUrlFromEnv,
   DB_HOST: optionalStringFromEnv,
@@ -145,18 +145,25 @@ function assertProductionSecurityConfig(envConfig: z.infer<typeof envSchema>) {
 
   const errors: string[] = [];
 
-  if (envConfig.JWT_SECRET.trim().length < 32 || isWeakSecret(envConfig.JWT_SECRET)) {
-    errors.push('JWT_SECRET must be at least 32 characters and must not use weak defaults.');
+  if (!envConfig.JWT_SECRET || envConfig.JWT_SECRET.trim().length < 32 || isWeakSecret(envConfig.JWT_SECRET)) {
+    errors.push('JWT_SECRET must be explicitly set with at least 32 characters and must not use weak defaults.');
   }
-  if (envConfig.JWT_REFRESH_SECRET.trim().length < 32 || isWeakSecret(envConfig.JWT_REFRESH_SECRET)) {
-    errors.push('JWT_REFRESH_SECRET must be at least 32 characters and must not use weak defaults.');
+  if (!envConfig.JWT_REFRESH_SECRET || envConfig.JWT_REFRESH_SECRET.trim().length < 32 || isWeakSecret(envConfig.JWT_REFRESH_SECRET)) {
+    errors.push('JWT_REFRESH_SECRET must be explicitly set with at least 32 characters and must not use weak defaults.');
   }
   if (envConfig.JWT_SECRET === envConfig.JWT_REFRESH_SECRET) {
     errors.push('JWT_SECRET and JWT_REFRESH_SECRET must be different values.');
   }
-  if (envConfig.DATA_ENCRYPTION_KEY.trim().length < 32 || isWeakSecret(envConfig.DATA_ENCRYPTION_KEY)) {
-    errors.push('DATA_ENCRYPTION_KEY must be at least 32 characters and must not use weak defaults.');
+  if (!envConfig.DATA_ENCRYPTION_KEY || envConfig.DATA_ENCRYPTION_KEY.trim().length < 32 || isWeakSecret(envConfig.DATA_ENCRYPTION_KEY)) {
+    errors.push('DATA_ENCRYPTION_KEY must be explicitly set with at least 32 characters and must not use weak defaults.');
   }
+
+  const dbEngine = databaseSelection.engine;
+  const requiresDbPassword = ['postgres', 'mysql', 'mariadb', 'mssql', 'cockroachdb'].includes(dbEngine);
+  if (requiresDbPassword && !envConfig.DATABASE_URL && (!envConfig.DB_PASSWORD || envConfig.DB_PASSWORD.trim().length === 0)) {
+    errors.push('DB_PASSWORD must be explicitly set in production for relational databases.');
+  }
+
   if (envConfig.ROOT_ADMIN_PASSWORD && !isStrongPassword(envConfig.ROOT_ADMIN_PASSWORD)) {
     errors.push('ROOT_ADMIN_PASSWORD must meet the password policy requirements.');
   }
@@ -164,8 +171,17 @@ function assertProductionSecurityConfig(envConfig: z.infer<typeof envSchema>) {
     errors.push('SUPERADMIN_PASSWORD must meet the password policy requirements.');
   }
 
+  if (!envConfig.CORS_ORIGINS || envConfig.CORS_ORIGINS.trim().length === 0) {
+    errors.push('CORS_ORIGINS must be explicitly set in production.');
+  }
+  if (!envConfig.FRONTEND_URL || envConfig.FRONTEND_URL.trim().length === 0) {
+    errors.push('FRONTEND_URL must be explicitly set in production.');
+  }
+  if (envConfig.TRUST_PROXY_HOPS < 1) {
+    errors.push('TRUST_PROXY_HOPS must be at least 1 in production for proper rate limiting.');
+  }
+
   if (errors.length > 0) {
-    // eslint-disable-next-line no-console
     console.error('Insecure production configuration detected', errors);
     throw new Error('Insecure production configuration');
   }

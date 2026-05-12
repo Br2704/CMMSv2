@@ -702,7 +702,7 @@ async function notifySecurityAndAdmins(input: {
 export const smartVisitorRouter = Router();
 smartVisitorRouter.use(requireAuth);
 
-smartVisitorRouter.get('/admin/plant-layout', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+smartVisitorRouter.get('/admin/plant-layout', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'READ'), async (req, res, next) => {
   try {
     const requestedPlantId = optionalUuid.parse(req.query.plantId);
     const plantId = await resolvePlant(req, requestedPlantId);
@@ -746,7 +746,7 @@ smartVisitorRouter.get('/admin/plant-layout', requireRole(['SUPERADMIN', 'ADMIN'
   }
 });
 
-smartVisitorRouter.post('/admin/plant-layout', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+smartVisitorRouter.post('/admin/plant-layout', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const body = adminLayoutSchema.parse(req.body);
     const plantId = await resolvePlant(req, body.plantId);
@@ -810,7 +810,7 @@ smartVisitorRouter.get('/admin/plant-coordinates', requirePermission('GATES', 'R
   }
 });
 
-smartVisitorRouter.post('/admin/plant-coordinates', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+smartVisitorRouter.post('/admin/plant-coordinates', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const body = coordinateSchema.parse(req.body);
     const plantId = await resolvePlant(req, body.plantId);
@@ -873,7 +873,7 @@ smartVisitorRouter.get('/admin/pathways', requirePermission('GATES', 'READ'), as
   }
 });
 
-smartVisitorRouter.post('/admin/pathways', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+smartVisitorRouter.post('/admin/pathways', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const body = pathwaySchema.parse(req.body);
     const plantId = await resolvePlant(req, body.plantId);
@@ -944,7 +944,7 @@ smartVisitorRouter.get('/admin/geo-fences', requirePermission('GATES', 'READ'), 
   }
 });
 
-smartVisitorRouter.post('/admin/geo-fences', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+smartVisitorRouter.post('/admin/geo-fences', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const body = geoFenceSchema.parse(req.body);
     const plantId = await resolvePlant(req, body.plantId);

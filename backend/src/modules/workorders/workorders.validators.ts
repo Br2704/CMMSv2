@@ -45,7 +45,7 @@ const nullableTrimmedString = z.preprocess((value) => {
   if (typeof value !== 'string') return value;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-}, z.string().nullable());
+}, z.string().min(1, { message: 'Field cannot be empty' }).nullable());
 
 const optionalUuidOrNull = z.preprocess((value) => {
   if (value === undefined || value === null || value === '') return null;
@@ -258,10 +258,24 @@ const reviewWorkOrderBodySchema = z.object({
   comments: nullableTrimmedString.optional(),
 });
 
+const acceptWorkOrderBodySchema = z.object({
+  notes: nullableTrimmedString.optional(),
+});
+
+const workOrderActivityBodySchema = z
+  .object({
+    type: z.enum(['COMMENT', 'INTERNAL_NOTE']).default('COMMENT'),
+    notes: requiredTrimmedString,
+    attachments: z.array(mobileAttachmentSchema).optional(),
+    occurred_at: optionalIsoDateTimeOrNull.optional(),
+  });
+
 export const startWorkOrderSchema = z.preprocess(normalizeObjectKeys, startWorkOrderBodySchema);
 export const triageWorkOrderSchema = z.preprocess(normalizeObjectKeys, triageWorkOrderBodySchema);
 export const submitWorkOrderForApprovalSchema = z.preprocess(normalizeObjectKeys, submitWorkOrderForApprovalBodySchema);
 export const reviewWorkOrderSchema = z.preprocess(normalizeObjectKeys, reviewWorkOrderBodySchema);
+export const acceptWorkOrderSchema = z.preprocess(normalizeObjectKeys, acceptWorkOrderBodySchema);
+export const workOrderActivitySchema = z.preprocess(normalizeObjectKeys, workOrderActivityBodySchema);
 
 const workOrderScopeSchema = z.enum(['assigned', 'raised', 'incharge', 'all', 'approval_required']);
 
@@ -316,6 +330,8 @@ export const workOrdersListQuerySchema = listQuerySchema.extend({
   woType: optionalTrimmedQueryString,
   approval_required: optionalBooleanQuery,
   approvalRequired: optionalBooleanQuery,
+  escalation_only: optionalBooleanQuery,
+  escalationOnly: optionalBooleanQuery,
 });
 
 export const workOrdersSummaryQuerySchema = listQuerySchema.pick({ plantId: true });

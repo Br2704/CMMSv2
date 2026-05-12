@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { VendorEntity, VendorNotificationSettingEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
 import { ok } from '../../utils/apiResponse';
 import { sendMail } from '../../utils/mailer';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
@@ -40,7 +40,7 @@ const vendorRenewalNotifySchema = z.object({
 export const vendorsRouter = Router();
 vendorsRouter.use(requireAuth);
 
-vendorsRouter.get('/vendors', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+vendorsRouter.get('/vendors', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('VENDORS', 'READ'), async (req, res, next) => {
   try {
     const query = parseListQuery(req.query as Record<string, unknown>);
     const repo = AppDataSource.getRepository(VendorEntity);
@@ -57,7 +57,7 @@ vendorsRouter.get('/vendors', requireRole(['SUPERADMIN', 'ADMIN']), async (req, 
   }
 });
 
-vendorsRouter.post('/vendors', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+vendorsRouter.post('/vendors', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('VENDORS', 'CREATE'), async (req, res, next) => {
   try {
     const body = vendorSchema.parse(req.body);
     const repo = AppDataSource.getRepository(VendorEntity);
@@ -69,7 +69,7 @@ vendorsRouter.post('/vendors', requireRole(['SUPERADMIN', 'ADMIN']), async (req,
   }
 });
 
-vendorsRouter.patch('/vendors/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+vendorsRouter.patch('/vendors/:id', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('VENDORS', 'UPDATE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = vendorSchema.partial().parse(req.body);
@@ -87,7 +87,7 @@ vendorsRouter.patch('/vendors/:id', requireRole(['SUPERADMIN', 'ADMIN']), async 
   }
 });
 
-vendorsRouter.delete('/vendors/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+vendorsRouter.delete('/vendors/:id', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('VENDORS', 'DELETE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const repo = AppDataSource.getRepository(VendorEntity);
@@ -104,7 +104,7 @@ vendorsRouter.delete('/vendors/:id', requireRole(['SUPERADMIN', 'ADMIN']), async
   }
 });
 
-vendorsRouter.get('/vendor-notification-settings', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+vendorsRouter.get('/vendor-notification-settings', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('VENDORS', 'READ'), async (req, res, next) => {
   try {
     const query = parseListQuery(req.query as Record<string, unknown>);
     const repo = AppDataSource.getRepository(VendorNotificationSettingEntity);
@@ -118,7 +118,7 @@ vendorsRouter.get('/vendor-notification-settings', requireRole(['SUPERADMIN', 'A
   }
 });
 
-vendorsRouter.post('/vendor-notification-settings', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+vendorsRouter.post('/vendor-notification-settings', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('VENDORS', 'CREATE'), async (req, res, next) => {
   try {
     const body = vendorNotificationSchema.parse(req.body);
     ensurePlantAccess(req, body.plantId ?? null);
@@ -134,7 +134,7 @@ vendorsRouter.post('/vendor-notification-settings', requireRole(['SUPERADMIN', '
   }
 });
 
-vendorsRouter.patch('/vendor-notification-settings/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+vendorsRouter.patch('/vendor-notification-settings/:id', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('VENDORS', 'UPDATE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = vendorNotificationSchema.partial().parse(req.body);
@@ -156,7 +156,7 @@ vendorsRouter.patch('/vendor-notification-settings/:id', requireRole(['SUPERADMI
   }
 });
 
-vendorsRouter.delete('/vendor-notification-settings/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+vendorsRouter.delete('/vendor-notification-settings/:id', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('VENDORS', 'DELETE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const repo = AppDataSource.getRepository(VendorNotificationSettingEntity);
@@ -173,7 +173,7 @@ vendorsRouter.delete('/vendor-notification-settings/:id', requireRole(['SUPERADM
   }
 });
 
-vendorsRouter.post('/vendors/notify-renewals', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+vendorsRouter.post('/vendors/notify-renewals', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('VENDORS', 'UPDATE'), async (req, res, next) => {
   try {
     const body = vendorRenewalNotifySchema.parse(req.body);
     const result = await sendMail(body.to, body.subject, body.message);

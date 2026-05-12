@@ -29,6 +29,8 @@ export interface AuthContext {
   scopeType?: ScopeType;
   organizationId?: string | null;
   orgRoleId?: string | null;
+  department?: string | null;
+  teamIds?: string[];
   plantIds: string[];
   activePlantId?: string | null;
   permissions: Record<string, string[]>;

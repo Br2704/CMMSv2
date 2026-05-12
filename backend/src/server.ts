@@ -21,6 +21,7 @@ import { startPmSchedulesScheduler } from './modules/pmSchedules/pmschedules.sch
 import { startReportsScheduler } from './modules/reports/reports.scheduler';
 import { startWorkOrdersScheduler } from './modules/workorders/workorders.scheduler';
 import { startDashboardSocketServer, stopDashboardSocketServer } from './realtime/dashboard-socket';
+import { initializeSecretRotation } from './utils/secretRotation';
 
 let logSchedulerStarted = false;
 
@@ -197,6 +198,7 @@ function startLogTemplateScheduler() {
 }
 
 async function bootstrap() {
+  initializeSecretRotation();
   await ensureSelectedDatabaseExists();
   await AppDataSource.initialize();
   await ensureProtectedRootAdminBootstrap();

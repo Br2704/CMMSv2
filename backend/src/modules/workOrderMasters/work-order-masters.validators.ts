@@ -24,7 +24,7 @@ const nullableTrimmedString = z.preprocess((value) => {
   if (typeof value !== 'string') return value;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-}, z.string().nullable());
+}, z.string().min(1, { message: 'Field cannot be empty' }).nullable());
 
 const optionTypeSchema = z.preprocess((value) => {
   if (typeof value !== 'string') return value;

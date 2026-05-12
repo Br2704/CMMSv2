@@ -8,6 +8,41 @@ export class AddWorkOrderFollowUpTeam1700000000042 implements MigrationInterface
       return;
     }
 
+    const dateTimeType = queryRunner.connection.options.type === 'mssql' ? 'datetime2' : 'timestamp';
+
+    const extraColumns: Array<[string, TableColumn]> = [
+      [
+        'accepted_at',
+        new TableColumn({
+          name: 'accepted_at',
+          type: dateTimeType,
+          isNullable: true,
+        }),
+      ],
+      [
+        'escalation_level',
+        new TableColumn({
+          name: 'escalation_level',
+          type: 'int',
+          isNullable: true,
+        }),
+      ],
+      [
+        'sla_due_at',
+        new TableColumn({
+          name: 'sla_due_at',
+          type: dateTimeType,
+          isNullable: true,
+        }),
+      ],
+    ];
+
+    for (const [name, column] of extraColumns) {
+      if (!(await queryRunner.hasColumn('work_orders', name))) {
+        await queryRunner.addColumn('work_orders', column);
+      }
+    }
+
     if (!(await queryRunner.hasColumn('work_orders', 'follow_up_team_id'))) {
       await queryRunner.addColumn(
         'work_orders',
@@ -52,8 +87,10 @@ export class AddWorkOrderFollowUpTeam1700000000042 implements MigrationInterface
       }
     }
 
-    if (await queryRunner.hasColumn('work_orders', 'follow_up_team_id')) {
-      await queryRunner.dropColumn('work_orders', 'follow_up_team_id');
+    for (const columnName of ['sla_due_at', 'escalation_level', 'accepted_at', 'follow_up_team_id']) {
+      if (await queryRunner.hasColumn('work_orders', columnName)) {
+        await queryRunner.dropColumn('work_orders', columnName);
+      }
     }
   }
 }

@@ -674,7 +674,7 @@ visitorExperienceRouter.get('/visitor-experience/content', requirePermission('GA
   }
 });
 
-visitorExperienceRouter.put('/visitor-experience/content', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+visitorExperienceRouter.put('/visitor-experience/content', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const body = contentSchema.parse(req.body);
     const resolvedPlantId = resolveScopedPlantId(req.auth!, body.plantId ?? null);
@@ -910,7 +910,7 @@ visitorExperienceRouter.get('/visitor-experience/layout', requirePermission('GAT
   }
 });
 
-visitorExperienceRouter.put('/visitor-experience/layout', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+visitorExperienceRouter.put('/visitor-experience/layout', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const body = layoutSchema.parse(req.body);
     const resolvedPlantId = resolveScopedPlantId(req.auth!, body.plantId);

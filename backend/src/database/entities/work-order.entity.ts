@@ -50,6 +50,15 @@ export class WorkOrderEntity extends TimestampedUuidEntity {
   @Column({ name: 'downtime_end_at', type: DATETIME_COLUMN_TYPE, nullable: true })
   downtimeEndAt!: Date | null;
 
+  @Column({ name: 'accepted_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  acceptedAt!: Date | null;
+
+  @Column({ name: 'escalation_level', type: 'int', nullable: true })
+  escalationLevel!: number | null;
+
+  @Column({ name: 'sla_due_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  slaDueAt!: Date | null;
+
   @Column({ name: 'is_failure_event', type: 'boolean', default: false })
   isFailureEvent!: boolean;
 

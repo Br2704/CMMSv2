@@ -532,7 +532,7 @@ reportsRouter.post('/reports/send-now', reportsRateLimiter, requirePermission('R
   }
 });
 
-reportsRouter.post('/reports/test-email', reportsRateLimiter, requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+reportsRouter.post('/reports/test-email', reportsRateLimiter, requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('REPORTS', 'CREATE'), async (req, res, next) => {
   try {
     const body = testEmailSchema.parse(req.body);
     const result = await sendMail(body.to, body.subject, body.message);
@@ -548,7 +548,7 @@ reportsRouter.post('/reports/test-email', reportsRateLimiter, requireRole(['SUPE
   }
 });
 
-reportsRouter.post('/reports/send-report-email', reportsRateLimiter, requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+reportsRouter.post('/reports/send-report-email', reportsRateLimiter, requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('REPORTS', 'CREATE'), async (req, res, next) => {
   try {
     const body = sendReportEmailSchema.parse(req.body);
 

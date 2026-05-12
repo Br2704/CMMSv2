@@ -67,12 +67,15 @@ export function errorHandler(
   }
 
   if (error instanceof ZodError) {
-    const details = error.issues.map((issue) => ({
-      path: issue.path.join('.'),
-      message: issue.message,
-      code: issue.code,
-    }));
-    res.status(400).json(fail('Validation failed', { issues: details, flattened: error.flatten() }));
+    const isProduction = env.NODE_ENV === 'production';
+    const details = isProduction
+      ? { errorCount: error.issues.length, code: 'VALIDATION_ERROR' }
+      : error.issues.map((issue) => ({
+          path: issue.path.join('.'),
+          message: issue.message,
+          code: issue.code,
+        }));
+    res.status(400).json(fail('Validation failed', details));
     return;
   }
 
@@ -88,7 +91,7 @@ export function errorHandler(
     return;
   }
 
-  if (req.originalUrl.includes('/auth/login')) {
+  if (req.originalUrl.includes('/auth/login') && (error.statusCode === 503 || error.status === 503)) {
     res
       .status(503)
       .json(fail('Authentication service is temporarily unavailable. Please retry shortly.', { code: 'AUTH_DEPENDENCY_ERROR' }));

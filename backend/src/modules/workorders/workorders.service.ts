@@ -11,6 +11,7 @@ import {
 } from '../../database/entities';
 import type { AuthContext } from '../../types/auth';
 import { badRequest, conflict, forbidden } from '../../utils/httpError';
+import { canAccessWorkOrder } from '../../utils/authorization';
 import { enforcePlantScope, resolvePlantFilter, resolveScopedPlantId } from '../../utils/plantScope';
 import type { GenericRecord, ListResult } from '../_core/crud.types';
 import { CrudService } from '../_core/crud.service';
@@ -78,6 +79,7 @@ const WORKFLOW_STATUSES = {
   RAISED: 'RAISED',
   TRIAGED: 'TRIAGED',
   ASSIGNED: 'ASSIGNED',
+  ACCEPTED: 'ACCEPTED',
   OPENED: 'OPENED',
   IN_PROGRESS: 'IN_PROGRESS',
   COMPLETED: 'COMPLETED',
@@ -284,6 +286,8 @@ class WorkOrdersService extends CrudService {
     const scope = normalizeScope(extended.scope);
     const approvalRequired =
       readOptionalBoolean(extended.approval_required) ?? readOptionalBoolean(extended.approvalRequired) ?? false;
+    const escalationOnly =
+      readOptionalBoolean(extended.escalation_only) ?? readOptionalBoolean(extended.escalationOnly) ?? false;
 
     const sortRaw = readOptionalString(query.sort);
     const [requestedSortColumn, requestedSortDirection] = sortRaw ? sortRaw.split(':') : [];
@@ -308,6 +312,7 @@ class WorkOrdersService extends CrudService {
       woTypeFilter,
       scope,
       approvalRequired,
+      escalationOnly,
       sortColumn,
       sortDirection,
     };
@@ -324,6 +329,7 @@ class WorkOrdersService extends CrudService {
       woTypeFilter,
       scope,
       approvalRequired,
+      escalationOnly,
       sortColumn,
       sortDirection,
     } = this.normalizeListQuery(query);
@@ -380,6 +386,10 @@ class WorkOrdersService extends CrudService {
 
     if (woTypeFilter) {
       qb.andWhere('t.wo_type = :woTypeFilter', { woTypeFilter });
+    }
+
+    if (escalationOnly) {
+      qb.andWhere('t.escalation_level IS NOT NULL');
     }
 
     if (search) {
@@ -477,6 +487,7 @@ class WorkOrdersService extends CrudService {
         'closed_last_24h_count',
       )
       .addSelect('SUM(CASE WHEN t.status = :approvalPendingStatus THEN 1 ELSE 0 END)', 'pending_approval_count')
+      .addSelect('SUM(CASE WHEN t.escalation_level IS NOT NULL THEN 1 ELSE 0 END)', 'escalated_count')
       .setParameters({
         actorUserId: auth.userId,
         inchargeCategories,
@@ -499,6 +510,7 @@ class WorkOrdersService extends CrudService {
         closedLast24h: toNumber(raw?.closed_last_24h_count),
         pendingApproval: toNumber(raw?.pending_approval_count),
         total: toNumber(raw?.total_count),
+        escalated: toNumber(raw?.escalated_count),
       },
       defaultScope: canApproveAny ? 'all' : inchargeCategories.length > 0 ? 'incharge' : 'assigned',
     };
@@ -532,9 +544,7 @@ class WorkOrdersService extends CrudService {
   }
 
   private canExecuteWorkOrder(existing: GenericRecord, auth: AuthContext): boolean {
-    const assignedTo = typeof existing.assigned_to === 'string' ? existing.assigned_to : null;
-    const raisedBy = typeof existing.raised_by === 'string' ? existing.raised_by : null;
-    return auth.userId === assignedTo || auth.userId === raisedBy || this.isAdminActor(auth);
+    return canAccessWorkOrder(auth, existing);
   }
 
   private ensureExecutionAccess(existing: GenericRecord, auth: AuthContext) {
@@ -821,6 +831,7 @@ class WorkOrdersService extends CrudService {
       ...normalized,
       asset_id: nextAssetId,
       plant_id: plantId,
+      ...(normalized.status === WORKFLOW_STATUSES.ACCEPTED && !existing.accepted_at ? { accepted_at: new Date().toISOString() } : {}),
       ...(normalizedCategory !== undefined ? { category: normalizedCategory } : {}),
       ...(normalizedWorkOrderType !== undefined ? { wo_type: normalizedWorkOrderType } : {}),
       ...(normalizedFailureCode !== undefined ? { failure_code: normalizedFailureCode } : {}),
@@ -845,6 +856,114 @@ class WorkOrdersService extends CrudService {
     return updated as GenericRecord;
   }
 
+  async acceptWorkOrder(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+    return AppDataSource.transaction(async (manager) => {
+      const existing = await this.loadExistingWorkOrder(id, auth, manager);
+      const status = String(existing.status ?? '').toUpperCase();
+      const allowedStatuses: string[] = [WORKFLOW_STATUSES.RAISED, WORKFLOW_STATUSES.TRIAGED, WORKFLOW_STATUSES.ASSIGNED];
+      if (!allowedStatuses.includes(status)) {
+        conflict('Only raised, triaged, or assigned work orders can be accepted');
+      }
+
+      this.ensureExecutionAccess(existing, auth);
+
+      const normalized = normalizeKeys(input);
+      const now = new Date().toISOString();
+      const notes = normalizeText(normalized.notes);
+      const updated = await this.persistWorkOrderUpdate(
+        id,
+        {
+          status: WORKFLOW_STATUSES.ACCEPTED,
+          opened_at: existing.opened_at ?? now,
+          accepted_at: now,
+          assigned_to: normalizeText(existing.assigned_to) ?? auth.userId,
+        },
+        auth,
+        { manager, allowWorkflowMutation: true, existing },
+      );
+
+      await this.writeActivityLog(
+        updated,
+        auth,
+        {
+          eventType: 'ACCEPTED',
+          notes,
+          occurredAt: now,
+        },
+        manager,
+      );
+
+      const raisedBy = normalizeText(existing.raised_by);
+      if (raisedBy && raisedBy !== auth.userId) {
+        await this.createNotifications(
+          [
+            {
+              userId: raisedBy,
+              title: 'Work Order Accepted',
+              message: `${String(existing.wo_number)} has been accepted and is queued for execution.`,
+              type: 'info',
+              link: '/work-orders',
+              woId: String(existing.id),
+            },
+          ],
+          manager,
+        );
+      }
+
+      return updated;
+    });
+  }
+
+  async addActivity(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+    return AppDataSource.transaction(async (manager) => {
+      const existing = await this.loadExistingWorkOrder(id, auth, manager);
+      this.ensureExecutionAccess(existing, auth);
+
+      const normalized = normalizeKeys(input);
+      const type = String(normalized.type ?? 'COMMENT').toUpperCase();
+      const notes = normalizeText(normalized.notes);
+      if (!notes) {
+        badRequest('notes are required');
+      }
+
+      const attachments = parseJsonArray(normalized.attachments);
+      const occurredAt = normalizeText(normalized.occurred_at) ?? new Date().toISOString();
+      const eventType = type === 'INTERNAL_NOTE' ? 'INTERNAL_NOTE' : 'COMMENT';
+
+      await this.writeActivityLog(
+        existing,
+        auth,
+        {
+          eventType,
+          notes,
+          attachments,
+          occurredAt,
+        },
+        manager,
+      );
+
+      if (eventType === 'COMMENT') {
+        const recipientIds = uniqueIds([
+          normalizeText(existing.assigned_to),
+          normalizeText(existing.raised_by),
+        ]).filter((userId) => userId !== auth.userId);
+        await this.createNotifications(
+          recipientIds.map((userId) => ({
+            userId,
+            title: 'Work Order Update',
+            message: `${String(existing.wo_number)} has a new comment.`,
+            type: 'info',
+            link: '/work-orders',
+            woId: String(existing.id),
+          })),
+          manager,
+        );
+      }
+
+      return existing;
+    });
+  }
+
   async startWorkOrder(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
@@ -853,6 +972,7 @@ class WorkOrdersService extends CrudService {
         WORKFLOW_STATUSES.RAISED,
         WORKFLOW_STATUSES.TRIAGED,
         WORKFLOW_STATUSES.ASSIGNED,
+        WORKFLOW_STATUSES.ACCEPTED,
         WORKFLOW_STATUSES.OPENED,
       ];
       if (!allowedStartStatuses.includes(status)) {
@@ -916,6 +1036,7 @@ class WorkOrdersService extends CrudService {
           status: WORKFLOW_STATUSES.IN_PROGRESS,
           opened_at: existing.opened_at ?? now,
           started_at: now,
+          accepted_at: existing.accepted_at ?? now,
           technician_verification: technicianVerification,
           safety_checklist: {
             ...safetyChecklist,
@@ -1172,6 +1293,8 @@ class WorkOrdersService extends CrudService {
           follow_up_notes: normalizeText(normalized.follow_up_notes),
           remarks,
           attachments: mergedAttachments,
+          escalation_level: followUpRequired ? null : existing.escalation_level ?? null,
+          sla_due_at: followUpRequired ? null : existing.sla_due_at ?? null,
         },
         auth,
         { manager, allowWorkflowMutation: true, existing },

@@ -25,16 +25,33 @@ describe('QR token validation and access checks', () => {
     expect(() => ensurePlantAccess(req, 'plant-b')).toThrow('Plant access denied');
   });
 
-  it('allows global roles to resolve QR from any plant', () => {
-    const superAdminReq = {
+  it('allows ROOT_ADMIN to resolve QR from any plant', () => {
+    const rootAdminReq = {
       auth: {
-        roles: ['SUPERADMIN'],
+        roles: ['ROOT_ADMIN'],
+        roleKey: 'ROOT_ADMIN',
+        scopeType: 'ROOT_ADMIN',
         accessAllPlants: true,
         plantIds: [],
       },
     } as any;
 
-    expect(() => ensurePlantAccess(superAdminReq, 'plant-a')).not.toThrow();
+    expect(() => ensurePlantAccess(rootAdminReq, 'plant-a')).not.toThrow();
+    expect(() => ensurePlantAccess(rootAdminReq, null)).not.toThrow();
+  });
+
+  it('requires organization roles to have resolved plant scope', () => {
+    const superAdminReq = {
+      auth: {
+        roles: ['SUPERADMIN'],
+        roleKey: 'SUPERADMIN',
+        scopeType: 'ORGANIZATION',
+        accessAllPlants: true,
+        plantIds: [],
+      },
+    } as any;
+
+    expect(() => ensurePlantAccess(superAdminReq, 'plant-a')).toThrow('Plant access denied');
     expect(() => ensurePlantAccess(superAdminReq, null)).not.toThrow();
   });
 });

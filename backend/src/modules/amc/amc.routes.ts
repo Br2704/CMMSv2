@@ -574,7 +574,7 @@ amcRouter.get('/amc/service-reports', requirePermission('AMC', 'READ'), async (r
   }
 });
 
-amcRouter.post('/amc/service-reports', requireRole(['VENDOR', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER']), async (req, res, next) => {
+amcRouter.post('/amc/service-reports', requireRole(['VENDOR', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER']), requirePermission('AMC', 'CREATE'), async (req, res, next) => {
   try {
     const body = serviceReportSchema.parse(req.body);
     const vendorScopedIds = await resolveVendorScope(req.auth!);
@@ -1079,7 +1079,7 @@ amcRouter.delete('/amc/:id', requirePermission('AMC', 'DELETE'), async (req, res
   }
 });
 
-amcRouter.post('/amc/notify-vendor', requireRole(['SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER']), async (req, res, next) => {
+amcRouter.post('/amc/notify-vendor', requireRole(['SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER']), requirePermission('AMC', 'UPDATE'), async (req, res, next) => {
   try {
     const payload = notifySchema.parse(req.body);
     if (payload.to && payload.subject && payload.message) {

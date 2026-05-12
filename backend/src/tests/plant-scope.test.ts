@@ -81,4 +81,19 @@ describe('plant scope utilities', () => {
 
     expect(() => enforcePlantScope(superAuth, 'plant-c')).toThrow('Plant scope violation');
   });
+
+  it('blocks organization-scoped access when no plants were resolved', () => {
+    const superAuth = authContext({
+      roles: ['SUPERADMIN'],
+      roleKey: 'SUPERADMIN',
+      scopeType: 'ORGANIZATION',
+      organizationId: 'org-1',
+      plantIds: [],
+      activePlantId: null,
+      accessAllPlants: true,
+    });
+
+    expect(() => enforcePlantScope(superAuth, 'plant-a')).toThrow('Plant scope violation');
+    expect(() => enforcePlantScope(superAuth, null)).not.toThrow();
+  });
 });

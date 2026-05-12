@@ -28,6 +28,21 @@ const byRoleSchema = z.object({
   woId: z.string().uuid().nullable().optional(),
 });
 
+const broadcastSchema = z.object({
+  roles: z.array(z.string().min(1)).optional(),
+  plantId: z.string().uuid().nullable().optional(),
+  departmentId: z.string().uuid().nullable().optional(),
+  teamId: z.string().uuid().nullable().optional(),
+  userIds: z.array(z.string().uuid()).optional(),
+  title: z.string().min(1),
+  message: z.string().min(1),
+  type: z.string().default('info'),
+  link: z.string().nullable().optional(),
+  woId: z.string().uuid().nullable().optional(),
+  category: z.string().optional(),
+  groupKey: z.string().optional(),
+});
+
 export const notificationsRouter = Router();
 notificationsRouter.use(requireAuth);
 
@@ -235,7 +250,7 @@ notificationsRouter.patch('/notifications/:id', requirePermission('NOTIFICATIONS
   }
 });
 
-notificationsRouter.post('/notifications', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+notificationsRouter.post('/notifications', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('NOTIFICATIONS', 'CREATE'), async (req, res, next) => {
   try {
     const body = notificationSchema.parse(req.body);
     if (body.userId) {
@@ -273,7 +288,7 @@ notificationsRouter.post('/notifications', requireRole(['SUPERADMIN', 'ADMIN']),
   }
 });
 
-notificationsRouter.post('/notifications/by-role', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+notificationsRouter.post('/notifications/by-role', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('NOTIFICATIONS', 'CREATE'), async (req, res, next) => {
   try {
     const body = byRoleSchema.parse(req.body);
     const roleRepo = AppDataSource.getRepository(UserRoleEntity);

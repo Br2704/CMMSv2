@@ -36,6 +36,7 @@ import { getAssetQr, rotateAssetQr, type AssetQrData } from "@/api/qr";
 import { listCostCenters, type CostCenter } from "@/api/costCenters";
 import { createDepartment, listDepartments, type Department } from "@/api/departments";
 import { createModule, listModules, type MachineModule } from "@/api/modules";
+import { listVendors, type Vendor } from "@/api/vendors";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { EmptyState } from "@/components/app-shell/EmptyState";
 import { FilterToolbar } from "@/components/app-shell/FilterToolbar";
@@ -43,6 +44,13 @@ import { PageHeader } from "@/components/app-shell/PageHeader";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import { PageShell } from "@/components/layout/PageShell";
 import { FormGrid } from "@/components/layout/FormGrid";
+import {
+  downloadEnterpriseExcelTemplate,
+  isCsvHelperRow,
+  normalizeHeaderName,
+  parseExcelXmlRows,
+  parseCsvRows,
+} from "@/lib/import-template";
 
 interface MachineFormState {
   code: string;
@@ -215,78 +223,6 @@ function normalizeLookupValue(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function normalizeHeaderName(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-}
-
-function parseCsvRows(content: string): string[][] {
-  const rows: string[][] = [];
-  let currentCell = "";
-  let currentRow: string[] = [];
-  let inQuotes = false;
-
-  const pushCell = () => {
-    currentRow.push(currentCell.trim());
-    currentCell = "";
-  };
-
-  const pushRow = () => {
-    if (currentRow.length === 0) return;
-    rows.push(currentRow);
-    currentRow = [];
-  };
-
-  for (let index = 0; index < content.length; index += 1) {
-    const char = content[index];
-    const nextChar = content[index + 1];
-
-    if (char === '"') {
-      if (inQuotes && nextChar === '"') {
-        currentCell += '"';
-        index += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (!inQuotes && char === ",") {
-      pushCell();
-      continue;
-    }
-
-    if (!inQuotes && (char === "\n" || char === "\r")) {
-      pushCell();
-      pushRow();
-      if (char === "\r" && nextChar === "\n") {
-        index += 1;
-      }
-      continue;
-    }
-
-    currentCell += char;
-  }
-
-  pushCell();
-  pushRow();
-
-  return rows.filter((row) => row.some((cell) => cell.length > 0));
-}
-
-function downloadCsvTemplate(fileName: string, headers: string[], rows: string[][]) {
-  const toCell = (value: string) => `"${String(value).replace(/"/g, '""')}"`;
-  const csv = [headers.map(toCell).join(","), ...rows.map((row) => row.map(toCell).join(","))].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-}
-
 function nextUniqueCode(prefix: string, source: string, existingCodes: Set<string>) {
   const cleaned = source
     .toUpperCase()
@@ -370,6 +306,7 @@ export default function MachinesMaster() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [modules, setModules] = useState<MachineModule[]>([]);
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -486,6 +423,15 @@ export default function MachinesMaster() {
     }
   };
 
+  const fetchVendorsList = async () => {
+    try {
+      const response = await listVendors({ page: 1, limit: 1000 });
+      setVendors(response.data);
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to load vendors");
+    }
+  };
+
   const fetchAssetTemplateOptions = useCallback(async () => {
     try {
       const response = await getAssetBulkTemplateOptions();
@@ -522,6 +468,7 @@ export default function MachinesMaster() {
 
   useEffect(() => {
     void fetchAssetTemplateOptions();
+    void fetchVendorsList();
   }, [fetchAssetTemplateOptions]);
 
   useEffect(() => {
@@ -655,9 +602,9 @@ export default function MachinesMaster() {
       return;
     }
 
-    const rows = parseCsvRows(content);
+    const rows = parseExcelXmlRows(content, "machine_code") || parseCsvRows(content);
     if (rows.length < 2) {
-      toast.error("CSV must include a header and at least one machine row");
+      toast.error("Upload file must include a header and at least one machine row");
       return;
     }
 
@@ -698,11 +645,6 @@ export default function MachinesMaster() {
       return "";
     };
 
-    const normalizeEnum = (value: string, allowed: string[], fallback: string) => {
-      const normalized = value.trim().toUpperCase();
-      return allowed.includes(normalized) ? normalized : fallback;
-    };
-
     const allowedTypes = assetTemplateOptions.types;
     const allowedAssetTypes = assetTemplateOptions.assetTypes;
     const allowedCriticalities = assetTemplateOptions.criticalities;
@@ -711,6 +653,13 @@ export default function MachinesMaster() {
     const defaultAssetType = assetTemplateOptions.defaults.assetType;
     const defaultCriticality = assetTemplateOptions.defaults.criticality;
     const defaultStatus = assetTemplateOptions.defaults.status;
+
+    const resolveEnum = (value: string, allowed: string[], fallback: string, label: string) => {
+      if (!value.trim()) return { value: fallback };
+      const normalized = value.trim().toUpperCase();
+      if (allowed.includes(normalized)) return { value: normalized };
+      return { error: `${label} '${value}' is not allowed. Allowed values: ${allowed.join(", ")}` };
+    };
 
     const departmentLookup = new Map<string, Department>();
     const departmentCodes = new Set<string>();
@@ -759,19 +708,52 @@ export default function MachinesMaster() {
         registerModuleAliases(module, module.departmentId!);
       });
 
+    const costCenterLookup = new Map<string, CostCenter>();
+    costCenters
+      .filter((costCenter) => costCenter.plantId === resolvedPlantId || costCenter.plantId === null)
+      .forEach((costCenter) => {
+        [costCenter.id, costCenter.code, costCenter.name, `${costCenter.code} - ${costCenter.name}`]
+          .map(normalizeLookupValue)
+          .filter(Boolean)
+          .forEach((key) => costCenterLookup.set(key, costCenter));
+      });
+
+    const vendorLookup = new Map<string, Vendor>();
+    vendors.forEach((vendor) => {
+      [vendor.id, vendor.code, vendor.name, `${vendor.code} - ${vendor.name}`]
+        .map(normalizeLookupValue)
+        .filter(Boolean)
+        .forEach((key) => vendorLookup.set(key, vendor));
+    });
+
     const existingMachineCodes = new Set(
       assets
         .filter((asset) => asset.plantId === resolvedPlantId)
         .map((asset) => normalizeLookupValue(asset.code)),
     );
+    const existingSerialNumbers = new Set(
+      assets
+        .filter((asset) => asset.plantId === resolvedPlantId && asset.serialNumber)
+        .map((asset) => normalizeLookupValue(asset.serialNumber || "")),
+    );
     const seenCodes = new Set<string>();
+    const seenSerialNumbers = new Set<string>();
     const failures: string[] = [];
     let createdCount = 0;
 
+    const importRows = rows
+      .map((row, index) => ({ row, csvRowNumber: index + 1 }))
+      .slice(1)
+      .filter(({ row }) => !isCsvHelperRow(row));
+
+    if (importRows.length === 0) {
+      toast.error("Upload file must include at least one importable machine row");
+      return;
+    }
+
     setBulkUploading(true);
     try {
-      for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
-        const row = rows[rowIndex];
+      for (const { row, csvRowNumber } of importRows) {
         if (!row || row.every((value) => value.trim().length === 0)) {
           continue;
         }
@@ -790,20 +772,34 @@ export default function MachinesMaster() {
         );
 
         if (!machineCode || !machineName || !departmentValue.raw || !moduleValue.raw) {
-          failures.push(`Row ${rowIndex + 1}: machine_code, machine_name, department, and module are required`);
+          failures.push(`Row ${csvRowNumber}: machine_code, machine_name, department, and module are required`);
           continue;
         }
 
         const machineCodeKey = normalizeLookupValue(machineCode);
         if (seenCodes.has(machineCodeKey)) {
-          failures.push(`Row ${rowIndex + 1}: duplicate machine code in CSV (${machineCode})`);
+          failures.push(`Row ${csvRowNumber}: duplicate machine code in CSV (${machineCode})`);
           continue;
         }
         if (existingMachineCodes.has(machineCodeKey)) {
-          failures.push(`Row ${rowIndex + 1}: machine code already exists (${machineCode})`);
+          failures.push(`Row ${csvRowNumber}: machine code already exists (${machineCode})`);
           continue;
         }
         seenCodes.add(machineCodeKey);
+
+        const serialNumber = pickCell(row, ["serial_number", "serial"]);
+        const serialNumberKey = normalizeLookupValue(serialNumber);
+        if (serialNumberKey && seenSerialNumbers.has(serialNumberKey)) {
+          failures.push(`Row ${csvRowNumber}: duplicate serial number in CSV (${serialNumber})`);
+          continue;
+        }
+        if (serialNumberKey && existingSerialNumbers.has(serialNumberKey)) {
+          failures.push(`Row ${csvRowNumber}: serial number already exists (${serialNumber})`);
+          continue;
+        }
+        if (serialNumberKey) {
+          seenSerialNumbers.add(serialNumberKey);
+        }
 
         const parsedDepartment = { codeHint: departmentValue.codeHint, name: departmentValue.name };
         const departmentKeys = buildLookupKeys(departmentValue.raw, parsedDepartment);
@@ -840,31 +836,84 @@ export default function MachinesMaster() {
           }
           registerModuleAliases(machineModule, department.id, moduleKeys);
 
+          const typeResult = resolveEnum(pickCell(row, ["type"]), allowedTypes, defaultType, "type");
+          const assetTypeResult = resolveEnum(pickCell(row, ["asset_type", "assettype"]), allowedAssetTypes, defaultAssetType, "asset_type");
+          const criticalityResult = resolveEnum(pickCell(row, ["criticality"]), allowedCriticalities, defaultCriticality, "criticality");
+          const statusResult = resolveEnum(pickCell(row, ["status"]), allowedStatuses, defaultStatus, "status");
+          const enumErrors = [typeResult, assetTypeResult, criticalityResult, statusResult]
+            .map((result) => result.error)
+            .filter(Boolean);
+          if (enumErrors.length > 0) {
+            failures.push(`Row ${csvRowNumber}: ${enumErrors.join("; ")}`);
+            continue;
+          }
+
+          const costCenterValue = buildHierarchyImportValue(
+            pickCell(row, ["cost_center"]),
+            pickCell(row, ["cost_center_code"]),
+            pickCell(row, ["cost_center_name"]),
+          );
+          const costCenter = costCenterValue.raw
+            ? buildLookupKeys(costCenterValue.raw, { codeHint: costCenterValue.codeHint, name: costCenterValue.name })
+              .map((key) => costCenterLookup.get(key))
+              .find((value): value is CostCenter => Boolean(value))
+            : null;
+          if (costCenterValue.raw && !costCenter) {
+            failures.push(`Row ${csvRowNumber}: cost_center '${costCenterValue.raw}' is not recognized`);
+            continue;
+          }
+
+          const vendorValue = buildHierarchyImportValue(
+            pickCell(row, ["vendor"]),
+            pickCell(row, ["vendor_code"]),
+            pickCell(row, ["vendor_name"]),
+          );
+          const vendor = vendorValue.raw
+            ? buildLookupKeys(vendorValue.raw, { codeHint: vendorValue.codeHint, name: vendorValue.name })
+              .map((key) => vendorLookup.get(key))
+              .find((value): value is Vendor => Boolean(value))
+            : null;
+          if (vendorValue.raw && !vendor) {
+            failures.push(`Row ${csvRowNumber}: vendor '${vendorValue.raw}' is not recognized`);
+            continue;
+          }
+
+          const ratedCapacityRaw = pickCell(row, ["rated_capacity", "capacity"]);
+          const ratedCapacity = parseOptionalNumber(ratedCapacityRaw);
+          if (ratedCapacity === "invalid") {
+            failures.push(`Row ${csvRowNumber}: rated_capacity must be a number`);
+            continue;
+          }
+
           await createAsset({
             code: machineCode,
             name: machineName,
-            type: normalizeEnum(pickCell(row, ["type"]), allowedTypes, defaultType),
-            assetType: normalizeEnum(
-              pickCell(row, ["asset_type", "assettype"]),
-              allowedAssetTypes,
-              defaultAssetType,
-            ) as Asset["assetType"],
+            type: typeResult.value || defaultType,
+            assetType: (assetTypeResult.value || defaultAssetType) as Asset["assetType"],
             departmentId: department.id,
             moduleId: machineModule.id,
+            costCenterId: costCenter?.id || null,
             plantId: resolvedPlantId,
-            criticality: normalizeEnum(pickCell(row, ["criticality"]), allowedCriticalities, defaultCriticality),
-            status: normalizeEnum(pickCell(row, ["status"]), allowedStatuses, defaultStatus),
+            criticality: criticalityResult.value || defaultCriticality,
+            status: statusResult.value || defaultStatus,
             make: pickCell(row, ["make"]) || null,
+            manufacturer: pickCell(row, ["manufacturer"]) || pickCell(row, ["make"]) || null,
             model: pickCell(row, ["model"]) || null,
-            serialNumber: pickCell(row, ["serial_number", "serial"]) || null,
+            ratedCapacity,
+            capacityUnit: pickCell(row, ["capacity_unit"]) || null,
+            serialNumber: serialNumber || null,
             refrigerantGasType: pickCell(row, ["refrigerant_gas_type", "refrigerant"]) || null,
+            machineImageUrl: pickCell(row, ["machine_image_url", "image_url"]) || null,
+            location: pickCell(row, ["location"]) || null,
+            vendorId: vendor?.id || null,
             commissionDate: pickCell(row, ["commission_date"]) || null,
             warrantyExpiry: pickCell(row, ["warranty_expiry"]) || null,
           });
           existingMachineCodes.add(machineCodeKey);
+          if (serialNumberKey) existingSerialNumbers.add(serialNumberKey);
           createdCount += 1;
         } catch (error: any) {
-          failures.push(`Row ${rowIndex + 1}: ${error?.message || "failed to create machine"}`);
+          failures.push(`Row ${csvRowNumber}: ${error?.message || "failed to create machine"}`);
         }
       }
 
@@ -899,7 +948,11 @@ export default function MachinesMaster() {
     }
   };
 
-  const handleDownloadMachineSampleCsv = async () => {
+  const handleShowMachineImportInstructions = () => {
+    toast.info("Machine import: download the blank or demo Excel file, fill Machine Upload, keep headers unchanged, use dropdown/reference values, then upload the saved .xls or CSV file.");
+  };
+
+  const handleDownloadMachineTemplate = async (includeDemoRows: boolean) => {
     const latestTemplateOptions = (await fetchAssetTemplateOptions()) || assetTemplateOptions;
     const allowedTypes = latestTemplateOptions.types;
     const allowedAssetTypes = latestTemplateOptions.assetTypes;
@@ -915,105 +968,188 @@ export default function MachinesMaster() {
     const secondaryAssetType = allowedAssetTypes.find((value) => value !== defaultAssetType) || defaultAssetType;
     const tertiaryAssetType = allowedAssetTypes.includes("COOLING_TOWER") ? "COOLING_TOWER" : secondaryAssetType;
 
-    const typeOptionsText = allowedTypes.join(" | ");
-    const assetTypeOptionsText = allowedAssetTypes.join(" | ");
-    const criticalityOptionsText = allowedCriticalities.join(" | ");
-    const statusOptionsText = allowedStatuses.join(" | ");
+    const departmentValues = departments
+      .filter((department) => department.plantId === (canSelectPlant ? selectedPlant : defaultPlantId))
+      .map((department) => [department.code, department.name].filter(Boolean).join(" - "))
+      .filter(Boolean);
+    const moduleValues = modules
+      .filter((module) => module.plantId === (canSelectPlant ? selectedPlant : defaultPlantId))
+      .map((module) => [module.code, module.name].filter(Boolean).join(" - "))
+      .filter(Boolean);
+    const costCenterValues = costCenters
+      .filter((costCenter) => costCenter.plantId === (canSelectPlant ? selectedPlant : defaultPlantId) || costCenter.plantId === null)
+      .map((costCenter) => [costCenter.code, costCenter.name].filter(Boolean).join(" - "))
+      .filter(Boolean);
+    const vendorValues = vendors
+      .map((vendor) => [vendor.code, vendor.name].filter(Boolean).join(" - "))
+      .filter(Boolean);
+    const makeValues = Array.from(new Set(assets.map((asset) => asset.make || "").filter(Boolean))).sort();
+    const locationValues = Array.from(new Set(assets.map((asset) => asset.location || "").filter(Boolean))).sort();
+    const refrigerantValues = Array.from(new Set(["R134A", "R410A", "R32", ...assets.map((asset) => asset.refrigerantGasType || "")].filter(Boolean))).sort();
 
-    downloadCsvTemplate(
-      "machine_bulk_upload_sample.csv",
+    const exampleRows = [
       [
-        "machine_code",
-        "machine_name",
-        "department_code",
-        "department_name",
-        "module_code",
-        "module_name",
-        "type",
-        "asset_type",
-        "criticality",
-        "status",
-        "make",
-        "model",
-        "serial_number",
-        "refrigerant_gas_type",
-        "commission_date",
-        "warranty_expiry",
-        "allowed_types",
-        "allowed_asset_types",
-        "allowed_criticality",
-        "allowed_status",
+        "MCH-001",
+        "Air Compressor 01",
+        "DEP-UTILITY",
+        "Utility",
+        "MOD-AIR",
+        "Air System",
+        costCenterValues[0]?.split(" - ")[0] || "",
+        costCenterValues[0]?.split(" - ").slice(1).join(" - ") || "",
+        defaultType,
+        defaultAssetType,
+        defaultCriticality,
+        defaultStatus,
+        "Atlas Copco",
+        "Atlas Copco",
+        "GA55",
+        "AC-2024-0001",
+        "125",
+        "CFM",
+        "",
+        "Compressor Room",
+        vendorValues[0]?.split(" - ")[0] || "",
+        vendorValues[0]?.split(" - ").slice(1).join(" - ") || "",
+        "",
+        "2024-01-10",
+        "2028-01-10",
       ],
       [
-        [
-          "MCH-001",
-          "Air Compressor 01",
-          "DEP-UTILITY",
-          "Utility",
-          "MOD-AIR",
-          "Air System",
-          defaultType,
-          defaultAssetType,
-          defaultCriticality,
-          defaultStatus,
-          "Atlas Copco",
-          "GA55",
-          "AC-2024-0001",
-          "",
-          "2024-01-10",
-          "2028-01-10",
-          typeOptionsText,
-          assetTypeOptionsText,
-          criticalityOptionsText,
-          statusOptionsText,
-        ],
-        [
-          "MCH-002",
-          "Air Compressor 02",
-          "DEP-UTILITY",
-          "Utility",
-          "MOD-AIR",
-          "Air System",
-          defaultType,
-          secondaryAssetType,
-          defaultCriticality,
-          defaultStatus,
-          "Atlas Copco",
-          "GA75",
-          "AC-2024-0002",
-          "",
-          "2024-01-12",
-          "2028-01-12",
-          "",
-          "",
-          "",
-          "",
-        ],
-        [
-          "MCH-003",
-          "Cooling Tower 02",
-          "DEP-UTILITY",
-          "Utility",
-          "MOD-CT",
-          "Cooling",
-          utilityType,
-          tertiaryAssetType,
-          defaultCriticality,
-          defaultStatus,
-          "BAC",
-          "VXT-180",
-          "CT-2024-0002",
-          "",
-          "2023-06-01",
-          "2027-06-01",
-          "",
-          "",
-          "",
-          "",
-        ],
+        "MCH-002",
+        "Air Compressor 02",
+        "DEP-UTILITY",
+        "Utility",
+        "MOD-AIR",
+        "Air System",
+        costCenterValues[0]?.split(" - ")[0] || "",
+        costCenterValues[0]?.split(" - ").slice(1).join(" - ") || "",
+        defaultType,
+        secondaryAssetType,
+        defaultCriticality,
+        defaultStatus,
+        "Atlas Copco",
+        "Atlas Copco",
+        "GA75",
+        "AC-2024-0002",
+        "175",
+        "CFM",
+        "",
+        "Compressor Room",
+        vendorValues[0]?.split(" - ")[0] || "",
+        vendorValues[0]?.split(" - ").slice(1).join(" - ") || "",
+        "",
+        "2024-01-12",
+        "2028-01-12",
       ],
-    );
-    toast.success("Machine template downloaded with backend option lists");
+      [
+        "MCH-003",
+        "Cooling Tower 02",
+        "DEP-UTILITY",
+        "Utility",
+        "MOD-CT",
+        "Cooling",
+        costCenterValues[0]?.split(" - ")[0] || "",
+        costCenterValues[0]?.split(" - ").slice(1).join(" - ") || "",
+        utilityType,
+        tertiaryAssetType,
+        defaultCriticality,
+        defaultStatus,
+        "BAC",
+        "BAC",
+        "VXT-180",
+        "CT-2024-0002",
+        "180",
+        "TR",
+        "",
+        "Cooling Yard",
+        vendorValues[0]?.split(" - ")[0] || "",
+        vendorValues[0]?.split(" - ").slice(1).join(" - ") || "",
+        "",
+        "2023-06-01",
+        "2027-06-01",
+      ],
+    ];
+
+    downloadEnterpriseExcelTemplate({
+      fileName: includeDemoRows ? "machine_bulk_upload_demo.xls" : "machine_bulk_upload_blank_template.xls",
+      title: includeDemoRows ? "CMMS Machine Master Demo Upload Template" : "CMMS Machine Master Blank Upload Template",
+      uploadSheetName: "Machine Upload",
+      columns: [
+        { key: "machine_code", label: "Machine code", required: true, example: "MCH-001", description: "Unique machine or asset code.", width: 120 },
+        { key: "machine_name", label: "Machine name", required: true, example: "Air Compressor 01", description: "Equipment display name.", width: 180 },
+        {
+          key: "department_code",
+          label: "Department code",
+          required: true,
+          example: "DEP-UTILITY",
+          allowedValues: departmentValues,
+          description: "Use an existing department code or provide a new code/name pair.",
+          width: 150,
+        },
+        {
+          key: "department_name",
+          label: "Department name",
+          required: true,
+          example: "Utility",
+          allowedValues: departmentValues,
+          description: "Existing names are matched; new names can be created by import.",
+          width: 160,
+        },
+        {
+          key: "module_code",
+          label: "Module code",
+          required: true,
+          example: "MOD-AIR",
+          allowedValues: moduleValues,
+          description: "Use an existing module code or provide a new code/name pair.",
+          width: 150,
+        },
+        {
+          key: "module_name",
+          label: "Module name",
+          required: true,
+          example: "Air System",
+          allowedValues: moduleValues,
+          description: "Existing names are matched inside the selected department.",
+          width: 160,
+        },
+        { key: "cost_center_code", label: "Cost center code", example: costCenterValues[0]?.split(" - ")[0] || "", allowedValues: costCenterValues, description: "Optional existing cost center.", width: 150 },
+        { key: "cost_center_name", label: "Cost center name", example: costCenterValues[0]?.split(" - ").slice(1).join(" - ") || "", allowedValues: costCenterValues, description: "Optional existing cost center.", width: 160 },
+        { key: "type", label: "Machine type", example: defaultType, allowedValues: allowedTypes, description: "Dropdown value; blank uses the default.", width: 120 },
+        { key: "asset_type", label: "Asset category", example: defaultAssetType, allowedValues: allowedAssetTypes, description: "Dropdown value; blank uses the default.", width: 150 },
+        { key: "criticality", label: "Criticality", example: defaultCriticality, allowedValues: allowedCriticalities, description: "Dropdown value; blank uses the default.", width: 120 },
+        { key: "status", label: "Status", example: defaultStatus, allowedValues: allowedStatuses, description: "Dropdown value; blank uses the default.", width: 150 },
+        { key: "make", label: "Make", example: "Atlas Copco", allowedValues: makeValues, description: "Optional make.", width: 150 },
+        { key: "manufacturer", label: "Manufacturer", example: "Atlas Copco", allowedValues: makeValues, description: "Optional manufacturer.", width: 160 },
+        { key: "model", label: "Model", example: "GA55", description: "Optional model number.", width: 140 },
+        { key: "serial_number", label: "Serial number", example: "AC-2024-0001", description: "Optional unique serial number.", width: 160 },
+        { key: "rated_capacity", label: "Capacity", example: "125", description: "Optional numeric capacity.", type: "number", width: 120 },
+        { key: "capacity_unit", label: "Capacity unit", example: "CFM", allowedValues: ["CFM", "TR", "KW", "HP", "KVA", "TPH", "LPH", "M3/H"], description: "Optional capacity unit.", width: 120 },
+        { key: "refrigerant_gas_type", label: "Refrigerant gas type", example: "", allowedValues: refrigerantValues, description: "Optional HVAC/refrigerant detail.", width: 160 },
+        { key: "location", label: "Location", example: "Compressor Room", allowedValues: locationValues, description: "Optional physical location.", width: 180 },
+        { key: "vendor_code", label: "Vendor code", example: vendorValues[0]?.split(" - ")[0] || "", allowedValues: vendorValues, description: "Optional existing vendor.", width: 150 },
+        { key: "vendor_name", label: "Vendor name", example: vendorValues[0]?.split(" - ").slice(1).join(" - ") || "", allowedValues: vendorValues, description: "Optional existing vendor.", width: 180 },
+        { key: "machine_image_url", label: "Machine image URL", example: "", description: "Optional image URL or data URL.", width: 220 },
+        { key: "commission_date", label: "Commission date", example: "2024-01-10", format: "YYYY-MM-DD", type: "date", width: 130 },
+        { key: "warranty_expiry", label: "Warranty expiry", example: "2028-01-10", format: "YYYY-MM-DD", type: "date", width: 130 },
+      ],
+      rows: includeDemoRows ? exampleRows : [],
+      referenceSections: [
+        { title: "Machine type options", values: allowedTypes },
+        { title: "Asset category options", values: allowedAssetTypes },
+        { title: "Criticality options", values: allowedCriticalities },
+        { title: "Status options", values: allowedStatuses },
+        { title: "Department reference", values: departmentValues.length > 0 ? departmentValues : ["DEP-UTILITY - Utility"] },
+        { title: "Module reference", values: moduleValues.length > 0 ? moduleValues : ["MOD-AIR - Air System"] },
+        { title: "Cost center reference", values: costCenterValues },
+        { title: "Vendor reference", values: vendorValues },
+        { title: "Manufacturer reference", values: makeValues },
+        { title: "Location reference", values: locationValues },
+        { title: "Refrigerant gas reference", values: refrigerantValues },
+      ],
+    });
+    toast.success(includeDemoRows ? "Machine demo Excel template downloaded" : "Blank machine Excel template downloaded");
   };
 
   const fileToDataUrl = (file: File) =>
@@ -1668,10 +1804,10 @@ export default function MachinesMaster() {
               <input
                 ref={bulkUploadInputRef}
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,text/csv,.xls,application/vnd.ms-excel,text/xml"
                 className="hidden"
-                aria-label="Bulk upload machine CSV"
-                title="Bulk upload machine CSV"
+                aria-label="Bulk upload machine Excel or CSV"
+                title="Bulk upload machine Excel or CSV"
                 onChange={(event) => {
                   const file = event.target.files?.[0] || null;
                   void handleBulkMachineFileChange(file);
@@ -1688,9 +1824,12 @@ export default function MachinesMaster() {
                 <Upload className="h-4 w-4" />
                 {bulkUploading ? "Uploading..." : "Bulk Upload Machines"}
               </Button>
-              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={handleDownloadMachineSampleCsv}>
+              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={() => void handleDownloadMachineTemplate(true)}>
                 <Download className="h-4 w-4" />
-                Download Upload Template
+                Demo File
+              </Button>
+              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={handleShowMachineImportInstructions}>
+                View Instructions
               </Button>
               <Button onClick={handleAdd} className="w-full gap-2 gradient-primary text-primary-foreground shadow-glow sm:w-auto">
                 <Plus className="h-4 w-4" />

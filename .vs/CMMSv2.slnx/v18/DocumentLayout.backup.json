@@ -66,8 +66,7 @@
               "RelativeToolTip": ".dockerignore",
               "ViewState": "AgIAAAYAAAAAAAAAAABBwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
-              "WhenOpened": "2026-05-01T13:02:56.311Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-05-01T13:02:56.311Z"
             },
             {
               "$type": "Document",
@@ -79,8 +78,7 @@
               "RelativeToolTip": "backend\\.env.example",
               "ViewState": "AgIAADoAAAAAAAAAAABBwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
-              "WhenOpened": "2026-05-01T12:56:28.35Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-05-01T12:56:28.35Z"
             },
             {
               "$type": "Document",
@@ -92,8 +90,7 @@
               "RelativeToolTip": "docker-compose.yml",
               "ViewState": "AgIAABgAAAAAAAAAAABRwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003775|",
-              "WhenOpened": "2026-05-01T12:56:00.704Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-05-01T12:56:00.704Z"
             },
             {
               "$type": "Document",
@@ -105,8 +102,7 @@
               "RelativeToolTip": "frontend\\tsconfig.app.json",
               "ViewState": "AgIAAAkAAAAAAAAAAIBJwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
-              "WhenOpened": "2026-05-01T12:40:59.528Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-05-01T12:40:59.528Z"
             },
             {
               "$type": "Document",
@@ -131,8 +127,7 @@
               "RelativeToolTip": "frontend\\Dockerfile",
               "ViewState": "AgIAAA0AAAAAAAAAAABBwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
-              "WhenOpened": "2026-05-01T13:03:00.027Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-05-01T13:03:00.027Z"
             },
             {
               "$type": "Document",
@@ -144,8 +139,7 @@
               "RelativeToolTip": "frontend\\src\\pages\\VisitorExperience.tsx",
               "ViewState": "AgIAALUAAAAAAAAAAIBJwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-05-01T12:40:22.399Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-05-01T12:40:22.399Z"
             },
             {
               "$type": "Document",
@@ -157,8 +151,7 @@
               "RelativeToolTip": "README.md",
               "ViewState": "AgIAACQAAAAAAAAAAABBwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
-              "WhenOpened": "2026-05-01T12:56:35.104Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-05-01T12:56:35.104Z"
             },
             {
               "$type": "Document",
@@ -170,8 +163,7 @@
               "RelativeToolTip": "docker-compose.dev.yml",
               "ViewState": "AgIAACoAAAAAAAAAAIBJwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003775|",
-              "WhenOpened": "2026-05-01T12:56:24.058Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-05-01T12:56:24.058Z"
             },
             {
               "$type": "Document",
@@ -183,8 +175,7 @@
               "RelativeToolTip": "docker-compose.prod.yml",
               "ViewState": "AgIAABoAAAAAAAAAAIBJwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003775|",
-              "WhenOpened": "2026-05-01T12:56:18.728Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-05-01T12:56:18.728Z"
             },
             {
               "$type": "Document",
@@ -196,8 +187,7 @@
               "RelativeToolTip": "frontend\\src\\components\\layout\\MainLayout.tsx",
               "ViewState": "AgIAAKQAAAAAAAAAAIBJwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2026-05-01T12:40:04.619Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-05-01T12:40:04.619Z"
             }
           ]
         }

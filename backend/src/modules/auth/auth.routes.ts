@@ -88,7 +88,7 @@ function getRefreshCookieOptions() {
 
 function getCsrfCookieOptions() {
   return {
-    httpOnly: false as const,
+    httpOnly: true as const,
     secure: env.NODE_ENV === 'production',
     sameSite: (env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'lax' | 'strict',
     maxAge: env.JWT_REFRESH_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000,
@@ -98,7 +98,7 @@ function getCsrfCookieOptions() {
 
 function getSessionCookieOptions() {
   return {
-    httpOnly: false as const,
+    httpOnly: true as const,
     secure: env.NODE_ENV === 'production',
     sameSite: (env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'lax' | 'strict',
     maxAge: env.JWT_REFRESH_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000,

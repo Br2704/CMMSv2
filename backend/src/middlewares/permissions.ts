@@ -1,23 +1,12 @@
 import type { NextFunction, Request, Response } from 'express';
 import { logger } from '../config/logger';
+import { authorizePermission } from '../utils/authorization';
 import { HttpError, unauthorized } from '../utils/httpError';
 import { enforcePlantScope } from '../utils/plantScope';
 import { normalizeModuleKey, normalizeRoleName, roleMatchesRequirement, toPermissionKey } from '../utils/rbac';
 import { recordSecurityEvent } from '../utils/securityEvents';
-import type { AuthContext } from '../types/auth';
 
 type ForbiddenCode = 'ROLE_DENIED' | 'PERMISSION_DENIED' | 'PLANT_SCOPE_DENIED';
-const ROOT_ADMIN_MODULE_ALLOWLIST = new Set([
-  'DASHBOARD',
-  'MASTERS',
-  'ORGANIZATIONS',
-  'PLANTS',
-  'USERS',
-  'ROLE_ACCESS',
-  'MODULES',
-  'NOTIFICATIONS',
-  'LOGS',
-]);
 
 function sendForbidden(res: Response, code: ForbiddenCode, message: string, details: Record<string, unknown>) {
   res.status(403).json({
@@ -27,21 +16,6 @@ function sendForbidden(res: Response, code: ForbiddenCode, message: string, deta
     details,
     errors: details,
   });
-}
-
-function authHasPermission(auth: AuthContext, moduleId: string, action: string) {
-  const normalizedRoles = auth.roles.map((role) => normalizeRoleName(role));
-  const isRootAdmin = normalizedRoles.some((role) => role === 'ROOT_ADMIN');
-  const requestedAction = action.toUpperCase();
-  const requestedModule = normalizeModuleKey(moduleId);
-
-  if (isRootAdmin && ROOT_ADMIN_MODULE_ALLOWLIST.has(requestedModule)) {
-    return true;
-  }
-
-  const actions = auth.permissions[requestedModule] ?? auth.permissions[normalizeModuleKey(moduleId)] ?? [];
-  const normalizedActions = actions.map((item) => item.toUpperCase());
-  return normalizedActions.includes(requestedAction) || normalizedActions.includes('*');
 }
 
 export function requireRole(roles: string[]) {
@@ -112,47 +86,9 @@ export function requirePermission(moduleId: string, action: string) {
       return;
     }
 
-    const normalizedRoles = req.auth.roles.map((role) => normalizeRoleName(role));
-    const isSuperAdmin = normalizedRoles.some((role) => role === 'SUPERADMIN');
-    const isAdmin = normalizedRoles.some((role) => role === 'ADMIN');
-    const isRootAdmin = normalizedRoles.some((role) => role === 'ROOT_ADMIN');
-
-    const requestedAction = action.toUpperCase();
-    const requestedModule = normalizeModuleKey(moduleId);
-    const requiredPermission = toPermissionKey(moduleId, action);
-
-    if (!isRootAdmin) {
-      const organizationMutationDenied = requestedModule === 'ORGANIZATIONS' && requestedAction !== 'READ';
-      const roleAccessDenied = requestedModule === 'ROLE_ACCESS' && !(isSuperAdmin || isAdmin);
-      const plantMutationDenied =
-        requestedModule === 'PLANTS' &&
-        requestedAction !== 'READ' &&
-        !(requestedAction === 'UPDATE' && (isSuperAdmin || isAdmin));
-
-      if (organizationMutationDenied || roleAccessDenied || plantMutationDenied) {
-        logger.warn(
-          {
-            route: req.originalUrl,
-            method: req.method,
-            userId: req.auth.userId,
-            roleKey: req.auth.roleKey,
-            plantId: req.auth.activePlantId ?? req.auth.plantIds[0] ?? null,
-            requiredPermission,
-          },
-          'Permission guard denied governance mutation',
-        );
-        sendForbidden(res, 'PERMISSION_DENIED', `Missing permission ${requiredPermission}`, {
-          userId: req.auth.userId,
-          role: req.auth.roleKey ?? normalizedRoles[0] ?? null,
-          scopeType: req.auth.scopeType ?? null,
-          plantId: req.auth.activePlantId ?? req.auth.plantIds[0] ?? null,
-          requiredPermission,
-        });
-        return;
-      }
-    }
-
-    if (!authHasPermission(req.auth, moduleId, action)) {
+    const decision = authorizePermission(req.auth, moduleId, action);
+    if (!decision.allowed) {
+      const normalizedRoles = req.auth.roles.map((role) => normalizeRoleName(role));
       logger.warn(
         {
           route: req.originalUrl,
@@ -160,7 +96,8 @@ export function requirePermission(moduleId: string, action: string) {
           userId: req.auth.userId,
           roleKey: req.auth.roleKey,
           plantId: req.auth.activePlantId ?? req.auth.plantIds[0] ?? null,
-          requiredPermission,
+          requiredPermission: decision.permissionKey,
+          reason: decision.reason,
         },
         'Permission guard denied request',
       );
@@ -170,20 +107,20 @@ export function requirePermission(moduleId: string, action: string) {
         plantId: req.auth.activePlantId ?? req.auth.plantIds[0] ?? null,
         eventType: 'AUTHZ_PERMISSION_DENIED',
         severity: 'HIGH',
-        module: requestedModule,
-        action: requestedAction,
+        module: decision.moduleKey,
+        action: decision.action,
         path: req.originalUrl,
-        message: `Permission guard denied ${requiredPermission}`,
+        message: `Permission guard denied ${decision.permissionKey}`,
         ipAddress: req.ip,
         userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
-        metadata: { requiredPermission },
+        metadata: { requiredPermission: decision.permissionKey, reason: decision.reason },
       });
-      sendForbidden(res, 'PERMISSION_DENIED', `Missing permission ${requiredPermission}`, {
+      sendForbidden(res, 'PERMISSION_DENIED', `Missing permission ${decision.permissionKey}`, {
         userId: req.auth.userId,
         role: req.auth.roleKey ?? normalizedRoles[0] ?? null,
         scopeType: req.auth.scopeType ?? null,
         plantId: req.auth.activePlantId ?? req.auth.plantIds[0] ?? null,
-        requiredPermission,
+        requiredPermission: decision.permissionKey,
       });
       return;
     }
@@ -203,14 +140,15 @@ export function requireAnyPermission(requirements: Array<{ moduleId: string; act
       return;
     }
 
-    const allowed = requirements.some((requirement) => authHasPermission(req.auth!, requirement.moduleId, requirement.action));
+    const decisions = requirements.map((requirement) => authorizePermission(req.auth!, requirement.moduleId, requirement.action));
+    const allowed = decisions.some((decision) => decision.allowed);
     if (allowed) {
       next();
       return;
     }
 
     const normalizedRoles = req.auth.roles.map((role) => normalizeRoleName(role));
-    const requiredPermissions = requirements.map((requirement) => toPermissionKey(requirement.moduleId, requirement.action));
+    const requiredPermissions = decisions.map((decision) => decision.permissionKey);
     logger.warn(
       {
         route: req.originalUrl,
@@ -222,6 +160,20 @@ export function requireAnyPermission(requirements: Array<{ moduleId: string; act
       },
       'Permission guard denied request',
     );
+    void recordSecurityEvent({
+      userId: req.auth.userId,
+      organizationId: req.auth.organizationId ?? null,
+      plantId: req.auth.activePlantId ?? req.auth.plantIds[0] ?? null,
+      eventType: 'AUTHZ_PERMISSION_DENIED',
+      severity: 'HIGH',
+      module: 'AUTHORIZATION',
+      action: req.method,
+      path: req.originalUrl,
+      message: `Permission guard denied all alternatives: ${requiredPermissions.join(', ')}`,
+      ipAddress: req.ip,
+      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+      metadata: { requiredPermissions },
+    });
     sendForbidden(res, 'PERMISSION_DENIED', `Missing one of required permissions: ${requiredPermissions.join(', ')}`, {
       userId: req.auth.userId,
       role: req.auth.roleKey ?? normalizedRoles[0] ?? null,

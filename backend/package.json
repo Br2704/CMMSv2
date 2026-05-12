@@ -17,6 +17,7 @@
     "migration:run:prod": "npm run db:ensure:prod && typeorm -d dist/database/data-source.js migration:run",
     "migration:revert": "npm run typeorm -- migration:revert",
     "security:audit": "npm audit --audit-level=high",
+    "security:test": "jest src/tests/security-hardening.test.ts --runInBand",
     "lint": "echo \"No backend lint configured yet\"",
     "test": "jest --runInBand",
     "test:smoke": "jest src/tests/smoke.test.ts --runInBand"

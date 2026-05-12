@@ -114,8 +114,8 @@ export const NON_ROOT_APP_PAGES: readonly AppPageDefinition[] = [
     path: "/security-center",
     section: "Operations",
     moduleId: "security-center",
-    permissionModuleKey: "MASTERS",
-    aliases: ["NOTIFICATIONS"],
+    permissionModuleKey: "SECURITY",
+    aliases: ["AUDIT_LOGS"],
   },
   {
     id: "security-gate",

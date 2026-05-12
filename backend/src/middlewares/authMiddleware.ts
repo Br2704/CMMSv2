@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { logger } from '../config/logger';
 import { env } from '../config/env';
 import { AppDataSource } from '../database/data-source';
-import { EsgAuthorizedUserEntity, OrgRoleEntity, OrgRolePermissionEntity, PlantEntity, ProfileEntity, RolePermissionEntity, UserRoleEntity, UserEntity } from '../database/entities';
+import { EsgAuthorizedUserEntity, MaintenanceTeamEntity, OrgRoleEntity, OrgRolePermissionEntity, PlantEntity, ProfileEntity, RolePermissionEntity, UserRoleEntity, UserEntity } from '../database/entities';
 import { enforceRoleRateLimit } from './roleRateLimit';
 import { enforcePlantScopeRequest } from './plantScopeMiddleware';
 import { RBAC_ACTIONS, RBAC_MODULE_KEYS, isAdminRole, isRootAdminRole, normalizeModuleKey, normalizeRoleName, resolveScopeType } from '../utils/rbac';
@@ -161,6 +161,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const orgRoleRepo = AppDataSource.getRepository(OrgRoleEntity);
     const orgPermissionRepo = AppDataSource.getRepository(OrgRolePermissionEntity);
     const esgAuthorizedUserRepo = AppDataSource.getRepository(EsgAuthorizedUserEntity);
+    const maintenanceTeamRepo = AppDataSource.getRepository(MaintenanceTeamEntity);
 
     const user = await userRepo.findOne({ where: { id: payload.sub } });
     if (!user || !user.isActive) {
@@ -190,9 +191,33 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const isConfiguredSuperAdmin = Boolean(normalizedSuperAdminEmail) && normalizedUserEmail === normalizedSuperAdminEmail;
     if (isConfiguredRootAdmin && !roles.some((role) => isRootAdminRole(role))) {
       roles.unshift('ROOT_ADMIN');
+      void recordSecurityEvent({
+        userId: user.id,
+        eventType: 'AUTH_AUTO_ROLE_ASSIGNED',
+        severity: 'MEDIUM',
+        module: 'AUTH',
+        action: 'LOGIN',
+        path: req.originalUrl,
+        message: `Auto-assigned ROOT_ADMIN role based on email matching`,
+        ipAddress: req.ip,
+        userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+        metadata: { emailDomain: normalizedUserEmail.split('@')[1] },
+      });
     }
     if (isConfiguredSuperAdmin && !roles.includes('SUPERADMIN') && !roles.some((role) => isRootAdminRole(role))) {
       roles.unshift('SUPERADMIN');
+      void recordSecurityEvent({
+        userId: user.id,
+        eventType: 'AUTH_AUTO_ROLE_ASSIGNED',
+        severity: 'MEDIUM',
+        module: 'AUTH',
+        action: 'LOGIN',
+        path: req.originalUrl,
+        message: `Auto-assigned SUPERADMIN role based on email matching`,
+        ipAddress: req.ip,
+        userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+        metadata: { emailDomain: normalizedUserEmail.split('@')[1] },
+      });
     }
     const hasRootAdminRole = roles.some((role) => isRootAdminRole(role));
     let effectiveRoles = hasRootAdminRole ? ['ROOT_ADMIN'] : roles;
@@ -372,6 +397,16 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       permissionMap = rootScopedPermissions;
     }
 
+    const teamRows = plantIds.length > 0
+      ? await maintenanceTeamRepo.find({
+          where: plantIds.map((plantId) => ({ plantId, isActive: true })),
+          select: ['id', 'teamLeaderId', 'teamMemberIds'],
+        })
+      : [];
+    const teamIds = teamRows
+      .filter((team) => team.teamLeaderId === user.id || (team.teamMemberIds ?? []).includes(user.id))
+      .map((team) => team.id);
+
     if (Object.keys(permissionMap).length === 0) {
       logger.warn(
         {
@@ -393,6 +428,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       scopeType,
       organizationId: resolvedOrganizationId,
       orgRoleId: orgRoleId ?? null,
+      department: profile?.department ?? null,
+      teamIds,
       permissions: permissionMap,
       plantIds,
       activePlantId,

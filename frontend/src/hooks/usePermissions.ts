@@ -24,6 +24,7 @@ const MODULE_ALIAS: Record<string, string[]> = {
   amc: ["AMC", "*"],
   esg: ["ESG", "*"],
   safety: ["SAFETY", "*"],
+  "security-center": ["SECURITY", "AUDIT_LOGS", "*"],
   "security-gate": ["GATES", "SECURITY_GATE", "*"],
   "data-logging": ["LOGS", "DATA_LOGGING", "*"],
   "masters.plant": ["PLANTS", "*"],

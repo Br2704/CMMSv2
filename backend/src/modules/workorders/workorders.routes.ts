@@ -17,6 +17,8 @@ import {
   updateWorkOrderSchema,
   workOrdersListQuerySchema,
   workOrdersSummaryQuerySchema,
+  acceptWorkOrderSchema,
+  workOrderActivitySchema,
 } from './workorders.validators';
 
 const crudRouter = createCrudRouter(
@@ -77,6 +79,34 @@ workordersRouter.get(
       const page = Number(req.query.page ?? 1) || 1;
       const limit = Number(req.query.limit ?? 50) || 50;
       res.json(ok(result.items, 'Fetched work order activity timeline', toPagination(page, limit, result.total)));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+workordersRouter.post(
+  '/work-orders/:id/accept',
+  requirePermission('WORK_ORDERS', 'UPDATE'),
+  validateRequest({ params: idParamSchema, body: acceptWorkOrderSchema }),
+  async (req, res, next) => {
+    try {
+      const record = await workordersService.acceptWorkOrder(req.params.id, req.body as Record<string, unknown>, req.auth!);
+      res.json(ok(record, 'Work order accepted'));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+workordersRouter.post(
+  '/work-orders/:id/activity',
+  requirePermission('WORK_ORDERS', 'UPDATE'),
+  validateRequest({ params: idParamSchema, body: workOrderActivitySchema }),
+  async (req, res, next) => {
+    try {
+      const record = await workordersService.addActivity(req.params.id, req.body as Record<string, unknown>, req.auth!);
+      res.json(ok(record, 'Work order activity recorded'));
     } catch (error) {
       next(error);
     }

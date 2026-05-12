@@ -6,6 +6,10 @@ import { publishNotificationChange } from '../notifications/notification-stream'
 
 const USER_VERIFICATION_STATUS = 'USER_VERIFICATION';
 const CLOSED_STATUS = 'CLOSED';
+const IN_PROGRESS_STATUS = 'IN_PROGRESS';
+const ACCEPTED_STATUS = 'ACCEPTED';
+const ESCALATION_EVENT = 'WORK_ORDER_ESCALATED';
+const ESCALATION_INTERVALS = [30, 60, 120, 240];
 const REMINDER_6H_EVENT = 'USER_VERIFICATION_REMINDER_6H';
 const REMINDER_24H_EVENT = 'USER_VERIFICATION_REMINDER_24H';
 const AUTO_CLOSED_EVENT = 'AUTO_CLOSED_SLA';
@@ -23,6 +27,113 @@ function toDate(value: unknown): Date | null {
   }
   const parsed = new Date(String(value));
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+async function runWorkOrderEscalationScheduler() {
+  if (!AppDataSource.isInitialized) {
+    return;
+  }
+
+  const manager = AppDataSource.manager;
+  const workOrderRepo = manager.getRepository(WorkOrderEntity);
+  const activityRepo = manager.getRepository(WorkOrderActivityLogEntity);
+  const notificationRepo = manager.getRepository(NotificationEntity);
+
+  const candidates = await manager
+    .createQueryBuilder()
+    .select('wo.id', 'id')
+    .addSelect('wo.wo_number', 'wo_number')
+    .addSelect('wo.asset_id', 'asset_id')
+    .addSelect('wo.plant_id', 'plant_id')
+    .addSelect('wo.raised_by', 'raised_by')
+    .addSelect('wo.assigned_to', 'assigned_to')
+    .addSelect('wo.accepted_at', 'accepted_at')
+    .addSelect('wo.started_at', 'started_at')
+    .addSelect('wo.created_at', 'created_at')
+    .addSelect('wo.escalation_level', 'escalation_level')
+    .addSelect('wo.sla_due_at', 'sla_due_at')
+    .from('work_orders', 'wo')
+    .where('wo.status IN (:...statuses)', { statuses: [ACCEPTED_STATUS, IN_PROGRESS_STATUS] })
+    .getRawMany<{
+      id: string;
+      wo_number: string;
+      asset_id: string | null;
+      plant_id: string | null;
+      raised_by: string | null;
+      assigned_to: string | null;
+      accepted_at: string | Date | null;
+      started_at: string | Date | null;
+      created_at: string | Date;
+      escalation_level: number | null;
+      sla_due_at: string | Date | null;
+    }>();
+
+  if (candidates.length === 0) {
+    return;
+  }
+
+  const now = new Date();
+  const touchedUsers = new Set<string>();
+
+  for (const workOrder of candidates) {
+    const baseline = toDate(workOrder.started_at) || toDate(workOrder.accepted_at) || toDate(workOrder.created_at) || now;
+    const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - baseline.getTime()) / 60000));
+    const currentLevel = Number(workOrder.escalation_level ?? 0) || 0;
+    const nextLevel = ESCALATION_INTERVALS.findIndex((threshold, index) => elapsedMinutes >= threshold && index + 1 > currentLevel) + 1;
+
+    if (nextLevel <= 0 || nextLevel <= currentLevel) {
+      continue;
+    }
+
+    const escalationMinutes = ESCALATION_INTERVALS[nextLevel - 1];
+    const slaDueAt = workOrder.sla_due_at ? toDate(workOrder.sla_due_at) : new Date(baseline.getTime() + ESCALATION_INTERVALS[ESCALATION_INTERVALS.length - 1] * 60000);
+
+    await workOrderRepo
+      .createQueryBuilder()
+      .update(WorkOrderEntity)
+      .set({
+        escalationLevel: nextLevel,
+        slaDueAt: slaDueAt ?? null,
+      })
+      .where('id = :id', { id: workOrder.id })
+      .execute();
+
+    await activityRepo.save(
+      activityRepo.create({
+        workOrderId: workOrder.id,
+        assetId: workOrder.asset_id,
+        plantId: workOrder.plant_id,
+        actorUserId: null,
+        eventType: ESCALATION_EVENT,
+        notes: `Escalated to level ${nextLevel} after ${escalationMinutes} minutes without closure.`,
+        eventMeta: {
+          level: nextLevel,
+          elapsedMinutes,
+          escalationMinutes,
+          slaDueAt: slaDueAt?.toISOString() ?? null,
+        },
+        occurredAt: now,
+      }),
+    );
+
+    const recipients = uniqueUserIds([workOrder.assigned_to, workOrder.raised_by]);
+    if (recipients.length > 0) {
+      const rows = recipients.map((userId) =>
+        notificationRepo.create({
+          userId,
+          title: `Work Order Escalation L${nextLevel}`,
+          message: `${workOrder.wo_number} requires attention. Escalation level ${nextLevel} triggered after ${escalationMinutes} minutes.`,
+          type: 'critical',
+          link: '/work-orders',
+          woId: workOrder.id,
+        }),
+      );
+      await notificationRepo.save(rows);
+      recipients.forEach((userId) => touchedUsers.add(userId));
+    }
+  }
+
+  touchedUsers.forEach((userId) => publishNotificationChange(userId));
 }
 
 function uniqueUserIds(values: Array<string | null | undefined>) {
@@ -233,6 +344,12 @@ export function startWorkOrdersScheduler() {
   cron.schedule('*/15 * * * *', () => {
     void runUserVerificationSlaScheduler().catch((error) => {
       logger.error({ error }, 'Failed running work order verification SLA scheduler');
+    });
+  });
+
+  cron.schedule('*/5 * * * *', () => {
+    void runWorkOrderEscalationScheduler().catch((error) => {
+      logger.error({ error }, 'Failed running work order escalation scheduler');
     });
   });
 

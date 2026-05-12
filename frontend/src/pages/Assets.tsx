@@ -245,7 +245,7 @@ export default function Assets() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, activePlantId } = useAuthStore();
   const userIsSuperAdmin = isSuperAdmin(user);
-  const [activeTab, setActiveTab] = useState<"flow" | "list">("flow");
+  const [activeTab, setActiveTab] = useState<"flow" | "list">("list");
   const [search, setSearch] = useState("");
   const [selectedPlantId, setSelectedPlantId] = useState("");
   const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
@@ -678,8 +678,8 @@ export default function Assets() {
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "flow" | "list")} className="space-y-4">
         <TabsList className="grid h-auto w-full grid-cols-2">
-          <TabsTrigger value="flow">Machine Flow Chart</TabsTrigger>
           <TabsTrigger value="list">Machine Directory</TabsTrigger>
+          <TabsTrigger value="flow">Machine Flow Chart</TabsTrigger>
         </TabsList>
 
         <TabsContent value="flow" className="space-y-4">

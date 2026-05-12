@@ -29,6 +29,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
+      TRUST_PROXY_HOPS: 1
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${DB_USER:-postgres}

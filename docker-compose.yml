@@ -28,6 +28,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
+      TRUST_PROXY_HOPS: 1
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${DB_USER:-postgres}
@@ -39,7 +40,7 @@ services:
       FRONTEND_URL: ${APP_BASE_URL:-http://localhost:8080}
       CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:8080,http://localhost,http://127.0.0.1:8080,http://127.0.0.1}
     ports:
-      - "3001:3001"
+      - "3002:3001"
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,7 +69,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "${FRONTEND_PORT:-8080}:80"
+      - "${FRONTEND_PORT:-8081}:80"
     networks:
       - app
 

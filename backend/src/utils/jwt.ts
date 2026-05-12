@@ -12,6 +12,7 @@ export type AccessTokenPayload = {
 
 export function signAccessToken(payload: AccessTokenPayload): string {
   return jwt.sign(payload, env.JWT_SECRET, {
+    algorithm: 'HS256',
     expiresIn: env.JWT_ACCESS_EXPIRES_IN as SignOptions['expiresIn'],
     issuer: env.JWT_ISSUER,
     audience: env.JWT_AUDIENCE,
@@ -20,6 +21,7 @@ export function signAccessToken(payload: AccessTokenPayload): string {
 
 export function verifyAccessToken(token: string): AccessTokenPayload {
   return jwt.verify(token, env.JWT_SECRET, {
+    algorithms: ['HS256'],
     issuer: env.JWT_ISSUER,
     audience: env.JWT_AUDIENCE,
   }) as AccessTokenPayload;
@@ -32,6 +34,7 @@ export type RefreshTokenPayload = {
 
 export function signRefreshToken(payload: RefreshTokenPayload): string {
   return jwt.sign(payload, env.JWT_REFRESH_SECRET, {
+    algorithm: 'HS256',
     expiresIn: `${env.JWT_REFRESH_EXPIRES_IN_DAYS}d` as SignOptions['expiresIn'],
     issuer: env.JWT_ISSUER,
     audience: env.JWT_AUDIENCE,
@@ -40,6 +43,7 @@ export function signRefreshToken(payload: RefreshTokenPayload): string {
 
 export function verifyRefreshToken(token: string): RefreshTokenPayload {
   return jwt.verify(token, env.JWT_REFRESH_SECRET, {
+    algorithms: ['HS256'],
     issuer: env.JWT_ISSUER,
     audience: env.JWT_AUDIENCE,
   }) as RefreshTokenPayload;
@@ -56,6 +60,7 @@ export type ChallengeTokenPayload = {
 
 export function signChallengeToken(payload: ChallengeTokenPayload, expiresIn: SignOptions['expiresIn'] = '10m') {
   return jwt.sign(payload, env.JWT_SECRET, {
+    algorithm: 'HS256',
     expiresIn,
     issuer: env.JWT_ISSUER,
     audience: env.JWT_AUDIENCE,
@@ -64,6 +69,7 @@ export function signChallengeToken(payload: ChallengeTokenPayload, expiresIn: Si
 
 export function verifyChallengeToken(token: string) {
   return jwt.verify(token, env.JWT_SECRET, {
+    algorithms: ['HS256'],
     issuer: env.JWT_ISSUER,
     audience: env.JWT_AUDIENCE,
   }) as ChallengeTokenPayload;

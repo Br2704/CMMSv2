@@ -16,11 +16,13 @@ import { errorHandler } from './middlewares/errorHandler';
 import { apiNotFoundHandler } from './middlewares/notFoundHandler';
 import { exportsRateLimiter, generalApiRateLimiter, mutatingApiRateLimiter } from './middlewares/rateLimiter';
 import { sanitizeInput } from './middlewares/sanitizeInput';
+import { securityHeadersMiddleware, threatDetectionMiddleware, requestValidationMiddleware } from './middlewares/securityHeaders';
 import { router } from './routes';
 import { fail, ok } from './utils/apiResponse';
 import { notFound } from './utils/httpError';
 import { findQrResolutionRow, toResolvedPayload } from './modules/qr/qr.shared';
 import { emitDashboardRefresh } from './realtime/dashboard-socket';
+import { initializeSecretRotation } from './utils/secretRotation';
 
 const qrTokenParamSchema = z.object({
   token: z.string().trim().min(16).max(128).regex(/^[A-Za-z0-9_-]+$/),
@@ -95,9 +97,14 @@ app.disable('x-powered-by');
 app.use(pinoHttp({ logger }));
 app.use(helmet(helmetOptions));
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+app.use(express.json({ limit: '1mb', strict: true }));
+app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(cookieParser());
+app.use(requestValidationMiddleware);
+app.use(securityHeadersMiddleware);
+if (env.NODE_ENV === 'production') {
+  app.use(threatDetectionMiddleware);
+}
 app.use(generalApiRateLimiter);
 app.use(mutatingApiRateLimiter);
 app.use(sanitizeInput);

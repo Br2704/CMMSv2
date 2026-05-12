@@ -704,7 +704,7 @@ gatesRouter.get('/gates/:id', requirePermission('GATES', 'READ'), async (req, re
   }
 });
 
-gatesRouter.post('/gates', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+gatesRouter.post('/gates', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'CREATE'), async (req, res, next) => {
   try {
     const body = gateSchema.parse(req.body);
     const resolvedPlantId = resolveScopedPlantId(req.auth!, body.plantId ?? null);
@@ -725,7 +725,7 @@ gatesRouter.post('/gates', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res
   }
 });
 
-gatesRouter.patch('/gates/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+gatesRouter.patch('/gates/:id', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = gateSchema.partial().parse(req.body);
@@ -751,7 +751,7 @@ gatesRouter.patch('/gates/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req
   }
 });
 
-gatesRouter.delete('/gates/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+gatesRouter.delete('/gates/:id', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'DELETE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const repo = AppDataSource.getRepository(GateEntity);
@@ -839,7 +839,7 @@ gatesRouter.get('/gate-templates/:id', requirePermission('GATES', 'READ'), async
   }
 });
 
-gatesRouter.post('/gate-templates', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+gatesRouter.post('/gate-templates', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'CREATE'), async (req, res, next) => {
   try {
     const body = templateSchema.parse(req.body);
     const gateRepo = AppDataSource.getRepository(GateEntity);
@@ -869,7 +869,7 @@ gatesRouter.post('/gate-templates', requireRole(['SUPERADMIN', 'ADMIN']), async 
   }
 });
 
-gatesRouter.patch('/gate-templates/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+gatesRouter.patch('/gate-templates/:id', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = templateSchema.partial().parse(req.body);
@@ -895,7 +895,7 @@ gatesRouter.patch('/gate-templates/:id', requireRole(['SUPERADMIN', 'ADMIN']), a
   }
 });
 
-gatesRouter.delete('/gate-templates/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+gatesRouter.delete('/gate-templates/:id', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'DELETE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const repo = AppDataSource.getRepository(GateEntryTypeEntity);
@@ -929,7 +929,7 @@ gatesRouter.get('/gate-templates/:id/fields', requirePermission('GATES', 'READ')
   }
 });
 
-gatesRouter.post('/gate-templates/:id/fields', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+gatesRouter.post('/gate-templates/:id/fields', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'CREATE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = templateFieldSchema.parse(req.body);
@@ -963,7 +963,7 @@ gatesRouter.post('/gate-templates/:id/fields', requireRole(['SUPERADMIN', 'ADMIN
   }
 });
 
-gatesRouter.patch('/gate-template-fields/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+gatesRouter.patch('/gate-template-fields/:id', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = templateFieldSchema.partial().parse(req.body);
@@ -990,7 +990,7 @@ gatesRouter.patch('/gate-template-fields/:id', requireRole(['SUPERADMIN', 'ADMIN
   }
 });
 
-gatesRouter.delete('/gate-template-fields/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+gatesRouter.delete('/gate-template-fields/:id', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'DELETE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const repo = AppDataSource.getRepository(GateTemplateFieldEntity);
@@ -1030,7 +1030,7 @@ gatesRouter.get('/gate-templates/:id/users', requirePermission('GATES', 'READ'),
   }
 });
 
-gatesRouter.post('/gate-templates/:id/users', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+gatesRouter.post('/gate-templates/:id/users', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'CREATE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = templateUserSchema.parse(req.body);
@@ -1056,7 +1056,7 @@ gatesRouter.post('/gate-templates/:id/users', requireRole(['SUPERADMIN', 'ADMIN'
   }
 });
 
-gatesRouter.patch('/gate-template-users/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+gatesRouter.patch('/gate-template-users/:id', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = templateUserSchema.partial().parse(req.body);
@@ -1082,7 +1082,7 @@ gatesRouter.patch('/gate-template-users/:id', requireRole(['SUPERADMIN', 'ADMIN'
   }
 });
 
-gatesRouter.delete('/gate-template-users/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+gatesRouter.delete('/gate-template-users/:id', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'DELETE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const repo = AppDataSource.getRepository(GateTemplateUserEntity);

@@ -22,6 +22,7 @@ export interface WorkOrderSummaryResponse {
       closedLast24h: number;
       pendingApproval: number;
       total: number;
+      escalated?: number;
     };
     defaultScope: "assigned" | "incharge" | "all";
   };
@@ -49,6 +50,18 @@ export const deleteWorkOrder = (id: string) =>
 
 export const startWorkOrder = (id: string, payload: Record<string, unknown>) =>
   httpRequest<{ success: true; data: WorkOrder }>(`/work-orders/${id}/start`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const acceptWorkOrder = (id: string, payload: Record<string, unknown> = {}) =>
+  httpRequest<{ success: true; data: WorkOrder }>(`/work-orders/${id}/accept`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const addWorkOrderActivity = (id: string, payload: Record<string, unknown>) =>
+  httpRequest<{ success: true; data: WorkOrder }>(`/work-orders/${id}/activity`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });

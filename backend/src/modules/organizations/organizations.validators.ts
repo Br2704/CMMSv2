@@ -7,7 +7,7 @@ const imageValueSchema = z
   .max(2_500_000)
   .refine((value) => isSafeImageValue(value), 'Must be a valid secure image URL or supported data URL');
 
-const nullableTrimmedString = z.string().trim().max(255).nullable().optional();
+const nullableTrimmedString = z.string().trim().min(1).max(255).nullable().optional();
 const nullableTextString = z.string().trim().max(10_000).nullable().optional();
 const nullableDateString = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must use YYYY-MM-DD format').nullable().optional();
 const nullableImageSchema = imageValueSchema.nullable().optional();

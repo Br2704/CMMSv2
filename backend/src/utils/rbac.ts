@@ -24,6 +24,8 @@ export const RBAC_MODULE_KEYS = [
   'SAFETY',
   'REPORTS',
   'NOTIFICATIONS',
+  'ALERTS',
+  'SECURITY',
   'MODULES',
   'MASTERS',
 ] as const;
