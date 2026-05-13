@@ -430,7 +430,6 @@ export default function WorkOrders() {
     () => selectedWO !== null && isAdmin(user) && !isOwnedByCurrentUser(selectedWO.raised_by),
     [selectedWO, user],
   );
-  };
   const filterCategoryOptions = useMemo(
     () => getUnionWorkOrderOptions(workOrderMasters, "CATEGORY"),
     [workOrderMasters],
@@ -1473,7 +1472,7 @@ export default function WorkOrders() {
     return ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status) && (isOwnedByCurrentUser(wo.raised_by) || userIsAdmin);
   };
 
-  const reviewRequiresComments = Boolean(reviewTargetWO && userIsAdmin && !isOwnedByCurrentUser(reviewTargetWO.raised_by));
+
 
   const kpiCards = [
     { label: "Open Work Orders", value: openWOs, icon: ClipboardList, color: "text-blue-500" },
