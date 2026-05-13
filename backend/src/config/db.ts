@@ -3,7 +3,7 @@ import { databaseSelection, type DatabaseEngine } from './database.selection';
 import { env } from './env';
 
 const commonOptions = {
-  synchronize: false,
+  synchronize: true,
   logging: env.NODE_ENV !== 'production',
 } as const;
 
