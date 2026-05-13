@@ -28,6 +28,8 @@ import {
   ShieldCheck,
   Users,
   X,
+  Mail,
+  AlertTriangle,
 } from "lucide-react";
 
 interface NavItem {
@@ -77,8 +79,6 @@ const navigation: NavItem[] = [
       { title: "Shifts", href: "/masters/shifts", moduleId: "masters.shifts" },
       { title: "Maintenance Teams", href: "/masters/maintenance-teams", moduleId: "masters.maintenance-teams" },
       { title: "Work Order Config", href: "/masters/work-order-config", moduleId: "masters.workorder-team-mapping" },
-      { title: "Mail Config", href: "/masters/mail-config", moduleId: "masters.mail-config" },
-      { title: "SLA & Escalation", href: "/masters/sla-config", moduleId: "masters.sla-config" },
     ],
   },
 ];
@@ -89,6 +89,8 @@ const rootNavigation: NavItem[] = [
   { title: "Plant Master", href: "/root/plant", icon: Factory, moduleId: "root.plants" },
   { title: "User Management", href: "/root/users", icon: Users, moduleId: "root.users" },
   { title: "Role & Access Master", href: "/root/role-access", icon: Settings, moduleId: "root.role_access" },
+  { title: "Mail Config", href: "/root/mail-config", icon: Mail, moduleId: "root.mail-config" },
+  { title: "SLA & Escalation", href: "/root/sla-config", icon: AlertTriangle, moduleId: "root.sla-config" },
 ];
 
 interface SidebarProps {

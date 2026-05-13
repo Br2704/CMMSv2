@@ -182,7 +182,7 @@ function WebappErrorLogger() {
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuthStore();
   const location = useLocation();
-  const rootAllowedPaths = ["/root/dashboard", "/root/organizations", "/root/plant", "/root/users", "/root/role-access", "/root/role-accesss"];
+  const rootAllowedPaths = ["/root/dashboard", "/root/organizations", "/root/plant", "/root/users", "/root/role-access", "/root/role-accesss", "/root/mail-config", "/root/sla-config"];
   const isAllowedForRoot = rootAllowedPaths.some((path) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`)
   );
@@ -407,7 +407,11 @@ function App() {
 
                   <Route path="/masters" element={<ModuleGuard moduleId="masters"><Masters /></ModuleGuard>} />
                   <Route path="/root/organizations" element={<RootOnlyRoute><RootOrganizationMaster /></RootOnlyRoute>} />
+                  <Route path="/root/mail-config" element={<RootOnlyRoute><MailConfigMaster /></RootOnlyRoute>} />
+                  <Route path="/root/sla-config" element={<RootOnlyRoute><SLAConfigMaster /></RootOnlyRoute>} />
                   <Route path="/masters/organizations" element={<Navigate to="/root/organizations" replace />} />
+                  <Route path="/masters/mail-config" element={<Navigate to="/root/mail-config" replace />} />
+                  <Route path="/masters/sla-config" element={<Navigate to="/root/sla-config" replace />} />
                   <Route path="/masters/plant" element={<PlantMasterRoute />} />
                   <Route path="/masters/departments" element={<ModuleGuard moduleId="masters.departments"><DepartmentMaster /></ModuleGuard>} />
                   <Route path="/masters/modules" element={<ModuleGuard moduleId="masters.modules"><ModulesMaster /></ModuleGuard>} />

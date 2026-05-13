@@ -24,7 +24,7 @@ import { SlaConfigEntity } from '../../database/entities/sla-config.entity';
 export const mailRouter = Router();
 mailRouter.use(requireAuth);
 
-mailRouter.get('/mail/config', requireRole(['SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
+mailRouter.get('/mail/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
   try {
     res.json(ok({
       configured: isMailConfigured(),
@@ -40,7 +40,7 @@ mailRouter.get('/mail/config', requireRole(['SUPERADMIN', 'ADMIN']), async (_req
   }
 });
 
-mailRouter.put('/mail/config', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.put('/mail/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const body = z.object({
       host: z.string().min(1),
@@ -112,7 +112,7 @@ mailRouter.put('/mail/config', requireRole(['SUPERADMIN', 'ADMIN']), async (req,
   }
 });
 
-mailRouter.post('/mail/test', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.post('/mail/test', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const body = z.object({ to: z.string().email() }).parse(req.body);
     const result = await sendTestEmail(body.to);
@@ -126,7 +126,7 @@ mailRouter.post('/mail/test', requireRole(['SUPERADMIN', 'ADMIN']), async (req, 
   }
 });
 
-mailRouter.get('/mail/verify', requireRole(['SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
+mailRouter.get('/mail/verify', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
   try {
     const result = await verifyMailConnection();
     if (result.ok) {
@@ -139,7 +139,7 @@ mailRouter.get('/mail/verify', requireRole(['SUPERADMIN', 'ADMIN']), async (_req
   }
 });
 
-mailRouter.get('/mail/stats', requireRole(['SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
+mailRouter.get('/mail/stats', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
   try {
     const stats = await getMailQueueStats();
     res.json(ok(stats, 'Mail queue stats'));
@@ -148,7 +148,7 @@ mailRouter.get('/mail/stats', requireRole(['SUPERADMIN', 'ADMIN']), async (_req,
   }
 });
 
-mailRouter.get('/mail/logs', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.get('/mail/logs', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const query = z.object({
       page: z.coerce.number().int().positive().default(1),
@@ -167,7 +167,7 @@ mailRouter.get('/mail/logs', requireRole(['SUPERADMIN', 'ADMIN']), async (req, r
   }
 });
 
-mailRouter.get('/mail/queue', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.get('/mail/queue', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const query = z.object({
       page: z.coerce.number().int().positive().default(1),
@@ -190,7 +190,7 @@ mailRouter.get('/mail/queue', requireRole(['SUPERADMIN', 'ADMIN']), async (req, 
   }
 });
 
-mailRouter.post('/mail/retry-dead-letters', requireRole(['SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
+mailRouter.post('/mail/retry-dead-letters', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
   try {
     const count = await retryDeadLetters();
     res.json(ok({ retried: count }, `Retried ${count} dead letter emails`));
@@ -199,7 +199,7 @@ mailRouter.post('/mail/retry-dead-letters', requireRole(['SUPERADMIN', 'ADMIN'])
   }
 });
 
-mailRouter.post('/mail/retry-one', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.post('/mail/retry-one', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const body = z.object({ id: z.string().uuid() }).parse(req.body);
     const repo = AppDataSource.getRepository(MailQueueEntity);
@@ -219,7 +219,7 @@ mailRouter.post('/mail/retry-one', requireRole(['SUPERADMIN', 'ADMIN']), async (
   }
 });
 
-mailRouter.get('/mail/templates', requireRole(['SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
+mailRouter.get('/mail/templates', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
   try {
     const templates = [
       { name: 'newWorkOrder', label: 'New Work Order' },
@@ -239,7 +239,7 @@ mailRouter.get('/mail/templates', requireRole(['SUPERADMIN', 'ADMIN']), async (_
   }
 });
 
-mailRouter.get('/escalation/history', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.get('/escalation/history', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const query = z.object({
       page: z.coerce.number().int().positive().default(1),
@@ -266,7 +266,7 @@ mailRouter.get('/escalation/history', requireRole(['SUPERADMIN', 'ADMIN']), asyn
   }
 });
 
-mailRouter.get('/sla/config', requireRole(['SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
+mailRouter.get('/sla/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
   try {
     const repo = AppDataSource.getRepository(SlaConfigEntity);
     const configs = await repo.find({ where: { isActive: true }, order: { priority: 'ASC' } });
@@ -276,7 +276,7 @@ mailRouter.get('/sla/config', requireRole(['SUPERADMIN', 'ADMIN']), async (_req,
   }
 });
 
-mailRouter.post('/sla/config', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.post('/sla/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const body = z.object({
       scope: z.string().default('GLOBAL'),
@@ -306,7 +306,7 @@ mailRouter.post('/sla/config', requireRole(['SUPERADMIN', 'ADMIN']), async (req,
   }
 });
 
-mailRouter.put('/sla/config/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.put('/sla/config/:id', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = z.object({
