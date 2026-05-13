@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Bell, BellOff, X } from "lucide-react";
+import { Bell, X } from "lucide-react";
 
 export function NotificationPermission() {
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => sessionStorage.getItem("cmms:notif-dismissed") === "true");
+  const [requesting, setRequesting] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) {
@@ -16,8 +17,18 @@ export function NotificationPermission() {
 
   const request = async () => {
     if (!("Notification" in window)) return;
-    const result = await Notification.requestPermission();
-    setPermission(result);
+    setRequesting(true);
+    try {
+      const result = await Notification.requestPermission();
+      setPermission(result);
+    } finally {
+      setRequesting(false);
+    }
+  };
+
+  const dismiss = () => {
+    setDismissed(true);
+    sessionStorage.setItem("cmms:notif-dismissed", "true");
   };
 
   if (permission === "granted" || permission === "unsupported" || dismissed) return null;
@@ -32,8 +43,10 @@ export function NotificationPermission() {
           <p className="text-sm font-medium leading-tight">Enable Notifications</p>
           <p className="text-xs text-muted-foreground">Get alerts for work orders & updates</p>
         </div>
-        <Button size="sm" onClick={request}>Enable</Button>
-        <button onClick={() => setDismissed(true)} className="shrink-0 text-muted-foreground hover:text-foreground">
+        <Button size="sm" onClick={request} disabled={requesting}>
+          {requesting ? "..." : "Enable"}
+        </Button>
+        <button onClick={dismiss} className="shrink-0 text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
         </button>
       </div>
