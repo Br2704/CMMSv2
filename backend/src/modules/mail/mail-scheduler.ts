@@ -3,6 +3,7 @@ import { logger } from '../../config/logger';
 import { AppDataSource } from '../../database/data-source';
 import { processMailQueue } from '../../services/mail.service';
 import { EscalationHistoryEntity, NotificationEntity, WorkOrderActivityLogEntity, WorkOrderEntity, UserEntity, UserRoleEntity, ProfileEntity, SlaConfigEntity } from '../../database/entities';
+import type { EscalationLevel } from '../../database/entities/escalation-history.entity';
 import { publishNotificationChange } from '../notifications/notification-stream';
 import { isMailConfigured } from '../../services/mail.service';
 import { sendWorkOrderEscalationEmails, sendWorkOrderReminderEmails, type WoNotificationData } from '../../services/notification-helper';

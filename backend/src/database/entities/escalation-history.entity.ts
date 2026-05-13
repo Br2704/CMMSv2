@@ -1,8 +1,8 @@
 import { Column, Entity, Index } from 'typeorm';
 import { DATETIME_COLUMN_TYPE, TimestampedUuidEntity } from './common';
 
-export type EscalationLevel = 1 | 2 | 3 | 4 | 5;
-export type EscalationTrigger = 'NOT_OPENED' | 'NOT_ACKNOWLEDGED' | 'NOT_ATTENDED' | 'NOT_CLOSED' | 'SLA_BREACHED';
+export type EscalationLevel = number;
+export type EscalationTrigger = string;
 
 @Entity('escalation_history')
 @Index('idx_escalation_wo', ['woId'])

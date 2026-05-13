@@ -16,7 +16,7 @@ import { enforcePlantScope, resolvePlantFilter, resolveScopedPlantId } from '../
 import type { GenericRecord, ListResult } from '../_core/crud.types';
 import { CrudService } from '../_core/crud.service';
 import { notifyBreakdownWorkOrderRaised } from '../amc/amc.helpers';
-import { sendNewWorkOrderEmails, sendWorkOrderAssignedEmails } from '../../services/notification-helper';
+import { sendNewWorkOrderEmails, sendWorkOrderAssignedEmails, sendWorkOrderCompletedEmails, sendWorkOrderClosedEmails } from '../../services/notification-helper';
 import { isMailConfigured } from '../../services/mail.service';
 import { applySpareUsageDelta, formatSpareUsageSummary, normalizeSpareUsage } from '../inventory/spare-consumption';
 import { ensureDefaultWorkOrderMasters } from '../workOrderMasters/work-order-master.helpers';

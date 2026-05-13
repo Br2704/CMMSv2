@@ -1,7 +1,7 @@
 import { Column, Entity, Index } from 'typeorm';
 import { TimestampedUuidEntity } from './common';
 
-export type SlaScope = 'DEPARTMENT' | 'CATEGORY' | 'PRIORITY' | 'ASSET_CRITICALITY' | 'PLANT' | 'GLOBAL';
+export type SlaScope = string;
 
 @Entity('sla_config')
 @Index('idx_sla_config_scope', ['scope', 'scopeValue'])
