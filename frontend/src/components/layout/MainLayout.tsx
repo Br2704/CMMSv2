@@ -146,7 +146,10 @@ export function MainLayout() {
     ensureLink("icon");
     ensureLink("shortcut icon");
     ensureLink("apple-touch-icon", "dynamic-apple-touch-icon").href = resolvedFavicon;
-    ensureLink("manifest", "dynamic-manifest-link").href = buildBrandingManifestUrl(organizationId, brandingVersion);
+    const manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (manifestLink) {
+      manifestLink.href = buildBrandingManifestUrl(organizationId, brandingVersion);
+    }
   }, [brandColor, brandingVersion, browserTitle, organizationId, organizationName, sidebarTitle]);
 
   return (
