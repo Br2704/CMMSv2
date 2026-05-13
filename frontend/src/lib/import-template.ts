@@ -329,8 +329,11 @@ export function downloadEnterpriseExcelTemplate(config: ExcelTemplateConfig) {
 export function parseExcelXmlRows(content: string, requiredHeader: string) {
   if (!content.trim().startsWith("<?xml") && !content.includes("<Workbook")) return null;
   const documentXml = new DOMParser().parseFromString(content, "application/xml");
-  const rows = Array.from(documentXml.getElementsByTagName("Row")).map((row) =>
-    Array.from(row.getElementsByTagName("Cell")).map((cell) => cell.textContent?.trim() || ""),
+  const rows = Array.from(documentXml.getElementsByTagNameNS("*", "Row")).map((row) =>
+    Array.from(row.getElementsByTagNameNS("*", "Cell")).map((cell) => {
+      const dataEl = cell.getElementsByTagNameNS("*", "Data")[0];
+      return dataEl ? dataEl.textContent?.trim() || "" : cell.textContent?.trim() || "";
+    }),
   );
   const headerIndexes = rows
     .map((row, index) => ({ row, index }))

@@ -38,12 +38,12 @@ import { FormGrid } from "@/components/layout/FormGrid";
 import { EmptyState } from "@/components/app-shell/EmptyState";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import {
-  downloadEnterpriseExcelTemplate,
   isCsvHelperRow,
   parseExcelXmlRows,
   normalizeHeaderName,
   parseCsvRows,
 } from "@/lib/import-template";
+import { parseFileContent, downloadXlsxTemplate } from "@/lib/xlsx-utils";
 
 type AppRole = string;
 
@@ -531,20 +531,20 @@ export default function UsersMaster() {
       toast.error("No bulk-uploadable roles are available. Contact your administrator.");
       return;
     }
-
     const rows = parseExcelXmlRows(content, "user_code") || parseCsvRows(content);
     if (rows.length < 2) {
       toast.error("Upload file must include a header and at least one user row");
       return;
     }
+    await processUserRows(rows);
+  };
 
+  const processUserRows = async (rows: string[][]) => {
     const headerRow = rows[0] || [];
     const headerIndex = new Map<string, number>();
     headerRow.forEach((header, index) => {
       const normalized = normalizeHeaderName(header);
-      if (normalized) {
-        headerIndex.set(normalized, index);
-      }
+      if (normalized) headerIndex.set(normalized, index);
     });
 
     const requiredHeaders: Array<{ label: string; aliases: string[] }> = [
@@ -568,9 +568,7 @@ export default function UsersMaster() {
         const cellIndex = headerIndex.get(alias);
         if (cellIndex === undefined) continue;
         const value = row[cellIndex];
-        if (typeof value === "string" && value.trim().length > 0) {
-          return value.trim();
-        }
+        if (typeof value === "string" && value.trim().length > 0) return value.trim();
       }
       return "";
     };
@@ -765,14 +763,14 @@ export default function UsersMaster() {
   const handleBulkUsersFileChange = async (file: File | null) => {
     if (!file) return;
     try {
-      const content = await file.text();
-      await handleBulkUsersCsv(content);
+      const rows = await parseFileContent(file);
+      await processUserRows(rows);
     } catch (error: unknown) {
-      toast.error(getErrorMessage(error, "Failed to read bulk upload file"));
+      toast.error(getErrorMessage(error, "Failed to read spreadsheet file"));
     }
   };
 
-  const handleDownloadUsersTemplate = async (includeDemoRows: boolean) => {
+  const handleDownloadUsersTemplate = async () => {
     const latestRoles = await fetchRoles();
     const sourceRoles = latestRoles.length > 0 ? latestRoles : allRoles;
     const latestAllowedBulkRoleOptions = sourceRoles.filter((role) => {
@@ -781,121 +779,32 @@ export default function UsersMaster() {
       return allowedRoleTargetsForCreate.includes(normalizeRoleKey(role.value));
     });
     const sampleRoleValues = latestAllowedBulkRoleOptions.map((role) => (role.value === "SUPER_ADMIN" ? "SUPERADMIN" : role.value));
-
-    const sampleRows = includeDemoRows
-      ? sampleRoleValues.length > 0
-        ? sampleRoleValues.map((roleValue, index) => [
-          `USR00${index + 1}`,
-          `Sample ${roleValue.replace(/_/g, " ")}`,
-          `sample.${index + 1}@example.com`,
+    const sampleRow = sampleRoleValues.length > 0
+      ? [[
+          `USR001`,
+          `Sample ${sampleRoleValues[0].replace(/_/g, " ")}`,
+          "sample.user@example.com",
           "TempPass@123",
-          roleValue,
-          "PLANT_CODE_OR_ID",
-          "Maintenance",
-          `+91-90000000${String(index + 1).padStart(2, "0")}`,
+          sampleRoleValues[0],
+          plantsOptions[0]?.label || "PLANT_CODE_OR_ID",
+          departments[0]?.name || "Maintenance",
+          "+91-9000000001",
           "true",
-        ])
-        : [["USR001", "Sample User", "sample.user@example.com", "TempPass@123", "USER", "PLANT_CODE_OR_ID", "Maintenance", "+91-9000000001", "true"]]
-      : [];
+        ]]
+      : [["USR001", "Sample User", "sample.user@example.com", "TempPass@123", "USER", "PLANT_CODE_OR_ID", "Maintenance", "+91-9000000001", "true"]];
 
-    const plantValues = plantsOptions.map((plant) => plant.label || plant.value).filter(Boolean);
-    const departmentValues = departments
-      .map((department) => [department.code, department.name].filter(Boolean).join(" - "))
-      .filter(Boolean);
-
-    downloadEnterpriseExcelTemplate({
-      fileName: "user_bulk_upload_demo.xls",
-      title: "CMMS User Management Demo Upload Template",
-      uploadSheetName: "User Upload",
-      columns: [
-        {
-          key: "user_code",
-          label: "User code",
-          required: true,
-          example: "USR001",
-          description: "Unique employee or login code.",
-          width: 120,
-        },
-        {
-          key: "full_name",
-          label: "Full name",
-          required: true,
-          example: "Sample User",
-          description: "Display name for the user.",
-          width: 180,
-        },
-        {
-          key: "email",
-          label: "Email",
-          required: true,
-          example: "sample.user@example.com",
-          format: "Valid unique email address.",
-          width: 220,
-        },
-        {
-          key: "password",
-          label: "Temporary password",
-          required: true,
-          example: "TempPass@123",
-          format: PASSWORD_POLICY_MESSAGE,
-          width: 180,
-        },
-        {
-          key: "role",
-          label: "Role",
-          required: true,
-          example: sampleRoleValues[0] || "USER",
-          allowedValues: sampleRoleValues,
-          description: "Use one allowed role exactly as listed.",
-          width: 140,
-        },
-        {
-          key: "plant",
-          label: "Plant",
-          required: true,
-          example: plantValues[0] || "PLANT_CODE_OR_ID",
-          allowedValues: plantValues,
-          description: "Accepts plant code, name, or id when available.",
-          width: 180,
-        },
-        {
-          key: "department",
-          label: "Department",
-          example: departmentValues[0] || "Maintenance",
-          allowedValues: departmentValues,
-          description: "Accepts department code or name.",
-          width: 180,
-        },
-        {
-          key: "phone",
-          label: "Phone",
-          example: "+91-9000000001",
-          format: "Optional contact number.",
-          width: 140,
-        },
-        {
-          key: "is_active",
-          label: "Status",
-          example: "true",
-          allowedValues: ["true", "false", "active", "inactive", "yes", "no"],
-          description: "Defaults to true when left blank.",
-          width: 120,
-        },
-      ],
-      rows: sampleRows,
-      instructions: [
-        "Fill data in the User Upload sheet only.",
-        "Required columns are marked with * and highlighted.",
-        "Use dropdown values where available. Do not rename database column headers.",
-        "Save the workbook as .xls after editing the template.",
-      ],
-      referenceSections: [
-        { title: "Allowed roles", values: sampleRoleValues },
-        { title: "Plant reference", values: plantValues.length > 0 ? plantValues : ["PLANT_CODE_OR_ID"] },
-        { title: "Department reference", values: departmentValues.length > 0 ? departmentValues : ["Maintenance"] },
-      ],
-    });
-    toast.success("User demo Excel template downloaded");
+    downloadXlsxTemplate("user_bulk_upload_demo.xlsx", [
+      { key: "user_code", label: "User Code", required: true },
+      { key: "full_name", label: "Full Name", required: true },
+      { key: "email", label: "Email Address", required: true },
+      { key: "password", label: "Temporary Password", required: true },
+      { key: "role", label: "Role", required: true },
+      { key: "plant", label: "Plant", required: true },
+      { key: "department", label: "Department" },
+      { key: "phone", label: "Phone Number" },
+      { key: "is_active", label: "Active Status" },
+    ], sampleRow, "User Upload");
+    toast.success("User demo workbook downloaded (.xlsx)");
   };
 
   const confirmDelete = async () => {
@@ -1003,7 +912,7 @@ export default function UsersMaster() {
                 <Upload className="h-4 w-4" />
                 {bulkUploading ? "Uploading..." : "Bulk Upload Users"}
               </Button>
-              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={() => void handleDownloadUsersTemplate(true)}>
+              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={() => void handleDownloadUsersTemplate()}>
                 <Download className="h-4 w-4" />
                 Demo File
               </Button>

@@ -45,12 +45,12 @@ import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import { PageShell } from "@/components/layout/PageShell";
 import { FormGrid } from "@/components/layout/FormGrid";
 import {
-  downloadEnterpriseExcelTemplate,
   isCsvHelperRow,
   normalizeHeaderName,
   parseExcelXmlRows,
   parseCsvRows,
 } from "@/lib/import-template";
+import { parseFileContent, downloadXlsxTemplate } from "@/lib/xlsx-utils";
 
 interface MachineFormState {
   code: string;
@@ -596,15 +596,18 @@ export default function MachinesMaster() {
     (canSelectPlant ? Boolean(formData.plantId && formData.departmentId && formData.moduleId) : Boolean(defaultPlantId && formData.departmentId && formData.moduleId));
 
   const handleBulkMachineCsv = async (content: string) => {
-    const resolvedPlantId = canSelectPlant ? selectedPlant : defaultPlantId;
-    if (!resolvedPlantId) {
-      toast.error("Select a specific plant before bulk uploading machines");
-      return;
-    }
-
     const rows = parseExcelXmlRows(content, "machine_code") || parseCsvRows(content);
     if (rows.length < 2) {
       toast.error("Upload file must include a header and at least one machine row");
+      return;
+    }
+    await processMachineRows(rows);
+  };
+
+  const processMachineRows = async (rows: string[][]) => {
+    const resolvedPlantId = canSelectPlant ? selectedPlant : defaultPlantId;
+    if (!resolvedPlantId) {
+      toast.error("Select a specific plant before bulk uploading machines");
       return;
     }
 
@@ -941,10 +944,10 @@ export default function MachinesMaster() {
   const handleBulkMachineFileChange = async (file: File | null) => {
     if (!file) return;
     try {
-      const content = await file.text();
-      await handleBulkMachineCsv(content);
+      const rows = await parseFileContent(file);
+      await processMachineRows(rows);
     } catch (error: any) {
-      toast.error(error?.message || "Failed to read bulk upload file");
+      toast.error(error?.message || "Failed to read spreadsheet file");
     }
   };
 
@@ -952,204 +955,37 @@ export default function MachinesMaster() {
     toast.info("Machine import: download the blank or demo Excel file, fill Machine Upload, keep headers unchanged, use dropdown/reference values, then upload the saved .xls or CSV file.");
   };
 
-  const handleDownloadMachineTemplate = async (includeDemoRows: boolean) => {
+  const handleDownloadMachineTemplate = async () => {
     const latestTemplateOptions = (await fetchAssetTemplateOptions()) || assetTemplateOptions;
-    const allowedTypes = latestTemplateOptions.types;
-    const allowedAssetTypes = latestTemplateOptions.assetTypes;
-    const allowedCriticalities = latestTemplateOptions.criticalities;
-    const allowedStatuses = latestTemplateOptions.statuses;
+    const defaultType = latestTemplateOptions.defaults.type || "EQUIPMENT";
+    const defaultAssetType = latestTemplateOptions.defaults.assetType || "MACHINERY";
+    const defaultCriticality = latestTemplateOptions.defaults.criticality || "MEDIUM";
+    const defaultStatus = latestTemplateOptions.defaults.status || "ACTIVE";
 
-    const defaultType = latestTemplateOptions.defaults.type;
-    const defaultAssetType = latestTemplateOptions.defaults.assetType;
-    const defaultCriticality = latestTemplateOptions.defaults.criticality;
-    const defaultStatus = latestTemplateOptions.defaults.status;
-
-    const utilityType = allowedTypes.includes("UTILITY") ? "UTILITY" : defaultType;
-    const secondaryAssetType = allowedAssetTypes.find((value) => value !== defaultAssetType) || defaultAssetType;
-    const tertiaryAssetType = allowedAssetTypes.includes("COOLING_TOWER") ? "COOLING_TOWER" : secondaryAssetType;
-
-    const departmentValues = departments
-      .filter((department) => department.plantId === (canSelectPlant ? selectedPlant : defaultPlantId))
-      .map((department) => [department.code, department.name].filter(Boolean).join(" - "))
-      .filter(Boolean);
-    const moduleValues = modules
-      .filter((module) => module.plantId === (canSelectPlant ? selectedPlant : defaultPlantId))
-      .map((module) => [module.code, module.name].filter(Boolean).join(" - "))
-      .filter(Boolean);
-    const costCenterValues = costCenters
-      .filter((costCenter) => costCenter.plantId === (canSelectPlant ? selectedPlant : defaultPlantId) || costCenter.plantId === null)
-      .map((costCenter) => [costCenter.code, costCenter.name].filter(Boolean).join(" - "))
-      .filter(Boolean);
-    const vendorValues = vendors
-      .map((vendor) => [vendor.code, vendor.name].filter(Boolean).join(" - "))
-      .filter(Boolean);
-    const makeValues = Array.from(new Set(assets.map((asset) => asset.make || "").filter(Boolean))).sort();
-    const locationValues = Array.from(new Set(assets.map((asset) => asset.location || "").filter(Boolean))).sort();
-    const refrigerantValues = Array.from(new Set(["R134A", "R410A", "R32", ...assets.map((asset) => asset.refrigerantGasType || "")].filter(Boolean))).sort();
-
-    const exampleRows = [
-      [
-        "MCH-001",
-        "Air Compressor 01",
-        "DEP-UTILITY",
-        "Utility",
-        "MOD-AIR",
-        "Air System",
-        costCenterValues[0]?.split(" - ")[0] || "",
-        costCenterValues[0]?.split(" - ").slice(1).join(" - ") || "",
-        defaultType,
-        defaultAssetType,
-        defaultCriticality,
-        defaultStatus,
-        "Atlas Copco",
-        "Atlas Copco",
-        "GA55",
-        "AC-2024-0001",
-        "125",
-        "CFM",
-        "",
-        "Compressor Room",
-        vendorValues[0]?.split(" - ")[0] || "",
-        vendorValues[0]?.split(" - ").slice(1).join(" - ") || "",
-        "",
-        "2024-01-10",
-        "2028-01-10",
-      ],
-      [
-        "MCH-002",
-        "Air Compressor 02",
-        "DEP-UTILITY",
-        "Utility",
-        "MOD-AIR",
-        "Air System",
-        costCenterValues[0]?.split(" - ")[0] || "",
-        costCenterValues[0]?.split(" - ").slice(1).join(" - ") || "",
-        defaultType,
-        secondaryAssetType,
-        defaultCriticality,
-        defaultStatus,
-        "Atlas Copco",
-        "Atlas Copco",
-        "GA75",
-        "AC-2024-0002",
-        "175",
-        "CFM",
-        "",
-        "Compressor Room",
-        vendorValues[0]?.split(" - ")[0] || "",
-        vendorValues[0]?.split(" - ").slice(1).join(" - ") || "",
-        "",
-        "2024-01-12",
-        "2028-01-12",
-      ],
-      [
-        "MCH-003",
-        "Cooling Tower 02",
-        "DEP-UTILITY",
-        "Utility",
-        "MOD-CT",
-        "Cooling",
-        costCenterValues[0]?.split(" - ")[0] || "",
-        costCenterValues[0]?.split(" - ").slice(1).join(" - ") || "",
-        utilityType,
-        tertiaryAssetType,
-        defaultCriticality,
-        defaultStatus,
-        "BAC",
-        "BAC",
-        "VXT-180",
-        "CT-2024-0002",
-        "180",
-        "TR",
-        "",
-        "Cooling Yard",
-        vendorValues[0]?.split(" - ")[0] || "",
-        vendorValues[0]?.split(" - ").slice(1).join(" - ") || "",
-        "",
-        "2023-06-01",
-        "2027-06-01",
-      ],
-    ];
-
-    downloadEnterpriseExcelTemplate({
-      fileName: includeDemoRows ? "machine_bulk_upload_demo.xls" : "machine_bulk_upload_blank_template.xls",
-      title: includeDemoRows ? "CMMS Machine Master Demo Upload Template" : "CMMS Machine Master Blank Upload Template",
-      uploadSheetName: "Machine Upload",
-      columns: [
-        { key: "machine_code", label: "Machine code", required: true, example: "MCH-001", description: "Unique machine or asset code.", width: 120 },
-        { key: "machine_name", label: "Machine name", required: true, example: "Air Compressor 01", description: "Equipment display name.", width: 180 },
-        {
-          key: "department_code",
-          label: "Department code",
-          required: true,
-          example: "DEP-UTILITY",
-          allowedValues: departmentValues,
-          description: "Use an existing department code or provide a new code/name pair.",
-          width: 150,
-        },
-        {
-          key: "department_name",
-          label: "Department name",
-          required: true,
-          example: "Utility",
-          allowedValues: departmentValues,
-          description: "Existing names are matched; new names can be created by import.",
-          width: 160,
-        },
-        {
-          key: "module_code",
-          label: "Module code",
-          required: true,
-          example: "MOD-AIR",
-          allowedValues: moduleValues,
-          description: "Use an existing module code or provide a new code/name pair.",
-          width: 150,
-        },
-        {
-          key: "module_name",
-          label: "Module name",
-          required: true,
-          example: "Air System",
-          allowedValues: moduleValues,
-          description: "Existing names are matched inside the selected department.",
-          width: 160,
-        },
-        { key: "cost_center_code", label: "Cost center code", example: costCenterValues[0]?.split(" - ")[0] || "", allowedValues: costCenterValues, description: "Optional existing cost center.", width: 150 },
-        { key: "cost_center_name", label: "Cost center name", example: costCenterValues[0]?.split(" - ").slice(1).join(" - ") || "", allowedValues: costCenterValues, description: "Optional existing cost center.", width: 160 },
-        { key: "type", label: "Machine type", example: defaultType, allowedValues: allowedTypes, description: "Dropdown value; blank uses the default.", width: 120 },
-        { key: "asset_type", label: "Asset category", example: defaultAssetType, allowedValues: allowedAssetTypes, description: "Dropdown value; blank uses the default.", width: 150 },
-        { key: "criticality", label: "Criticality", example: defaultCriticality, allowedValues: allowedCriticalities, description: "Dropdown value; blank uses the default.", width: 120 },
-        { key: "status", label: "Status", example: defaultStatus, allowedValues: allowedStatuses, description: "Dropdown value; blank uses the default.", width: 150 },
-        { key: "make", label: "Make", example: "Atlas Copco", allowedValues: makeValues, description: "Optional make.", width: 150 },
-        { key: "manufacturer", label: "Manufacturer", example: "Atlas Copco", allowedValues: makeValues, description: "Optional manufacturer.", width: 160 },
-        { key: "model", label: "Model", example: "GA55", description: "Optional model number.", width: 140 },
-        { key: "serial_number", label: "Serial number", example: "AC-2024-0001", description: "Optional unique serial number.", width: 160 },
-        { key: "rated_capacity", label: "Capacity", example: "125", description: "Optional numeric capacity.", type: "number", width: 120 },
-        { key: "capacity_unit", label: "Capacity unit", example: "CFM", allowedValues: ["CFM", "TR", "KW", "HP", "KVA", "TPH", "LPH", "M3/H"], description: "Optional capacity unit.", width: 120 },
-        { key: "refrigerant_gas_type", label: "Refrigerant gas type", example: "", allowedValues: refrigerantValues, description: "Optional HVAC/refrigerant detail.", width: 160 },
-        { key: "location", label: "Location", example: "Compressor Room", allowedValues: locationValues, description: "Optional physical location.", width: 180 },
-        { key: "vendor_code", label: "Vendor code", example: vendorValues[0]?.split(" - ")[0] || "", allowedValues: vendorValues, description: "Optional existing vendor.", width: 150 },
-        { key: "vendor_name", label: "Vendor name", example: vendorValues[0]?.split(" - ").slice(1).join(" - ") || "", allowedValues: vendorValues, description: "Optional existing vendor.", width: 180 },
-        { key: "machine_image_url", label: "Machine image URL", example: "", description: "Optional image URL or data URL.", width: 220 },
-        { key: "commission_date", label: "Commission date", example: "2024-01-10", format: "YYYY-MM-DD", type: "date", width: 130 },
-        { key: "warranty_expiry", label: "Warranty expiry", example: "2028-01-10", format: "YYYY-MM-DD", type: "date", width: 130 },
-      ],
-      rows: includeDemoRows ? exampleRows : [],
-      referenceSections: [
-        { title: "Machine type options", values: allowedTypes },
-        { title: "Asset category options", values: allowedAssetTypes },
-        { title: "Criticality options", values: allowedCriticalities },
-        { title: "Status options", values: allowedStatuses },
-        { title: "Department reference", values: departmentValues.length > 0 ? departmentValues : ["DEP-UTILITY - Utility"] },
-        { title: "Module reference", values: moduleValues.length > 0 ? moduleValues : ["MOD-AIR - Air System"] },
-        { title: "Cost center reference", values: costCenterValues },
-        { title: "Vendor reference", values: vendorValues },
-        { title: "Manufacturer reference", values: makeValues },
-        { title: "Location reference", values: locationValues },
-        { title: "Refrigerant gas reference", values: refrigerantValues },
-      ],
-    });
-    toast.success(includeDemoRows ? "Machine demo Excel template downloaded" : "Blank machine Excel template downloaded");
+    downloadXlsxTemplate("machine_bulk_upload_demo.xlsx", [
+      { key: "machine_code", label: "Machine Code", required: true },
+      { key: "machine_name", label: "Machine Name", required: true },
+      { key: "department_code", label: "Department Code", required: true },
+      { key: "department_name", label: "Department Name", required: true },
+      { key: "module_code", label: "Module Code", required: true },
+      { key: "module_name", label: "Module Name", required: true },
+      { key: "type", label: "Machine Type" },
+      { key: "asset_type", label: "Asset Category" },
+      { key: "criticality", label: "Criticality" },
+      { key: "status", label: "Status" },
+      { key: "make", label: "Make" },
+      { key: "serial_number", label: "Serial Number" },
+      { key: "rated_capacity", label: "Capacity" },
+      { key: "capacity_unit", label: "Capacity Unit" },
+      { key: "location", label: "Location" },
+    ], [[
+      "MCH-001", "Air Compressor 01",
+      "DEP-UTILITY", "Utility",
+      "MOD-AIR", "Air System",
+      defaultType, defaultAssetType, defaultCriticality, defaultStatus,
+      "Atlas Copco", "SN-001", "125", "CFM", "Compressor Room",
+    ]], "Machine Upload");
+    toast.success("Machine demo workbook downloaded (.xlsx)");
   };
 
   const fileToDataUrl = (file: File) =>
@@ -1824,7 +1660,7 @@ export default function MachinesMaster() {
                 <Upload className="h-4 w-4" />
                 {bulkUploading ? "Uploading..." : "Bulk Upload Machines"}
               </Button>
-              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={() => void handleDownloadMachineTemplate(true)}>
+              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={() => void handleDownloadMachineTemplate()}>
                 <Download className="h-4 w-4" />
                 Demo File
               </Button>

@@ -5,13 +5,13 @@ ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 COPY frontend/package*.json ./frontend/
 WORKDIR /app/frontend
-RUN npm ci
+RUN npm install
 WORKDIR /app
 COPY frontend ./frontend
 COPY scripts ./scripts
 WORKDIR /app/frontend
 RUN rm -rf node_modules
-RUN npm ci
+RUN npm install
 RUN npm run build
 
 FROM nginx:1-alpine-slim
