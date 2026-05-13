@@ -32,7 +32,7 @@ pushRouter.post('/push/subscribe', requireAuth, async (req, res, next) => {
     }
     const repo = AppDataSource.getRepository(PushSubscriptionEntity);
     const existing = await repo.findOne({
-      where: { userId: req.user!.id, endpoint: subscription.endpoint },
+      where: { userId: req.auth!.userId, endpoint: subscription.endpoint },
     });
     if (existing) {
       existing.keys = subscription.keys;
@@ -41,7 +41,7 @@ pushRouter.post('/push/subscribe', requireAuth, async (req, res, next) => {
       await repo.save(existing);
     } else {
       const entity = repo.create({
-        userId: req.user!.id,
+        userId: req.auth!.userId,
         endpoint: subscription.endpoint,
         keys: subscription.keys,
         userAgent: req.headers['user-agent'] || null,
@@ -63,7 +63,7 @@ pushRouter.post('/push/unsubscribe', requireAuth, async (req, res, next) => {
       return;
     }
     const repo = AppDataSource.getRepository(PushSubscriptionEntity);
-    await repo.delete({ userId: req.user!.id, endpoint });
+    await repo.delete({ userId: req.auth!.userId, endpoint });
     res.json(ok({ unsubscribed: true }));
   } catch (error) {
     next(error);
