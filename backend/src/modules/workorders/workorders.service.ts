@@ -1400,14 +1400,14 @@ class WorkOrdersService extends CrudService {
           {
             woId: String(existing.id),
             woNumber: String(existing.wo_number),
-            assetId: existing.asset_id,
-            plantId: existing.plant_id,
+            assetId: String(existing.asset_id ?? ''),
+            plantId: String(existing.plant_id ?? ''),
             priority: String(existing.priority ?? 'MEDIUM'),
-            problemDescription: existing.problem_description,
-            location: existing.reported_location,
+            problemDescription: String(existing.problem_description ?? ''),
+            location: String(existing.reported_location ?? ''),
           },
-          existing.raised_by,
-          existing.assigned_to,
+          existing.raised_by as string | null | undefined,
+          existing.assigned_to as string | null | undefined,
         ).catch(() => {});
       }
 
@@ -1484,14 +1484,14 @@ class WorkOrdersService extends CrudService {
           {
             woId: String(existing.id),
             woNumber: String(existing.wo_number),
-            assetId: existing.asset_id,
-            plantId: existing.plant_id,
+            assetId: String(existing.asset_id ?? ''),
+            plantId: String(existing.plant_id ?? ''),
             priority: String(existing.priority ?? 'MEDIUM'),
-            problemDescription: existing.problem_description,
-            location: existing.reported_location,
+            problemDescription: String(existing.problem_description ?? ''),
+            location: String(existing.reported_location ?? ''),
           },
-          existing.raised_by,
-          existing.assigned_to,
+          existing.raised_by as string | null | undefined,
+          existing.assigned_to as string | null | undefined,
         ).catch(() => {});
       }
 
