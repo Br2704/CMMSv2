@@ -7,6 +7,7 @@ import {
   AssetQrEntity,
   AssetDowntimeEventEntity,
   AssetReliabilityKpiEntity,
+  PushSubscriptionEntity,
   AssetPerformanceLogEntity,
   AssetEnergyMeterConfigEntity,
   FeatureFlagEntity,
@@ -202,4 +203,5 @@ export const ALL_ENTITIES = [
   VendorUserMappingEntity,
   AuditLogEntity,
   RbacMetaEntity,
+  PushSubscriptionEntity,
 ];

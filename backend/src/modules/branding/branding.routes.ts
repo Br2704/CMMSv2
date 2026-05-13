@@ -293,10 +293,22 @@ brandingRouter.get('/branding/manifest', async (req, res, next) => {
       theme_color: themeColor,
       icons: [
         {
-          src: getManifestIconUrl(),
+          src: '/jkfenner/jkfenner-favicon.svg',
           sizes: 'any',
           type: 'image/svg+xml',
-          purpose: 'any maskable',
+          purpose: 'any',
+        },
+        {
+          src: '/jkfenner/jkfenner-logo.png',
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'any',
+        },
+        {
+          src: '/jkfenner/jkfenner-logo.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'any',
         },
       ],
     };

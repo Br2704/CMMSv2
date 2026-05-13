@@ -1,5 +1,6 @@
 import { registerSW } from "virtual:pwa-register";
 import { flushOfflineMutations, registerOfflineSyncListeners } from "@/mobile/offlineSync";
+import { requestNotificationPermissionAndSubscribe } from "@/mobile/pushNotifications";
 
 async function cleanupDevServiceWorkers(): Promise<void> {
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
@@ -34,15 +35,12 @@ export function bootstrapMobileRuntime(): () => void {
         periodicSync?: { register: (name: string, options: { minInterval: number }) => Promise<void> };
       };
       if (maybeSync.sync?.register) {
-        void maybeSync.sync.register("cmms-mobile-sync").catch(() => {
-          // Browser may deny background sync in some contexts.
-        });
+        void maybeSync.sync.register("cmms-mobile-sync").catch(() => {});
       }
       if (maybeSync.periodicSync?.register) {
-        void maybeSync.periodicSync.register("cmms-mobile-periodic-sync", { minInterval: 15 * 60 * 1000 }).catch(() => {
-          // Not supported in many browsers; ignore safely.
-        });
+        void maybeSync.periodicSync.register("cmms-mobile-periodic-sync", { minInterval: 15 * 60 * 1000 }).catch(() => {});
       }
+      void requestNotificationPermissionAndSubscribe(registration).catch(() => {});
     },
   });
 
@@ -55,6 +53,9 @@ export function bootstrapMobileRuntime(): () => void {
       const maybeSync = registrationRef as (ServiceWorkerRegistration & { sync?: { register: (name: string) => Promise<void> } }) | null;
       if (maybeSync?.sync?.register) {
         void maybeSync.sync.register("cmms-mobile-sync").catch(() => undefined);
+      }
+      if (registrationRef) {
+        void requestNotificationPermissionAndSubscribe(registrationRef).catch(() => {});
       }
     }
   };

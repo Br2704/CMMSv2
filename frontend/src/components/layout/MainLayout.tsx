@@ -7,6 +7,8 @@ import { buildBrandingManifestUrl } from "@/api/branding";
 import { useAuthStore } from "@/store/auth.store";
 import { useBrandingStore } from "@/store/branding.store";
 import { useFeaturesStore } from "@/store/features.store";
+import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
+import { NotificationPermission } from "@/components/NotificationPermission";
 import { cn } from "@/lib/utils";
 
 const JK_FENNER_FAVICON = "/jkfenner/jkfenner-favicon.svg";
@@ -179,6 +181,8 @@ export function MainLayout() {
 
       {/* Mobile Bottom Navigation */}
       <BottomNav isSidebarOpen={sidebarOpen} />
+      <PwaInstallPrompt />
+      <NotificationPermission />
     </div>
   );
 }

@@ -51,12 +51,14 @@ import { masterDataRouter } from '../modules/master-data/master-data.routes';
 import { systemRouter } from '../modules/system/system.routes';
 import { shiftsRouter } from '../modules/shifts/shifts.routes';
 import { workOrderMastersRouter } from '../modules/workOrderMasters/work-order-masters.routes';
+import { pushRouter } from '../modules/push/push.routes';
 
 export const router = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
 router.use(brandingRouter);
+router.use(pushRouter);
 router.use(governanceRouter);
 router.use(organizationsRouter);
 router.use(rootUsersRouter);

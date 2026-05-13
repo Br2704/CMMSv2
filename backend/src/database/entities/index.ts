@@ -99,3 +99,4 @@ export * from './audit-log.entity';
 export * from './rbac-meta.entity';
 export * from './org-rbac-meta.entity';
 export * from './branding-meta.entity';
+export * from './push-subscription.entity';

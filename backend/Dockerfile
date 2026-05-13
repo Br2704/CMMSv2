@@ -2,7 +2,7 @@ FROM node:22-alpine3.22 AS build
 WORKDIR /app
 RUN apk upgrade --no-cache
 COPY package*.json ./
-RUN npm ci --include=dev
+RUN npm install --include=dev
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
@@ -12,7 +12,7 @@ WORKDIR /app
 RUN apk upgrade --no-cache
 ENV NODE_ENV=production
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
 EXPOSE 3001
 USER node
