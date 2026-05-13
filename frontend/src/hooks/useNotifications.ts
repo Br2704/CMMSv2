@@ -240,9 +240,19 @@ export function useNotifications(options?: { enabled?: boolean }) {
         const browserNotification = new Notification(notification.title, {
           body: notification.message,
           tag: notification.id,
+          icon: "/jkfenner/jkfenner-logo.png",
+          badge: "/jkfenner/jkfenner-favicon.svg",
+          requireInteraction: true,
+          data: { url: notification.link, woId: notification.wo_id },
+          actions: [
+            { action: "open", title: "View" },
+            { action: "dismiss", title: "Dismiss" },
+          ],
         });
-        browserNotification.onclick = () => {
+        browserNotification.onclick = (event) => {
+          event.preventDefault();
           if (notification.link) {
+            window.focus();
             window.location.assign(notification.link);
           }
           browserNotification.close();
@@ -251,7 +261,25 @@ export function useNotifications(options?: { enabled?: boolean }) {
     }
 
     seenNotificationIds.current = nextSeen;
+
+    if ("setAppBadge" in navigator) {
+      const unread = notifications.filter((n) => !n.is_read).length;
+      navigator.setAppBadge(unread).catch(() => {});
+    }
   }, [notifications]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && "clearAppBadge" in navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
 
   const markAsRead = async (id: string) => {
     await markNotificationRead(id);

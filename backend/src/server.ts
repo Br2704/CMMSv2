@@ -20,6 +20,7 @@ import { startOrganizationSubscriptionScheduler } from './modules/organizations/
 import { startPmSchedulesScheduler } from './modules/pmSchedules/pmschedules.scheduler';
 import { startReportsScheduler } from './modules/reports/reports.scheduler';
 import { startWorkOrdersScheduler } from './modules/workorders/workorders.scheduler';
+import { startMailScheduler } from './modules/mail/mail-scheduler';
 import { startDashboardSocketServer, stopDashboardSocketServer } from './realtime/dashboard-socket';
 import { initializeSecretRotation } from './utils/secretRotation';
 
@@ -209,6 +210,7 @@ async function bootstrap() {
   startAmcScheduler();
   startOrganizationSubscriptionScheduler();
   startWorkOrdersScheduler();
+  startMailScheduler();
 
   const server = createServer(app);
   startDashboardSocketServer(server);

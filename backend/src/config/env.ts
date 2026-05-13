@@ -85,6 +85,10 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional().default(''),
   SMTP_PASS: z.string().optional().default(''),
   SMTP_FROM: z.string().optional().default(''),
+  SMTP_FROM_NAME: z.string().optional().default('CMMS Notification'),
+  MAIL_QUEUE_ENABLED: booleanFromEnv.default(true),
+  MAIL_RETRY_MAX: z.coerce.number().int().positive().default(3),
+  MAIL_RETRY_INTERVAL_MINUTES: z.coerce.number().int().positive().default(5),
 
   SUPERADMIN_EMAIL: z.string().email().default('superadmin@cmms.local'),
   SUPERADMIN_PASSWORD: optionalStringFromEnv,

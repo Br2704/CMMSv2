@@ -77,6 +77,8 @@ const navigation: NavItem[] = [
       { title: "Shifts", href: "/masters/shifts", moduleId: "masters.shifts" },
       { title: "Maintenance Teams", href: "/masters/maintenance-teams", moduleId: "masters.maintenance-teams" },
       { title: "Work Order Config", href: "/masters/work-order-config", moduleId: "masters.workorder-team-mapping" },
+      { title: "Mail Config", href: "/masters/mail-config", moduleId: "masters.mail-config" },
+      { title: "SLA & Escalation", href: "/masters/sla-config", moduleId: "masters.sla-config" },
     ],
   },
 ];

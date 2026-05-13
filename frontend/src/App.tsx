@@ -49,6 +49,8 @@ import GateMaster from "@/pages/masters/GateMaster";
 import SafetyConfigMaster from "@/pages/masters/SafetyConfigMaster";
 import EmailReportsMaster from "@/pages/masters/EmailReportsMaster";
 import LogTemplateMaster from "@/pages/masters/LogTemplateMaster";
+import MailConfigMaster from "@/pages/masters/MailConfigMaster";
+import SLAConfigMaster from "@/pages/masters/SLAConfigMaster";
 import RootDashboard from "@/pages/root/RootDashboard";
 import RootOrganizationMaster from "@/pages/root/RootOrganizationMaster";
 import RootPlantMaster from "@/pages/root/RootPlantMaster";
@@ -424,6 +426,8 @@ function App() {
                   <Route path="/masters/safety-config" element={<ModuleGuard moduleId="masters.safety-config"><SafetyConfigMaster /></ModuleGuard>} />
                   <Route path="/masters/email-reports" element={<ModuleGuard moduleId="masters.email-reports"><EmailReportsMaster /></ModuleGuard>} />
                   <Route path="/masters/log-templates" element={<ModuleGuard moduleId="masters.log-templates"><LogTemplateMaster /></ModuleGuard>} />
+                  <Route path="/masters/mail-config" element={<ModuleGuard moduleId="masters.mail-config"><MailConfigMaster /></ModuleGuard>} />
+                  <Route path="/masters/sla-config" element={<ModuleGuard moduleId="masters.sla-config"><SLAConfigMaster /></ModuleGuard>} />
                   <Route path="/masters/machine-instruments" element={<ModuleGuard moduleId="masters.machine-instruments"><MachineInstrumentsMaster /></ModuleGuard>} />
                   <Route path="/masters/shifts" element={<ModuleGuard moduleId="masters.shifts"><ShiftMaster /></ModuleGuard>} />
                   <Route path="/masters/maintenance-teams" element={<ModuleGuard moduleId="masters.maintenance-teams"><MaintenanceTeamsMaster /></ModuleGuard>} />

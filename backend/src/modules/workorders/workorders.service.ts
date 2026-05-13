@@ -16,6 +16,8 @@ import { enforcePlantScope, resolvePlantFilter, resolveScopedPlantId } from '../
 import type { GenericRecord, ListResult } from '../_core/crud.types';
 import { CrudService } from '../_core/crud.service';
 import { notifyBreakdownWorkOrderRaised } from '../amc/amc.helpers';
+import { sendNewWorkOrderEmails, sendWorkOrderAssignedEmails } from '../../services/notification-helper';
+import { isMailConfigured } from '../../services/mail.service';
 import { applySpareUsageDelta, formatSpareUsageSummary, normalizeSpareUsage } from '../inventory/spare-consumption';
 import { ensureDefaultWorkOrderMasters } from '../workOrderMasters/work-order-master.helpers';
 import { normalizeWorkOrderMasterCode, type WorkOrderMasterOptionType } from '../workOrderMasters/work-order-master.defaults';
@@ -770,6 +772,26 @@ class WorkOrdersService extends CrudService {
 
     await notifyBreakdownWorkOrderRaised(String(createdWorkOrder.id));
 
+    if (isMailConfigured()) {
+      const woData = {
+        woId: String(createdWorkOrder.id),
+        woNumber: String(createdWorkOrder.wo_number ?? payload.wo_number),
+        assetId: typeof payload.asset_id === 'string' ? payload.asset_id : (typeof createdWorkOrder.asset_id === 'string' ? createdWorkOrder.asset_id : undefined),
+        plantId: typeof payload.plant_id === 'string' ? payload.plant_id : undefined,
+        priority: String(payload.priority ?? 'MEDIUM'),
+        problemDescription: String(payload.problem_description ?? ''),
+        location: String(payload.reported_location ?? ''),
+        assignedTeamId: assignedTeam?.id,
+        createdTime: new Date().toLocaleString(),
+      };
+
+      sendNewWorkOrderEmails(woData, payload.raised_by as string | null | undefined).catch(() => {});
+
+      if (assignedTeam) {
+        sendWorkOrderAssignedEmails(woData, assignedTeam.id).catch(() => {});
+      }
+    }
+
     return createdWorkOrder;
   }
 
@@ -1373,6 +1395,22 @@ class WorkOrdersService extends CrudService {
         );
       }
 
+      if (isMailConfigured() && !followUpRequired) {
+        sendWorkOrderCompletedEmails(
+          {
+            woId: String(existing.id),
+            woNumber: String(existing.wo_number),
+            assetId: existing.asset_id,
+            plantId: existing.plant_id,
+            priority: String(existing.priority ?? 'MEDIUM'),
+            problemDescription: existing.problem_description,
+            location: existing.reported_location,
+          },
+          existing.raised_by,
+          existing.assigned_to,
+        ).catch(() => {});
+      }
+
       return updated;
     });
   }
@@ -1440,6 +1478,22 @@ class WorkOrdersService extends CrudService {
         })),
         manager,
       );
+
+      if (isMailConfigured()) {
+        sendWorkOrderClosedEmails(
+          {
+            woId: String(existing.id),
+            woNumber: String(existing.wo_number),
+            assetId: existing.asset_id,
+            plantId: existing.plant_id,
+            priority: String(existing.priority ?? 'MEDIUM'),
+            problemDescription: existing.problem_description,
+            location: existing.reported_location,
+          },
+          existing.raised_by,
+          existing.assigned_to,
+        ).catch(() => {});
+      }
 
       return updated;
     });

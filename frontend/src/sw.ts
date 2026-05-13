@@ -99,37 +99,139 @@ self.addEventListener("push", (event) => {
   if (!event.data) return;
   try {
     const data = event.data.json();
+    const tag = data.tag || data.id || `cmms-${Date.now()}`;
     const options: NotificationOptions = {
       body: data.body || data.message || "",
       icon: data.icon || "/jkfenner/jkfenner-logo.png",
       badge: data.badge || "/jkfenner/jkfenner-favicon.svg",
-      tag: data.tag || data.id || "cmms-push",
-      data: { url: data.url || data.link || "/" },
+      tag,
+      data: {
+        url: data.url || data.link || "/",
+        action: data.action || "open",
+        woId: data.woId || null,
+        notificationId: data.notificationId || null,
+        timestamp: Date.now(),
+      },
       vibrate: [200, 100, 200],
       requireInteraction: true,
+      silent: data.silent || false,
+      renotify: true,
+      actions: [
+        { action: "open", title: "View Details" },
+        { action: "dismiss", title: "Dismiss" },
+      ],
     };
+
     event.waitUntil(
-      self.registration.showNotification(data.title || "CMMS", options)
+      (async () => {
+        await self.registration.showNotification(data.title || "CMMS", options);
+        try {
+          if ("setAppBadge" in navigator && "serviceWorker" in navigator) {
+            const badgeCount = await getUnreadNotificationCount();
+            await navigator.setAppBadge(badgeCount);
+          }
+        } catch {
+          // Badge API not supported
+        }
+      })()
     );
   } catch {
     const text = event.data.text();
     event.waitUntil(
-      self.registration.showNotification("CMMS", { body: text })
+      self.registration.showNotification("CMMS", {
+        body: text,
+        badge: "/jkfenner/jkfenner-favicon.svg",
+        icon: "/jkfenner/jkfenner-logo.png",
+      })
     );
   }
 });
 
+async function getUnreadNotificationCount(): Promise<number> {
+  try {
+    const cache = await caches.open("app-shell-pages");
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function openOrFocusClient(url: string): Promise<void> {
+  const clients = await self.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+
+  for (const client of clients) {
+    const clientUrl = new URL(client.url);
+    const targetUrl = new URL(url, self.location.origin);
+    if (clientUrl.pathname === targetUrl.pathname && "focus" in client) {
+      await client.focus();
+      return;
+    }
+  }
+
+  await self.clients.openWindow(url);
+}
+
+async function dismissNotification(tag: string): Promise<void> {
+  const notifications = await self.registration.getNotifications({ tag });
+  notifications.forEach((n) => n.close());
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const urlToOpen = event.notification.data?.url || "/";
+
+  const data = event.notification.data || {};
+  const urlToOpen = data.url || "/";
+  const action = event.action || "open";
+
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if (client.url === urlToOpen && "focus" in client) {
-          return client.focus();
+    (async () => {
+      try {
+        if ("clearAppBadge" in navigator) {
+          await navigator.clearAppBadge();
         }
+      } catch {
+        // Badge API not supported
       }
-      return self.clients.openWindow(urlToOpen);
-    })
+
+      if (action === "dismiss") {
+        return;
+      }
+
+      if (action === "open" && data.woId) {
+        await openOrFocusClient(`/work-orders?id=${data.woId}`);
+        return;
+      }
+
+      await openOrFocusClient(urlToOpen);
+    })()
   );
+});
+
+self.addEventListener("notificationclose", (event) => {
+  const tag = event.notification.tag;
+  event.waitUntil(dismissNotification(tag));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "CLEAR_BADGE") {
+    if ("clearAppBadge" in navigator) {
+      navigator.clearAppBadge().catch(() => {});
+    }
+  }
+});
+
+self.addEventListener("sync", (event) => {
+  if (event.tag === "cmms-mobile-sync") {
+    event.waitUntil(
+      (async () => {
+        const clients = await self.clients.matchAll({ type: "window" });
+        for (const client of clients) {
+          client.postMessage({ type: "SYNC_TRIGGERED" });
+        }
+      })()
+    );
+  }
 });

@@ -100,3 +100,8 @@ export * from './rbac-meta.entity';
 export * from './org-rbac-meta.entity';
 export * from './branding-meta.entity';
 export * from './push-subscription.entity';
+export * from './email-log.entity';
+export * from './mail-queue.entity';
+export * from './escalation-history.entity';
+export * from './sla-config.entity';
+export * from './notification-settings.entity';
