@@ -278,12 +278,12 @@ brandingRouter.get('/branding/version', async (_req, res, next) => {
 brandingRouter.get('/branding/manifest', async (req, res) => {
   try {
     const parsedQuery = manifestQuerySchema.safeParse(req.query);
-    let organization: Record<string, unknown> | null = null;
+    let organization: OrganizationEntity | null = null;
     try {
       const result = parsedQuery.success
         ? await resolveBrandingForLogoRequest({ organizationId: parsedQuery.data.organizationId ?? null })
         : await resolveBrandingForLogoRequest();
-      organization = result.organization;
+      organization = result.organization ?? null;
     } catch {
       // Fall through to default manifest on any error
     }

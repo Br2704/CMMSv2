@@ -74,17 +74,21 @@ export function buildPagination(page: number, limit: number, total: number) {
   };
 }
 
-export function parseListQuery(query: Record<string, unknown>) {
+export function parseListQuery(query: Record<string, unknown>): z.infer<typeof listQuerySchema> & { includeInactive: boolean } {
   const parsed = listQuerySchema.safeParse(query);
-
-  const defaults = { page: 1, limit: 50, sort: 'created_at', order: 'DESC' as const };
 
   if (!parsed.success) {
     return {
-      ...defaults,
+      page: 1,
+      limit: 50,
       search: undefined,
-      includeInactive: false,
+      plantId: undefined,
+      departmentId: undefined,
+      moduleId: undefined,
       isActive: undefined,
+      includeInactive: false,
+      sort: 'created_at',
+      order: 'DESC',
     };
   }
 
