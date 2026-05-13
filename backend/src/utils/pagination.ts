@@ -108,8 +108,8 @@ export function parseListQuery(query: Record<string, unknown>): z.infer<typeof l
       moduleId: undefined,
       isActive: undefined,
       includeInactive: false,
-      sort: 'created_at',
-      order: 'DESC',
+      sort: undefined,
+      dateRange: undefined,
     };
   }
 

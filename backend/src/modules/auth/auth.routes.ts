@@ -617,7 +617,7 @@ async function resetLoginSecurityState(user: UserEntity, req: Request) {
 async function enforceSessionLimit(userId: string) {
   const refreshRepo = AppDataSource.getRepository(RefreshTokenEntity);
   const activeSessions = await refreshRepo.find({
-    where: { userId, revokedAt: null as unknown as null },
+    where: { userId, revokedAt: null as any },
     order: { createdAt: 'DESC' },
   });
 

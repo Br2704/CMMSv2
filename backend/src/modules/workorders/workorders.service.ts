@@ -1576,7 +1576,7 @@ class WorkOrdersService extends CrudService {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
       const status = String(existing.status ?? '').toUpperCase();
-      const cancellableStatuses = [WORKFLOW_STATUSES.RAISED, WORKFLOW_STATUSES.ASSIGNED, WORKFLOW_STATUSES.OPENED, WORKFLOW_STATUSES.TRIAGED];
+      const cancellableStatuses: readonly string[] = [WORKFLOW_STATUSES.RAISED, WORKFLOW_STATUSES.ASSIGNED, WORKFLOW_STATUSES.OPENED, WORKFLOW_STATUSES.TRIAGED];
       if (!cancellableStatuses.includes(status)) {
         conflict('Only raised, assigned, opened, or triaged work orders can be cancelled');
       }
