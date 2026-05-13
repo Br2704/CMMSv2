@@ -210,11 +210,13 @@ function excelDateValidationXml(columnIndex: number, startRow: number, endRow: n
 }
 
 function downloadExcelXml(fileName: string, xml: string) {
-  const blob = new Blob([xml], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const isXlsx = fileName.endsWith(".xlsx");
+  const mime = isXlsx ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.ms-excel";
+  const blob = new Blob([xml], { type: `${mime};charset=utf-8` });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = fileName.endsWith(".xls") ? fileName : `${fileName}.xls`;
+  anchor.download = fileName;
   document.body.appendChild(anchor);
   anchor.click();
   document.body.removeChild(anchor);

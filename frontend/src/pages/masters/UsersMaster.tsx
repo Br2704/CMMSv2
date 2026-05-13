@@ -38,12 +38,13 @@ import { FormGrid } from "@/components/layout/FormGrid";
 import { EmptyState } from "@/components/app-shell/EmptyState";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import {
+  downloadEnterpriseExcelTemplate,
   isCsvHelperRow,
   parseExcelXmlRows,
   normalizeHeaderName,
   parseCsvRows,
 } from "@/lib/import-template";
-import { parseFileContent, downloadXlsxTemplate } from "@/lib/xlsx-utils";
+import { parseFileContent } from "@/lib/xlsx-utils";
 
 type AppRole = string;
 
@@ -779,31 +780,54 @@ export default function UsersMaster() {
       return allowedRoleTargetsForCreate.includes(normalizeRoleKey(role.value));
     });
     const sampleRoleValues = latestAllowedBulkRoleOptions.map((role) => (role.value === "SUPER_ADMIN" ? "SUPERADMIN" : role.value));
-    const sampleRow = sampleRoleValues.length > 0
-      ? [[
-          `USR001`,
-          `Sample ${sampleRoleValues[0].replace(/_/g, " ")}`,
-          "sample.user@example.com",
+
+    const sampleRows = sampleRoleValues.length > 0
+      ? sampleRoleValues.map((roleValue, index) => [
+          `USR00${index + 1}`,
+          `Sample ${roleValue.replace(/_/g, " ")}`,
+          `sample.${index + 1}@example.com`,
           "TempPass@123",
-          sampleRoleValues[0],
-          plantsOptions[0]?.label || "PLANT_CODE_OR_ID",
-          departments[0]?.name || "Maintenance",
-          "+91-9000000001",
+          roleValue,
+          "PLANT_CODE_OR_ID",
+          "Maintenance",
+          `+91-90000000${String(index + 1).padStart(2, "0")}`,
           "true",
-        ]]
+        ])
       : [["USR001", "Sample User", "sample.user@example.com", "TempPass@123", "USER", "PLANT_CODE_OR_ID", "Maintenance", "+91-9000000001", "true"]];
 
-    downloadXlsxTemplate("user_bulk_upload_demo.xlsx", [
-      { key: "user_code", label: "User Code", required: true },
-      { key: "full_name", label: "Full Name", required: true },
-      { key: "email", label: "Email Address", required: true },
-      { key: "password", label: "Temporary Password", required: true },
-      { key: "role", label: "Role", required: true },
-      { key: "plant", label: "Plant", required: true },
-      { key: "department", label: "Department" },
-      { key: "phone", label: "Phone Number" },
-      { key: "is_active", label: "Active Status" },
-    ], sampleRow, "User Upload");
+    const plantValues = plantsOptions.map((plant) => plant.label || plant.value).filter(Boolean);
+    const departmentValues = departments
+      .map((department) => [department.code, department.name].filter(Boolean).join(" - "))
+      .filter(Boolean);
+
+    downloadEnterpriseExcelTemplate({
+      fileName: "user_bulk_upload_demo.xlsx",
+      title: "CMMS User Management Demo Upload Template",
+      uploadSheetName: "User Upload",
+      columns: [
+        { key: "user_code", label: "User code", required: true, example: "USR001", description: "Unique employee or login code.", width: 120 },
+        { key: "full_name", label: "Full name", required: true, example: "Sample User", description: "Display name for the user.", width: 180 },
+        { key: "email", label: "Email", required: true, example: "sample.user@example.com", format: "Valid unique email address.", width: 220 },
+        { key: "password", label: "Temporary password", required: true, example: "TempPass@123", format: PASSWORD_POLICY_MESSAGE, width: 180 },
+        { key: "role", label: "Role", required: true, example: sampleRoleValues[0] || "USER", allowedValues: sampleRoleValues, description: "Use one allowed role exactly as listed.", width: 140 },
+        { key: "plant", label: "Plant", required: true, example: plantValues[0] || "PLANT_CODE_OR_ID", allowedValues: plantValues, description: "Accepts plant code, name, or id when available.", width: 180 },
+        { key: "department", label: "Department", example: departmentValues[0] || "Maintenance", allowedValues: departmentValues, description: "Accepts department code or name.", width: 180 },
+        { key: "phone", label: "Phone", example: "+91-9000000001", format: "Optional contact number.", width: 140 },
+        { key: "is_active", label: "Status", example: "true", allowedValues: ["true", "false", "active", "inactive", "yes", "no"], description: "Defaults to true when left blank.", width: 120 },
+      ],
+      rows: sampleRows,
+      instructions: [
+        "Fill data in the User Upload sheet only.",
+        "Required columns are marked with * and highlighted.",
+        "Use dropdown values where available. Do not rename database column headers.",
+        "Save the workbook after editing the template.",
+      ],
+      referenceSections: [
+        { title: "Allowed roles", values: sampleRoleValues },
+        { title: "Plant reference", values: plantValues.length > 0 ? plantValues : ["PLANT_CODE_OR_ID"] },
+        { title: "Department reference", values: departmentValues.length > 0 ? departmentValues : ["Maintenance"] },
+      ],
+    });
     toast.success("User demo workbook downloaded (.xlsx)");
   };
 
