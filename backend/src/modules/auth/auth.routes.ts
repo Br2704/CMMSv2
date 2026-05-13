@@ -135,7 +135,7 @@ function clearAuthCookies(res: Response) {
   res.clearCookie(SESSION_COOKIE_NAME, getClearCookieOptions(getSessionCookieOptions()));
 }
 
-function buildAuthTokenPayload(accessToken: string, csrfToken?: string) {
+function buildAuthTokenPayload(accessToken: string, csrfToken?: string, refreshToken?: string) {
   return {
     accessToken,
     access_token: accessToken,
@@ -143,6 +143,12 @@ function buildAuthTokenPayload(accessToken: string, csrfToken?: string) {
       ? {
         csrfToken,
         csrf_token: csrfToken,
+      }
+      : {}),
+    ...(refreshToken
+      ? {
+        refreshToken,
+        refresh_token: refreshToken,
       }
       : {}),
   };
@@ -859,9 +865,11 @@ authRouter.post('/auth/login', authLoginRateLimiter, validateRequest({ body: log
 
     let accessToken = '';
     let csrfToken: string | undefined;
+    let refreshTokenValue: string | undefined;
     try {
       const issued = await issueTokens(user, { req, mfaVerified: user.mfaEnabled });
       accessToken = issued.accessToken;
+      refreshTokenValue = issued.refreshToken;
       csrfToken = issueCsrfToken();
       setAuthCookies(res, issued.refreshToken, csrfToken);
     } catch (error) {
@@ -910,7 +918,7 @@ authRouter.post('/auth/login', authLoginRateLimiter, validateRequest({ body: log
       logger.error({ error, route: 'POST /auth/login', userId: user.id }, 'Failed to persist auth login security event; continuing login flow');
     }
 
-    res.status(200).json(ok({ ...buildAuthTokenPayload(accessToken, csrfToken), ...me }, 'Login successful'));
+    res.status(200).json(ok({ ...buildAuthTokenPayload(accessToken, csrfToken, refreshTokenValue), ...me }, 'Login successful'));
   } catch (error) {
     logger.error(
       {

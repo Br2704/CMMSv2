@@ -40,6 +40,7 @@ const API_BASE_URL = shouldUseDevProxy
 let unauthorizedHandled = false;
 let accessTokenMemory: string | null = null;
 let csrfTokenMemory: string | null = null;
+let refreshTokenMemory: string | null = null;
 let bootstrapRefreshAttempted = false;
 const isDev = import.meta.env.DEV;
 const isTest = import.meta.env.MODE === "test";
@@ -100,6 +101,18 @@ export function setStoredCsrfToken(token: string): void {
 
 export function clearStoredCsrfToken(): void {
   csrfTokenMemory = null;
+}
+
+export function getStoredRefreshToken(): string | null {
+  return refreshTokenMemory;
+}
+
+export function setStoredRefreshToken(token: string): void {
+  refreshTokenMemory = token;
+}
+
+export function clearStoredRefreshToken(): void {
+  refreshTokenMemory = null;
 }
 
 export function setSessionBootstrapHint(): void {
@@ -218,7 +231,9 @@ async function refreshAccessToken(): Promise<boolean> {
   refreshInFlight = (async () => {
     try {
       const refreshUrl = `${API_BASE_URL}/auth/refresh`;
-      debugLog("request", { url: refreshUrl, method: "POST", hasAuthHeader: false, credentials: "include" });
+      const storedRefreshToken = getStoredRefreshToken();
+      const body = storedRefreshToken ? { refreshToken: storedRefreshToken } : {};
+      debugLog("request", { url: refreshUrl, method: "POST", hasAuthHeader: false, credentials: "include", hasBodyToken: !!storedRefreshToken });
       const response = await fetch(refreshUrl, {
         method: "POST",
         headers: {
@@ -227,7 +242,7 @@ async function refreshAccessToken(): Promise<boolean> {
         },
         credentials: "include",
         cache: "no-store",
-        body: JSON.stringify({}),
+        body: JSON.stringify(body),
       });
       debugLog("response", { url: refreshUrl, status: response.status });
 

@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -42,9 +42,18 @@ export function FormDialog({
   submitDisabled = false,
   size = "md",
 }: FormDialogProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={`${sizeClasses[size]} w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-4 sm:p-6`}>
+      <DialogContent
+        ref={contentRef}
+        className={`${sizeClasses[size]} w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-4 sm:p-6`}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          requestAnimationFrame(() => contentRef.current?.focus());
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}

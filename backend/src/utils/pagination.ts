@@ -75,16 +75,27 @@ export function buildPagination(page: number, limit: number, total: number) {
 }
 
 export function parseListQuery(query: Record<string, unknown>) {
-  const parsed = listQuerySchema.parse(query);
+  const parsed = listQuerySchema.safeParse(query);
+
+  const defaults = { page: 1, limit: 50, sort: 'created_at', order: 'DESC' as const };
+
+  if (!parsed.success) {
+    return {
+      ...defaults,
+      search: undefined,
+      includeInactive: false,
+      isActive: undefined,
+    };
+  }
 
   const includeInactive =
-    parsed.includeInactive === true ||
-    (parsed.isActive !== undefined && parsed.isActive === false);
+    parsed.data.includeInactive === true ||
+    (parsed.data.isActive !== undefined && parsed.data.isActive === false);
 
   return {
-    ...parsed,
+    ...parsed.data,
     includeInactive,
-    search: parsed.search && parsed.search.length > 0 ? parsed.search : undefined,
+    search: parsed.data.search && parsed.data.search.length > 0 ? parsed.data.search : undefined,
   };
 }
 

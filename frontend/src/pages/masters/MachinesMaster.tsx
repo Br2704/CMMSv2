@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Plus, Search, Edit, Trash2, Cog, Eye, QrCode, RefreshCcw, Download, Printer, ImagePlus, Image as ImageIcon, Upload, Gauge } from "lucide-react";
-import { toast } from "sonner";
 import BackButton from "@/components/masters/BackButton";
 import HierarchyBreadcrumb from "@/components/masters/HierarchyBreadcrumb";
 import { FormDialog } from "@/components/shared/FormDialog";
@@ -39,7 +38,6 @@ import { createModule, listModules, type MachineModule } from "@/api/modules";
 import { listVendors, type Vendor } from "@/api/vendors";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { EmptyState } from "@/components/app-shell/EmptyState";
-import { FilterToolbar } from "@/components/app-shell/FilterToolbar";
 import { PageHeader } from "@/components/app-shell/PageHeader";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import { PageShell } from "@/components/layout/PageShell";
@@ -952,10 +950,6 @@ export default function MachinesMaster() {
     }
   };
 
-  const handleShowMachineImportInstructions = () => {
-    toast.info("Machine import: download the blank or demo Excel file, fill Machine Upload, keep headers unchanged, use dropdown/reference values, then upload the saved .xls or CSV file.");
-  };
-
   const handleDownloadMachineTemplate = async () => {
     const latestTemplateOptions = (await fetchAssetTemplateOptions()) || assetTemplateOptions;
     const allowedTypes = latestTemplateOptions.types;
@@ -1729,14 +1723,11 @@ export default function MachinesMaster() {
                 <Upload className="h-4 w-4" />
                 {bulkUploading ? "Uploading..." : "Bulk Upload Machines"}
               </Button>
-              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={() => void handleDownloadMachineTemplate()}>
+              <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => void handleDownloadMachineTemplate()}>
                 <Download className="h-4 w-4" />
-                Demo File
+                Demo
               </Button>
-              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={handleShowMachineImportInstructions}>
-                View Instructions
-              </Button>
-              <Button onClick={handleAdd} className="w-full gap-2 gradient-primary text-primary-foreground shadow-glow sm:w-auto">
+              <Button onClick={handleAdd} className="gap-2" size="sm">
                 <Plus className="h-4 w-4" />
                 Add Machine
               </Button>
@@ -1745,72 +1736,65 @@ export default function MachinesMaster() {
         }
       />
       <Card className="shadow-card">
-        <CardContent className="py-4">
-          <HierarchyBreadcrumb currentLevel="machine" />
+        <CardContent className="py-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <HierarchyBreadcrumb currentLevel="machine" />
+            <div className="flex items-center gap-2 text-sm text-muted-foreground shrink-0">
+              <Cog className="h-4 w-4" />
+              <span className="font-medium">{filtered.length}</span> equipment
+            </div>
+          </div>
         </CardContent>
       </Card>
-      <FilterToolbar
-        left={
-          <CardTitle className="text-base sm:text-lg font-semibold flex items-center gap-2">
-            <Cog className="h-5 w-5 text-primary" />
-            Equipment ({filtered.length})
-          </CardTitle>
-        }
-        right={
-          <>
-            {canSelectPlant && (
-              <SelectField
-                label=""
-                value={selectedPlant}
-                onChange={(value) => {
-                  setSelectedPlant(value);
-                  setSelectedDepartmentFilter("all");
-                  setSelectedModuleFilter("all");
-                }}
-                options={plantsOptions}
-                placeholder="Select plant"
-                className="w-full sm:w-[180px] min-w-[160px] flex-shrink-0"
-              />
-            )}
-            <SelectField
-              label=""
-              value={selectedDepartmentFilter}
-              onChange={(value) => {
-                setSelectedDepartmentFilter(value);
-                setSelectedModuleFilter("all");
-              }}
-              options={[{ value: "all", label: "All Departments" }, ...departmentFilterOptions]}
-              className="w-full sm:w-[220px] min-w-[180px] flex-shrink-0"
-            />
-            <SelectField
-              label=""
-              value={selectedModuleFilter}
-              onChange={setSelectedModuleFilter}
-              options={[{ value: "all", label: "All Modules" }, ...moduleFilterOptions]}
-              className="w-full sm:w-[220px] min-w-[180px] flex-shrink-0"
-            />
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
-            </div>
-            <SelectField
-              label=""
-              value={categoryFilter}
-              onChange={setCategoryFilter}
-              options={[
-                { value: "all", label: "All" },
-                { value: "MACHINE", label: "Machine" },
-                { value: "UTILITY", label: "Utility" },
-              ]}
-              className="w-full sm:w-[160px] min-w-[140px] flex-shrink-0"
-            />
-          </>
-        }
-      />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
+        {canSelectPlant && (
+          <SelectField
+            label=""
+            value={selectedPlant}
+            onChange={(value) => {
+              setSelectedPlant(value);
+              setSelectedDepartmentFilter("all");
+              setSelectedModuleFilter("all");
+            }}
+            options={plantsOptions}
+            placeholder="Plant"
+            className="w-full sm:w-[160px]"
+          />
+        )}
+        <SelectField
+          label=""
+          value={selectedDepartmentFilter}
+          onChange={(value) => {
+            setSelectedDepartmentFilter(value);
+            setSelectedModuleFilter("all");
+          }}
+          options={[{ value: "all", label: "All Departments" }, ...departmentFilterOptions]}
+          className="w-full sm:w-[180px]"
+        />
+        <SelectField
+          label=""
+          value={selectedModuleFilter}
+          onChange={setSelectedModuleFilter}
+          options={[{ value: "all", label: "All Modules" }, ...moduleFilterOptions]}
+          className="w-full sm:w-[180px]"
+        />
+        <SelectField
+          label=""
+          value={categoryFilter}
+          onChange={setCategoryFilter}
+          options={[
+            { value: "all", label: "All Types" },
+            { value: "MACHINE", label: "Machine" },
+            { value: "UTILITY", label: "Utility" },
+          ]}
+          className="w-full sm:w-[140px]"
+        />
+        <div className="relative flex-1 min-w-[160px] sm:max-w-xs">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input placeholder="Search machines..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-9 pl-9" />
+        </div>
+      </div>
       <Card className="shadow-card">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base sm:text-lg font-semibold">Machine List</CardTitle>
-        </CardHeader>
         <CardContent>
           {loading ? (<TableSkeleton />) : canSelectPlant && !selectedPlant ? (<EmptyState title="Select a plant" description="Choose a plant to view machine data." />) : filtered.length === 0 ? (<EmptyState title="No machines found" description="Add your first machine record to start work orders and logs." actionLabel={canManage ? "Add Machine" : undefined} onAction={canManage ? handleAdd : undefined} />) : (
             <ResponsiveTable

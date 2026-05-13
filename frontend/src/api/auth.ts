@@ -1,11 +1,13 @@
 import {
   clearStoredCsrfToken,
   clearStoredAccessToken,
+  clearStoredRefreshToken,
   clearSessionBootstrapHint,
   httpRequest,
   setSessionBootstrapHint,
   setStoredCsrfToken,
   setStoredAccessToken,
+  setStoredRefreshToken,
 } from "@/api/http";
 
 export interface MeResponse {
@@ -91,7 +93,10 @@ export async function login(input: LoginInput): Promise<MeResponse> {
   if (response.data.csrfToken) {
     setStoredCsrfToken(response.data.csrfToken);
   }
-  const { accessToken: _ignored, csrfToken: _csrfIgnored, ...me } = response.data;
+  if ((response.data as any).refreshToken) {
+    setStoredRefreshToken((response.data as any).refreshToken);
+  }
+  const { accessToken: _ignored, csrfToken: _csrfIgnored, refreshToken: _rtIgnored, ...me } = response.data;
   return me;
 }
 
@@ -126,6 +131,7 @@ export async function logout(): Promise<void> {
   } finally {
     clearStoredAccessToken();
     clearStoredCsrfToken();
+    clearStoredRefreshToken();
     clearSessionBootstrapHint();
   }
 }
