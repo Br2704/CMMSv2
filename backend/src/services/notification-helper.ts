@@ -1,8 +1,7 @@
 import { AppDataSource } from '../database/data-source';
 import { UserEntity, UserRoleEntity, ProfileEntity, AssetEntity, MaintenanceTeamEntity } from '../database/entities';
-import { enqueueMail, isMailConfigured } from './mail.service';
+import { enqueueMail, enqueueBulkMail, isMailConfigured } from './mail.service';
 import { buildMail } from './mail-templates';
-import { Not } from 'typeorm';
 
 export interface WoNotificationData {
   woId: string;
@@ -120,30 +119,17 @@ export async function sendNewWorkOrderEmails(
 
   const { subject, html } = buildMail({ template: 'newWorkOrder', data: templateData as any });
 
-  const mailEntries = Array.from(emails).map((recipient) => ({
-    recipient,
-    subject,
-    htmlBody: html,
-    templateName: 'newWorkOrder',
-    templateData: templateData as Record<string, unknown>,
-    woId: data.woId,
-    woNumber: data.woNumber,
-    eventType: 'WORK_ORDER_CREATED',
-    priority: data.priority === 'CRITICAL' ? 2 : data.priority === 'HIGH' ? 1 : 0,
-  }));
-
-  await AppDataSource.getRepository('MailQueueEntity' as any).save(
-    mailEntries.map((e) => ({
-      recipient: e.recipient,
-      subject: e.subject,
-      htmlBody: e.htmlBody,
-      status: 'PENDING',
-      templateName: e.templateName,
-      templateData: e.templateData,
-      woId: e.woId,
-      woNumber: e.woNumber,
-      eventType: e.eventType,
-      priority: e.priority,
+  await enqueueBulkMail(
+    Array.from(emails).map((recipient) => ({
+      recipient,
+      subject,
+      htmlBody: html,
+      templateName: 'newWorkOrder',
+      templateData: templateData as Record<string, unknown>,
+      woId: data.woId,
+      woNumber: data.woNumber,
+      eventType: 'WORK_ORDER_CREATED',
+      priority: data.priority === 'CRITICAL' ? 2 : data.priority === 'HIGH' ? 1 : 0,
     })),
   );
 }
@@ -159,18 +145,18 @@ export async function sendWorkOrderAssignedEmails(
 
   const { subject, html } = buildMail({ template: 'workOrderAssigned', data: templateData as any });
 
-  const mailEntries = emails.map((recipient) => ({
-    recipient,
-    subject,
-    htmlBody: html,
-    templateName: 'workOrderAssigned',
-    templateData: templateData as Record<string, unknown>,
-    woId: data.woId,
-    woNumber: data.woNumber,
-    eventType: 'WORK_ORDER_ASSIGNED',
-  }));
-
-  await AppDataSource.getRepository('MailQueueEntity' as any).save(mailEntries);
+  await enqueueBulkMail(
+    emails.map((recipient) => ({
+      recipient,
+      subject,
+      htmlBody: html,
+      templateName: 'workOrderAssigned',
+      templateData: templateData as Record<string, unknown>,
+      woId: data.woId,
+      woNumber: data.woNumber,
+      eventType: 'WORK_ORDER_ASSIGNED',
+    })),
+  );
 }
 
 export async function sendWorkOrderCompletedEmails(

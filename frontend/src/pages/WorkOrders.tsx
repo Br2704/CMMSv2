@@ -8,7 +8,8 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { format, formatDistanceToNow, subHours } from "date-fns";
 import {
   Plus, Search, Eye, MoreHorizontal, Play, CheckCircle, Loader2, RefreshCw,
-  ClipboardList, Clock, CheckSquare, AlertTriangle, Send, Wrench, QrCode
+  ClipboardList, Clock, CheckSquare, AlertTriangle, Send, Wrench, QrCode,
+  Bell, BellOff, History, XCircle
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -41,7 +42,9 @@ import { listWorkOrderTeamMappings, type WorkOrderTeamMapping } from "@/api/work
 import { listMaintenanceTeams } from "@/api/maintenanceTeams";
 import {
   approveWorkOrder,
+  cancelWorkOrder,
   createWorkOrder,
+  listWorkOrderActivity,
   rejectWorkOrder,
   startWorkOrder,
   submitWorkOrderForApproval,
@@ -144,6 +147,7 @@ function getCloseDraftStorageKey(workOrderId: string) {
 
 function getStatusVariant(status: string) {
   if (status === "CLOSED") return "completed" as const;
+  if (status === "CANCELLED") return "error" as const;
   if (status === "IN_PROGRESS") return "in_progress" as const;
   if (status === "USER_VERIFICATION") return "critical" as const;
   if (status === "APPROVAL_PENDING") return "critical" as const;
@@ -417,100 +421,15 @@ export default function WorkOrders() {
   });
   const [closeAttachments, setCloseAttachments] = useState<PhotoAttachment[]>([]);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
-  const [reviewTargetWO, setReviewTargetWO] = useState<any>(null);
   const [reviewMode, setReviewMode] = useState<"approve" | "reject">("approve");
   const [reviewData, setReviewData] = useState(() => ({ ...EMPTY_REVIEW_DATA }));
-  const [photoAttachments, setPhotoAttachments] = useState<PhotoAttachment[]>([]);
-  const raiseFileInputRef = useRef<HTMLInputElement | null>(null);
-  const closeFileInputRef = useRef<HTMLInputElement | null>(null);
-  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
-  const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const cameraStreamRef = useRef<MediaStream | null>(null);
-  const [isCameraDialogOpen, setIsCameraDialogOpen] = useState(false);
-  const [cameraTarget, setCameraTarget] = useState<"RAISE" | "CLOSE" | null>(null);
-  const [cameraError, setCameraError] = useState("");
-
-  // Raise form
-  const [formData, setFormData] = useState(() => getInitialRaiseFormData(user?.plantId || ""));
-
-  const { data: hierarchyData, isLoading: isHierarchyLoading } = useQuery({
-    queryKey: ["work_order_raise_hierarchy", userIsSuperAdmin],
-    queryFn: async () => {
-      const [plantsResponse, departmentsResponse, modulesResponse] = await Promise.all([
-        userIsSuperAdmin
-          ? listPlants({ page: 1, limit: 500, includeInactive: true })
-          : Promise.resolve({ data: [] as Plant[] }),
-        listDepartments({ page: 1, limit: 1000, includeInactive: true }),
-        listModules({ page: 1, limit: 1000, includeInactive: true }),
-      ]);
-
-      return {
-        plants: plantsResponse.data || [],
-        departments: departmentsResponse.data || [],
-        modules: modulesResponse.data || [],
-      };
-    },
-  });
-
-  const plants = hierarchyData?.plants || [];
-  const departments = hierarchyData?.departments || [];
-  const modules = hierarchyData?.modules || [];
-  const { data: workOrderConfigData, isLoading: isWorkOrderConfigLoading } = useQuery({
-    queryKey: ["work_order_config_options", userIsSuperAdmin ? "all" : user?.plantId || "none"],
-    enabled: userIsSuperAdmin || Boolean(user?.plantId),
-    queryFn: async () => {
-      const [mastersResponse, mappingsResponse] = await Promise.all([
-        listWorkOrderMasters({
-          page: 1,
-          limit: 2000,
-          includeInactive: false,
-          ...(userIsSuperAdmin ? {} : { plantId: user?.plantId || "" }),
-        }),
-        listWorkOrderTeamMappings({
-          page: 1,
-          limit: 2000,
-          ...(userIsSuperAdmin ? {} : { plantId: user?.plantId || "" }),
-        }),
-      ]);
-
-      return {
-        masters: mastersResponse.data || [],
-        mappings: mappingsResponse.data || [],
-      };
-    },
-  });
-  const workOrderMasters = workOrderConfigData?.masters || [];
-  const workOrderTeamMappings = workOrderConfigData?.mappings || [];
-  const masterWorkOrderLabels = useMemo(() => {
-    const map = new Map<string, string>();
-    workOrderMasters
-      .filter((item) => item.isActive)
-      .sort(sortWorkOrderMasters)
-      .forEach((item) => {
-        const normalizedCode = normalizeWorkOrderCode(item.code);
-        const scopedKey = `${item.plantId || ""}:${item.optionType}:${normalizedCode}`;
-        const genericKey = `*:${item.optionType}:${normalizedCode}`;
-        if (!map.has(scopedKey)) {
-          map.set(scopedKey, item.label);
-        }
-        if (!map.has(genericKey)) {
-          map.set(genericKey, item.label);
-        }
-      });
-    return map;
-  }, [workOrderMasters]);
-  const resolveWorkOrderLabel = (
-    optionType: WorkOrderMasterOptionType,
-    code: string | null | undefined,
-    plantId?: string | null,
-  ) => {
-    if (!code) return "-";
-    const normalizedCode = normalizeWorkOrderCode(code);
-    return (
-      masterWorkOrderLabels.get(`${plantId || ""}:${optionType}:${normalizedCode}`) ||
-      masterWorkOrderLabels.get(`*:${optionType}:${normalizedCode}`) ||
-      humanizeWorkOrderCode(normalizedCode)
-    );
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  const reviewRequiresComments = useMemo(
+    () => selectedWO !== null && isAdmin(user) && !isOwnedByCurrentUser(selectedWO.raised_by),
+    [selectedWO, user],
+  );
   };
   const filterCategoryOptions = useMemo(
     () => getUnionWorkOrderOptions(workOrderMasters, "CATEGORY"),
@@ -1576,6 +1495,13 @@ export default function WorkOrders() {
     { key: "category", header: "Category", render: (wo: any) => resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id), hideOnMobile: true },
     { key: "priority", header: "Priority", render: (wo: any) => <StatusBadge variant={wo.priority === "CRITICAL" ? "critical" : wo.priority === "HIGH" ? "warning" : "default"}>{wo.priority}</StatusBadge> },
     { key: "status", header: "Status", render: (wo: any) => <StatusBadge status={wo.status} variant={getStatusVariant(wo.status)} /> },
+    { key: "escalation", header: "Alert", hideOnMobile: true, render: (wo: any) => (
+      <div className="flex items-center gap-1">
+        {wo.escalation_level > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"><Bell className="h-3 w-3" />L{wo.escalation_level}</span>}
+        {wo.sla_due_at && new Date(wo.sla_due_at) < new Date() && !["CLOSED", "CANCELLED"].includes(wo.status) && <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700"><Clock className="h-3 w-3" />SLA</span>}
+        {!wo.escalation_level && (!wo.sla_due_at || new Date(wo.sla_due_at) >= new Date()) && <span className="text-xs text-muted-foreground">—</span>}
+      </div>
+    )},
     { key: "raised", header: "Raised", hideOnMobile: true, render: (wo: any) => (<div><p className="text-sm">{format(new Date(wo.created_at), "dd MMM yyyy")}</p><p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(wo.created_at), { addSuffix: true })}</p></div>) },
     {
       key: "actions", header: "Actions", className: "text-right", render: (wo: any) => (
@@ -1597,6 +1523,9 @@ export default function WorkOrders() {
             )}
             {!canReviewWO(wo) && ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status) && (
               <DropdownMenuItem disabled className="text-muted-foreground">Awaiting raiser verification</DropdownMenuItem>
+            )}
+            {(["RAISED", "ASSIGNED", "OPENED", "TRIAGED"].includes(wo.status) && canExecuteWO(wo)) && (
+              <DropdownMenuItem onClick={() => { setSelectedWO(wo); setIsCancelDialogOpen(true); }} className="text-destructive"><XCircle className="mr-2 h-4 w-4" />Cancel Work Order</DropdownMenuItem>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -2165,6 +2094,12 @@ export default function WorkOrders() {
               {selectedWO.closed_at && <DetailRow label="Completed" value={format(new Date(selectedWO.closed_at), "dd MMM yyyy HH:mm")} />}
               {selectedWO.remarks && <DetailRow label="Remarks" value={selectedWO.remarks} />}
             </DetailSection>
+            <DetailSection title="Notifications & Alerts">
+              <DetailRow label="Escalation Level" value={selectedWO.escalation_level ? <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"><Bell className="h-3 w-3" />Level {selectedWO.escalation_level}</span> : <span className="text-xs text-muted-foreground">None</span>} />
+              <DetailRow label="SLA Due" value={selectedWO.sla_due_at ? <span className={`text-xs ${new Date(selectedWO.sla_due_at) < new Date() && !["CLOSED", "CANCELLED"].includes(selectedWO.status) ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>{format(new Date(selectedWO.sla_due_at), "dd MMM yyyy HH:mm")}{new Date(selectedWO.sla_due_at) < new Date() && !["CLOSED", "CANCELLED"].includes(selectedWO.status) ? " (Overdue)" : ""}</span> : <span className="text-xs text-muted-foreground">Not set</span>} />
+              <DetailRow label="Email Notifications" value={selectedWO.email_notified ? <span className="inline-flex items-center gap-1 text-xs text-green-600"><Bell className="h-3 w-3" />Sent</span> : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><BellOff className="h-3 w-3" />Pending</span>} />
+            </DetailSection>
+            <ActivityTimeline workOrderId={selectedWO.id} />
           </div>
         )}
       </ViewDialog>
@@ -2380,6 +2315,120 @@ export default function WorkOrders() {
           required={reviewMode === "reject" || reviewRequiresComments}
         />
       </FormDialog>
+
+      <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Cancel Work Order</DialogTitle><DialogDescription>This action cannot be undone. The work order will be marked as cancelled.</DialogDescription></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Reason for cancellation <span className="text-red-500">*</span></Label>
+              <textarea
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder="Explain why this work order is being cancelled..."
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsCancelDialogOpen(false); setCancelReason(""); }}>Keep Work Order</Button>
+            <Button
+              variant="destructive"
+              disabled={!cancelReason.trim() || cancelling}
+              onClick={async () => {
+                if (!selectedWO || !cancelReason.trim()) return;
+                setCancelling(true);
+                try {
+                  await cancelWorkOrder(selectedWO.id, { reason: cancelReason.trim() });
+                  toast.success("Work order cancelled");
+                  setIsCancelDialogOpen(false);
+                  setCancelReason("");
+                  await refetch();
+                } catch (error: any) {
+                  toast.error(error?.message || "Failed to cancel work order");
+                } finally {
+                  setCancelling(false);
+                }
+              }}
+            >
+              {cancelling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <XCircle className="h-4 w-4 mr-2" />}
+              {cancelling ? "Cancelling..." : "Cancel Work Order"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageShell>
+  );
+}
+
+/** Inline activity timeline shown inside the work order view dialog. */
+function ActivityTimeline({ workOrderId }: { workOrderId: string }) {
+  const [events, setEvents] = useState<Array<{ event_type: string; notes: string | null; occurred_at: string; actor_name?: string }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    listWorkOrderActivity(workOrderId, { limit: 20 })
+      .then((res: any) => {
+        if (!cancelled) setEvents(res?.data?.activity ?? res?.data ?? []);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [workOrderId]);
+
+  const eventLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      RAISED: 'Raised', ASSIGNED: 'Assigned', ACCEPTED: 'Accepted', WORK_STARTED: 'Work Started',
+      TRIAGED: 'Triaged', COMMENT: 'Comment', INTERNAL_NOTE: 'Internal Note',
+      USER_VERIFICATION_REQUESTED: 'Sent for Verification', USER_CONFIRMED_CLOSE: 'Closed',
+      ADMIN_FORCE_CLOSED: 'Force Closed', USER_REOPENED: 'Reopened', ADMIN_REOPENED: 'Admin Reopened',
+      FOLLOW_UP_ROUTED: 'Follow-up Routed', WORK_ORDER_ESCALATED: 'Escalated',
+      USER_VERIFICATION_REMINDER_6H: '6h Reminder', USER_VERIFICATION_REMINDER_24H: '24h Reminder',
+      AUTO_CLOSED_SLA: 'Auto-Closed',
+    };
+    return labels[type] || type;
+  };
+
+  const eventIcon = (type: string) => {
+    if (type.includes('ESCALATED') || type.includes('REMINDER')) return Bell;
+    if (type.includes('CLOSE') || type === 'USER_CONFIRMED_CLOSE') return CheckCircle;
+    if (type.includes('REOPEN') || type === 'REJECTED') return AlertTriangle;
+    if (type === 'WORK_STARTED') return Play;
+    if (type === 'COMMENT') return Clock;
+    return History;
+  };
+
+  return (
+    <div className="space-y-3">
+      <h4 className="text-sm font-semibold flex items-center gap-2 border-b pb-2"><History className="h-4 w-4" />Activity Timeline</h4>
+      {loading ? (
+        <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : events.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-4 text-center">No activity recorded yet</p>
+      ) : (
+        <div className="space-y-1 max-h-64 overflow-y-auto">
+          {events.map((ev, i) => {
+            const Icon = eventIcon(ev.event_type);
+            return (
+              <div key={i} className="flex gap-3 py-1.5 border-b border-dashed last:border-0">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted">
+                  <Icon className="h-3 w-3 text-muted-foreground" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium">{eventLabel(ev.event_type)}</p>
+                  {ev.notes && <p className="text-xs text-muted-foreground truncate">{ev.notes}</p>}
+                  <p className="text-[10px] text-muted-foreground/60">
+                    {ev.occurred_at ? format(new Date(ev.occurred_at), "dd MMM HH:mm") : ''}
+                    {ev.actor_name ? ` by ${ev.actor_name}` : ''}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

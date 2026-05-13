@@ -89,3 +89,9 @@ export const rejectWorkOrder = (id: string, payload: { comments: string }) =>
     method: 'POST',
     body: JSON.stringify(payload),
   });
+
+export const cancelWorkOrder = (id: string, payload: { reason: string }) =>
+  httpRequest<{ success: true; data: WorkOrder }>(`/work-orders/${id}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });

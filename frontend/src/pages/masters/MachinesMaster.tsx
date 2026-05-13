@@ -44,6 +44,7 @@ import { PageShell } from "@/components/layout/PageShell";
 import { FormGrid } from "@/components/layout/FormGrid";
 import {
   downloadEnterpriseExcelTemplate,
+  findHeaderRowFromRows,
   isCsvHelperRow,
   normalizeHeaderName,
   parseExcelXmlRows,
@@ -943,7 +944,12 @@ export default function MachinesMaster() {
   const handleBulkMachineFileChange = async (file: File | null) => {
     if (!file) return;
     try {
-      const rows = await parseFileContent(file);
+      const rawRows = await parseFileContent(file);
+      const rows = findHeaderRowFromRows(rawRows, "machine_code");
+      if (rows.length < 2) {
+        toast.error("Upload file must include a header and at least one machine row");
+        return;
+      }
       await processMachineRows(rows);
     } catch (error: any) {
       toast.error(error?.message || "Failed to read spreadsheet file");

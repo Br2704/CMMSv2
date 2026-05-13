@@ -39,6 +39,7 @@ import { EmptyState } from "@/components/app-shell/EmptyState";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import {
   downloadEnterpriseExcelTemplate,
+  findHeaderRowFromRows,
   isCsvHelperRow,
   parseExcelXmlRows,
   normalizeHeaderName,
@@ -764,7 +765,12 @@ export default function UsersMaster() {
   const handleBulkUsersFileChange = async (file: File | null) => {
     if (!file) return;
     try {
-      const rows = await parseFileContent(file);
+      const rawRows = await parseFileContent(file);
+      const rows = findHeaderRowFromRows(rawRows, "user_code");
+      if (rows.length < 2) {
+        toast.error("Upload file must include a header and at least one user row");
+        return;
+      }
       await processUserRows(rows);
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, "Failed to read spreadsheet file"));

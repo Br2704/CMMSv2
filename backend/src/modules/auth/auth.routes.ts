@@ -614,6 +614,32 @@ async function resetLoginSecurityState(user: UserEntity, req: Request) {
   await userRepo.save(user);
 }
 
+async function enforceSessionLimit(userId: string) {
+  const refreshRepo = AppDataSource.getRepository(RefreshTokenEntity);
+  const activeSessions = await refreshRepo.find({
+    where: { userId, revokedAt: null as unknown as null },
+    order: { createdAt: 'DESC' },
+  });
+
+  const maxSessions = env.MAX_CONCURRENT_SESSIONS;
+  if (activeSessions.length >= maxSessions) {
+    const sessionsToRevoke = activeSessions.slice(maxSessions - 1);
+    for (const session of sessionsToRevoke) {
+      session.revokedAt = new Date();
+      session.replacedByTokenId = null;
+    }
+    await refreshRepo.save(sessionsToRevoke);
+    await recordSecurityEvent({
+      userId,
+      eventType: 'AUTH_SESSION_LIMIT_ENFORCED',
+      severity: 'MEDIUM',
+      module: 'AUTH',
+      action: 'LOGIN',
+      message: `Revoked ${sessionsToRevoke.length} old session(s) due to concurrent session limit`,
+    });
+  }
+}
+
 async function issueTokens(
   user: UserEntity,
   options?: {
@@ -861,6 +887,12 @@ authRouter.post('/auth/login', authLoginRateLimiter, validateRequest({ body: log
       await resetLoginSecurityState(user, req);
     } catch (error) {
       logger.error({ error, route: 'POST /auth/login', userId: user.id }, 'Failed to reset login security state; continuing login flow');
+    }
+
+    try {
+      await enforceSessionLimit(user.id);
+    } catch (error) {
+      logger.error({ error, route: 'POST /auth/login', userId: user.id }, 'Failed to enforce session limit; continuing login');
     }
 
     let accessToken = '';

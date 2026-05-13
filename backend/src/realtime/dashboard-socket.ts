@@ -2,6 +2,7 @@ import type { Server as HttpServer } from 'http';
 import type { IncomingMessage } from 'http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { logger } from '../config/logger';
+import { verifyAccessToken } from '../utils/jwt';
 
 type DashboardSocketEvent =
   | {
@@ -75,8 +76,12 @@ export function startDashboardSocketServer(server: HttpServer) {
   });
 
   dashboardSocketServer.on('connection', (socket, request) => {
-    if (!isDashboardSocketAuthorized(request)) {
-      logger.warn({ path: request.url }, 'Dashboard WebSocket auth failed - allowing connection for refresh-only mode');
+    const isAuthorized = isDashboardSocketAuthorized(request);
+
+    if (!isAuthorized) {
+      logger.warn({ path: request.url }, 'Dashboard WebSocket rejected: invalid or missing token');
+      socket.close(4001, 'Unauthorized');
+      return;
     }
 
     safeSend(socket, {

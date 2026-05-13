@@ -89,6 +89,7 @@ const WORKFLOW_STATUSES = {
   APPROVAL_PENDING: 'APPROVAL_PENDING',
   REJECTED: 'REJECTED',
   CLOSED: 'CLOSED',
+  CANCELLED: 'CANCELLED',
 } as const;
 
 const WORKFLOW_MANAGED_FIELDS = new Set([
@@ -97,6 +98,9 @@ const WORKFLOW_MANAGED_FIELDS = new Set([
   'closed_at',
   'started_at',
   'resolved_at',
+  'cancelled_at',
+  'cancelled_by',
+  'cancellation_reason',
   'technician_verification',
   'safety_checklist',
   'submitted_for_approval_at',
@@ -1558,6 +1562,59 @@ class WorkOrdersService extends CrudService {
           title: 'Work Order Reopened',
           message: `${String(existing.wo_number)} was reopened. Comments: ${comments}`,
           type: 'critical',
+          link: '/work-orders',
+          woId: String(existing.id),
+        })),
+        manager,
+      );
+
+      return updated;
+    });
+  }
+
+  async cancelWorkOrder(id: string, input: { reason: string }, auth: AuthContext): Promise<GenericRecord> {
+    return AppDataSource.transaction(async (manager) => {
+      const existing = await this.loadExistingWorkOrder(id, auth, manager);
+      const status = String(existing.status ?? '').toUpperCase();
+      const cancellableStatuses = [WORKFLOW_STATUSES.RAISED, WORKFLOW_STATUSES.ASSIGNED, WORKFLOW_STATUSES.OPENED, WORKFLOW_STATUSES.TRIAGED];
+      if (!cancellableStatuses.includes(status)) {
+        conflict('Only raised, assigned, opened, or triaged work orders can be cancelled');
+      }
+
+      const now = new Date().toISOString();
+      const updated = await this.persistWorkOrderUpdate(
+        id,
+        {
+          status: WORKFLOW_STATUSES.CANCELLED,
+          cancelled_at: now,
+          cancelled_by: auth.userId,
+          cancellation_reason: input.reason,
+          closed_at: now,
+        },
+        auth,
+        { manager, allowWorkflowMutation: true, existing },
+      );
+
+      await this.writeActivityLog(
+        updated,
+        auth,
+        {
+          eventType: 'CANCELLED',
+          notes: `Work order cancelled. Reason: ${input.reason}`,
+          occurredAt: now,
+        },
+        manager,
+      );
+
+      const recipients = uniqueIds([normalizeText(existing.raised_by), normalizeText(existing.assigned_to)]).filter(
+        (userId) => userId !== auth.userId,
+      );
+      await this.createNotifications(
+        recipients.map((userId) => ({
+          userId,
+          title: 'Work Order Cancelled',
+          message: `${String(existing.wo_number)} was cancelled. Reason: ${input.reason}`,
+          type: 'info',
           link: '/work-orders',
           woId: String(existing.id),
         })),

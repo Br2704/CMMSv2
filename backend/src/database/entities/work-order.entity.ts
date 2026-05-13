@@ -122,6 +122,15 @@ export class WorkOrderEntity extends TimestampedUuidEntity {
   @Column({ name: 'technician_verification', type: 'simple-json', nullable: true })
   technicianVerification!: Record<string, unknown> | null;
 
+  @Column({ name: 'cancelled_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  cancelledAt!: Date | null;
+
+  @Column({ name: 'cancelled_by', type: 'uuid', nullable: true })
+  cancelledBy!: string | null;
+
+  @Column({ name: 'cancellation_reason', type: 'text', nullable: true })
+  cancellationReason!: string | null;
+
   @Column({ name: 'submitted_for_approval_at', type: DATETIME_COLUMN_TYPE, nullable: true })
   submittedForApprovalAt!: Date | null;
 

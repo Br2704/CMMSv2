@@ -4,6 +4,7 @@ import { DATETIME_COLUMN_TYPE, TimestampedUuidEntity } from './common';
 @Entity('security_events')
 @Index('idx_security_events_detected', ['detectedAt'])
 @Index('idx_security_events_severity_status', ['severity', 'status'])
+@Index('idx_security_events_event_type', ['eventType'])
 export class SecurityEventEntity extends TimestampedUuidEntity {
   @Column({ name: 'user_id', type: 'uuid', nullable: true })
   userId!: string | null;

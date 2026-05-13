@@ -65,6 +65,7 @@ const envSchema = z.object({
   JWT_ISSUER: z.string().default('cmms-backend'),
   JWT_AUDIENCE: z.string().default('cmms-web'),
   AUTH_SESSION_MAX_HOURS: z.coerce.number().int().positive().default(12),
+  MAX_CONCURRENT_SESSIONS: z.coerce.number().int().positive().default(5),
   LOGIN_CAPTCHA_THRESHOLD: z.coerce.number().int().positive().default(3),
   LOGIN_LOCKOUT_THRESHOLD: z.coerce.number().int().positive().default(8),
   LOGIN_LOCKOUT_MINUTES: z.coerce.number().int().positive().default(10),

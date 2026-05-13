@@ -7,242 +7,401 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { httpRequest } from '@/api/http';
 import { useToast } from '@/hooks/use-toast';
-import { Clock, Plus, Pencil, Loader2, History } from 'lucide-react';
+import {
+  Clock, Plus, Pencil, Loader2, History, ShieldAlert, AlertTriangle,
+  CheckCircle2, Gauge, ArrowUpRight, Bell, XCircle, Save, Trash2, Eye
+} from 'lucide-react';
+
+const PRIORITY_CONFIG: Record<string, { color: string; bg: string; label: string; icon: string }> = {
+  CRITICAL: { color: 'text-red-600', bg: 'bg-red-50 border-red-200', label: 'Critical', icon: '🔴' },
+  HIGH: { color: 'text-orange-600', bg: 'bg-orange-50 border-orange-200', label: 'High', icon: '🟠' },
+  MEDIUM: { color: 'text-yellow-600', bg: 'bg-yellow-50 border-yellow-200', label: 'Medium', icon: '🟡' },
+  LOW: { color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', label: 'Low', icon: '🔵' },
+};
+
+function formatMinutes(m: number): string {
+  if (m < 60) return `${m}m`;
+  if (m < 1440) return `${Math.round(m / 60)}h ${m % 60 > 0 ? `${m % 60}m` : ''}`;
+  return `${Math.round(m / 1440)}d ${Math.round((m % 1440) / 60)}h`;
+}
 
 export default function SLAConfigMaster() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [configs, setConfigs] = useState<Array<Record<string, unknown>>>([]);
   const [history, setHistory] = useState<Array<Record<string, unknown>>>([]);
-  const [activeTab, setActiveTab] = useState('config');
+  const [stats, setStats] = useState<Record<string, unknown>>({});
   const [editDialog, setEditDialog] = useState(false);
   const [editItem, setEditItem] = useState<Record<string, unknown> | null>(null);
 
   const fetchConfigs = useCallback(async () => {
     try {
-      const res = await httpRequest<{ success: true; data: Array<Record<string, unknown>> }>('/sla/config', { method: 'GET' });
+      const res = await httpRequest<{ success: true; data: Array<Record<string, unknown>> }>('/sla/config?includeInactive=true', { method: 'GET' });
       setConfigs(res.data);
     } catch { /* ignore */ }
   }, []);
 
   const fetchHistory = useCallback(async () => {
     try {
-      const res = await httpRequest<{ success: true; data: { items: Array<Record<string, unknown>> } }>('/escalation/history?page=1&limit=50', { method: 'GET' });
+      const res = await httpRequest<{ success: true; data: { items: Array<Record<string, unknown>> } }>('/escalation/history?page=1&limit=100', { method: 'GET' });
       setHistory(res.data.items);
+    } catch { /* ignore */ }
+  }, []);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await httpRequest<{ success: true; data: Record<string, unknown> }>('/sla/stats', { method: 'GET' });
+      setStats(res.data);
     } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([fetchConfigs(), fetchHistory()]).finally(() => setLoading(false));
-  }, [fetchConfigs, fetchHistory]);
+    Promise.all([fetchConfigs(), fetchHistory(), fetchStats()]).finally(() => setLoading(false));
+  }, [fetchConfigs, fetchHistory, fetchStats]);
 
   const handleSave = async () => {
     if (!editItem) return;
+    setSaving(true);
     try {
       if ((editItem as any).id) {
         await httpRequest(`/sla/config/${(editItem as any).id}`, { method: 'PUT', body: JSON.stringify(editItem) });
-        toast({ title: 'Updated' });
+        toast({ title: 'SLA rule updated' });
       } else {
         await httpRequest('/sla/config', { method: 'POST', body: JSON.stringify(editItem) });
-        toast({ title: 'Created' });
+        toast({ title: 'SLA rule created' });
       }
       setEditDialog(false);
       setEditItem(null);
+      await Promise.all([fetchConfigs(), fetchStats()]);
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Error', description: String(error) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleActive = async (item: Record<string, unknown>) => {
+    try {
+      await httpRequest(`/sla/config/${(item as any).id}`, { method: 'PUT', body: JSON.stringify({ isActive: !(item as any).isActive }) });
+      toast({ title: (item as any).isActive ? 'SLA rule deactivated' : 'SLA rule activated' });
       await fetchConfigs();
     } catch (error) {
       toast({ variant: 'destructive', title: 'Error', description: String(error) });
     }
   };
 
+  const openNew = () => {
+    setEditItem({ scope: 'GLOBAL', priority: 'MEDIUM', responseTimeMinutes: 30, acknowledgementTimeMinutes: 15, closureTimeMinutes: 480, escalation1Minutes: 30, escalation2Minutes: 60, escalation3Minutes: 120, escalation4Minutes: 240, reminderIntervalMinutes: 60, isActive: true });
+    setEditDialog(true);
+  };
+
+  const openEdit = (item: Record<string, unknown>) => {
+    setEditItem({ ...item });
+    setEditDialog(true);
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
   }
+
+  const slaComplianceRate = (stats as any).slaComplianceRate ?? 100;
+  const complianceColor = slaComplianceRate >= 90 ? 'text-green-600' : slaComplianceRate >= 70 ? 'text-orange-600' : 'text-red-600';
 
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">SLA Configuration</h1>
-          <p className="text-sm text-muted-foreground">Configure response/closure SLAs and escalation rules</p>
+          <h1 className="text-2xl font-bold tracking-tight">SLA & Escalation Engine</h1>
+          <p className="text-sm text-muted-foreground">Configure service level agreements, escalation rules, and monitor compliance</p>
         </div>
-        <Dialog open={editDialog} onOpenChange={setEditDialog}>
-          <Button onClick={() => { setEditItem({ scope: 'GLOBAL', priority: 'MEDIUM', responseTimeMinutes: 30, acknowledgementTimeMinutes: 15, closureTimeMinutes: 480, escalation1Minutes: 30, escalation2Minutes: 60, escalation3Minutes: 120, escalation4Minutes: 240, reminderIntervalMinutes: 60 }); setEditDialog(true); }}>
-            <Plus className="h-4 w-4 mr-2" />Add SLA Config
-          </Button>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader><DialogTitle>{editItem && (editItem as any).id ? 'Edit' : 'New'} SLA Configuration</DialogTitle></DialogHeader>
-            {editItem && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Scope</Label>
-                    <Select value={String((editItem as any).scope)} onValueChange={(v) => setEditItem({ ...editItem, scope: v })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="GLOBAL">Global</SelectItem>
-                        <SelectItem value="PRIORITY">By Priority</SelectItem>
-                        <SelectItem value="DEPARTMENT">By Department</SelectItem>
-                        <SelectItem value="CATEGORY">By Category</SelectItem>
-                        <SelectItem value="ASSET_CRITICALITY">By Asset Criticality</SelectItem>
-                        <SelectItem value="PLANT">By Plant</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Priority</Label>
-                    <Select value={String((editItem as any).priority)} onValueChange={(v) => setEditItem({ ...editItem, priority: v })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="CRITICAL">Critical</SelectItem>
-                        <SelectItem value="HIGH">High</SelectItem>
-                        <SelectItem value="MEDIUM">Medium</SelectItem>
-                        <SelectItem value="LOW">Low</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+        <Button onClick={openNew} size="sm"><Plus className="h-4 w-4 mr-2" />New SLA Rule</Button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="border-l-4 border-l-blue-500"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Active Rules</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{(stats as any).totalActiveRules ?? 0}</p></CardContent></Card>
+        <Card className="border-l-4 border-l-green-500"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">SLA Compliance</CardTitle></CardHeader><CardContent><p className={`text-2xl font-bold ${complianceColor}`}>{slaComplianceRate}%</p></CardContent></Card>
+        <Card className={`border-l-4 ${(stats as any).overdueWOs > 0 ? 'border-l-red-500' : 'border-l-green-500'}`}>
+          <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Overdue WOs</CardTitle></CardHeader>
+          <CardContent className="flex items-center gap-2"><p className={`text-2xl font-bold ${(stats as any).overdueWOs > 0 ? 'text-red-600' : 'text-green-600'}`}>{(stats as any).overdueWOs ?? 0}</p>{(stats as any).overdueWOs > 0 && <AlertTriangle className="h-4 w-4 text-red-500" />}</CardContent>
+        </Card>
+        <Card className={`border-l-4 ${(stats as any).escalatedWOs > 0 ? 'border-l-orange-500' : 'border-l-gray-300'}`}>
+          <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Escalated</CardTitle></CardHeader>
+          <CardContent className="flex items-center gap-2"><p className={`text-2xl font-bold ${(stats as any).escalatedWOs > 0 ? 'text-orange-600' : 'text-gray-600'}`}>{(stats as any).escalatedWOs ?? 0}</p>{(stats as any).escalatedWOs > 0 && <ArrowUpRight className="h-4 w-4 text-orange-500" />}</CardContent>
+        </Card>
+      </div>
+
+      <Tabs defaultValue="rules">
+        <TabsList>
+          <TabsTrigger value="rules"><Gauge className="h-4 w-4 mr-2" />SLA Rules</TabsTrigger>
+          <TabsTrigger value="matrix"><ShieldAlert className="h-4 w-4 mr-2" />Escalation Matrix</TabsTrigger>
+          <TabsTrigger value="history"><History className="h-4 w-4 mr-2" />Escalation History</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="rules" className="space-y-4 mt-4">
+          {configs.length === 0 ? (
+            <Card><CardContent className="flex flex-col items-center justify-center py-12 text-center"><Gauge className="h-12 w-12 text-muted-foreground mb-4" /><h3 className="text-lg font-medium">No SLA rules configured</h3><p className="text-sm text-muted-foreground mt-1">Create your first SLA rule to start tracking response and resolution times.</p><Button className="mt-4" onClick={openNew}><Plus className="h-4 w-4 mr-2" />Add SLA Rule</Button></CardContent></Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {configs.map((config) => {
+                const pc = PRIORITY_CONFIG[(config as any).priority as string] || PRIORITY_CONFIG.MEDIUM;
+                const isOverdue = false; // not computed per-rule
+                return (
+                  <Card key={String((config as any).id)} className={`${(config as any).isActive ? '' : 'opacity-60'} hover:shadow-md transition-shadow`}>
+                    <CardHeader className="pb-2 flex flex-row items-start justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs font-mono">{(config as any).scope}</Badge>
+                          {(config as any).scopeValue && <Badge variant="secondary" className="text-xs">{(config as any).scopeValue}</Badge>}
+                        </div>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <span className={pc.color}>{pc.icon}</span>
+                          <span>{pc.label}</span>
+                        </CardTitle>
+                        {(config as any).description && <CardDescription className="text-xs">{(config as any).description}</CardDescription>}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEdit(config)}><Pencil className="h-3.5 w-3.5" /></Button>
+                        <Switch checked={(config as any).isActive} onCheckedChange={() => toggleActive(config)} />
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div className="p-2 bg-blue-50 rounded-lg"><p className="font-semibold text-blue-700">{formatMinutes((config as any).responseTimeMinutes)}</p><p className="text-blue-600/70 mt-0.5">Response</p></div>
+                        <div className="p-2 bg-purple-50 rounded-lg"><p className="font-semibold text-purple-700">{formatMinutes((config as any).acknowledgementTimeMinutes)}</p><p className="text-purple-600/70 mt-0.5">Ack</p></div>
+                        <div className="p-2 bg-green-50 rounded-lg"><p className="font-semibold text-green-700">{formatMinutes((config as any).closureTimeMinutes)}</p><p className="text-green-600/70 mt-0.5">Closure</p></div>
+                      </div>
+                      <div className="mt-3 space-y-1">
+                        <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1"><Bell className="h-3 w-3" />Escalation Ladder</p>
+                        <div className="flex gap-1">
+                          {[1, 2, 3, 4].map((l) => {
+                            const mins = (config as any)[`escalation${l}Minutes`];
+                            const active = (config as any).escalation_level >= l;
+                            return (
+                              <div key={l} className={`flex-1 text-center py-1 px-1 rounded text-[10px] font-medium ${active ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
+                                L{l} {mins ? formatMinutes(mins) : '-'}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>Reminder: {formatMinutes((config as any).reminderIntervalMinutes)}</span>
+                        <span>{(config as any).isActive ? <Badge className="bg-green-100 text-green-700 text-[10px]">Active</Badge> : <Badge variant="outline" className="text-[10px]">Inactive</Badge>}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="matrix" className="mt-4">
+          <Card>
+            <CardHeader><CardTitle>Escalation Matrix</CardTitle><CardDescription>Visual overview of escalation levels across all priority tiers</CardDescription></CardHeader>
+            <CardContent>
+              <div className="rounded-lg border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[100px]">Priority</TableHead>
+                      <TableHead>Scope</TableHead>
+                      <TableHead>Response</TableHead>
+                      <TableHead>Ack</TableHead>
+                      <TableHead>Closure</TableHead>
+                      <TableHead className="text-red-600">Esc L1</TableHead>
+                      <TableHead className="text-orange-600">Esc L2</TableHead>
+                      <TableHead className="text-yellow-600">Esc L3</TableHead>
+                      <TableHead className="text-gray-600">Esc L4</TableHead>
+                      <TableHead>Reminder</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {configs.length === 0 && <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No SLA configurations</TableCell></TableRow>}
+                    {configs.map((config) => (
+                      <TableRow key={String((config as any).id)} className={!(config as any).isActive ? 'opacity-50' : ''}>
+                        <TableCell><Badge className={PRIORITY_CONFIG[(config as any).priority as string]?.bg || ''} variant="outline">{(config as any).priority}</Badge></TableCell>
+                        <TableCell className="text-xs">{(config as any).scope}{(config as any).scopeValue ? `: ${(config as any).scopeValue}` : ''}</TableCell>
+                        <TableCell className="text-xs font-mono">{formatMinutes((config as any).responseTimeMinutes)}</TableCell>
+                        <TableCell className="text-xs font-mono">{formatMinutes((config as any).acknowledgementTimeMinutes)}</TableCell>
+                        <TableCell className="text-xs font-mono">{formatMinutes((config as any).closureTimeMinutes)}</TableCell>
+                        <TableCell className="text-xs font-mono text-red-600">{formatMinutes((config as any).escalation1Minutes)}</TableCell>
+                        <TableCell className="text-xs font-mono text-orange-600">{formatMinutes((config as any).escalation2Minutes)}</TableCell>
+                        <TableCell className="text-xs font-mono text-yellow-600">{formatMinutes((config as any).escalation3Minutes)}</TableCell>
+                        <TableCell className="text-xs font-mono text-gray-600">{formatMinutes((config as any).escalation4Minutes)}</TableCell>
+                        <TableCell className="text-xs font-mono">{formatMinutes((config as any).reminderIntervalMinutes)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEdit(config)}><Pencil className="h-3.5 w-3.5" /></Button>
+                            <Switch checked={(config as any).isActive} onCheckedChange={() => toggleActive(config)} />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-4">
+          <Card>
+            <CardHeader><CardTitle>Escalation History</CardTitle><CardDescription>Log of all work order escalations and reminders</CardDescription></CardHeader>
+            <CardContent>
+              <div className="rounded-lg border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>WO #</TableHead>
+                      <TableHead>Level</TableHead>
+                      <TableHead>Trigger</TableHead>
+                      <TableHead>Triggered At</TableHead>
+                      <TableHead>Reminders</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Notified</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {history.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No escalation history</TableCell></TableRow>}
+                    {history.map((entry) => (
+                      <TableRow key={String((entry as any).id)}>
+                        <TableCell className="font-mono text-xs font-medium">{(entry as any).woNumber}</TableCell>
+                        <TableCell>
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                            (entry as any).level >= 3 ? 'bg-red-100 text-red-700' : (entry as any).level >= 2 ? 'bg-orange-100 text-orange-700' : 'bg-yellow-100 text-yellow-700'
+                          }`}>L{(entry as any).level}</span>
+                        </TableCell>
+                        <TableCell className="text-xs">{(entry as any).triggerType}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{new Date((entry as any).triggeredAt).toLocaleString()}</TableCell>
+                        <TableCell className="text-xs">{(entry as any).reminderCount > 0 ? <Badge variant="outline">{`${(entry as any).reminderCount}x`}</Badge> : '-'}</TableCell>
+                        <TableCell>{(entry as any).resolved ? <Badge className="bg-green-100 text-green-700">Resolved</Badge> : <Badge className="bg-yellow-100 text-yellow-700">Active</Badge>}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{((entry as any).notifiedUsers || []).length} users, {((entry as any).notifiedEmails || []).length} emails</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={editDialog} onOpenChange={setEditDialog}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle className="text-lg">{editItem && (editItem as any).id ? 'Edit SLA Rule' : 'Create SLA Rule'}</DialogTitle></DialogHeader>
+          {editItem && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Scope</Label>
+                  <Select value={String((editItem as any).scope)} onValueChange={(v) => setEditItem({ ...editItem, scope: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="GLOBAL">🌐 Global (applies to all)</SelectItem>
+                      <SelectItem value="PRIORITY">📊 By Priority</SelectItem>
+                      <SelectItem value="DEPARTMENT">🏢 By Department</SelectItem>
+                      <SelectItem value="CATEGORY">📋 By Category</SelectItem>
+                      <SelectItem value="ASSET_CRITICALITY">⚡ By Asset Criticality</SelectItem>
+                      <SelectItem value="PLANT">🏭 By Plant</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>Response SLA (min)</Label>
-                    <Input type="number" value={(editItem as any).responseTimeMinutes} onChange={(e) => setEditItem({ ...editItem, responseTimeMinutes: Number(e.target.value) })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Ack SLA (min)</Label>
-                    <Input type="number" value={(editItem as any).acknowledgementTimeMinutes} onChange={(e) => setEditItem({ ...editItem, acknowledgementTimeMinutes: Number(e.target.value) })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Closure SLA (min)</Label>
-                    <Input type="number" value={(editItem as any).closureTimeMinutes} onChange={(e) => setEditItem({ ...editItem, closureTimeMinutes: Number(e.target.value) })} />
-                  </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Priority Level</Label>
+                  <Select value={String((editItem as any).priority)} onValueChange={(v) => setEditItem({ ...editItem, priority: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CRITICAL">🔴 Critical</SelectItem>
+                      <SelectItem value="HIGH">🟠 High</SelectItem>
+                      <SelectItem value="MEDIUM">🟡 Medium</SelectItem>
+                      <SelectItem value="LOW">🔵 Low</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="grid grid-cols-4 gap-4">
-                  <div className="space-y-2">
-                    <Label>Esc L1 (min)</Label>
-                    <Input type="number" value={(editItem as any).escalation1Minutes} onChange={(e) => setEditItem({ ...editItem, escalation1Minutes: Number(e.target.value) })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Esc L2 (min)</Label>
-                    <Input type="number" value={(editItem as any).escalation2Minutes} onChange={(e) => setEditItem({ ...editItem, escalation2Minutes: Number(e.target.value) })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Esc L3 (min)</Label>
-                    <Input type="number" value={(editItem as any).escalation3Minutes} onChange={(e) => setEditItem({ ...editItem, escalation3Minutes: Number(e.target.value) })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Esc L4 (min)</Label>
-                    <Input type="number" value={(editItem as any).escalation4Minutes} onChange={(e) => setEditItem({ ...editItem, escalation4Minutes: Number(e.target.value) })} />
-                  </div>
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium mb-2 block">SLA Timers</Label>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { key: 'responseTimeMinutes', label: 'Response SLA', icon: '⚡', color: 'bg-blue-50 border-blue-200' },
+                    { key: 'acknowledgementTimeMinutes', label: 'Acknowledgement', icon: '👀', color: 'bg-purple-50 border-purple-200' },
+                    { key: 'closureTimeMinutes', label: 'Closure SLA', icon: '✅', color: 'bg-green-50 border-green-200' },
+                  ].map((sla) => (
+                    <div key={sla.key} className={`p-3 rounded-lg border ${sla.color}`}>
+                      <Label className="text-xs font-medium block mb-1.5">{sla.icon} {sla.label}</Label>
+                      <div className="flex items-center gap-2">
+                        <Input type="number" value={(editItem as any)[sla.key]} onChange={(e) => setEditItem({ ...editItem, [sla.key]: Number(e.target.value) })} className="h-8 text-sm" />
+                        <span className="text-xs text-muted-foreground shrink-0">min</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Reminder Interval (min)</Label>
-                    <Input type="number" value={(editItem as any).reminderIntervalMinutes} onChange={(e) => setEditItem({ ...editItem, reminderIntervalMinutes: Number(e.target.value) })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Scope Value</Label>
-                    <Input value={String((editItem as any).scopeValue || '')} onChange={(e) => setEditItem({ ...editItem, scopeValue: e.target.value })} placeholder="e.g., CRITICAL, ELECTRICAL, ..." />
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium mb-2 block">Escalation Ladder</Label>
+                <div className="grid grid-cols-4 gap-3">
+                  {[1, 2, 3, 4].map((l) => {
+                    const colors = ['bg-red-50 border-red-200', 'bg-orange-50 border-orange-200', 'bg-yellow-50 border-yellow-200', 'bg-gray-50 border-gray-200'];
+                    const icons = ['🚨', '⚠️', '⏰', '🔔'];
+                    return (
+                      <div key={l} className={`p-3 rounded-lg border ${colors[l - 1]}`}>
+                        <Label className="text-xs font-medium block mb-1.5">{icons[l - 1]} Level {l}</Label>
+                        <div className="flex items-center gap-2">
+                          <Input type="number" value={(editItem as any)[`escalation${l}Minutes`]} onChange={(e) => setEditItem({ ...editItem, [`escalation${l}Minutes`]: Number(e.target.value) })} className="h-8 text-sm" />
+                          <span className="text-xs text-muted-foreground shrink-0">min</span>
+                        </div>
+                        <Input
+                          className="h-7 text-xs mt-1.5"
+                          placeholder="Role (e.g., MANAGER)"
+                          value={String((editItem as any)[`escalationRole${l}`] || '')}
+                          onChange={(e) => setEditItem({ ...editItem, [`escalationRole${l}`]: e.target.value || null })}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Reminder Interval</Label>
+                  <div className="flex items-center gap-2">
+                    <Input type="number" value={(editItem as any).reminderIntervalMinutes} onChange={(e) => setEditItem({ ...editItem, reminderIntervalMinutes: Number(e.target.value) })} className="h-8" />
+                    <span className="text-xs text-muted-foreground">min</span>
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Input value={String((editItem as any).description || '')} onChange={(e) => setEditItem({ ...editItem, description: e.target.value })} />
+                  <Label className="text-xs font-medium">Scope Value <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Input value={String((editItem as any).scopeValue || '')} onChange={(e) => setEditItem({ ...editItem, scopeValue: e.target.value })} placeholder="e.g., ELECTRICAL, CRITICAL" className="h-8" />
                 </div>
-                <Button onClick={handleSave}>Save</Button>
               </div>
-            )}
-          </DialogContent>
-        </Dialog>
-      </div>
 
-      <div>
-        <div className="flex gap-2 mb-4">
-          <Button variant={activeTab === 'config' ? 'default' : 'outline'} size="sm" onClick={() => setActiveTab('config')}><Clock className="h-4 w-4 mr-2" />SLA Rules</Button>
-          <Button variant={activeTab === 'history' ? 'default' : 'outline'} size="sm" onClick={() => setActiveTab('history')}><History className="h-4 w-4 mr-2" />Escalation History</Button>
-        </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Description</Label>
+                <Input value={String((editItem as any).description || '')} onChange={(e) => setEditItem({ ...editItem, description: e.target.value })} placeholder="Purpose of this SLA rule" className="h-8" />
+              </div>
 
-        {activeTab === 'config' && (
-          <Card>
-            <CardHeader><CardTitle>SLA Rules</CardTitle><CardDescription>Configure SLA thresholds per scope and priority</CardDescription></CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Scope</TableHead>
-                    <TableHead>Value</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Response</TableHead>
-                    <TableHead>Ack</TableHead>
-                    <TableHead>Closure</TableHead>
-                    <TableHead>Escalations</TableHead>
-                    <TableHead>Reminder</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {configs.length === 0 && <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No SLA configurations. Click "Add SLA Config" above.</TableCell></TableRow>}
-                  {configs.map((config) => (
-                    <TableRow key={String((config as any).id)}>
-                      <TableCell><Badge variant="outline">{(config as any).scope}</Badge></TableCell>
-                      <TableCell>{(config as any).scopeValue || '-'}</TableCell>
-                      <TableCell><Badge>{(config as any).priority}</Badge></TableCell>
-                      <TableCell>{(config as any).responseTimeMinutes}m</TableCell>
-                      <TableCell>{(config as any).acknowledgementTimeMinutes}m</TableCell>
-                      <TableCell>{(config as any).closureTimeMinutes}m</TableCell>
-                      <TableCell className="text-xs">L1:{(config as any).escalation1Minutes}m L2:{(config as any).escalation2Minutes}m</TableCell>
-                      <TableCell>{(config as any).reminderIntervalMinutes}m</TableCell>
-                      <TableCell>{(config as any).isActive ? <Badge className="bg-green-100 text-green-800">Active</Badge> : <Badge variant="outline">Inactive</Badge>}</TableCell>
-                      <TableCell>
-                        <Button size="sm" variant="ghost" onClick={() => { setEditItem(config); setEditDialog(true); }}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        )}
-
-        {activeTab === 'history' && (
-          <Card>
-            <CardHeader><CardTitle>Escalation History</CardTitle><CardDescription>Records of all work order escalations</CardDescription></CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>WO #</TableHead>
-                    <TableHead>Level</TableHead>
-                    <TableHead>Trigger</TableHead>
-                    <TableHead>Triggered At</TableHead>
-                    <TableHead>Reminders</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Users Notified</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {history.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No escalation history</TableCell></TableRow>}
-                  {history.map((entry) => (
-                    <TableRow key={String((entry as any).id)}>
-                      <TableCell className="font-mono text-sm">{(entry as any).woNumber}</TableCell>
-                      <TableCell>L{(entry as any).level}</TableCell>
-                      <TableCell>{(entry as any).triggerType}</TableCell>
-                      <TableCell className="text-xs">{new Date((entry as any).triggeredAt).toLocaleString()}</TableCell>
-                      <TableCell>{(entry as any).reminderCount}</TableCell>
-                      <TableCell>{(entry as any).resolved ? <Badge className="bg-green-100 text-green-800">Resolved</Badge> : <Badge className="bg-yellow-100 text-yellow-800">Active</Badge>}</TableCell>
-                      <TableCell className="text-xs">{((entry as any).notifiedUsers || []).length}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+              <div className="flex items-center justify-between border-t pt-4">
+                <Button variant="outline" size="sm" onClick={() => setEditDialog(false)}>Cancel</Button>
+                <Button onClick={handleSave} disabled={saving} size="sm">
+                  {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                  {saving ? 'Saving...' : (editItem as any).id ? 'Update Rule' : 'Create Rule'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -328,6 +328,24 @@ export function downloadEnterpriseExcelTemplate(config: ExcelTemplateConfig) {
   downloadExcelXml(config.fileName, xml);
 }
 
+/** Find the header row in a 2D array by scanning for a known column name.
+ *  Returns [headerRow, ...dataRows] — skips non-data prefix rows.
+ */
+export function findHeaderRowFromRows(rows: string[][], requiredHeader: string): string[][] {
+  if (rows.length === 0) return [];
+
+  const headerIndexes = rows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => row.some((cell) => normalizeHeaderName(cell.replace(/\s+\*$/, "")) === requiredHeader))
+    .map(({ index }) => index);
+  const headerIndex = headerIndexes[headerIndexes.length - 1] ?? -1;
+  if (headerIndex < 0) return rows;
+
+  const headerRow = rows[headerIndex].map((cell) => cell.replace(/\s+\*$/, ""));
+  const dataRows = rows.slice(headerIndex + 1).filter((row) => row.some((cell) => cell.trim().length > 0));
+  return [headerRow, ...dataRows];
+}
+
 export function parseExcelXmlRows(content: string, requiredHeader: string) {
   if (!content.trim().startsWith("<?xml") && !content.includes("<Workbook")) return null;
   const documentXml = new DOMParser().parseFromString(content, "application/xml");

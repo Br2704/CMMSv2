@@ -20,6 +20,7 @@ import { MailQueueEntity } from '../../database/entities/mail-queue.entity';
 import { EmailLogEntity } from '../../database/entities/email-log.entity';
 import { EscalationHistoryEntity } from '../../database/entities/escalation-history.entity';
 import { SlaConfigEntity } from '../../database/entities/sla-config.entity';
+import { WorkOrderEntity } from '../../database/entities/work-order.entity';
 
 export const mailRouter = Router();
 mailRouter.use(requireAuth);
@@ -266,11 +267,55 @@ mailRouter.get('/escalation/history', requireRole(['ROOT_ADMIN', 'SUPERADMIN', '
   }
 });
 
-mailRouter.get('/sla/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
+mailRouter.get('/sla/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const repo = AppDataSource.getRepository(SlaConfigEntity);
-    const configs = await repo.find({ where: { isActive: true }, order: { priority: 'ASC' } });
-    res.json(ok(configs, 'SLA configs'));
+    const includeInactive = req.query.includeInactive === 'true';
+    const configs = await repo.find({ order: { priority: 'ASC', createdAt: 'DESC' } });
+    const filtered = includeInactive ? configs : configs.filter((c) => c.isActive);
+    res.json(ok(filtered, 'SLA configs'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+mailRouter.get('/sla/stats', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
+  try {
+    const woRepo = AppDataSource.getRepository(WorkOrderEntity);
+    const configRepo = AppDataSource.getRepository(SlaConfigEntity);
+    const escalationRepo = AppDataSource.getRepository(EscalationHistoryEntity);
+
+    const totalActiveRules = await configRepo.count({ where: { isActive: true } });
+
+    const overdueWOs = await woRepo
+      .createQueryBuilder('wo')
+      .where('wo.status NOT IN (:...closed)', { closed: ['CLOSED', 'CANCELLED'] })
+      .andWhere('wo.sla_due_at IS NOT NULL')
+      .andWhere('wo.sla_due_at < NOW()')
+      .getCount();
+
+    const escalatedWOs = await woRepo
+      .createQueryBuilder('wo')
+      .where('wo.status NOT IN (:...closed)', { closed: ['CLOSED', 'CANCELLED'] })
+      .andWhere('wo.escalation_level IS NOT NULL')
+      .andWhere('wo.escalation_level > 0')
+      .getCount();
+
+    const activeEscalations = await escalationRepo.count({ where: { resolved: false } });
+
+    const openWOs = await woRepo
+      .createQueryBuilder('wo')
+      .where('wo.status NOT IN (:...closed)', { closed: ['CLOSED', 'CANCELLED'] })
+      .getCount();
+
+    res.json(ok({
+      totalActiveRules,
+      overdueWOs,
+      escalatedWOs,
+      activeEscalations,
+      openWOs,
+      slaComplianceRate: openWOs > 0 ? Math.round(((openWOs - overdueWOs) / openWOs) * 100) : 100,
+    }, 'SLA stats'));
   } catch (error) {
     next(error);
   }

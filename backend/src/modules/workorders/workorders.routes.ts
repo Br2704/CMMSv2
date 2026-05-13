@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { Router } from 'express';
 import { createCrudRouter } from '../_core/crud.routes';
 import { idParamSchema, listQuerySchema } from '../_core/crud.validators';
@@ -159,7 +160,7 @@ workordersRouter.post(
 
 workordersRouter.post(
   '/work-orders/:id/approve',
-  requirePermission('WORK_ORDERS', 'READ'),
+  requirePermission('WORK_ORDERS', 'APPROVE'),
   validateRequest({ params: idParamSchema, body: reviewWorkOrderSchema }),
   async (req, res, next) => {
     try {
@@ -173,12 +174,26 @@ workordersRouter.post(
 
 workordersRouter.post(
   '/work-orders/:id/reject',
-  requirePermission('WORK_ORDERS', 'READ'),
+  requirePermission('WORK_ORDERS', 'APPROVE'),
   validateRequest({ params: idParamSchema, body: reviewWorkOrderSchema }),
   async (req, res, next) => {
     try {
       const record = await workordersService.rejectWorkOrder(req.params.id, req.body as Record<string, unknown>, req.auth!);
       res.json(ok(record, 'Work order reopened'));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+workordersRouter.post(
+  '/work-orders/:id/cancel',
+  requirePermission('WORK_ORDERS', 'UPDATE'),
+  validateRequest({ params: idParamSchema, body: z.object({ reason: z.string().min(1).max(500) }).strict() }),
+  async (req, res, next) => {
+    try {
+      const record = await workordersService.cancelWorkOrder(req.params.id, req.body as { reason: string }, req.auth!);
+      res.json(ok(record, 'Work order cancelled'));
     } catch (error) {
       next(error);
     }

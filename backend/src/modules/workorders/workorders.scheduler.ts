@@ -6,6 +6,7 @@ import { publishNotificationChange } from '../notifications/notification-stream'
 
 const USER_VERIFICATION_STATUS = 'USER_VERIFICATION';
 const CLOSED_STATUS = 'CLOSED';
+const CANCELLED_STATUS = 'CANCELLED';
 const IN_PROGRESS_STATUS = 'IN_PROGRESS';
 const ACCEPTED_STATUS = 'ACCEPTED';
 const ESCALATION_EVENT = 'WORK_ORDER_ESCALATED';
