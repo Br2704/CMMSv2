@@ -334,6 +334,24 @@ export const NON_ROOT_APP_PAGES: readonly AppPageDefinition[] = [
     moduleId: "masters.workorder-team-mapping",
     permissionModuleKey: "MASTERS",
   },
+  {
+    id: "masters-mail-config",
+    title: "Mail Config",
+    description: "Configure SMTP, test email delivery, monitor mail queue and logs.",
+    path: "/masters/mail-config",
+    section: "Masters",
+    moduleId: "masters.mail-config",
+    permissionModuleKey: "MASTERS",
+  },
+  {
+    id: "masters-sla-config",
+    title: "SLA & Escalation",
+    description: "Set SLA rules, escalation levels, and view escalation history.",
+    path: "/masters/sla-config",
+    section: "Masters",
+    moduleId: "masters.sla-config",
+    permissionModuleKey: "MASTERS",
+  },
 ] as const;
 
 export const NON_ROOT_PAGE_SECTIONS = Array.from(new Set(NON_ROOT_APP_PAGES.map((page) => page.section)));

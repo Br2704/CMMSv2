@@ -21,6 +21,8 @@ import {
   DoorOpen,
   Mail,
   ClipboardList,
+  Settings,
+  AlertTriangle,
 } from "lucide-react";
 
 const masterPages = [
@@ -175,6 +177,22 @@ const masterPages = [
     icon: Link2,
     color: "bg-sky-600",
     moduleId: "masters.workorder-team-mapping",
+  },
+  {
+    name: "Mail Config",
+    description: "Configure SMTP, test email delivery, monitor mail queue and logs",
+    href: "/masters/mail-config",
+    icon: Mail,
+    color: "bg-blue-600",
+    moduleId: "masters.mail-config",
+  },
+  {
+    name: "SLA & Escalation",
+    description: "Set SLA rules, escalation levels, and view escalation history",
+    href: "/masters/sla-config",
+    icon: AlertTriangle,
+    color: "bg-red-600",
+    moduleId: "masters.sla-config",
   },
 ];
 
