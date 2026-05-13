@@ -801,7 +801,7 @@ export default function UsersMaster() {
       .filter(Boolean);
 
     downloadEnterpriseExcelTemplate({
-      fileName: "user_bulk_upload_demo.xlsx",
+      fileName: "user_bulk_upload_demo.xls",
       title: "CMMS User Management Demo Upload Template",
       uploadSheetName: "User Upload",
       columns: [

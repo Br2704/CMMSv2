@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { httpRequest } from '@/api/http';
 import { useToast } from '@/hooks/use-toast';
@@ -69,11 +69,9 @@ export default function SLAConfigMaster() {
           <p className="text-sm text-muted-foreground">Configure response/closure SLAs and escalation rules</p>
         </div>
         <Dialog open={editDialog} onOpenChange={setEditDialog}>
-          <DialogTrigger asChild>
-            <Button onClick={() => setEditItem({ scope: 'GLOBAL', priority: 'MEDIUM', responseTimeMinutes: 30, acknowledgementTimeMinutes: 15, closureTimeMinutes: 480, escalation1Minutes: 30, escalation2Minutes: 60, escalation3Minutes: 120, escalation4Minutes: 240, reminderIntervalMinutes: 60 })}>
-              <Plus className="h-4 w-4 mr-2" />Add SLA Config
-            </Button>
-          </DialogTrigger>
+          <Button onClick={() => { setEditItem({ scope: 'GLOBAL', priority: 'MEDIUM', responseTimeMinutes: 30, acknowledgementTimeMinutes: 15, closureTimeMinutes: 480, escalation1Minutes: 30, escalation2Minutes: 60, escalation3Minutes: 120, escalation4Minutes: 240, reminderIntervalMinutes: 60 }); setEditDialog(true); }}>
+            <Plus className="h-4 w-4 mr-2" />Add SLA Config
+          </Button>
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader><DialogTitle>{editItem && (editItem as any).id ? 'Edit' : 'New'} SLA Configuration</DialogTitle></DialogHeader>
             {editItem && (
@@ -159,7 +157,7 @@ export default function SLAConfigMaster() {
         </Dialog>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <div>
         <div className="flex gap-2 mb-4">
           <Button variant={activeTab === 'config' ? 'default' : 'outline'} size="sm" onClick={() => setActiveTab('config')}><Clock className="h-4 w-4 mr-2" />SLA Rules</Button>
           <Button variant={activeTab === 'history' ? 'default' : 'outline'} size="sm" onClick={() => setActiveTab('history')}><History className="h-4 w-4 mr-2" />Escalation History</Button>
@@ -244,7 +242,7 @@ export default function SLAConfigMaster() {
             </CardContent>
           </Card>
         )}
-      </Tabs>
+      </div>
     </div>
   );
 }

@@ -1003,7 +1003,7 @@ export default function MachinesMaster() {
     ];
 
     downloadEnterpriseExcelTemplate({
-      fileName: "machine_bulk_upload_demo.xlsx",
+      fileName: "machine_bulk_upload_demo.xls",
       title: "CMMS Machine Master Demo Upload Template",
       uploadSheetName: "Machine Upload",
       columns: [
