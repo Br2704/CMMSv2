@@ -10,7 +10,7 @@ import { httpRequest } from '@/api/http';
 import { useToast } from '@/hooks/use-toast';
 import { Settings, Send, RefreshCw, MailCheck, MailWarning, Loader2, Inbox } from 'lucide-react';
 
-export function MailConfigMaster() {
+export default function MailConfigMaster() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState({ configured: false, host: '', port: 587, from: '', user: '' });

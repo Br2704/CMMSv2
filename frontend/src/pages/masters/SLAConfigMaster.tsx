@@ -11,7 +11,7 @@ import { httpRequest } from '@/api/http';
 import { useToast } from '@/hooks/use-toast';
 import { Clock, Plus, Pencil, Loader2, History } from 'lucide-react';
 
-export function SLAConfigMaster() {
+export default function SLAConfigMaster() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [configs, setConfigs] = useState<Array<Record<string, unknown>>>([]);
