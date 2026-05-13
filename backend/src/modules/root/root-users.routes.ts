@@ -269,7 +269,10 @@ rootUsersRouter.get('/root/users', async (req, res, next) => {
     await repairLegacyManagedUserScopeAssignments();
 
     const query = parseListQuery(req.query as Record<string, unknown>);
-    const organizationId = typeof req.query.organizationId === 'string' ? req.query.organizationId : null;
+    const organizationIdRaw = typeof req.query.organizationId === 'string' ? req.query.organizationId : null;
+    const organizationId = organizationIdRaw && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(organizationIdRaw)
+      ? organizationIdRaw
+      : null;
     const roleKeyFilterRaw = typeof req.query.roleKey === 'string' ? req.query.roleKey : null;
     const roleKeyFilter = roleKeyFilterRaw ? normalizeRoleInput(roleKeyFilterRaw) : null;
     const userRepo = AppDataSource.getRepository(UserEntity);

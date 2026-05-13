@@ -1,4 +1,5 @@
 import { httpRequest } from "@/api/http";
+import { isUuid } from "@/lib/utils";
 import type { ApiListResponse, ApiResponse, DeleteResult } from "@/api/types";
 
 export interface RootOrgUser {
@@ -55,7 +56,7 @@ function buildQuery(params: Record<string, string | number | boolean | undefined
 
 export function listRootUsers(params: { organizationId?: string; roleKey?: string; page?: number; limit?: number; search?: string; includeInactive?: boolean }) {
   const query = buildQuery({
-    organizationId: params.organizationId ?? undefined,
+    organizationId: params.organizationId && isUuid(params.organizationId) ? params.organizationId : undefined,
     roleKey: params.roleKey ?? undefined,
     page: params.page ?? 1,
     limit: params.limit ?? 100,

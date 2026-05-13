@@ -1,4 +1,5 @@
 import { httpRequest } from "@/api/http";
+import { isUuid } from "@/lib/utils";
 import type { ApiResponse } from "@/api/types";
 
 export interface BrandingMe {
@@ -51,7 +52,7 @@ export function getBrandingManifest() {
 
 export function buildBrandingManifestUrl(organizationId?: string | null, version?: number | null) {
   const params = new URLSearchParams();
-  if (organizationId) params.set("organizationId", organizationId);
+  if (organizationId && isUuid(organizationId)) params.set("organizationId", organizationId);
   if (version) params.set("v", String(version));
   const query = params.toString();
   return query ? `/api/branding/manifest?${query}` : "/api/branding/manifest";
@@ -59,7 +60,7 @@ export function buildBrandingManifestUrl(organizationId?: string | null, version
 
 export function buildBrandingLogoUrl(organizationId?: string | null, version?: number | null, size = 192) {
   const params = new URLSearchParams();
-  if (organizationId) params.set("organizationId", organizationId);
+  if (organizationId && isUuid(organizationId)) params.set("organizationId", organizationId);
   params.set("size", size >= 512 ? "512" : "192");
   if (version) params.set("v", String(version));
   return `/api/branding/logo?${params.toString()}`;
