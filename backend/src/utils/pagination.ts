@@ -1,11 +1,31 @@
 import { z } from 'zod';
 
+const MAX_DATE_RANGE_DAYS = 365;
+
 function toScalar(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value[0];
   }
   return value;
 }
+
+const dateStringSchema = z.string().refine(
+  (val) => !isNaN(Date.parse(val)),
+  { message: 'Invalid date format' },
+);
+
+const dateRangeSchema = z.object({
+  from: dateStringSchema,
+  to: dateStringSchema,
+}).refine(
+  (data) => {
+    const from = new Date(data.from);
+    const to = new Date(data.to);
+    const diffDays = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
+    return diffDays >= 0 && diffDays <= MAX_DATE_RANGE_DAYS;
+  },
+  { message: `Date range cannot exceed ${MAX_DATE_RANGE_DAYS} days` },
+).optional();
 
 const optionalUuidQuery = z
   .preprocess((value) => {
@@ -61,7 +81,8 @@ export const listQuerySchema = z.object({
     const scalar = toScalar(value);
     return typeof scalar === 'string' ? scalar.trim() : undefined;
   }, z.string().optional()),
-}).passthrough();
+  dateRange: dateRangeSchema,
+}).strict();
 
 export type ListQuery = z.infer<typeof listQuerySchema>;
 

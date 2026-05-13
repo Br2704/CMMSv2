@@ -1,8 +1,9 @@
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { DATETIME_COLUMN_TYPE, TimestampedUuidEntity } from './common';
 import { UserEntity } from './user.entity';
 
 @Entity('refresh_tokens')
+@Index(['userId', 'revokedAt'])
 export class RefreshTokenEntity extends TimestampedUuidEntity {
   @Column({ name: 'user_id', type: 'uuid' })
   userId!: string;
