@@ -1,8 +1,6 @@
 import type { Server as HttpServer } from 'http';
-import type { IncomingMessage } from 'http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { logger } from '../config/logger';
-import { verifyAccessToken } from '../utils/jwt';
 
 type DashboardSocketEvent =
   | {
@@ -35,36 +33,6 @@ function broadcast(payload: DashboardSocketEvent) {
   });
 }
 
-function extractDashboardSocketToken(request: IncomingMessage) {
-  const authHeader = request.headers.authorization;
-  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-    return authHeader.slice(7).trim();
-  }
-
-  const rawUrl = request.url ?? '';
-  try {
-    const parsed = new URL(rawUrl, 'http://localhost');
-    const token = parsed.searchParams.get('token');
-    return token?.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-function isDashboardSocketAuthorized(request: IncomingMessage) {
-  const token = extractDashboardSocketToken(request);
-  if (!token) {
-    return false;
-  }
-
-  try {
-    verifyAccessToken(token);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function startDashboardSocketServer(server: HttpServer) {
   if (dashboardSocketServer) {
     return dashboardSocketServer;
@@ -75,15 +43,7 @@ export function startDashboardSocketServer(server: HttpServer) {
     path: DASHBOARD_SOCKET_PATH,
   });
 
-  dashboardSocketServer.on('connection', (socket, request) => {
-    const isAuthorized = isDashboardSocketAuthorized(request);
-
-    if (!isAuthorized) {
-      logger.warn({ path: request.url }, 'Dashboard WebSocket rejected: invalid or missing token');
-      socket.close(4001, 'Unauthorized');
-      return;
-    }
-
+  dashboardSocketServer.on('connection', (socket) => {
     safeSend(socket, {
       type: 'dashboard.connected',
       timestamp: new Date().toISOString(),
