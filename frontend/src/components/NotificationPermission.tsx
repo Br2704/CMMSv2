@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Bell, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const DISMISS_COUNT_KEY = "cmms:notif-dismiss-count";
 const MAX_DISMISS_BEFORE_HIDE = 2;
