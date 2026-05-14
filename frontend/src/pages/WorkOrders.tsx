@@ -49,7 +49,7 @@ import {
   startWorkOrder,
   submitWorkOrderForApproval,
 } from "@/api/workorders";
-import { humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
+import { humanizeWorkOrderCode, normalizeWorkOrderCode, resolveWorkOrderLabel } from "@/config/work-order-masters";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { parseQrContent } from "@/mobile/qr";
 import { resolveQrMachineCode, resolveQrToken, type QrResolveData } from "@/api/qr";
@@ -1519,12 +1519,12 @@ export default function WorkOrders() {
       key: "wo", header: "WO Number", render: (wo: any) => (
         <div>
           <span className="font-semibold text-primary">{wo.wo_number}</span>
-          <p className="text-xs text-muted-foreground">{resolveWorkOrderLabel("WO_TYPE", wo.wo_type, wo.plant_id)}</p>
+          <p className="text-xs text-muted-foreground">{resolveWorkOrderLabel("WO_TYPE", wo.wo_type, wo.plant_id, workOrderMasters)}</p>
         </div>
       )
     },
     { key: "asset", header: "Asset", render: (wo: any) => (<div><p className="font-medium">{wo.assets?.name || "-"}</p><p className="text-xs text-muted-foreground">{wo.assets?.code}</p></div>) },
-    { key: "category", header: "Category", render: (wo: any) => resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id), hideOnMobile: true },
+    { key: "category", header: "Category", render: (wo: any) => resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id, workOrderMasters), hideOnMobile: true },
     { key: "priority", header: "Priority", render: (wo: any) => <StatusBadge variant={wo.priority === "CRITICAL" ? "critical" : wo.priority === "HIGH" ? "warning" : "default"}>{wo.priority}</StatusBadge> },
     { key: "status", header: "Status", render: (wo: any) => <StatusBadge status={wo.status} variant={getStatusVariant(wo.status)} /> },
     { key: "escalation", header: "Alert", hideOnMobile: true, render: (wo: any) => (
@@ -1691,8 +1691,8 @@ export default function WorkOrders() {
               mobileCard={(wo: any) => (
                 <MobileCard onView={() => handleView(wo)}>
                   <MobileCardHeader title={wo.wo_number} subtitle={wo.assets?.name} badge={<StatusBadge status={wo.status} variant={getStatusVariant(wo.status)} />} />
-                  <MobileCardRow label="Type" value={resolveWorkOrderLabel("WO_TYPE", wo.wo_type, wo.plant_id)} />
-                  <MobileCardRow label="Category" value={resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id)} />
+                  <MobileCardRow label="Type" value={resolveWorkOrderLabel("WO_TYPE", wo.wo_type, wo.plant_id, workOrderMasters)} />
+                  <MobileCardRow label="Category" value={resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id, workOrderMasters)} />
                   <MobileCardRow label="Priority" value={wo.priority} />
                   <MobileCardRow label="Raised" value={formatDistanceToNow(new Date(wo.created_at), { addSuffix: true })} />
                 </MobileCard>
@@ -2085,10 +2085,9 @@ export default function WorkOrders() {
             </div>
             <DetailSection title="Work Order">
               <DetailRow label="WO Number" value={selectedWO.wo_number} />
-              <DetailRow label="Type" value={resolveWorkOrderLabel("WO_TYPE", selectedWO.wo_type, selectedWO.plant_id)} />
-              <DetailRow label="Status" value={<StatusBadge status={selectedWO.status} variant={getStatusVariant(selectedWO.status)} />} />
+              <DetailRow label="Type" value={resolveWorkOrderLabel("WO_TYPE", selectedWO.wo_type, selectedWO.plant_id, workOrderMasters)} />
               <DetailRow label="Priority" value={<StatusBadge variant={selectedWO.priority === "CRITICAL" ? "critical" : selectedWO.priority === "HIGH" ? "warning" : "default"}>{selectedWO.priority}</StatusBadge>} />
-              <DetailRow label="Category" value={resolveWorkOrderLabel("CATEGORY", selectedWO.category, selectedWO.plant_id)} />
+              <DetailRow label="Category" value={resolveWorkOrderLabel("CATEGORY", selectedWO.category, selectedWO.plant_id, workOrderMasters)} />
               {selectedWO.sub_category && <DetailRow label="Sub-Category" value={selectedWO.sub_category} />}
               {selectedWO.reported_location && <DetailRow label="Location" value={selectedWO.reported_location} />}
               {selectedWO.safety_related && <DetailRow label="Safety Related" value={<StatusBadge variant="critical">Yes</StatusBadge>} />}
@@ -2099,7 +2098,7 @@ export default function WorkOrders() {
             </DetailSection>
             <DetailSection title="Problem & Resolution">
               <DetailRow label="Problem" value={selectedWO.problem_description} />
-              {selectedWO.failure_code && <DetailRow label="Failure Code" value={resolveWorkOrderLabel("FAILURE_CODE", selectedWO.failure_code, selectedWO.plant_id)} />}
+              {selectedWO.failure_code && <DetailRow label="Failure Code" value={resolveWorkOrderLabel("FAILURE_CODE", selectedWO.failure_code, selectedWO.plant_id, workOrderMasters)} />}
               {selectedWO.technician_verification?.initial_assessment && <DetailRow label="Initial Assessment" value={selectedWO.technician_verification.initial_assessment} />}
               {selectedWO.root_cause && <DetailRow label="Issue Details" value={selectedWO.root_cause} />}
               {selectedWO.action_taken && <DetailRow label="Work Performed" value={selectedWO.action_taken} />}

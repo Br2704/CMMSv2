@@ -20,6 +20,25 @@ export function normalizeWorkOrderOptionType(value: string): WorkOrderMasterOpti
   return "CATEGORY";
 }
 
+/** Resolve a work order master code to its display label.
+ *  Falls back to humanizeWorkOrderCode if no master list is provided or no match is found.
+ */
+export function resolveWorkOrderLabel(
+  optionType: WorkOrderMasterOptionType,
+  code: string | null | undefined,
+  plantId?: string | null,
+  masters?: Array<{ code: string; label: string; optionType: string; plantId?: string | null }>,
+): string {
+  if (!code) return '-';
+  if (masters && masters.length > 0) {
+    const match = masters.find(
+      (m) => m.optionType === optionType && m.code === code && (!plantId || !m.plantId || m.plantId === plantId),
+    );
+    if (match) return match.label;
+  }
+  return humanizeWorkOrderCode(code);
+}
+
 export function humanizeWorkOrderCode(value: string | null | undefined): string {
   if (!value) return "-";
   return value

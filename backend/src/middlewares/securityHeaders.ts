@@ -140,11 +140,12 @@ export function threatDetectionMiddleware(req: Request, res: Response, next: Nex
   }
 
   if (securityConfig.blockSuspiciousPatterns) {
-    const urlString = req.originalUrl || req.url;
-    if (containsSuspiciousPattern(urlString)) {
+    // Only check the URL path (not query string) to avoid false positives from UUIDs or normal params
+    const urlPath = req.path || '/';
+    if (containsSuspiciousPattern(urlPath)) {
       logger.warn(
-        { method: req.method, path: urlString, ip: req.ip },
-        'Blocked request with suspicious URL pattern',
+        { method: req.method, path: urlPath, ip: req.ip },
+        'Blocked request with suspicious URL path',
       );
       res.status(400).json({
         success: false,
