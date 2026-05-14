@@ -92,27 +92,34 @@ export function clearStoredAccessToken(): void {
 }
 
 export function getStoredCsrfToken(): string | null {
-  return csrfTokenMemory;
+  return csrfTokenMemory || getSessionStorage()?.getItem(CSRF_TOKEN_STORAGE_KEY) || null;
 }
 
 export function setStoredCsrfToken(token: string): void {
   csrfTokenMemory = token;
+  try { getSessionStorage()?.setItem(CSRF_TOKEN_STORAGE_KEY, token); } catch { /* ignore */ }
 }
 
 export function clearStoredCsrfToken(): void {
   csrfTokenMemory = null;
+  try { getSessionStorage()?.removeItem(CSRF_TOKEN_STORAGE_KEY); } catch { /* ignore */ }
 }
 
+const REFRESH_TOKEN_STORAGE_KEY = "cmms_refresh_token";
+const CSRF_TOKEN_STORAGE_KEY = "cmms_csrf_token";
+
 export function getStoredRefreshToken(): string | null {
-  return refreshTokenMemory;
+  return refreshTokenMemory || getSessionStorage()?.getItem(REFRESH_TOKEN_STORAGE_KEY) || null;
 }
 
 export function setStoredRefreshToken(token: string): void {
   refreshTokenMemory = token;
+  try { getSessionStorage()?.setItem(REFRESH_TOKEN_STORAGE_KEY, token); } catch { /* ignore */ }
 }
 
 export function clearStoredRefreshToken(): void {
   refreshTokenMemory = null;
+  try { getSessionStorage()?.removeItem(REFRESH_TOKEN_STORAGE_KEY); } catch { /* ignore */ }
 }
 
 export function setSessionBootstrapHint(): void {
