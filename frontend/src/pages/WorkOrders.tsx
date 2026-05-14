@@ -23,7 +23,6 @@ import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { SpareUsageEditor, type SpareUsageDraft } from "@/components/spares/SpareUsageEditor";
 import { useAuthStore, isAdmin, isIncharge, isSuperAdmin } from "@/store/auth.store";
-import { dbClient } from "@/api/dbClient";
 import { getStoredAccessToken } from "@/api/http";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -45,6 +44,7 @@ import {
   cancelWorkOrder,
   createWorkOrder,
   listWorkOrderActivity,
+  listWorkOrders,
   rejectWorkOrder,
   startWorkOrder,
   submitWorkOrderForApproval,
@@ -305,13 +305,8 @@ export default function WorkOrders() {
     queryKey: ["work_orders", ...activePlantIds, activeTab, actorIds],
     enabled: Boolean(authEnabled),
     queryFn: async () => {
-      const { data, error } = await dbClient
-        .from("work_orders")
-        .select("*, assets(id, code, name)")
-        .order("created_at", { ascending: false })
-        .limit(2000);
-      if (error) throw error;
-      return data || [];
+      const response = await listWorkOrders({ page: 1, limit: 2000, sort: 'created_at', order: 'DESC' });
+      return response.data || [];
     },
   });
 
