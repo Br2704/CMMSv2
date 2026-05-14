@@ -250,20 +250,18 @@ export default function WorkOrders() {
   const authEnabled = !authLoading && isAuthenticated && Boolean(getStoredAccessToken());
   const workOrderRefetchInterval: number | false = authEnabled ? 15_000 : false;
 
-  const { data: allWorkOrders = [], isLoading, isFetching, refetch, dataUpdatedAt } = useQuery({
-    queryKey: ["work_orders", user?.authId || "anonymous"],
-    enabled: authEnabled,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-    refetchInterval: workOrderRefetchInterval,
-    refetchIntervalInBackground: true,
-    staleTime: 0,
-    retry: (failureCount: number, error: any) => {
-      const status = error?.status;
-      if (status === 401 || status === 403) return false;
-      return failureCount < 1;
+  const { data: workOrderMasters = [] } = useQuery({
+    queryKey: ["work_order_masters", ...activePlantIds],
+    enabled: Boolean(authEnabled),
+    queryFn: async () => {
+      const response = await listWorkOrderMasters({ page: 1, limit: 500, includeInactive: true });
+      return response.data || [];
     },
+  });
+
+  const { data: allWorkOrders = [], isLoading, isFetching, refetch, dataUpdatedAt } = useQuery({
+    queryKey: ["work_orders", ...activePlantIds, activeTab, actorIds],
+    enabled: Boolean(authEnabled),
     queryFn: async () => {
       const { data, error } = await dbClient
         .from("work_orders")
