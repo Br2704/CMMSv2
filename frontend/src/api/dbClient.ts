@@ -1,5 +1,4 @@
 import { ApiError, getStoredAccessToken, httpRequest } from "@/api/http";
-import { useAuthStore } from "@/store/auth.store";
 import { usePermissionsStore } from "@/store/permissions.store";
 
 type ApiResult<T> = {
@@ -84,6 +83,7 @@ function toCamelCase<T>(value: T): T {
 async function apiFetch(path: string, init: RequestInit = {}) {
   const isAuthPath = path.startsWith("/auth/");
   if (!isAuthPath) {
+    const { useAuthStore } = await import("@/store/auth.store");
     const { isLoading, isAuthenticated } = useAuthStore.getState();
     const accessToken = getStoredAccessToken();
     if (isLoading || (!isAuthenticated && !accessToken)) {

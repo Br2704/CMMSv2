@@ -1,6 +1,7 @@
-import type { Server as HttpServer } from 'http';
+import type { Server as HttpServer, IncomingMessage } from 'http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { logger } from '../config/logger';
+import { verifyAccessToken } from '../utils/jwt';
 
 type DashboardSocketEvent =
   | {
@@ -33,6 +34,16 @@ function broadcast(payload: DashboardSocketEvent) {
   });
 }
 
+function extractToken(request: IncomingMessage): string | null {
+  const rawUrl = request.url ?? '';
+  const queryStart = rawUrl.indexOf('?');
+  if (queryStart === -1) return null;
+
+  const searchParams = new URLSearchParams(rawUrl.slice(queryStart));
+  const token = searchParams.get('token');
+  return token?.trim() || null;
+}
+
 export function startDashboardSocketServer(server: HttpServer) {
   if (dashboardSocketServer) {
     return dashboardSocketServer;
@@ -43,7 +54,27 @@ export function startDashboardSocketServer(server: HttpServer) {
     path: DASHBOARD_SOCKET_PATH,
   });
 
-  dashboardSocketServer.on('connection', (socket) => {
+  dashboardSocketServer.on('connection', (socket: WebSocket, request: IncomingMessage) => {
+    logger.info({ path: request.url }, 'Dashboard WebSocket upgrade received');
+
+    const token = extractToken(request);
+    logger.info({ hasToken: !!token }, 'Dashboard WebSocket token extraction');
+
+    if (!token) {
+      logger.warn({ url: request.url }, 'Dashboard WebSocket rejected: missing token');
+      socket.close(4001, 'Unauthorized');
+      return;
+    }
+
+    try {
+      verifyAccessToken(token);
+      logger.info('Dashboard WebSocket auth succeeded');
+    } catch (err) {
+      logger.warn({ err }, 'Dashboard WebSocket rejected: invalid or expired token');
+      socket.close(4001, 'Unauthorized');
+      return;
+    }
+
     safeSend(socket, {
       type: 'dashboard.connected',
       timestamp: new Date().toISOString(),
