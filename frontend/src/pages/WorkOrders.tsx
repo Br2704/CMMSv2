@@ -250,11 +250,49 @@ export default function WorkOrders() {
   const authEnabled = !authLoading && isAuthenticated && Boolean(getStoredAccessToken());
   const workOrderRefetchInterval: number | false = authEnabled ? 15_000 : false;
 
+  const activePlantIds = user?.plantId ? [user.plantId] : [];
+
   const { data: workOrderMasters = [] } = useQuery({
     queryKey: ["work_order_masters", ...activePlantIds],
     enabled: Boolean(authEnabled),
     queryFn: async () => {
       const response = await listWorkOrderMasters({ page: 1, limit: 500, includeInactive: true });
+      return response.data || [];
+    },
+  });
+
+  const { data: plants = [] } = useQuery({
+    queryKey: ["wo_plants", ...activePlantIds],
+    enabled: Boolean(authEnabled),
+    queryFn: async () => {
+      const response = await listPlants({ page: 1, limit: 500, includeInactive: true });
+      return response.data || [];
+    },
+  });
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ["wo_departments", ...activePlantIds],
+    enabled: Boolean(authEnabled),
+    queryFn: async () => {
+      const response = await listDepartments({ page: 1, limit: 500, includeInactive: true });
+      return response.data || [];
+    },
+  });
+
+  const { data: modules = [] } = useQuery({
+    queryKey: ["wo_modules", ...activePlantIds],
+    enabled: Boolean(authEnabled),
+    queryFn: async () => {
+      const response = await listModules({ page: 1, limit: 500, includeInactive: true });
+      return response.data || [];
+    },
+  });
+
+  const { data: workOrderTeamMappings = [] } = useQuery({
+    queryKey: ["wo_team_mappings", ...activePlantIds],
+    enabled: Boolean(authEnabled),
+    queryFn: async () => {
+      const response = await listWorkOrderTeamMappings({ page: 1, limit: 500 });
       return response.data || [];
     },
   });
