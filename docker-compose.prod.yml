@@ -23,8 +23,7 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
-    command: >
-      sh -c "npm run migration:run:prod; npm run start"
+    command: npm run start
     environment:
       NODE_ENV: production
       PORT: 3001

@@ -276,7 +276,21 @@ brandingRouter.get('/branding/version', async (_req, res, next) => {
 });
 
 brandingRouter.get('/branding/manifest', async (req, res) => {
+  const sendDefaultManifest = () => {
+    res.setHeader('Content-Type', 'application/manifest+json');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json({
+      id: '/', name: 'CMMS', short_name: 'CMMS', description: 'Maintenance Platform',
+      start_url: '/', display: 'standalone', background_color: '#ffffff', theme_color: '#0f172a',
+      icons: [
+        { src: '/jkfenner/jkfenner-favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+        { src: '/jkfenner/jkfenner-logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      ],
+    });
+  };
+
   try {
+    if (res.headersSent) return;
     const parsedQuery = manifestQuerySchema.safeParse(req.query);
     let organization: OrganizationEntity | null = null;
     try {
@@ -285,10 +299,12 @@ brandingRouter.get('/branding/manifest', async (req, res) => {
         : await resolveBrandingForLogoRequest();
       organization = result.organization ?? null;
     } catch {
-      // Fall through to default manifest on any error
+      // Fall through to default manifest
     }
     const themeColor = normalizeThemeColor(organization?.brandColor as string | null | undefined);
-    const manifest = {
+    res.setHeader('Content-Type', 'application/manifest+json');
+    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    res.json({
       id: '/',
       name: 'JK Fenner CMMS',
       short_name: 'JK Fenner CMMS',
@@ -302,19 +318,8 @@ brandingRouter.get('/branding/manifest', async (req, res) => {
         { src: '/jkfenner/jkfenner-logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
         { src: '/jkfenner/jkfenner-logo.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       ],
-    };
-    res.setHeader('Content-Type', 'application/manifest+json');
-    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
-    res.json(manifest);
-  } catch {
-    res.setHeader('Content-Type', 'application/manifest+json');
-    res.json({
-      id: '/', name: 'CMMS', short_name: 'CMMS', description: 'Maintenance Platform',
-      start_url: '/', display: 'standalone', background_color: '#ffffff', theme_color: '#0f172a',
-      icons: [
-        { src: '/jkfenner/jkfenner-favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
-        { src: '/jkfenner/jkfenner-logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      ],
     });
+  } catch {
+    if (!res.headersSent) sendDefaultManifest();
   }
 });
