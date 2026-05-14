@@ -1,37 +1,52 @@
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Bell, X } from "lucide-react";
+
+const DISMISS_COUNT_KEY = "cmms:notif-dismiss-count";
+const MAX_DISMISS_BEFORE_HIDE = 2;
+
+function getDismissCount(): number {
+  try {
+    return Number(sessionStorage.getItem(DISMISS_COUNT_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function incrementDismissCount(): number {
+  const next = getDismissCount() + 1;
+  try {
+    sessionStorage.setItem(DISMISS_COUNT_KEY, String(next));
+  } catch { /* ignore */ }
+  return next;
+}
 
 export function NotificationPermission() {
-  const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
-  const [dismissed, setDismissed] = useState(() => sessionStorage.getItem("cmms:notif-dismissed") === "true");
+  const [visible, setVisible] = useState(false);
   const [requesting, setRequesting] = useState(false);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !("Notification" in window)) {
-      setPermission("unsupported");
-      return;
-    }
-    setPermission(Notification.permission);
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission !== "default") return;
+    if (getDismissCount() >= MAX_DISMISS_BEFORE_HIDE) return;
+    setVisible(true);
   }, []);
 
   const request = async () => {
     if (!("Notification" in window)) return;
     setRequesting(true);
     try {
-      const result = await Notification.requestPermission();
-      setPermission(result);
+      await Notification.requestPermission();
+      setVisible(false);
     } finally {
       setRequesting(false);
     }
   };
 
   const dismiss = () => {
-    setDismissed(true);
-    sessionStorage.setItem("cmms:notif-dismissed", "true");
+    incrementDismissCount();
+    setVisible(false);
   };
 
-  if (permission === "granted" || permission === "unsupported" || dismissed) return null;
+  if (!visible) return null;
 
   return (
     <div className="fixed bottom-36 left-4 right-4 z-50 mx-auto max-w-md animate-in slide-in-from-bottom-4 fade-in">
