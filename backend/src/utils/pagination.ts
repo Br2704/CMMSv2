@@ -81,6 +81,12 @@ export const listQuerySchema = z.object({
     const scalar = toScalar(value);
     return typeof scalar === 'string' ? scalar.trim() : undefined;
   }, z.string().optional()),
+  order: z.preprocess((value) => {
+    const scalar = toScalar(value);
+    if (typeof scalar !== 'string') return undefined;
+    const normalized = scalar.trim().toUpperCase();
+    return normalized === 'ASC' || normalized === 'DESC' ? normalized : undefined;
+  }, z.enum(['ASC', 'DESC']).optional()),
   dateRange: dateRangeSchema,
 }).strict();
 

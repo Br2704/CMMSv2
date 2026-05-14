@@ -1,7 +1,7 @@
 import { getPermissionsMe, type PermissionsMeResponse } from "@/api/permissionsMe";
 import { getMe } from "@/api/auth";
 import { getOrganizationRbacVersion, getRbacPermissionsMe, getRbacVersion } from "@/api/rbac";
-import { getStoredAccessToken } from "@/api/http";
+import { getStoredAccessToken } from "@/api/token";
 import { create } from "zustand";
 
 const PERMISSIONS_CACHE_TTL_MS = 60_000;

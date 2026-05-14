@@ -1,5 +1,6 @@
 import { buildBrandingLogoUrl, getBrandingMe, getBrandingVersion } from "@/api/branding";
-import { ApiError, getStoredAccessToken } from "@/api/http";
+import { ApiError } from "@/api/http";
+import { getStoredAccessToken } from "@/api/token";
 import { create } from "zustand";
 
 const BRANDING_WATCH_INTERVAL_MS = 30_000;
@@ -101,10 +102,8 @@ function applyForbiddenFallback(get: () => BrandingState, set: (partial: Partial
   set({ ...snapshot, loading: false });
 }
 
-const initialSnapshot = getStoredAccessToken() ? readCachedSnapshot() : getDefaultSnapshot();
-
 export const useBrandingStore = create<BrandingState>((set, get) => ({
-  ...initialSnapshot,
+  ...(getStoredAccessToken() ? readCachedSnapshot() : getDefaultSnapshot()),
   version: null,
   loading: false,
 

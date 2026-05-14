@@ -1,5 +1,6 @@
 import { getFeaturesMe, type FeatureMap } from "@/api/features";
-import { ApiError, getStoredAccessToken } from "@/api/http";
+import { ApiError } from "@/api/http";
+import { getStoredAccessToken } from "@/api/token";
 import { create } from "zustand";
 
 interface FeaturesState {

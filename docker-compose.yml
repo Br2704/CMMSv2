@@ -37,8 +37,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-cmms-docker-jwt-secret-2026-rotate-me-32-chars}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-cmms-docker-refresh-secret-2026-rotate-me-32-chars}
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-cmms-docker-encryption-key-2026-rotate-me-32}
-      FRONTEND_URL: ${APP_BASE_URL:-http://localhost:8080}
-      CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:8080,http://localhost,http://127.0.0.1:8080,http://127.0.0.1}
+      FRONTEND_URL: ${APP_BASE_URL:-http://localhost:8081}
+      CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:8081,http://localhost:8080,http://localhost,http://127.0.0.1:8081,http://127.0.0.1:8080,http://127.0.0.1}
     ports:
       - "3002:3001"
     depends_on:

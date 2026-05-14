@@ -256,7 +256,7 @@ export default function WorkOrders() {
     [user?.authId, user?.id],
   );
 
-  const { data: workOrderMasters = [] } = useQuery({
+  const { data: workOrderMasters = [], isLoading: isWorkOrderConfigLoading } = useQuery({
     queryKey: ["work_order_masters", ...activePlantIds],
     enabled: Boolean(authEnabled),
     queryFn: async () => {
@@ -265,7 +265,7 @@ export default function WorkOrders() {
     },
   });
 
-  const { data: plants = [] } = useQuery({
+  const { data: plants = [], isLoading: isPlantsLoading } = useQuery({
     queryKey: ["wo_plants", ...activePlantIds],
     enabled: Boolean(authEnabled),
     queryFn: async () => {
@@ -274,7 +274,7 @@ export default function WorkOrders() {
     },
   });
 
-  const { data: departments = [] } = useQuery({
+  const { data: departments = [], isLoading: isDepartmentsLoading } = useQuery({
     queryKey: ["wo_departments", ...activePlantIds],
     enabled: Boolean(authEnabled),
     queryFn: async () => {
@@ -283,7 +283,7 @@ export default function WorkOrders() {
     },
   });
 
-  const { data: modules = [] } = useQuery({
+  const { data: modules = [], isLoading: isModulesLoading } = useQuery({
     queryKey: ["wo_modules", ...activePlantIds],
     enabled: Boolean(authEnabled),
     queryFn: async () => {
@@ -291,6 +291,8 @@ export default function WorkOrders() {
       return response.data || [];
     },
   });
+
+  const isHierarchyLoading = isPlantsLoading || isDepartmentsLoading || isModulesLoading;
 
   const { data: workOrderTeamMappings = [] } = useQuery({
     queryKey: ["wo_team_mappings", ...activePlantIds],
@@ -300,6 +302,8 @@ export default function WorkOrders() {
       return response.data || [];
     },
   });
+
+  const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "incharge" | "all" | "approval">("assigned");
 
   const { data: allWorkOrders = [], isLoading, isFetching, refetch, dataUpdatedAt } = useQuery({
     queryKey: ["work_orders", ...activePlantIds, activeTab, actorIds],
@@ -335,7 +339,6 @@ export default function WorkOrders() {
     );
   }, [allWorkOrders, userIsAdmin]);
 
-  const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "incharge" | "all" | "approval">("assigned");
   const activeAssetHistoryId = assetIdFromQuery?.trim() || "";
   const isAssetHistoryMode = Boolean(activeAssetHistoryId);
 
@@ -454,6 +457,17 @@ export default function WorkOrders() {
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  const [formData, setFormData] = useState(() => getInitialRaiseFormData(user?.plantId || ""));
+  const [photoAttachments, setPhotoAttachments] = useState<PhotoAttachment[]>([]);
+  const [reviewTargetWO, setReviewTargetWO] = useState<any>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const raiseFileInputRef = useRef<HTMLInputElement | null>(null);
+  const closeFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isCameraDialogOpen, setIsCameraDialogOpen] = useState(false);
+  const [cameraTarget, setCameraTarget] = useState<"RAISE" | "CLOSE" | null>(null);
+  const [cameraError, setCameraError] = useState("");
   const reviewRequiresComments = useMemo(
     () => selectedWO !== null && isAdmin(user) && !isOwnedByCurrentUser(selectedWO.raised_by),
     [selectedWO, user],

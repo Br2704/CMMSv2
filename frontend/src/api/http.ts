@@ -1,8 +1,26 @@
+import {
+  getStoredAccessToken,
+  setStoredAccessToken,
+  clearStoredAccessToken,
+  getStoredCsrfToken,
+  setStoredCsrfToken,
+  clearStoredCsrfToken,
+  getStoredRefreshToken,
+  setStoredRefreshToken,
+  clearStoredRefreshToken,
+  setSessionBootstrapHint,
+  clearSessionBootstrapHint,
+  hasSessionBootstrapHint,
+  readCookie,
+  clearCookie,
+  getUnauthorizedCallback,
+  SESSION_HINT_KEY,
+  SESSION_COOKIE_NAME,
+} from "./token";
+
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1"]);
 const DEFAULT_DEV_API_BASE_URL = "http://localhost:3001/api";
 const DEFAULT_PROD_API_BASE_URL = "/api";
-const SESSION_HINT_KEY = "cmms_has_session";
-const SESSION_COOKIE_NAME = "cmms_session";
 
 function normalizeApiBaseUrl(value: string): string {
   const trimmed = value.trim();
@@ -38,9 +56,6 @@ const API_BASE_URL = shouldUseDevProxy
   ? "/api"
   : (configuredApiBase || (import.meta.env.PROD ? DEFAULT_PROD_API_BASE_URL : DEFAULT_DEV_API_BASE_URL));
 let unauthorizedHandled = false;
-let accessTokenMemory: string | null = null;
-let csrfTokenMemory: string | null = null;
-let refreshTokenMemory: string | null = null;
 let bootstrapRefreshAttempted = false;
 const isDev = import.meta.env.DEV;
 const isTest = import.meta.env.MODE === "test";
@@ -49,11 +64,6 @@ function debugLog(...args: unknown[]) {
   if (isDev) {
     console.log("[HTTP]", ...args);
   }
-}
-
-function getSessionStorage() {
-  if (typeof window === "undefined") return null;
-  return window.sessionStorage;
 }
 
 if (isDev) {
@@ -75,64 +85,7 @@ export class ApiError extends Error {
   }
 }
 
-export function getStoredAccessToken(): string | null {
-  return accessTokenMemory;
-}
-
-export function setStoredAccessToken(token: string): void {
-  accessTokenMemory = token;
-  if (token) {
-    bootstrapRefreshAttempted = false;
-  }
-}
-
-export function clearStoredAccessToken(): void {
-  accessTokenMemory = null;
-  bootstrapRefreshAttempted = false;
-}
-
-export function getStoredCsrfToken(): string | null {
-  return csrfTokenMemory || getSessionStorage()?.getItem(CSRF_TOKEN_STORAGE_KEY) || null;
-}
-
-export function setStoredCsrfToken(token: string): void {
-  csrfTokenMemory = token;
-  try { getSessionStorage()?.setItem(CSRF_TOKEN_STORAGE_KEY, token); } catch { /* ignore */ }
-}
-
-export function clearStoredCsrfToken(): void {
-  csrfTokenMemory = null;
-  try { getSessionStorage()?.removeItem(CSRF_TOKEN_STORAGE_KEY); } catch { /* ignore */ }
-}
-
-const REFRESH_TOKEN_STORAGE_KEY = "cmms_refresh_token";
-const CSRF_TOKEN_STORAGE_KEY = "cmms_csrf_token";
-
-export function getStoredRefreshToken(): string | null {
-  return refreshTokenMemory || getSessionStorage()?.getItem(REFRESH_TOKEN_STORAGE_KEY) || null;
-}
-
-export function setStoredRefreshToken(token: string): void {
-  refreshTokenMemory = token;
-  try { getSessionStorage()?.setItem(REFRESH_TOKEN_STORAGE_KEY, token); } catch { /* ignore */ }
-}
-
-export function clearStoredRefreshToken(): void {
-  refreshTokenMemory = null;
-  try { getSessionStorage()?.removeItem(REFRESH_TOKEN_STORAGE_KEY); } catch { /* ignore */ }
-}
-
-export function setSessionBootstrapHint(): void {
-  getSessionStorage()?.setItem(SESSION_HINT_KEY, "true");
-}
-
-export function clearSessionBootstrapHint(): void {
-  getSessionStorage()?.removeItem(SESSION_HINT_KEY);
-}
-
-function hasSessionBootstrapHint(): boolean {
-  return getSessionStorage()?.getItem(SESSION_HINT_KEY) === "true";
-}
+export { getStoredAccessToken, setStoredAccessToken, clearStoredAccessToken, getStoredCsrfToken, setStoredCsrfToken, clearStoredCsrfToken, getStoredRefreshToken, setStoredRefreshToken, clearStoredRefreshToken, setSessionBootstrapHint, clearSessionBootstrapHint } from "./token";
 
 function hasSessionBootstrapEvidence(): boolean {
   const hasSessionCookie = readCookie(SESSION_COOKIE_NAME) === "1";
@@ -149,24 +102,8 @@ function hasSessionBootstrapEvidence(): boolean {
   return isTest;
 }
 
-function readCookie(name: string): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${name}=`));
-  if (!match) return null;
-  const value = match.slice(name.length + 1);
-  return value ? decodeURIComponent(value) : null;
-}
-
 function getCsrfForRequest(): string | null {
   return getStoredCsrfToken() ?? readCookie("cmms_csrf_token");
-}
-
-function clearCookie(name: string): void {
-  if (typeof document === "undefined") return;
-  document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`;
 }
 
 async function handleUnauthorized(): Promise<void> {
@@ -181,21 +118,7 @@ async function handleUnauthorized(): Promise<void> {
   clearCookie("cmms_csrf_token");
 
   try {
-    const { useAuthStore } = await import("@/store/auth.store");
-    const auth = useAuthStore.getState();
-    const alreadyLoggedOut =
-      !auth.user &&
-      !auth.session &&
-      !auth.isAuthenticated &&
-      !auth.activePlantId &&
-      !auth.activePlantCode &&
-      !auth.activePlantName;
-
-    if (!alreadyLoggedOut) {
-      auth.setUser(null);
-      auth.setSession(null);
-      auth.setActivePlant(null, null, null);
-    }
+    getUnauthorizedCallback()?.();
   } catch {
     // Ignore store reset errors and proceed to login redirect.
   }

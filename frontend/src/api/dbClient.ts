@@ -1,5 +1,5 @@
-import { ApiError, getStoredAccessToken, httpRequest } from "@/api/http";
-import { usePermissionsStore } from "@/store/permissions.store";
+import { ApiError, httpRequest } from "@/api/http";
+import { getStoredAccessToken } from "@/api/token";
 
 type ApiResult<T> = {
   data: T | null;
@@ -94,7 +94,8 @@ async function apiFetch(path: string, init: RequestInit = {}) {
         status: 0,
       };
     }
-    const { permissionsMe, loading: permissionsLoading } = usePermissionsStore.getState();
+    const { usePermissionsStore: PermissionStore } = await import("@/store/permissions.store");
+    const { permissionsMe, loading: permissionsLoading } = PermissionStore.getState();
     if (isAuthenticated && accessToken && (permissionsLoading || !permissionsMe)) {
       return {
         ok: false,

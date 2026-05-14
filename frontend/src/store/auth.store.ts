@@ -1,5 +1,6 @@
 import { getMe, logout as apiLogout, type MeResponse } from "@/api/auth";
 import { ensureAccessToken } from "@/api/http";
+import { setUnauthorizedCallback } from "@/api/token";
 import { mastersOptionsStore } from "@/store/mastersOptions.store";
 import { create } from "zustand";
 
@@ -191,6 +192,15 @@ export async function fetchUserProfile(_unusedAuthUserId?: string): Promise<AppU
 }
 
 let initializeAuthStateInFlight: Promise<void> | null = null;
+
+setUnauthorizedCallback(() => {
+  const s = useAuthStore.getState();
+  if (s.user || s.session || s.isAuthenticated || s.activePlantId) {
+    s.setUser(null);
+    s.setSession(null);
+    s.setActivePlant(null, null, null);
+  }
+});
 
 export async function initializeAuthState(): Promise<void> {
   if (initializeAuthStateInFlight) {

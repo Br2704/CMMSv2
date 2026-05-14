@@ -61,11 +61,16 @@ async function fetchPushPublicKey(): Promise<string | null> {
 }
 
 async function sendSubscriptionToServer(subscription: PushSubscription): Promise<void> {
+  const token = getStoredAccessToken();
+  if (!token) {
+    // User is not authenticated yet — skip silently to avoid 401 errors.
+    return;
+  }
   await fetch(`${getApiBaseUrl()}/push/subscribe`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${getStoredAccessToken() ?? ""}`,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ subscription: subscription.toJSON() }),
   });
