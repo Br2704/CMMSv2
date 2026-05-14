@@ -2,7 +2,6 @@ import { getPermissionsMe, type PermissionsMeResponse } from "@/api/permissionsM
 import { getMe } from "@/api/auth";
 import { getOrganizationRbacVersion, getRbacPermissionsMe, getRbacVersion } from "@/api/rbac";
 import { getStoredAccessToken } from "@/api/http";
-import { useAuthStore } from "@/store/auth.store";
 import { create } from "zustand";
 
 const PERMISSIONS_CACHE_TTL_MS = 60_000;
@@ -284,7 +283,8 @@ export const usePermissionsStore = create<PermissionsStoreState>((set, get) => (
   rbacVersionEndpointAvailable: ENABLE_RBAC_VERSION_ENDPOINT ? null : false,
 
   fetchPermissionsMe: async (forceRefresh = false) => {
-    const auth = useAuthStore.getState();
+    const { useAuthStore: AuthStore } = await import("@/store/auth.store");
+    const auth = AuthStore.getState();
     const accessToken = getStoredAccessToken();
     const now = Date.now();
 
@@ -407,7 +407,8 @@ export const usePermissionsStore = create<PermissionsStoreState>((set, get) => (
   },
 
   fetchRbacVersion: async (_forceRefresh = false) => {
-    const auth = useAuthStore.getState();
+    const { useAuthStore: AuthStore } = await import("@/store/auth.store");
+    const auth = AuthStore.getState();
     const accessToken = getStoredAccessToken();
     if (!auth.user || !accessToken) {
       return;
