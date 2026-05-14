@@ -251,6 +251,10 @@ export default function WorkOrders() {
   const workOrderRefetchInterval: number | false = authEnabled ? 15_000 : false;
 
   const activePlantIds = user?.plantId ? [user.plantId] : [];
+  const actorIds = useMemo(
+    () => new Set([user?.authId, user?.id].filter((value): value is string => Boolean(value))),
+    [user?.authId, user?.id],
+  );
 
   const { data: workOrderMasters = [] } = useQuery({
     queryKey: ["work_order_masters", ...activePlantIds],
@@ -311,13 +315,6 @@ export default function WorkOrders() {
     },
   });
 
-  const actorIds = useMemo(
-    () =>
-      new Set(
-        [user?.authId, user?.id].filter((value): value is string => Boolean(value)),
-      ),
-    [user?.authId, user?.id],
-  );
   const isOwnedByCurrentUser = (value: unknown) => typeof value === "string" && actorIds.has(value);
 
   const assignedWorkOrders = useMemo(() => {
