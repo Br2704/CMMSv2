@@ -164,9 +164,9 @@ export default function Dashboard() {
         >
           <div className="flex items-center gap-3">
              <div className="h-10 w-1 rounded-full bg-primary" />
-             <p className="text-xs font-black uppercase tracking-[0.3em] text-primary/70">{getRoleGreeting()}</p>
+             <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary/70">{getRoleGreeting()}</p>
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl lg:text-5xl">
+          <h1 className="text-xl font-black tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
             {userIsSuperAdmin && showingOverview ? "Global Governance" : "Command Center"}
           </h1>
           <div className="flex items-center gap-3 pt-2">
@@ -212,18 +212,16 @@ export default function Dashboard() {
       {/* Advanced Data Modules: Accurate 2-Column Grid */}
       {!userIsHR && !userIsSafety && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-           {/* Tier 1: Reliability Benchmarks */}
            <MTTRTrendChart data={charts.mttrTrendData} />
            <MTBFTrendChart data={charts.mtbfTrendData} />
            
-           {/* Tier 2: Analytical Core */}
            <div className="lg:col-span-2">
               <WOTrendChart data={charts.woTrendData} />
            </div>
+
            <WOByStatusChart data={charts.woByStatusData} />
            <WOByCategoryChart data={charts.woByCategoryData} />
 
-           {/* Tier 3: Live Operational Feed (Full Width) */}
            <div className="lg:col-span-2 mt-4">
               <RecentWorkOrdersTable workOrders={recentWOs} isLoading={isLoading} />
            </div>

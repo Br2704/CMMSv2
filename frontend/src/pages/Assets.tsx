@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Eye, Factory, Gauge, History, Image as ImageIcon, Loader2, QrCode, ScanLine, Search, ShieldCheck, Wrench } from "lucide-react";
+import { Eye, Factory, Gauge, History, Image as ImageIcon, Loader2, QrCode, RotateCcw, ScanLine, Search, ShieldCheck, Wrench } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getAsset, getAssetOverview, type Asset, type AssetOverview } from "@/api/assets";
 import { getMasterDataGraph } from "@/api/master-data";
@@ -10,18 +10,17 @@ import { getAssetQr, resolveQrMachineCode, resolveQrToken, type AssetQrData } fr
 import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { ViewDialog } from "@/components/shared/ViewDialog";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
-import { EnterpriseAssetGraph } from "@/components/assets/EnterpriseAssetGraph";
 import { parseQrContent } from "@/mobile/qr";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface WorkOrderSummary {
   id: string;
@@ -30,11 +29,6 @@ interface WorkOrderSummary {
   status: string | null;
 }
 
-interface KpiPreview {
-  mttr: string;
-  mtbf: string;
-  loading: boolean;
-}
 
 type AssetStatusFilter = "all" | "ACTIVE" | "UNDER_MAINTENANCE" | "INACTIVE";
 
@@ -85,157 +79,143 @@ function AssetOverviewPanel({
   };
 
   return (
-    <div className="space-y-4">
-      <Card className="border-border/70 bg-card/95">
-        <CardContent className="space-y-4 pt-4">
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="flex w-full justify-center">
-              <div className="flex h-[220px] w-full max-w-[360px] items-center justify-center overflow-hidden rounded-xl border border-border/60 bg-muted/30 shadow-sm">
-                {overview.asset.machineImageUrl ? (
-                  <img src={overview.asset.machineImageUrl} alt={overview.asset.name} className="max-h-full max-w-full object-contain" />
-                ) : (
-                  <div className="flex flex-col items-center text-muted-foreground">
-                    <ImageIcon className="mb-2 h-10 w-10" />
-                    <p className="text-sm">No Image Available</p>
+    <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="overflow-hidden rounded-[2rem] border-none bg-slate-50 shadow-inner">
+           {overview.asset.machineImageUrl ? (
+             <div className="relative h-64 w-full overflow-hidden">
+               <img src={overview.asset.machineImageUrl} alt={overview.asset.name} className="h-full w-full object-cover" />
+               <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+             </div>
+           ) : (
+             <div className="flex h-48 flex-col items-center justify-center gap-3 text-slate-300">
+               <ImageIcon className="h-12 w-12" />
+               <p className="text-[10px] font-black uppercase tracking-widest">No Intelligence Image</p>
+             </div>
+           )}
+           <CardContent className="p-6">
+             <div className="flex items-center justify-between mb-4">
+                <div className="space-y-0.5">
+                   <p className="text-[9px] font-black uppercase tracking-widest text-primary">Node Core</p>
+                   <h3 className="text-lg font-black text-slate-900 tracking-tight">{overview.asset.name}</h3>
+                </div>
+                <StatusBadge variant={assetStatusVariant(overview.asset.status)}>{overview.asset.status.replace(/_/g, " ")}</StatusBadge>
+             </div>
+             
+             <div className="grid grid-cols-2 gap-3 mb-6">
+               <div className="rounded-2xl bg-white p-3 shadow-sm border border-slate-100">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">MTTR</p>
+                  <p className="text-sm font-bold text-slate-900">{formatMinutes(reliability?.mttrMinutes)}</p>
+               </div>
+               <div className="rounded-2xl bg-white p-3 shadow-sm border border-slate-100">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Criticality</p>
+                  <StatusBadge variant={overview.asset.criticality === "HIGH" ? "critical" : "default"} className="h-5 px-2 text-[9px]">{overview.asset.criticality || "STABLE"}</StatusBadge>
+               </div>
+             </div>
+
+             <div className="space-y-3">
+               <div className="flex items-center justify-between pb-2 border-b border-slate-100/50">
+                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Serial Number</span>
+                 <span className="text-xs font-black text-slate-700">{overview.asset.serialNumber || "-"}</span>
+               </div>
+               <div className="flex items-center justify-between">
+                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Model</span>
+                 <span className="text-xs font-black text-slate-700">{overview.asset.model || "-"}</span>
+               </div>
+             </div>
+           </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
+             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">Operations Context</h4>
+             <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-10 w-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600"><Factory className="h-5 w-5" /></div>
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Department</p>
+                    <p className="text-sm font-bold text-slate-900">{overview.hierarchy?.department?.name || "-"}</p>
                   </div>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
-              <div className="flex items-center gap-2">
-                <ScanLine className="h-4 w-4 text-primary" />
-                <p className="text-sm font-semibold">Asset QR</p>
-              </div>
-              <div className="mt-3 flex min-h-[172px] items-center justify-center rounded-lg border border-border/60 bg-white p-3 shadow-sm">
-                {qrLoading ? (
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                ) : qrImageUrl ? (
-                  <button
-                    type="button"
-                    className="rounded-lg transition-transform hover:scale-[1.01] focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:cursor-default disabled:hover:scale-100"
-                    onClick={() => void handleCopyResolverUrl()}
-                    disabled={!resolverUrl}
-                    aria-label="Copy QR resolver link"
-                    title={resolverUrl ? "Copy QR resolver link" : "QR link unavailable"}
-                  >
-                    <img src={qrImageUrl} alt={`${overview.asset.code} QR`} className="h-40 w-40 object-contain" />
-                  </button>
-                ) : (
-                  <div className="text-center text-xs text-muted-foreground">
-                    QR preview is not available.
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="h-10 w-10 rounded-xl bg-violet-50 flex items-center justify-center text-violet-600"><Gauge className="h-5 w-5" /></div>
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Module Mapping</p>
+                    <p className="text-sm font-bold text-slate-900">{overview.hierarchy?.module?.name || "-"}</p>
                   </div>
-                )}
-              </div>
-              <p className="mt-3 text-center text-[11px] text-muted-foreground">
-                {resolverUrl ? "Click the QR image to copy the asset link." : "QR link is not available for this asset."}
-              </p>
-            </div>
+                </div>
+             </div>
           </div>
 
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">{overview.asset.code}</p>
-              <h3 className="truncate text-lg font-semibold">{overview.asset.name}</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {overview.hierarchy.department ? `${overview.hierarchy.department.code} - ${overview.hierarchy.department.name}` : "No Department"} /{" "}
-                {overview.hierarchy.module ? `${overview.hierarchy.module.code ? `${overview.hierarchy.module.code} - ` : ""}${overview.hierarchy.module.name}` : "No Module"}
-              </p>
-            </div>
-            <div className="flex flex-col items-end gap-1">
-              <StatusBadge variant={assetStatusVariant(overview.asset.status)}>{overview.asset.status.replace(/_/g, " ")}</StatusBadge>
-              <StatusBadge variant={overview.asset.criticality === "HIGH" ? "critical" : overview.asset.criticality === "MEDIUM" ? "warning" : "default"}>
-                {overview.asset.criticality}
-              </StatusBadge>
-            </div>
+          <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm overflow-hidden">
+             <div className="flex items-center justify-between mb-4">
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Quick Actions & Identity</h4>
+             </div>
+             
+             <div className="flex gap-4">
+                <div className="grid grid-cols-1 gap-3 flex-1">
+                  <Button className="h-14 rounded-2xl flex-row gap-2 shadow-glow" onClick={onRaiseWorkOrder}>
+                    <Wrench className="h-4 w-4" />
+                    <span className="text-[10px] font-black uppercase">Raise Incident</span>
+                  </Button>
+                  <Button variant="outline" className="h-14 rounded-2xl flex-row gap-2 border-slate-100" onClick={() => toast.info("History download initiated")}>
+                    <History className="h-4 w-4" />
+                    <span className="text-[10px] font-black uppercase">Logbook</span>
+                  </Button>
+                </div>
+
+                <div 
+                  className="group relative h-32 w-32 shrink-0 cursor-pointer rounded-2xl border border-slate-100 bg-slate-50 p-2 transition-all hover:bg-slate-100"
+                  onClick={handleCopyResolverUrl}
+                >
+                   {qrLoading ? (
+                     <div className="flex h-full items-center justify-center">
+                        <Loader2 className="h-6 w-6 animate-spin text-slate-300" />
+                     </div>
+                   ) : qrImageUrl ? (
+                     <>
+                        <img src={qrImageUrl} alt="Asset QR" className="h-full w-full object-contain mix-blend-multiply" />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100 rounded-2xl">
+                           <span className="text-[8px] font-black text-white uppercase tracking-widest">Copy Link</span>
+                        </div>
+                     </>
+                   ) : (
+                     <div className="flex h-full items-center justify-center text-slate-300">
+                        <QrCode className="h-8 w-8" />
+                     </div>
+                   )}
+                </div>
+             </div>
           </div>
+        </div>
+      </div>
 
-          <div className="grid gap-2 text-xs sm:grid-cols-2">
-            <div className="rounded-md bg-muted/50 p-2"><p className="text-muted-foreground">Type</p><p className="font-medium">{overview.asset.assetType || overview.asset.type}</p></div>
-            <div className="rounded-md bg-muted/50 p-2"><p className="text-muted-foreground">AMC Vendor</p><p className="font-medium">{overview.asset.vendor?.vendorName || overview.asset.vendor?.name || "-"}</p></div>
-            <div className="rounded-md bg-muted/50 p-2"><p className="text-muted-foreground">Model</p><p className="font-medium">{overview.asset.model || "-"}</p></div>
-            <div className="rounded-md bg-muted/50 p-2"><p className="text-muted-foreground">Location</p><p className="font-medium">{overview.asset.location || "-"}</p></div>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-lg border border-border/60 p-3">
-              <div className="flex items-center gap-2"><Gauge className="h-4 w-4 text-primary" /><p className="text-sm font-semibold">Reliability</p></div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <div className="rounded-md bg-muted/20 p-2"><p className="text-[11px] text-muted-foreground">MTTR</p><p className="text-sm font-semibold">{formatMinutes(reliability?.mttrMinutes)}</p></div>
-                <div className="rounded-md bg-muted/20 p-2"><p className="text-[11px] text-muted-foreground">MTBF</p><p className="text-sm font-semibold">{formatMinutes(reliability?.mtbfMinutes)}</p></div>
-                <div className="rounded-md bg-muted/20 p-2"><p className="text-[11px] text-muted-foreground">Downtime</p><p className="text-sm font-semibold">{formatMinutes(reliability?.downtimeMinutes)}</p></div>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-border/60 p-3">
-              <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary" /><p className="text-sm font-semibold">AMC Coverage</p></div>
-              <div className="mt-3 space-y-2">
-                {overview.amcContracts.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No AMC contracts linked.</p>
-                ) : (
-                  overview.amcContracts.slice(0, 3).map((contract, index) => (
-                    <div key={String(contract.id || index)} className="rounded-md border border-border/50 bg-muted/20 p-2.5">
-                      <p className="text-xs font-semibold text-primary">{String(contract.contractName || contract.contract_name || "AMC Contract")}</p>
-                      <p className="mt-1 text-[11px] text-muted-foreground">{String(contract.status || "ACTIVE").replace(/_/g, " ")}</p>
+      <div className="rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-sm">
+         <div className="flex items-center justify-between mb-6">
+            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Maintenance History</h4>
+            <div className="h-1 w-12 bg-slate-100 rounded-full" />
+         </div>
+         <div className="space-y-3">
+           {overview.workOrders.length === 0 ? (
+             <div className="py-12 text-center border-2 border-dashed border-slate-50 rounded-3xl">
+               <p className="text-xs font-bold text-slate-300">Operational Log Stable</p>
+             </div>
+           ) : (
+             overview.workOrders.slice(0, 5).map((wo) => (
+               <div key={wo.id} className="group flex items-center justify-between p-4 rounded-2xl border border-slate-50 hover:border-primary/20 hover:bg-primary/5 transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className={cn("h-2 w-2 rounded-full", workOrderStatusVariant(wo.status) === "active" ? "bg-emerald-500" : "bg-rose-500")} />
+                    <div>
+                      <p className="text-xs font-black text-slate-900">{wo.woNumber}</p>
+                      <p className="text-[10px] font-bold text-slate-400 truncate max-w-[200px]">{wo.problemDescription || "Routine maintenance"}</p>
                     </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-lg border border-border/60 p-3">
-              <div className="flex items-center gap-2"><Wrench className="h-4 w-4 text-primary" /><p className="text-sm font-semibold">Maintenance Linkage</p></div>
-              <div className="mt-3 space-y-2 text-xs text-muted-foreground">
-                <p>Work orders: {overview.workOrders.length}</p>
-                <p>PM / Pd schedules: {overview.pmSchedules.length}</p>
-                <p>Calibration tasks: {overview.calibrationTasks.length}</p>
-                <p>Service reports: {overview.amcServiceReports.length}</p>
-                <p>Spare usage logs: {overview.spareUsage.length}</p>
-              </div>
-            </div>
-            <div className="rounded-lg border border-border/60 p-3">
-              <div className="flex items-center gap-2"><Gauge className="h-4 w-4 text-primary" /><p className="text-sm font-semibold">Energy / ESG Snapshot</p></div>
-              <div className="mt-3 space-y-2 text-xs text-muted-foreground">
-                {overview.analytics.performance.slice(0, 3).map((sample) => (
-                  <p key={sample.id}>
-                    {format(new Date(sample.capturedAt), "dd MMM yyyy, hh:mm a")} | Runtime {sample.runtimeHours || "-"} h | Energy {sample.energyKwh || "-"} kWh
-                  </p>
-                ))}
-                {overview.analytics.performance.length === 0 ? <p>No recent energy samples.</p> : null}
-                <p>ESG entries in plant scope: {overview.analytics.esgSample.length}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-border/60 p-3">
-            <div className="flex items-center gap-2"><Factory className="h-4 w-4 text-primary" /><p className="text-sm font-semibold">Recent Work Orders</p></div>
-            <div className="mt-3 space-y-2">
-              {overview.workOrders.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No work orders recorded for this machine.</p>
-              ) : (
-                overview.workOrders.slice(0, 6).map((workOrder) => (
-                  <div key={workOrder.id} className="rounded-md border border-border/50 bg-muted/20 p-2.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-semibold text-primary">{workOrder.woNumber}</span>
-                      <StatusBadge className="text-[10px]" variant={workOrderStatusVariant(workOrder.status)}>{workOrder.status.replace(/_/g, " ")}</StatusBadge>
-                    </div>
-                    <p className="mt-1 text-xs text-foreground/90">{workOrder.problemDescription || "No problem description"}</p>
                   </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <Button className="gap-2" onClick={onRaiseWorkOrder}>
-              <Wrench className="h-4 w-4" />
-              Raise Work Order
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+                  <StatusBadge className="text-[8px]" variant={workOrderStatusVariant(wo.status)}>{wo.status.replace(/_/g, " ")}</StatusBadge>
+               </div>
+             ))
+           )}
+         </div>
+      </div>
     </div>
   );
 }
@@ -245,21 +225,15 @@ export default function Assets() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, activePlantId } = useAuthStore();
   const userIsSuperAdmin = isSuperAdmin(user);
-  const [activeTab, setActiveTab] = useState<"flow" | "list">("list");
   const [search, setSearch] = useState("");
   const [selectedPlantId, setSelectedPlantId] = useState("");
   const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
   const [selectedModuleId, setSelectedModuleId] = useState("");
   const [statusFilter, setStatusFilter] = useState<AssetStatusFilter>("all");
-  const [flowSearch, setFlowSearch] = useState("");
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
-  const [qrBlinkAssetId, setQrBlinkAssetId] = useState<string | null>(null);
-  const [assetKpiPreview, setAssetKpiPreview] = useState<Record<string, KpiPreview>>({});
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [resolvingQr, setResolvingQr] = useState(false);
-  const kpiPrefetchInFlightRef = useRef<Set<string>>(new Set());
-  const qrBlinkTimeoutRef = useRef<number | null>(null);
   const assetIdFromQuery = searchParams.get("assetId");
   const queryOpenHandledRef = useRef<string | null>(null);
 
@@ -338,27 +312,6 @@ export default function Assets() {
     };
   }, [assetQrQuery.data?.data?.qrPayload]);
 
-  useEffect(() => {
-    return () => {
-      if (qrBlinkTimeoutRef.current) {
-        window.clearTimeout(qrBlinkTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const overview = overviewQuery.data?.data;
-    if (!overview?.asset?.id) return;
-
-    setAssetKpiPreview((current) => ({
-      ...current,
-      [overview.asset.id]: {
-        mttr: formatMinutes(overview.analytics.reliability?.mttrMinutes),
-        mtbf: formatMinutes(overview.analytics.reliability?.mtbfMinutes),
-        loading: false,
-      },
-    }));
-  }, [overviewQuery.data?.data]);
 
   const graph = masterDataQuery.data?.data;
   const plants = useMemo(() => graph?.plants ?? [], [graph?.plants]);
@@ -456,7 +409,6 @@ export default function Assets() {
     queryOpenHandledRef.current = resolvedAsset.id;
     setSelectedAsset(resolvedAsset);
     setIsViewOpen(true);
-    setActiveTab("list");
     if (resolvedAsset.plantId) {
       setSelectedPlantId(resolvedAsset.plantId);
     }
@@ -481,55 +433,11 @@ export default function Assets() {
     [visibleAssets, workOrdersByAsset],
   );
 
-  const handlePrefetchAssetKpi = async (assetId: string) => {
-    if (!assetId) return;
-    if (kpiPrefetchInFlightRef.current.has(assetId)) return;
-    if (assetKpiPreview[assetId] && !assetKpiPreview[assetId].loading) return;
-
-    kpiPrefetchInFlightRef.current.add(assetId);
-    setAssetKpiPreview((current) => {
-      const previous = current[assetId];
-      if (previous && !previous.loading) return current;
-      return {
-        ...current,
-        [assetId]: {
-          mttr: previous?.mttr || "-",
-          mtbf: previous?.mtbf || "-",
-          loading: true,
-        },
-      };
-    });
-
-    try {
-      const response = await getAssetOverview(assetId);
-      setAssetKpiPreview((current) => ({
-        ...current,
-        [assetId]: {
-          mttr: formatMinutes(response.data.analytics.reliability?.mttrMinutes),
-          mtbf: formatMinutes(response.data.analytics.reliability?.mtbfMinutes),
-          loading: false,
-        },
-      }));
-    } catch {
-      setAssetKpiPreview((current) => ({
-        ...current,
-        [assetId]: {
-          mttr: current[assetId]?.mttr || "-",
-          mtbf: current[assetId]?.mtbf || "-",
-          loading: false,
-        },
-      }));
-    } finally {
-      kpiPrefetchInFlightRef.current.delete(assetId);
-    }
-  };
 
   const openAssetFromContext = async (
     assetId: string,
     options?: {
       openDialog?: boolean;
-      targetTab?: "flow" | "list";
-      blinkInMindmap?: boolean;
     },
   ) => {
     let resolvedAsset = assets.find((asset) => asset.id === assetId) || null;
@@ -550,20 +458,8 @@ export default function Assets() {
     setSelectedAsset(resolvedAsset);
 
     const openDialog = options?.openDialog ?? true;
-    const targetTab = options?.targetTab ?? "list";
 
-    setActiveTab(targetTab);
     setIsViewOpen(openDialog);
-
-    if (options?.blinkInMindmap) {
-      setQrBlinkAssetId(resolvedAsset.id);
-      if (qrBlinkTimeoutRef.current) {
-        window.clearTimeout(qrBlinkTimeoutRef.current);
-      }
-      qrBlinkTimeoutRef.current = window.setTimeout(() => {
-        setQrBlinkAssetId((current) => (current === resolvedAsset?.id ? null : current));
-      }, 2200);
-    }
 
     return resolvedAsset;
   };
@@ -588,13 +484,10 @@ export default function Assets() {
         throw new Error("Invalid machine QR. Please rescan.");
       }
 
-      const locatedAsset = await openAssetFromContext(scannedMachineId, {
-        openDialog: false,
-        targetTab: "flow",
-        blinkInMindmap: true,
+      await openAssetFromContext(scannedMachineId, {
+        openDialog: true,
       });
-      setFlowSearch(`${locatedAsset.code} ${locatedAsset.name}`);
-      toast.success("Machine located in enterprise mindmap");
+      toast.success("Machine located");
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Unable to resolve machine QR");
       setIsQrScannerOpen(true);
@@ -607,41 +500,79 @@ export default function Assets() {
     navigate(`/work-orders?assetId=${asset.id}`);
   };
 
-  const assetColumns = [
+  const columns = [
     {
       key: "machine",
-      header: "Machine",
-      render: (asset: Asset) => <div><p className="font-medium">{asset.code}</p><p className="text-xs text-muted-foreground">{asset.name}</p></div>,
+      header: "Identified Node",
+      render: (asset: Asset) => (
+        <div className="flex flex-col">
+          <span className="text-xs font-black uppercase tracking-widest text-primary">{asset.code}</span>
+          <span className="text-sm font-bold text-slate-700 tracking-tight">{asset.name}</span>
+        </div>
+      ),
     },
     {
       key: "hierarchy",
-      header: "Department / Module",
+      header: "Workcenter Context",
       render: (asset: Asset) => {
         const department = departments.find((item) => item.id === asset.departmentId);
         const module = modules.find((item) => item.id === asset.moduleId);
-        return <div><p className="text-sm">{department ? `${department.code} - ${department.name}` : "-"}</p><p className="text-xs text-muted-foreground">{module ? `${module.code ? `${module.code} - ` : ""}${module.name}` : "-"}</p></div>;
+        return (
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-slate-600">{department ? department.name : "-"}</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              {module ? module.name : "Unmapped Module"}
+            </span>
+          </div>
+        );
       },
     },
     {
       key: "status",
-      header: "Status",
-      render: (asset: Asset) => <StatusBadge variant={assetStatusVariant(asset.status)}>{asset.status.replace(/_/g, " ")}</StatusBadge>,
+      header: "Operational Health",
+      render: (asset: Asset) => (
+        <div className="flex flex-col gap-1.5">
+          <StatusBadge variant={assetStatusVariant(asset.status)} className="h-5 px-2 text-[10px]">{asset.status.replace(/_/g, " ")}</StatusBadge>
+          <div className="flex items-center gap-1 opacity-60">
+            <div className={cn("h-1.5 w-1.5 rounded-full", asset.criticality === "HIGH" ? "bg-rose-500" : "bg-slate-300")} />
+            <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">{asset.criticality || "STABLE"}</span>
+          </div>
+        </div>
+      ),
     },
     {
       key: "wo",
-      header: "WO History",
-      render: (asset: Asset) => `${(workOrdersByAsset.get(asset.id) || []).length}`,
+      header: "Log Count",
+      render: (asset: Asset) => (
+        <div className="flex items-center gap-2">
+           <span className="text-xs font-black text-slate-700">{(workOrdersByAsset.get(asset.id) || []).length}</span>
+           <span className="text-[9px] font-bold text-slate-400 uppercase">Records</span>
+        </div>
+      ),
       hideOnMobile: true,
     },
     {
       key: "actions",
-      header: "Actions",
+      header: "",
       render: (asset: Asset) => (
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={() => { setSelectedAsset(asset); setIsViewOpen(true); }} aria-label={`View ${asset.name}`}>
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded-lg hover:bg-slate-50 text-slate-400 hover:text-primary"
+            onClick={() => {
+              setSelectedAsset(asset);
+              setIsViewOpen(true);
+            }}
+          >
             <Eye className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => openWorkOrderHistory(asset)} aria-label={`Work order history for ${asset.name}`}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded-lg hover:bg-slate-50 text-slate-400"
+            onClick={() => openWorkOrderHistory(asset)}
+          >
             <History className="h-4 w-4" />
           </Button>
         </div>
@@ -650,204 +581,12 @@ export default function Assets() {
   ];
 
   const isLoading = masterDataQuery.isLoading || workOrdersQuery.isLoading;
+
   const handleRaiseWorkOrder = () => {
     if (!selectedAsset?.id) return;
     navigate(`/work-orders?assetId=${selectedAsset.id}&mode=create-breakdown`);
   };
-  const clearAssetQueryParams = () => {
-    if (!assetIdFromQuery && !searchParams.get("view") && !searchParams.get("from")) return;
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.delete("assetId");
-  const workOrdersByAsset = useMemo(() => {
-    const map = new Map<string, WorkOrderSummary[]>();
-    workOrders.forEach((workOrder) => {
-      if (!workOrder.assetId) return;
-      const bucket = map.get(workOrder.assetId) || [];
-      bucket.push(workOrder);
-      map.set(workOrder.assetId, bucket);
-    });
-    return map;
-  }, [workOrders]);
 
-  const assetsWithOpenWo = useMemo(
-    () =>
-      visibleAssets.filter((asset) => (workOrdersByAsset.get(asset.id) || []).some((workOrder) => workOrder.status && workOrder.status !== "CLOSED")).length,
-    [visibleAssets, workOrdersByAsset],
-  );
-
-  const handlePrefetchAssetKpi = async (assetId: string) => {
-    if (!assetId) return;
-    if (kpiPrefetchInFlightRef.current.has(assetId)) return;
-    if (assetKpiPreview[assetId] && !assetKpiPreview[assetId].loading) return;
-
-    kpiPrefetchInFlightRef.current.add(assetId);
-    setAssetKpiPreview((current) => {
-      const previous = current[assetId];
-      if (previous && !previous.loading) return current;
-      return {
-        ...current,
-        [assetId]: {
-          mttr: previous?.mttr || "-",
-          mtbf: previous?.mtbf || "-",
-          loading: true,
-        },
-      };
-    });
-
-    try {
-      const response = await getAssetOverview(assetId);
-      setAssetKpiPreview((current) => ({
-        ...current,
-        [assetId]: {
-          mttr: formatMinutes(response.data.analytics.reliability?.mttrMinutes),
-          mtbf: formatMinutes(response.data.analytics.reliability?.mtbfMinutes),
-          loading: false,
-        },
-      }));
-    } catch {
-      setAssetKpiPreview((current) => ({
-        ...current,
-        [assetId]: {
-          mttr: current[assetId]?.mttr || "-",
-          mtbf: current[assetId]?.mtbf || "-",
-          loading: false,
-        },
-      }));
-    } finally {
-      kpiPrefetchInFlightRef.current.delete(assetId);
-    }
-  };
-
-  const openAssetFromContext = async (
-    assetId: string,
-    options?: {
-      openDialog?: boolean;
-      targetTab?: "flow" | "list";
-      blinkInMindmap?: boolean;
-    },
-  ) => {
-    let resolvedAsset = assets.find((asset) => asset.id === assetId) || null;
-    if (!resolvedAsset) {
-      const response = await getAsset(assetId);
-      resolvedAsset = response.data;
-    }
-
-    if (!resolvedAsset) {
-      throw new Error("Machine not found for this QR");
-    }
-
-    if (resolvedAsset.plantId) {
-      setSelectedPlantId(resolvedAsset.plantId);
-    }
-    setSelectedDepartmentId(resolvedAsset.departmentId || "");
-    setSelectedModuleId(resolvedAsset.moduleId || "");
-    setSelectedAsset(resolvedAsset);
-
-    const openDialog = options?.openDialog ?? true;
-    const targetTab = options?.targetTab ?? "list";
-
-    setActiveTab(targetTab);
-    setIsViewOpen(openDialog);
-
-    if (options?.blinkInMindmap) {
-      setQrBlinkAssetId(resolvedAsset.id);
-      if (qrBlinkTimeoutRef.current) {
-        window.clearTimeout(qrBlinkTimeoutRef.current);
-      }
-      qrBlinkTimeoutRef.current = window.setTimeout(() => {
-        setQrBlinkAssetId((current) => (current === resolvedAsset?.id ? null : current));
-      }, 2200);
-    }
-
-    return resolvedAsset;
-  };
-
-  const handleAssetQrDecoded = async (rawValue: string) => {
-    setResolvingQr(true);
-    try {
-      const parsed = parseQrContent(rawValue);
-      let scannedMachineId = parsed.machineId || "";
-
-      if (!scannedMachineId && parsed.machineCode) {
-        const resolvedByCode = await resolveQrMachineCode(parsed.machineCode, parsed.token);
-        scannedMachineId = resolvedByCode.data.asset?.id || "";
-      }
-
-      if (!scannedMachineId && parsed.token) {
-        const resolved = await resolveQrToken(parsed.token);
-        scannedMachineId = resolved.data.asset?.id || "";
-      }
-
-      if (!scannedMachineId) {
-        throw new Error("Invalid machine QR. Please rescan.");
-      }
-
-      const locatedAsset = await openAssetFromContext(scannedMachineId, {
-        openDialog: false,
-        targetTab: "flow",
-        blinkInMindmap: true,
-      });
-      setFlowSearch(`${locatedAsset.code} ${locatedAsset.name}`);
-      toast.success("Machine located in enterprise mindmap");
-    } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Unable to resolve machine QR");
-      setIsQrScannerOpen(true);
-    } finally {
-      setResolvingQr(false);
-    }
-  };
-
-  const openWorkOrderHistory = (asset: Asset) => {
-    navigate(`/work-orders?assetId=${asset.id}`);
-  };
-
-  const assetColumns = [
-    {
-      key: "machine",
-      header: "Machine",
-      render: (asset: Asset) => <div><p className="font-medium">{asset.code}</p><p className="text-xs text-muted-foreground">{asset.name}</p></div>,
-    },
-    {
-      key: "hierarchy",
-      header: "Department / Module",
-      render: (asset: Asset) => {
-        const department = departments.find((item) => item.id === asset.departmentId);
-        const module = modules.find((item) => item.id === asset.moduleId);
-        return <div><p className="text-sm">{department ? `${department.code} - ${department.name}` : "-"}</p><p className="text-xs text-muted-foreground">{module ? `${module.code ? `${module.code} - ` : ""}${module.name}` : "-"}</p></div>;
-      },
-    },
-    {
-      key: "status",
-      header: "Status",
-      render: (asset: Asset) => <StatusBadge variant={assetStatusVariant(asset.status)}>{asset.status.replace(/_/g, " ")}</StatusBadge>,
-    },
-    {
-      key: "wo",
-      header: "WO History",
-      render: (asset: Asset) => `${(workOrdersByAsset.get(asset.id) || []).length}`,
-      hideOnMobile: true,
-    },
-    {
-      key: "actions",
-      header: "Actions",
-      render: (asset: Asset) => (
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={() => { setSelectedAsset(asset); setIsViewOpen(true); }} aria-label={`View ${asset.name}`}>
-            <Eye className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => openWorkOrderHistory(asset)} aria-label={`Work order history for ${asset.name}`}>
-            <History className="h-4 w-4" />
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
-  const isLoading = masterDataQuery.isLoading || workOrdersQuery.isLoading;
-  const handleRaiseWorkOrder = () => {
-    if (!selectedAsset?.id) return;
-    navigate(`/work-orders?assetId=${selectedAsset.id}&mode=create-breakdown`);
-  };
   const clearAssetQueryParams = () => {
     if (!assetIdFromQuery && !searchParams.get("view") && !searchParams.get("from")) return;
     const nextParams = new URLSearchParams(searchParams);
@@ -862,263 +601,190 @@ export default function Assets() {
       <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         <PageHeader
           title="Machine Directory"
-          subtitle="Advanced asset intelligence and hierarchy management"
+          subtitle="Enterprise asset catalog and operational intelligence"
           className="lg:mb-0"
         />
         <div className="flex items-center gap-3">
           <Button 
             variant="outline" 
-            className="h-11 gap-2 rounded-xl border-border/60 bg-white/50 backdrop-blur-md hover:bg-white shadow-sm" 
+            className="h-11 gap-2 rounded-2xl border-slate-200 bg-white shadow-sm hover:bg-slate-50 transition-all" 
             onClick={() => setIsQrScannerOpen(true)} 
             disabled={resolvingQr}
           >
             <QrCode className="h-4 w-4 text-primary" />
-            <span className="font-semibold">{resolvingQr ? "Resolving..." : "QR Scan"}</span>
+            <span className="text-xs font-black uppercase tracking-widest">{resolvingQr ? "Resolving..." : "QR Scanner"}</span>
           </Button>
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "flow" | "list")} className="space-y-6">
-        <TabsList className="grid h-12 w-full max-w-[400px] grid-cols-2 rounded-2xl bg-muted/50 p-1.5 backdrop-blur-md">
-          <TabsTrigger value="list" className="rounded-xl font-bold uppercase tracking-widest text-[10px]">Directory</TabsTrigger>
-          <TabsTrigger value="flow" className="rounded-xl font-bold uppercase tracking-widest text-[10px]">Flow Chart</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="flow" className="space-y-6">
-          <Card className="overflow-hidden rounded-[2rem] border-none bg-white/40 shadow-industrial backdrop-blur-xl">
-            <CardContent className="p-5">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-3 rounded-2xl bg-white/60 p-1 pl-4 border border-white/50 shadow-sm">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Context</span>
-                  {userIsSuperAdmin ? (
-                    <select 
-                      aria-label="Flow chart plant filter" 
-                      className="h-9 min-w-[200px] rounded-xl border-none bg-transparent px-2 text-sm font-bold focus:ring-0" 
-                      value={selectedPlantId} 
-                      onChange={(event) => {
-                        setSelectedPlantId(event.target.value);
-                        setSelectedDepartmentId("");
-                        setSelectedModuleId("");
-                      }}
-                    >
-                      <option value="">All Plants</option>
-                      {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode || plant.plantName}</option>)}
-                    </select>
-                  ) : (
-                    <div className="flex h-9 min-w-[200px] items-center px-2 text-sm font-bold">
-                      {selectedPlant ? (selectedPlant.plantCode || selectedPlant.plantName) : "Plant Not Assigned"}
-                    </div>
-                  )}
+      <div className="space-y-6">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+           <Card className="overflow-hidden rounded-[2.5rem] border-none bg-white shadow-industrial-sm">
+             <CardContent className="p-8">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Total Inventory</p>
+                  <div className="h-8 w-8 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600"><Wrench className="h-4 w-4" /></div>
                 </div>
+                <p className="text-3xl font-black text-slate-900 tracking-tight">{visibleAssets.length}</p>
+                <p className="mt-1 text-[10px] font-bold text-slate-400">Registered assets in scope</p>
+             </CardContent>
+           </Card>
+           <Card className="overflow-hidden rounded-[2.5rem] border-none bg-white shadow-industrial-sm">
+             <CardContent className="p-8">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Active Alerts</p>
+                  <div className="h-8 w-8 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600"><ScanLine className="h-4 w-4" /></div>
+                </div>
+                <p className="text-3xl font-black text-slate-900 tracking-tight">{assetsWithOpenWo}</p>
+                <p className="mt-1 text-[10px] font-bold text-slate-400">Nodes requiring attention</p>
+             </CardContent>
+           </Card>
+           <Card className="overflow-hidden rounded-[2.5rem] border-none bg-white shadow-industrial-sm">
+             <CardContent className="p-8">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Deployment</p>
+                  <div className="h-8 w-8 rounded-xl bg-sky-50 flex items-center justify-center text-sky-600"><Factory className="h-4 w-4" /></div>
+                </div>
+                <p className="text-sm font-black text-slate-900 tracking-tight truncate">
+                  {userIsSuperAdmin && !selectedPlantId ? "GLOBAL JK FENNER" : selectedPlant?.plantCode || "PRIMARY UNIT"}
+                </p>
+                <p className="mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{selectedDepartment?.code || "ALL DEPARTMENTS"}</p>
+             </CardContent>
+           </Card>
+        </div>
 
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-11 rounded-2xl font-bold uppercase tracking-widest text-[10px] text-slate-500 hover:bg-white/60"
-                  onClick={() => {
-                    setSelectedDepartmentId("");
-                    setSelectedModuleId("");
-                    setFlowSearch("");
-                    setQrBlinkAssetId(null);
-                  }}
-                >
-                  <RotateCcw className="mr-2 h-3.5 w-3.5" />
-                  Reset View
-                </Button>
+        <Card className="rounded-[3rem] border-none bg-white shadow-industrial overflow-hidden">
+          <CardContent className="space-y-8 p-10">
+            {/* Professional Filter Bar */}
+            <div className="flex flex-wrap items-end gap-6 pb-6 border-b border-slate-50">
+              <div className="flex-1 min-w-[300px] space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Search Identifier</label>
+                <div className="relative group">
+                  <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-primary" />
+                  <Input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 pl-11 focus-visible:ring-primary/20 shadow-none hover:bg-slate-50 transition-all text-sm font-medium"
+                    placeholder="Search by code, name or model..."
+                  />
+                </div>
               </div>
-            </CardContent>
-          </Card>
 
-          <div className="relative overflow-hidden rounded-[2.5rem] border border-white/40 bg-white/30 shadow-industrial backdrop-blur-md min-h-[600px]">
-            <EnterpriseAssetGraph
-              plants={plants}
-              departments={departments}
-              modules={modules}
-              assets={assets.filter((asset) => asset.isActive)}
-              workOrdersByAsset={workOrdersByAsset}
-              selectedPlantId={selectedPlantId}
-              selectedDepartmentId={selectedDepartmentId}
-              selectedModuleId={selectedModuleId}
-              selectedAssetId={selectedAsset?.id || null}
-              searchTerm={flowSearch}
-              statusFilter="all"
-              user={user}
-              userIsSuperAdmin={userIsSuperAdmin}
-              blinkAssetId={qrBlinkAssetId}
-              assetKpiPreview={assetKpiPreview}
-              onSearchChange={setFlowSearch}
-              onSelectPlant={(plantId) => {
-                setSelectedPlantId(plantId);
-                setSelectedDepartmentId("");
-                setSelectedModuleId("");
-              }}
-              onSelectDepartment={(departmentId) => {
-                setSelectedDepartmentId(departmentId);
-                setSelectedModuleId("");
-              }}
-              onSelectModule={setSelectedModuleId}
-              onSelectAsset={(asset) => {
-                setSelectedAsset(asset);
-                setIsViewOpen(true);
-                setActiveTab("flow");
-              }}
-              onPrefetchAssetKpi={(assetId) => {
-                void handlePrefetchAssetKpi(assetId);
-              }}
-            />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="list" className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-             <Card className="overflow-hidden rounded-[2rem] border-none bg-gradient-to-br from-teal-500/10 to-transparent shadow-sm backdrop-blur-xl">
-               <CardContent className="p-6">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-600 mb-1">Total Assets</p>
-                  <p className="text-3xl font-black text-slate-900">{visibleAssets.length}</p>
-                  <div className="mt-2 h-1 w-12 rounded-full bg-teal-500/20" />
-               </CardContent>
-             </Card>
-             <Card className="overflow-hidden rounded-[2rem] border-none bg-gradient-to-br from-rose-500/10 to-transparent shadow-sm backdrop-blur-xl">
-               <CardContent className="p-6">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-600 mb-1">Active Maintenance</p>
-                  <p className="text-3xl font-black text-slate-900">{assetsWithOpenWo}</p>
-                  <div className="mt-2 h-1 w-12 rounded-full bg-rose-500/20" />
-               </CardContent>
-             </Card>
-             <Card className="overflow-hidden rounded-[2rem] border-none bg-gradient-to-br from-sky-500/10 to-transparent shadow-sm backdrop-blur-xl">
-               <CardContent className="p-6">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-600 mb-1">Current Scope</p>
-                  <p className="truncate text-sm font-bold text-slate-700">
-                    {userIsSuperAdmin && !selectedPlantId ? "GLOBAL" : selectedPlant?.plantCode || "-"} • {selectedDepartment?.code || "ALL"}
-                  </p>
-                  <div className="mt-2 h-1 w-12 rounded-full bg-sky-500/20" />
-               </CardContent>
-             </Card>
-          </div>
-
-          <Card className="rounded-[2.5rem] border-none bg-white/40 shadow-industrial backdrop-blur-xl">
-            <CardContent className="space-y-6 p-6">
-              <div className="grid items-end gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Search Machine</label>
-                  <div className="relative">
-                    <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <Input
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      className="h-11 rounded-xl border-border/40 bg-white/60 pl-10 focus-visible:ring-primary/20 shadow-sm"
-                      placeholder="Code, Name, Model..."
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Plant Unit</label>
-                  {userIsSuperAdmin ? (
-                    <select
-                      aria-label="Machine list plant filter"
-                      className="h-11 w-full rounded-xl border-border/40 bg-white/60 px-4 text-sm font-bold shadow-sm focus:ring-primary/20"
-                      value={selectedPlantId}
-                      onChange={(event) => {
-                        setSelectedPlantId(event.target.value);
-                        setSelectedDepartmentId("");
-                        setSelectedModuleId("");
-                      }}
-                    >
-                      <option value="">All Plants</option>
-                      {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode}</option>)}
-                    </select>
-                  ) : (
-                    <div className="flex h-11 w-full items-center rounded-xl border border-border/40 bg-white/60 px-4 text-sm font-bold shadow-sm">
-                      {selectedPlant ? (selectedPlant.plantCode || selectedPlant.plantName) : "Plant Not Assigned"}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Department</label>
+              <div className="w-[200px] space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Plant Context</label>
+                {userIsSuperAdmin ? (
                   <select
-                    aria-label="Machine list department filter"
-                    className="h-11 w-full rounded-xl border-border/40 bg-white/60 px-4 text-sm font-bold shadow-sm focus:ring-primary/20"
-                    value={selectedDepartmentId}
+                    className="h-12 w-full rounded-2xl border-slate-100 bg-slate-50/50 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20"
+                    value={selectedPlantId}
                     onChange={(event) => {
-                      setSelectedDepartmentId(event.target.value);
+                      setSelectedPlantId(event.target.value);
+                      setSelectedDepartmentId("");
                       setSelectedModuleId("");
                     }}
                   >
-                    <option value="">All Departments</option>
-                    {departmentsForPlant.map((department) => <option key={department.id} value={department.id}>{department.code} - {department.name}</option>)}
+                    <option value="">Global Overview</option>
+                    {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode}</option>)}
                   </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Machine Status</label>
-                  <select
-                    aria-label="Machine list status filter"
-                    className="h-11 w-full rounded-xl border-border/40 bg-white/60 px-4 text-sm font-bold shadow-sm focus:ring-primary/20"
-                    value={statusFilter}
-                    onChange={(event) => setStatusFilter(event.target.value as AssetStatusFilter)}
-                  >
-                    <option value="all">All Status</option>
-                    <option value="ACTIVE">Active</option>
-                    <option value="UNDER_MAINTENANCE">Maintenance</option>
-                    <option value="INACTIVE">Inactive</option>
-                  </select>
-                </div>
+                ) : (
+                  <div className="flex h-12 w-full items-center rounded-2xl border border-slate-100 bg-slate-50/30 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    {selectedPlant?.plantCode || "Default Unit"}
+                  </div>
+                )}
               </div>
 
-              {isLoading ? (
-                <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary opacity-20" />
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Synchronizing Directory</p>
-                </div>
-              ) : (
-                <div className="rounded-[2rem] border border-white/40 bg-white/20 shadow-sm overflow-hidden">
-                  <ResponsiveTable
-                    data={visibleAssets}
-                    columns={assetColumns}
-                    keyExtractor={(asset) => asset.id}
-                    emptyMessage="No machines found for the selected filters."
-                    mobileCard={(asset) => {
-                      const department = departments.find((item) => item.id === asset.departmentId);
-                      const module = modules.find((item) => item.id === asset.moduleId);
-                      return (
-                        <MobileCard
-                          onView={() => { setSelectedAsset(asset); setIsViewOpen(true); }}
-                          actions={[
-                            {
-                              label: "Work Order History",
-                              icon: <History className="mr-2 h-4 w-4" />,
-                              onClick: () => openWorkOrderHistory(asset),
-                            },
-                          ]}
-                        >
-                          <MobileCardHeader 
-                            title={asset.code} 
-                            subtitle={asset.name} 
-                            badge={<StatusBadge variant={assetStatusVariant(asset.status)}>{asset.status.replace(/_/g, " ")}</StatusBadge>} 
-                          />
-                          <MobileCardRow label="Department" value={department ? department.code : "-"} />
-                          <MobileCardRow label="Module" value={module ? module.code || module.name : "-"} />
-                          <MobileCardRow label="Type" value={asset.assetType || "-"} />
-                          <MobileCardRow label="WO History" value={(workOrdersByAsset.get(asset.id) || []).length} />
-                        </MobileCard>
-                      );
-                    }}
-                  />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+              <div className="w-[200px] space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Workcenter</label>
+                <select
+                  className="h-12 w-full rounded-2xl border-slate-100 bg-slate-50/50 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20"
+                  value={selectedDepartmentId}
+                  onChange={(event) => {
+                    setSelectedDepartmentId(event.target.value);
+                    setSelectedModuleId("");
+                  }}
+                >
+                  <option value="">All Areas</option>
+                  {departmentsForPlant.map((dept) => <option key={dept.id} value={dept.id}>{dept.code}</option>)}
+                </select>
+              </div>
+
+              <div className="w-[180px] space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Health Filter</label>
+                <select
+                  className="h-12 w-full rounded-2xl border-slate-100 bg-slate-50/50 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20"
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value as AssetStatusFilter)}
+                >
+                  <option value="all">Any Status</option>
+                  <option value="ACTIVE">Stable Only</option>
+                  <option value="UNDER_MAINTENANCE">In Maintenance</option>
+                  <option value="INACTIVE">Decommissioned</option>
+                </select>
+              </div>
+
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-12 w-12 rounded-2xl hover:bg-slate-50 text-slate-400"
+                onClick={() => {
+                  setSearch("");
+                  setSelectedPlantId("");
+                  setSelectedDepartmentId("");
+                  setStatusFilter("all");
+                }}
+              >
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {isLoading ? (
+              <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
+                <Loader2 className="h-8 w-8 animate-spin text-primary opacity-20" />
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Synchronizing Directory</p>
+              </div>
+            ) : (
+              <div className="rounded-[2rem] border border-slate-50 bg-white shadow-sm overflow-hidden">
+                <ResponsiveTable
+                  data={visibleAssets}
+                  columns={columns}
+                  keyExtractor={(asset) => asset.id}
+                  emptyMessage="No machines found for the selected filters."
+                  mobileCard={(asset) => {
+                    const department = departments.find((item) => item.id === asset.departmentId);
+                    const module = modules.find((item) => item.id === asset.moduleId);
+                    return (
+                      <MobileCard
+                        onView={() => { setSelectedAsset(asset); setIsViewOpen(true); }}
+                        actions={[
+                          {
+                            label: "Log History",
+                            icon: <History className="mr-2 h-4 w-4" />,
+                            onClick: () => openWorkOrderHistory(asset),
+                          },
+                        ]}
+                      >
+                        <MobileCardHeader 
+                          title={asset.code} 
+                          subtitle={asset.name} 
+                          badge={<StatusBadge variant={assetStatusVariant(asset.status)} className="h-4 px-1.5 text-[9px] uppercase tracking-wider">{asset.status.replace(/_/g, " ")}</StatusBadge>} 
+                        />
+                        <MobileCardRow label="Dept" value={department ? department.code : "-"} />
+                        <MobileCardRow label="Type" value={asset.assetType || "-"} />
+                        <MobileCardRow label="Records" value={(workOrdersByAsset.get(asset.id) || []).length} />
+                      </MobileCard>
+                    );
+                  }}
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <MobileQrScannerDialog
         open={isQrScannerOpen}
         onOpenChange={setIsQrScannerOpen}
-        title="Scan Machine QR"
-        description="Scan a machine QR code to locate and highlight that machine in the enterprise mindmap."
+        title="Quick Node Access"
+        description="Scan machine QR code for immediate diagnostic intelligence and incident logging."
         onDecoded={(value) => void handleAssetQrDecoded(value)}
       />
 
@@ -1131,13 +797,13 @@ export default function Assets() {
             clearAssetQueryParams();
           }
         }}
-        title={selectedAsset?.code || "Machine"}
+        title={selectedAsset?.code || "Operational Node"}
         subtitle={selectedAsset?.name}
-        contentClassName="sm:max-w-[760px] rounded-[2.5rem] border-none bg-white/95 backdrop-blur-xl"
+        contentClassName="sm:max-w-[860px] rounded-[3.5rem] border-none bg-white/95 backdrop-blur-2xl shadow-2xl"
       >
         {overviewQuery.isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+          <div className="flex items-center justify-center py-32">
+            <Loader2 className="h-12 w-12 animate-spin text-primary opacity-20" />
           </div>
         ) : overviewQuery.data?.data ? (
           <AssetOverviewPanel
@@ -1148,8 +814,8 @@ export default function Assets() {
             onRaiseWorkOrder={handleRaiseWorkOrder}
           />
         ) : selectedAsset ? (
-          <div className="rounded-3xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">
-            Machine intelligence snapshot could not be generated.
+          <div className="rounded-[2.5rem] border-2 border-dashed border-slate-100 p-20 text-center">
+            <p className="text-sm font-bold text-slate-300 uppercase tracking-widest">Diagnostic Snapshot Offline</p>
           </div>
         ) : null}
       </ViewDialog>

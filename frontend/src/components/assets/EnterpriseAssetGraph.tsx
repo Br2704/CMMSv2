@@ -105,17 +105,17 @@ interface EnterpriseAssetGraphProps {
 
 const LEVEL_X = {
   plant: 100,
-  department: 580,
-  module: 1060,
-  machine: 1540,
-  overflow: 1540,
+  department: 680,
+  module: 1260,
+  machine: 1840,
+  overflow: 1840,
 } as const;
 
-const RADIAL_DEPTH_X = [100, 580, 1060, 1540] as const;
-const RADIAL_CURVE_X = [0, 32, 64, 96] as const;
-const RADIAL_CURVE_Y = [0, 24, 40, 56] as const;
+const RADIAL_DEPTH_X = [100, 680, 1260, 1840] as const;
+const RADIAL_CURVE_X = [0, 64, 110, 150] as const;
+const RADIAL_CURVE_Y = [0, 40, 64, 88] as const;
 
-const VERTICAL_GAP = 180;
+const VERTICAL_GAP = 240;
 const MAX_VISIBLE_MACHINES_PER_MODULE = 28;
 const MINDMAP_STATE_VERSION = 1;
 
@@ -497,6 +497,8 @@ function MindmapNode({ id, data }: NodeProps<MindmapNodeType>) {
       </TooltipContent>
     </Tooltip>
   );
+}
+
 const nodeTypes = {
   mindmapNode: MindmapNode,
 };
@@ -543,8 +545,7 @@ export function EnterpriseAssetGraph({
 
   const handleResetView = useCallback(() => {
     if (!flowInstance) return;
-    flowInstance.setViewport({ x: 0, y: 0, zoom: 1 });
-    setZoomLevel(1);
+    void flowInstance.fitView({ padding: 0.25, duration: 800 });
   }, [flowInstance]);
 
   useEffect(() => {
@@ -944,8 +945,8 @@ export function EnterpriseAssetGraph({
 
     const SPACING_Y = {
       node: VERTICAL_GAP,
-      branch: 60,
-      plant: 140,
+      branch: 110,
+      plant: 220,
     };
 
     const ensureEdge = (source: string, target: string) => {
