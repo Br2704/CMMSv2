@@ -694,8 +694,8 @@ export default function VisitorExperience() {
                         <CardContent className="p-0">
                             <div className="aspect-[21/9] bg-slate-900 relative">
                                 <img 
-                                    src="/plant_satellite_navigation_mockup_1778820501209.png" 
-                                    alt="Plant Satellite Map" 
+                                    src="https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&q=80&w=2000" 
+                                    alt="Plant Navigation Map" 
                                     className="w-full h-full object-cover opacity-60"
                                 />
                                 <div className="absolute inset-0 flex items-center justify-center">
