@@ -32,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { InputField, SelectField, TextareaField } from "@/components/shared/FormField";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { listPlants, type Plant } from "@/api/plants";
