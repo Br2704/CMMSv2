@@ -104,18 +104,18 @@ interface EnterpriseAssetGraphProps {
 }
 
 const LEVEL_X = {
-  plant: 80,
-  department: 520,
-  module: 940,
-  machine: 1360,
-  overflow: 1360,
+  plant: 100,
+  department: 580,
+  module: 1060,
+  machine: 1540,
+  overflow: 1540,
 } as const;
 
-const RADIAL_DEPTH_X = [90, 520, 940, 1360] as const;
-const RADIAL_CURVE_X = [0, 28, 52, 72] as const;
-const RADIAL_CURVE_Y = [0, 20, 34, 44] as const;
+const RADIAL_DEPTH_X = [100, 580, 1060, 1540] as const;
+const RADIAL_CURVE_X = [0, 32, 64, 96] as const;
+const RADIAL_CURVE_Y = [0, 24, 40, 56] as const;
 
-const VERTICAL_GAP = 130;
+const VERTICAL_GAP = 180;
 const MAX_VISIBLE_MACHINES_PER_MODULE = 28;
 const MINDMAP_STATE_VERSION = 1;
 
@@ -403,14 +403,14 @@ function MindmapNode({ id, data }: NodeProps<MindmapNodeType>) {
       <TooltipTrigger asChild>
         <div
           className={cn(
-            "group relative rounded-2xl border px-3 py-2 text-left shadow-md transition-all duration-200",
-            "hover:scale-[1.03] hover:shadow-xl hover:ring-2 hover:ring-primary/30",
+            "group relative rounded-[1.5rem] border px-4 py-3 text-left shadow-lg transition-all duration-300",
+            "hover:scale-[1.02] hover:shadow-2xl hover:ring-2 hover:ring-primary/20",
             levelFrameClass(data.level),
             nodeMinWidthClass(data.level),
-            data.pathHighlighted && "ring-2 ring-primary/50",
-            data.searchHighlighted && "ring-2 ring-amber-400/80",
-            data.selected && "ring-2 ring-primary",
-            data.blink && "animate-pulse ring-4 ring-blue-500 scale-110 shadow-xl",
+            data.pathHighlighted && "ring-2 ring-primary/40 shadow-blue-500/10",
+            data.searchHighlighted && "ring-2 ring-amber-400/60 shadow-amber-500/10",
+            data.selected && "ring-2 ring-primary bg-white shadow-xl",
+            data.blink && "animate-pulse ring-4 ring-blue-500 scale-105 shadow-2xl z-50",
           )}
           onClick={(event) => {
             event.stopPropagation();
@@ -422,24 +422,24 @@ function MindmapNode({ id, data }: NodeProps<MindmapNodeType>) {
             }
           }}
         >
-          <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-none !bg-muted-foreground" />
-          <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-none !bg-muted-foreground" />
+          <Handle type="target" position={Position.Left} className="!h-3 !w-3 !border-2 !border-white !bg-slate-400" />
+          <Handle type="source" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white !bg-slate-400" />
 
-          <div className="flex items-start gap-2.5">
-            <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-lg bg-background/90 shadow-sm">
-              <Icon className="h-4 w-4 text-primary" />
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white shadow-sm border border-slate-100">
+              <Icon className="h-4.5 w-4.5 text-primary" />
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <p className="truncate text-sm font-semibold text-foreground">{data.label}</p>
-                <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", machineStatusDot)} />
+                <p className="truncate text-sm font-black tracking-tight text-slate-800">{data.label}</p>
+                <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full shadow-sm", machineStatusDot)} />
               </div>
-              {data.subtitle ? <p className="mt-0.5 truncate text-xs text-muted-foreground">{data.subtitle}</p> : null}
+              {data.subtitle ? <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-widest text-slate-400">{data.subtitle}</p> : null}
             </div>
             {showExpandControl ? (
               <button
                 type="button"
-                className="rounded-md border border-border/70 bg-background/80 p-1 text-muted-foreground transition hover:text-foreground"
+                className="rounded-lg border border-slate-200 bg-white/80 p-1.5 text-slate-400 transition hover:text-primary hover:border-primary/30 shadow-sm"
                 onClick={(event) => {
                   event.stopPropagation();
                   data.onToggleExpand?.(id, data.level);
@@ -450,19 +450,24 @@ function MindmapNode({ id, data }: NodeProps<MindmapNodeType>) {
             ) : null}
           </div>
 
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {typeof data.moduleCount === "number" ? <Badge variant="outline">{data.moduleCount} Modules</Badge> : null}
-            {typeof data.totalMachines === "number" ? <Badge variant="secondary">{data.totalMachines} Machines</Badge> : null}
-            {typeof data.activeMachines === "number" ? <Badge variant="outline">{data.activeMachines} Active</Badge> : null}
-            {typeof data.woCount === "number" ? <Badge variant="outline">WO {data.woCount}</Badge> : null}
-            {typeof data.hiddenCount === "number" && data.hiddenCount > 0 ? <Badge variant="outline">+{data.hiddenCount} hidden</Badge> : null}
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {typeof data.moduleCount === "number" ? <Badge variant="outline" className="rounded-lg border-slate-200 text-[9px] font-black uppercase tracking-wider">{data.moduleCount} Modules</Badge> : null}
+            {typeof data.totalMachines === "number" ? <Badge variant="secondary" className="rounded-lg bg-slate-100 text-slate-600 border-none text-[9px] font-black uppercase tracking-wider">{data.totalMachines} Machines</Badge> : null}
+            {typeof data.activeMachines === "number" ? <Badge variant="outline" className="rounded-lg border-emerald-100 text-emerald-600 text-[9px] font-black uppercase tracking-wider">{data.activeMachines} Active</Badge> : null}
+            {typeof data.woCount === "number" ? <Badge variant="outline" className="rounded-lg border-rose-100 text-rose-600 text-[9px] font-black uppercase tracking-wider">WO {data.woCount}</Badge> : null}
+            {typeof data.hiddenCount === "number" && data.hiddenCount > 0 ? <Badge variant="outline" className="rounded-lg border-amber-200 text-amber-600 text-[9px] font-black uppercase tracking-wider">+{data.hiddenCount} more</Badge> : null}
           </div>
 
           {data.level === "machine" ? (
-            <div className="mt-1 text-[10px] text-muted-foreground">
-              MTTR: {data.kpi?.mttr || "-"}
-              <br />
-              MTBF: {data.kpi?.mtbf || "-"}
+            <div className="mt-2.5 grid grid-cols-2 gap-2 border-t border-slate-100 pt-2.5">
+              <div>
+                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">MTTR</p>
+                <p className="text-[10px] font-bold text-slate-700">{data.kpi?.mttr || "-"}</p>
+              </div>
+              <div>
+                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">MTBF</p>
+                <p className="text-[10px] font-bold text-slate-700">{data.kpi?.mtbf || "-"}</p>
+              </div>
             </div>
           ) : null}
         </div>
@@ -492,7 +497,9 @@ function MindmapNode({ id, data }: NodeProps<MindmapNodeType>) {
       </TooltipContent>
     </Tooltip>
   );
-}
+const nodeTypes = {
+  mindmapNode: MindmapNode,
+};
 
 export function EnterpriseAssetGraph({
   plants,
@@ -924,7 +931,22 @@ export function EnterpriseAssetGraph({
     const nodeMap = new Map<string, MindmapNodeType>();
     const edges: Edge[] = [];
     const levelsByNode = new Map<string, NodeLevel>();
-    let cursorY = 40;
+    let cursorY = 80;
+
+    // Layout configuration for high-density enterprise hierarchies
+    const SPACING_X = {
+      plant: LEVEL_X.plant,
+      department: LEVEL_X.department,
+      module: LEVEL_X.module,
+      machine: LEVEL_X.machine,
+      overflow: LEVEL_X.overflow,
+    };
+
+    const SPACING_Y = {
+      node: VERTICAL_GAP,
+      branch: 60,
+      plant: 140,
+    };
 
     const ensureEdge = (source: string, target: string) => {
       edges.push({
@@ -932,213 +954,168 @@ export function EnterpriseAssetGraph({
         source,
         target,
         type: "smoothstep",
-        markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
+        markerEnd: { type: MarkerType.ArrowClosed, width: 22, height: 22 },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
+        style: { stroke: "#cbd5e1", strokeWidth: 1.5 },
       });
     };
 
     scopedPlants.forEach((plant) => {
       const plantNodeId = `plant:${plant.id}`;
       levelsByNode.set(plantNodeId, "plant");
+      parentByNodeId.set(plantNodeId, null);
+
       const departmentRows = departmentsByPlant.get(plant.id) || [];
       const departmentCenters: number[] = [];
 
       if (departmentRows.length === 0) {
         departmentCenters.push(cursorY);
-        cursorY += VERTICAL_GAP;
-      }
+        cursorY += SPACING_Y.node;
+      } else {
+        departmentRows.forEach((department) => {
+          const departmentNodeId = `department:${department.id}`;
+          parentByNodeId.set(departmentNodeId, plantNodeId);
+          levelsByNode.set(departmentNodeId, "department");
 
-      departmentRows.forEach((department) => {
-        const departmentNodeId = `department:${department.id}`;
-        parentByNodeId.set(departmentNodeId, plantNodeId);
-        levelsByNode.set(departmentNodeId, "department");
+          const moduleRows = modulesByDepartment.get(department.id) || [];
+          const isDepartmentExpanded = expandedDepartments[department.id] !== false;
+          const moduleCenters: number[] = [];
 
-        const moduleRows = modulesByDepartment.get(department.id) || [];
-        const manualDepartmentExpanded = expandedDepartments[department.id] !== false;
-        const isDepartmentExpanded = manualDepartmentExpanded;
-        const moduleCenters: number[] = [];
+          if (!isDepartmentExpanded || moduleRows.length === 0) {
+            moduleCenters.push(cursorY);
+            cursorY += SPACING_Y.node;
+          } else {
+            moduleRows.forEach((module) => {
+              if (drilldownLevel === "plant") return;
 
-        if (!isDepartmentExpanded || moduleRows.length === 0) {
-          const y = cursorY;
-          moduleCenters.push(y);
-          cursorY += VERTICAL_GAP;
-        }
+              const moduleNodeId = `module:${module.id}`;
+              parentByNodeId.set(moduleNodeId, departmentNodeId);
+              levelsByNode.set(moduleNodeId, "module");
 
-        moduleRows.forEach((module) => {
-          if (!isDepartmentExpanded || drilldownLevel === "plant") return;
+              const moduleMachines = machinesByModule.get(module.id) || [];
+              const isModuleExpanded = expandedModules[module.id] !== false && drilldownLevel === "module";
+              const leafCenters: number[] = [];
 
-          const moduleNodeId = `module:${module.id}`;
-          parentByNodeId.set(moduleNodeId, departmentNodeId);
-          levelsByNode.set(moduleNodeId, "module");
+              const renderLimit = (selectedModuleId === module.id || debouncedSearch) ? 140 : machineRenderBudget;
+              const visibleMachines = moduleMachines.slice(0, renderLimit);
+              const hiddenCount = Math.max(0, moduleMachines.length - visibleMachines.length);
 
-          const moduleMachines = machinesByModule.get(module.id) || [];
-          const machineRows = moduleMachines;
+              if (!isModuleExpanded || visibleMachines.length === 0) {
+                leafCenters.push(cursorY);
+                cursorY += SPACING_Y.node;
+              } else {
+                visibleMachines.forEach((machine) => {
+                  const machineNodeId = `machine:${machine.id}`;
+                  parentByNodeId.set(machineNodeId, moduleNodeId);
+                  levelsByNode.set(machineNodeId, "machine");
 
-          const renderLimit = selectedModuleId === module.id || debouncedSearch ? 120 : machineRenderBudget;
-          const visibleMachineRows = machineRows.slice(0, renderLimit);
-          const hiddenCount = Math.max(0, machineRows.length - visibleMachineRows.length);
+                  leafCenters.push(cursorY);
+                  nodeMap.set(machineNodeId, {
+                    id: machineNodeId,
+                    type: "mindmapNode",
+                    position: { x: SPACING_X.machine, y: cursorY },
+                    data: {
+                      nodeId: machineNodeId,
+                      level: "machine",
+                      label: `${machine.code} - ${machine.name}`,
+                      subtitle: `${machine.assetType || "MACHINE"} • ${machine.status.replace(/_/g, " ")}`,
+                      status: machine.status,
+                      woCount: (workOrdersByAsset.get(machine.id) || []).length,
+                      kpi: assetKpiPreview[machine.id],
+                      onClickNode: () => undefined,
+                    },
+                  });
+                  ensureEdge(moduleNodeId, machineNodeId);
+                  cursorY += SPACING_Y.node;
+                });
 
-          const manualModuleExpanded = expandedModules[module.id] !== false;
-          const isModuleExpanded = manualModuleExpanded && drilldownLevel === "module";
-          const leafCenters: number[] = [];
+                if (hiddenCount > 0) {
+                  const overflowId = `overflow:${module.id}`;
+                  nodeMap.set(overflowId, {
+                    id: overflowId,
+                    type: "mindmapNode",
+                    position: { x: SPACING_X.overflow, y: cursorY },
+                    data: {
+                      nodeId: overflowId,
+                      level: "overflow",
+                      label: `+${hiddenCount} Hidden`,
+                      subtitle: "Refine view to reveal assets",
+                      hiddenCount,
+                      onClickNode: () => undefined,
+                    },
+                  });
+                  ensureEdge(moduleNodeId, overflowId);
+                  cursorY += SPACING_Y.node;
+                }
+              }
 
-          if (!isModuleExpanded || visibleMachineRows.length === 0) {
-            const y = cursorY;
-            leafCenters.push(y);
-            cursorY += VERTICAL_GAP;
-          }
-
-          if (isModuleExpanded) {
-            visibleMachineRows.forEach((asset) => {
-              const machineNodeId = `machine:${asset.id}`;
-              parentByNodeId.set(machineNodeId, moduleNodeId);
-              levelsByNode.set(machineNodeId, "machine");
-
-              const y = cursorY;
-              leafCenters.push(y);
-              cursorY += VERTICAL_GAP;
-
-              nodeMap.set(machineNodeId, {
-                id: machineNodeId,
+              const moduleY = average(leafCenters);
+              moduleCenters.push(moduleY);
+              
+              nodeMap.set(moduleNodeId, {
+                id: moduleNodeId,
                 type: "mindmapNode",
-                position: { x: LEVEL_X.machine, y },
+                position: { x: SPACING_X.module, y: moduleY },
                 data: {
-                  nodeId: machineNodeId,
-                  level: "machine",
-                  label: `${asset.code} - ${asset.name}`,
-                  subtitle: `${asset.assetType || asset.type} • ${asset.status.replace(/_/g, " ")}`,
-                  status: asset.status,
-                  woCount: (workOrdersByAsset.get(asset.id) || []).length,
-                  kpi: assetKpiPreview[asset.id],
+                  nodeId: moduleNodeId,
+                  level: "module",
+                  label: `${module.code ? `${module.code} - ` : ""}${module.name}`,
+                  subtitle: module.description || "Sub-Hierarchy Unit",
+                  hasChildren: moduleMachines.length > 0,
+                  expanded: isModuleExpanded,
+                  totalMachines: moduleMachines.length,
                   onClickNode: () => undefined,
-                  onHoverMachine: () => undefined,
+                  onToggleExpand: () => undefined,
                 },
               });
-              ensureEdge(moduleNodeId, machineNodeId);
+              ensureEdge(departmentNodeId, moduleNodeId);
+              cursorY += SPACING_Y.branch;
             });
-
-            if (hiddenCount > 0) {
-              const overflowNodeId = `overflow:${module.id}`;
-              parentByNodeId.set(overflowNodeId, moduleNodeId);
-              levelsByNode.set(overflowNodeId, "overflow");
-
-              const y = cursorY;
-              leafCenters.push(y);
-              cursorY += VERTICAL_GAP;
-
-              nodeMap.set(overflowNodeId, {
-                id: overflowNodeId,
-                type: "mindmapNode",
-                position: { x: LEVEL_X.overflow, y },
-                data: {
-                  nodeId: overflowNodeId,
-                  level: "overflow",
-                  label: `+${hiddenCount} more machines`,
-                  subtitle: "Use search or module selection to load all leaf nodes",
-                  hiddenCount,
-                  onClickNode: () => undefined,
-                },
-              });
-              ensureEdge(moduleNodeId, overflowNodeId);
-            }
           }
 
-          const moduleY = average(leafCenters);
-          moduleCenters.push(moduleY);
+          const departmentY = average(moduleCenters);
+          departmentCenters.push(departmentY);
 
-          const activeMachines = moduleMachines.filter((asset) => isActiveMachineStatus(asset.status)).length;
-          nodeMap.set(moduleNodeId, {
-            id: moduleNodeId,
+          nodeMap.set(departmentNodeId, {
+            id: departmentNodeId,
             type: "mindmapNode",
-            position: { x: LEVEL_X.module, y: moduleY },
+            position: { x: SPACING_X.department, y: departmentY },
             data: {
-              nodeId: moduleNodeId,
-              level: "module",
-              label: `${module.code ? `${module.code} - ` : ""}${module.name}`,
-              subtitle: module.description || "Sub-branch module",
-              hasChildren: moduleMachines.length > 0,
-              expanded: isModuleExpanded,
-              totalMachines: moduleMachines.length,
-              activeMachines,
-              hiddenCount,
+              nodeId: departmentNodeId,
+              level: "department",
+              label: `${department.code} - ${department.name}`,
+              subtitle: "Operational Department",
+              hasChildren: (modulesByDepartment.get(department.id) || []).length > 0,
+              expanded: isDepartmentExpanded,
+              moduleCount: (modulesByDepartment.get(department.id) || []).length,
               onClickNode: () => undefined,
               onToggleExpand: () => undefined,
             },
           });
-          ensureEdge(departmentNodeId, moduleNodeId);
+          ensureEdge(plantNodeId, departmentNodeId);
+          cursorY += SPACING_Y.branch * 1.5;
         });
-
-        const departmentY = average(moduleCenters);
-        departmentCenters.push(departmentY);
-
-        const departmentModuleRows = modulesByDepartment.get(department.id) || [];
-        const departmentMachineCount = departmentModuleRows.reduce((sum, module) => sum + (machinesByModule.get(module.id)?.length || 0), 0);
-        const departmentActiveMachines = departmentModuleRows.reduce(
-          (sum, module) => sum + (machinesByModule.get(module.id) || []).filter((asset) => isActiveMachineStatus(asset.status)).length,
-          0,
-        );
-
-        nodeMap.set(departmentNodeId, {
-          id: departmentNodeId,
-          type: "mindmapNode",
-          position: { x: LEVEL_X.department, y: departmentY },
-          data: {
-            nodeId: departmentNodeId,
-            level: "department",
-            label: `${department.code} - ${department.name}`,
-            subtitle: "Branch",
-            hasChildren: departmentModuleRows.length > 0,
-            expanded: isDepartmentExpanded,
-            moduleCount: departmentModuleRows.length,
-            totalMachines: departmentMachineCount,
-            activeMachines: departmentActiveMachines,
-            onClickNode: () => undefined,
-            onToggleExpand: () => undefined,
-          },
-        });
-        ensureEdge(plantNodeId, departmentNodeId);
-      });
+      }
 
       const plantY = average(departmentCenters);
-      const plantDepartmentRows = departmentsByPlant.get(plant.id) || [];
-      const plantModuleCount = plantDepartmentRows.reduce((sum, department) => sum + (modulesByDepartment.get(department.id)?.length || 0), 0);
-      const plantMachineCount = plantDepartmentRows.reduce((sum, department) => {
-        const moduleRows = modulesByDepartment.get(department.id) || [];
-        return sum + moduleRows.reduce((moduleSum, module) => moduleSum + (machinesByModule.get(module.id)?.length || 0), 0);
-      }, 0);
-      const plantActiveMachineCount = plantDepartmentRows.reduce((sum, department) => {
-        const moduleRows = modulesByDepartment.get(department.id) || [];
-        return (
-          sum +
-          moduleRows.reduce(
-            (moduleSum, module) => moduleSum + (machinesByModule.get(module.id) || []).filter((asset) => isActiveMachineStatus(asset.status)).length,
-            0,
-          )
-        );
-      }, 0);
-
       nodeMap.set(plantNodeId, {
         id: plantNodeId,
         type: "mindmapNode",
-        position: { x: LEVEL_X.plant, y: plantY },
+        position: { x: SPACING_X.plant, y: plantY },
         data: {
           nodeId: plantNodeId,
           level: "plant",
           label: `${plant.plantCode} - ${plant.plantName}`,
-          subtitle: plant.location || "Root node",
-          hasChildren: plantDepartmentRows.length > 0,
+          subtitle: plant.location || "Industrial Unit",
+          hasChildren: (departmentsByPlant.get(plant.id) || []).length > 0,
           expanded: true,
-          moduleCount: plantModuleCount,
-          totalMachines: plantMachineCount,
-          activeMachines: plantActiveMachineCount,
           onClickNode: () => undefined,
         },
       });
-
-      cursorY += 20;
-      parentByNodeId.set(plantNodeId, null);
+      cursorY += SPACING_Y.plant;
     });
+
 
     const treeNodes = Array.from(nodeMap.values());
 
