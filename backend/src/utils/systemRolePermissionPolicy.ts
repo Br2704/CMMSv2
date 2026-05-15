@@ -8,6 +8,12 @@ const ADMIN_BLOCKED_MODULES = new Set([] as string[]);
 const VENDOR_ALLOWED_MODULES = new Set(['AMC']);
 const SECURITY_ALLOWED_MODULES = new Set(['GATES']);
 const VISITOR_ALLOWED_MODULES = new Set(['GATES']);
+const HR_ALLOWED_MODULES = new Set(['USERS', 'DEPARTMENTS', 'SHIFTS', 'LOGS']);
+const SAFETY_ALLOWED_MODULES = new Set(['GATES', 'ESG', 'SAFETY', 'ALERTS']);
+const INVENTORY_ALLOWED_MODULES = new Set(['INVENTORY', 'VENDORS', 'MASTERS', 'REPORTS']);
+const MAINTENANCE_USER_ALLOWED_MODULES = new Set(['ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'INVENTORY', 'DASHBOARD']);
+const MAINTENANCE_MANAGER_ALLOWED_MODULES = new Set(['ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'INVENTORY', 'DASHBOARD', 'REPORTS', 'MASTERS', 'DEPARTMENTS', 'VENDORS', 'ANALYTICS']);
+const PRODUCTION_USER_ALLOWED_MODULES = new Set(['DASHBOARD', 'WORK_ORDERS', 'ASSETS', 'NOTIFICATIONS']);
 
 function normalizeSystemRoleKey(roleKey: string): string {
   const normalized = normalizeRoleName(roleKey);
@@ -67,7 +73,9 @@ export function isSystemManagedOrganizationRole(roleKey: string): boolean {
 export function applySystemRolePermissionPolicy(roleKey: string, input: PermissionMap): PermissionMap {
   const normalizedRole = normalizeSystemRoleKey(roleKey);
   const normalizedInput = normalizePermissionMap(input);
+  const isInputEmpty = Object.keys(normalizedInput).length === 0;
 
+  // SUPERADMIN policy is always strictly enforced to ensure org recovery.
   if (normalizedRole === 'SUPERADMIN') {
     const map = buildAllModulesPermissionMap();
     map.ORGANIZATIONS = ['READ'];
@@ -75,6 +83,13 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
     return map;
   }
 
+  // For other system roles, if the input is NOT empty, it means a Root Admin 
+  // has manually configured permissions. We respect those overrides.
+  if (!isInputEmpty) {
+    return normalizedInput;
+  }
+
+  // Baseline defaults for newly created or unconfigured system roles:
   if (normalizedRole === 'ADMIN') {
     const map = buildAllModulesPermissionMap(ADMIN_BLOCKED_MODULES);
     map.ORGANIZATIONS = ['READ'];
@@ -82,22 +97,65 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
     return map;
   }
 
-  if (normalizedRole === 'VISITOR') {
-    const map = pickAllowedModules(normalizedInput, VISITOR_ALLOWED_MODULES);
-    map.GATES = normalizeActions(Array.from(new Set([...(map.GATES ?? []), 'READ', 'CREATE'])));
+  if (normalizedRole === 'MAINTENANCE_MANAGER') {
+    const map = pickAllowedModules(normalizedInput, MAINTENANCE_MANAGER_ALLOWED_MODULES);
+    for (const mod of MAINTENANCE_MANAGER_ALLOWED_MODULES) {
+      map[mod] = [...RBAC_ACTIONS];
+    }
     return map;
   }
 
+  if (normalizedRole === 'MAINTENANCE_USER') {
+    const map = pickAllowedModules(normalizedInput, MAINTENANCE_USER_ALLOWED_MODULES);
+    for (const mod of MAINTENANCE_USER_ALLOWED_MODULES) {
+      map[mod] = ['READ', 'CREATE', 'UPDATE', 'EXPORT'];
+    }
+    return map;
+  }
+
+  if (normalizedRole === 'HR_USER') {
+    const map = pickAllowedModules(normalizedInput, HR_ALLOWED_MODULES);
+    for (const mod of HR_ALLOWED_MODULES) {
+      map[mod] = [...RBAC_ACTIONS];
+    }
+    return map;
+  }
+
+  if (normalizedRole === 'SAFETY_OFFICER') {
+    const map = pickAllowedModules(normalizedInput, SAFETY_ALLOWED_MODULES);
+    for (const mod of SAFETY_ALLOWED_MODULES) {
+      map[mod] = ['READ', 'UPDATE', 'EXPORT'];
+    }
+    return map;
+  }
+
+  if (normalizedRole === 'INVENTORY_MANAGER') {
+    const map = pickAllowedModules(normalizedInput, INVENTORY_ALLOWED_MODULES);
+    for (const mod of INVENTORY_ALLOWED_MODULES) {
+      map[mod] = [...RBAC_ACTIONS];
+    }
+    return map;
+  }
+
+  if (normalizedRole === 'PRODUCTION_USER') {
+    const map = pickAllowedModules(normalizedInput, PRODUCTION_USER_ALLOWED_MODULES);
+    map.DASHBOARD = ['READ'];
+    map.WORK_ORDERS = ['READ', 'CREATE'];
+    map.ASSETS = ['READ'];
+    map.NOTIFICATIONS = ['READ', 'UPDATE'];
+    return map;
+  }
+
+  if (normalizedRole === 'VISITOR') {
+    return { GATES: ['READ', 'CREATE'] };
+  }
 
   if (normalizedRole === 'VENDOR') {
-    const map = pickAllowedModules(normalizedInput, VENDOR_ALLOWED_MODULES);
-    return ensureModuleReadAccess(map, 'AMC');
+    return { AMC: ['READ', 'UPDATE'] };
   }
 
   if (normalizedRole === 'SECURITY') {
-    const map = pickAllowedModules(normalizedInput, SECURITY_ALLOWED_MODULES);
-    map.GATES = normalizeActions(Array.from(new Set([...(map.GATES ?? []), 'READ', 'CREATE', 'UPDATE', 'EXPORT'])));
-    return map;
+    return { GATES: ['READ', 'CREATE', 'UPDATE', 'EXPORT'] };
   }
 
   if (normalizedRole === 'USER') {

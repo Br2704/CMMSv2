@@ -1,7 +1,22 @@
 import { forbidden } from './httpError';
 import { normalizeRoleName } from './rbac';
 
-export const SYSTEM_ROLES = ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER', 'USER', 'VENDOR', 'VISITOR', 'SECURITY'] as const;
+export const SYSTEM_ROLES = [
+  'ROOT_ADMIN',
+  'SUPERADMIN',
+  'ADMIN',
+  'PLANT_ADMIN',
+  'MAINTENANCE_MANAGER',
+  'MAINTENANCE_USER',
+  'HR_USER',
+  'SAFETY_OFFICER',
+  'INVENTORY_MANAGER',
+  'PRODUCTION_USER',
+  'USER',
+  'VENDOR',
+  'VISITOR',
+  'SECURITY',
+] as const;
 
 export type SystemRole = (typeof SYSTEM_ROLES)[number];
 
@@ -27,6 +42,11 @@ const ROLE_PRECEDENCE: Record<string, number> = {
   SUPERADMIN: 300,
   ADMIN: 200,
   MAINTENANCE_MANAGER: 180,
+  MAINTENANCE_USER: 150,
+  HR_USER: 145,
+  SAFETY_OFFICER: 142,
+  INVENTORY_MANAGER: 140,
+  PRODUCTION_USER: 110,
   ENGINEER: 140,
   TECHNICIAN: 130,
   STORE_USER: 125,
@@ -39,6 +59,11 @@ const ROLE_PRECEDENCE: Record<string, number> = {
 
 const SUPERADMIN_MANAGED_ROLES = new Set([
   'MAINTENANCE_MANAGER',
+  'MAINTENANCE_USER',
+  'HR_USER',
+  'SAFETY_OFFICER',
+  'INVENTORY_MANAGER',
+  'PRODUCTION_USER',
   'ENGINEER',
   'TECHNICIAN',
   'STORE_USER',
@@ -52,6 +77,11 @@ const SUPERADMIN_MANAGED_ROLES = new Set([
 
 const ADMIN_MANAGED_ROLES = new Set([
   'MAINTENANCE_MANAGER',
+  'MAINTENANCE_USER',
+  'HR_USER',
+  'SAFETY_OFFICER',
+  'INVENTORY_MANAGER',
+  'PRODUCTION_USER',
   'ENGINEER',
   'TECHNICIAN',
   'STORE_USER',
@@ -90,14 +120,31 @@ export function isRegularRole(roleKey: string): boolean {
 
 export function visibleRolesForActor(actorRole: string): string[] {
   const role = normalizeRole(actorRole);
+  const common = [
+    'MAINTENANCE_MANAGER',
+    'MAINTENANCE_USER',
+    'HR_USER',
+    'SAFETY_OFFICER',
+    'INVENTORY_MANAGER',
+    'PRODUCTION_USER',
+    'ENGINEER',
+    'TECHNICIAN',
+    'STORE_USER',
+    'VIEWER',
+    'SECURITY',
+    'VENDOR',
+    'VISITOR',
+    'USER',
+  ];
+
   if (role === 'ROOT_ADMIN') {
-    return ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'SECURITY', 'VENDOR', 'VISITOR', 'USER'];
+    return ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', ...common];
   }
   if (role === 'SUPERADMIN') {
-    return ['MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'SECURITY', 'VENDOR', 'VISITOR', 'USER'];
+    return common;
   }
   if (role === 'ADMIN') {
-    return ['MAINTENANCE_MANAGER', 'ENGINEER', 'TECHNICIAN', 'STORE_USER', 'VIEWER', 'USER', 'SECURITY', 'VENDOR', 'VISITOR'];
+    return common.filter((r) => r !== 'SUPERADMIN');
   }
   return ['USER', 'SECURITY', 'VENDOR', 'VISITOR'];
 }

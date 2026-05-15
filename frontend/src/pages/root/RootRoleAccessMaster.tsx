@@ -127,6 +127,8 @@ function applySystemRolePolicy(roleKey: string, input: OrgRolePermissionMap) {
   const normalizedRoleKey = normalizeRoleKeyForPolicy(roleKey);
   const normalized = sanitizePermissionMap(input);
 
+  const isInputEmpty = Object.keys(normalized).length === 0;
+
   if (normalizedRoleKey === "SUPERADMIN") {
     const next = buildFullAccessMapFromCatalog(normalized);
     next.ORGANIZATIONS = ["READ"];
@@ -135,12 +137,55 @@ function applySystemRolePolicy(roleKey: string, input: OrgRolePermissionMap) {
     return next;
   }
 
+  // For other industrial roles, provide default baseline if the current map is empty.
+  if (isInputEmpty) {
+    if (normalizedRoleKey === "MAINTENANCE_MANAGER") {
+      const next = buildFullAccessMapFromCatalog(normalized);
+      delete next.ORGANIZATIONS;
+      delete next.PLANTS;
+      delete next["MASTERS.PLANT"];
+      return next;
+    }
+    if (normalizedRoleKey === "MAINTENANCE_USER") {
+      const map: OrgRolePermissionMap = {};
+      ["ASSETS", "WORK_ORDERS", "PM", "CALIBRATION", "AMC", "INVENTORY", "DASHBOARD"].forEach(mod => {
+        map[mod] = ["READ", "CREATE", "UPDATE", "EXPORT"];
+      });
+      return map;
+    }
+    if (normalizedRoleKey === "HR_USER") {
+      const map: OrgRolePermissionMap = {};
+      ["USERS", "DEPARTMENTS", "SHIFTS", "LOGS"].forEach(mod => {
+        map[mod] = ["READ", "CREATE", "UPDATE", "DELETE", "EXPORT"];
+      });
+      return map;
+    }
+    if (normalizedRoleKey === "SAFETY_OFFICER") {
+      const map: OrgRolePermissionMap = {};
+      ["GATES", "ESG", "SAFETY", "ALERTS"].forEach(mod => {
+        map[mod] = ["READ", "UPDATE", "EXPORT"];
+      });
+      return map;
+    }
+    if (normalizedRoleKey === "PRODUCTION_USER") {
+      return {
+        DASHBOARD: ["READ"],
+        WORK_ORDERS: ["READ", "CREATE"],
+        ASSETS: ["READ"],
+      };
+    }
+  }
+
   return normalized;
 }
 
 function getSystemRolePolicyHint(roleKey: string): string | null {
   const normalizedRoleKey = normalizeRoleKeyForPolicy(roleKey);
   if (normalizedRoleKey === "SUPERADMIN") return "SUPERADMIN policy is fixed: full organization access across modules, with Plant Master limited to view and edit.";
+  if (normalizedRoleKey === "MAINTENANCE_MANAGER") return "Maintenance Manager baseline: full access to maintenance, assets, and inventory modules.";
+  if (normalizedRoleKey === "MAINTENANCE_USER") return "Maintenance User baseline: operational access to work orders, PMs, and assets.";
+  if (normalizedRoleKey === "HR_USER") return "HR User baseline: focus on user management, departments, and shift configuration.";
+  if (normalizedRoleKey === "SAFETY_OFFICER") return "Safety Officer baseline: access to gate logs, safety tracking, and ESG reporting.";
   return null;
 }
 

@@ -29,6 +29,12 @@ const DEFAULT_FEATURE_KEYS = ['SAFETY', 'ESG', 'GATE_ENTRY', 'ADVANCED_ANALYTICS
 const DEFAULT_ORG_ROLES = [
   { key: 'SUPERADMIN', name: 'SUPERADMIN', isSystem: true },
   { key: 'ADMIN', name: 'ADMIN', isSystem: true },
+  { key: 'MAINTENANCE_MANAGER', name: 'MAINTENANCE_MANAGER', isSystem: true },
+  { key: 'MAINTENANCE_USER', name: 'MAINTENANCE_USER', isSystem: true },
+  { key: 'HR_USER', name: 'HR_USER', isSystem: true },
+  { key: 'SAFETY_OFFICER', name: 'SAFETY_OFFICER', isSystem: true },
+  { key: 'INVENTORY_MANAGER', name: 'INVENTORY_MANAGER', isSystem: true },
+  { key: 'PRODUCTION_USER', name: 'PRODUCTION_USER', isSystem: true },
   { key: 'SECURITY', name: 'SECURITY', isSystem: true },
   { key: 'VENDOR', name: 'VENDOR', isSystem: true },
   { key: 'VISITOR', name: 'VISITOR', isSystem: true },
