@@ -57,7 +57,7 @@ export default function VendorsMaster() {
   const fetchVendors = async () => {
     setLoading(true);
     try {
-      const response = await listVendors({ page: 1, limit: 100, search: searchQuery || undefined });
+      const response = await listVendors({ page: 1, limit: 1000, search: searchQuery || undefined });
       setVendors(response.data);
     } catch (error: any) {
       toast.error(error?.message || "Failed to load vendors");

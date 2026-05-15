@@ -79,13 +79,13 @@ export default function ModulesMaster() {
       const [modulesResponse, departmentsResponse, assetsResponse] = await Promise.all([
         listModules({
           page: 1,
-          limit: 100,
+          limit: 1000,
           search: searchQuery || undefined,
           plantId: effectivePlantId,
           departmentId: effectiveDepartmentId,
         }),
-        listDepartments({ page: 1, limit: 100, plantId: effectivePlantId }),
-        listAssets({ page: 1, limit: 100, plantId: effectivePlantId, departmentId: effectiveDepartmentId }),
+        listDepartments({ page: 1, limit: 1000, plantId: effectivePlantId }),
+        listAssets({ page: 1, limit: 1000, plantId: effectivePlantId, departmentId: effectiveDepartmentId }),
       ]);
 
       const machineCountMap = new Map<string, number>();

@@ -58,7 +58,7 @@ export default function CostCentersMaster() {
       }
       const response = await listCostCenters({
         page: 1,
-        limit: 100,
+        limit: 1000,
         search: searchQuery || undefined,
         plantId: effectivePlantId,
       });
@@ -79,7 +79,7 @@ export default function CostCentersMaster() {
       }
       const response = await listDepartments({
         page: 1,
-        limit: 100,
+        limit: 1000,
         plantId: effectivePlantId,
       });
       setDepartments(response.data);

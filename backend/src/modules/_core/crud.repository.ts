@@ -94,7 +94,7 @@ export class CrudRepository {
       if (scopedPlantIds.length === 0) {
         return { items: [], total: 0 };
       }
-      qb.andWhere(`t.${plantColumn} IN (:...plantIds)`, { plantIds: scopedPlantIds });
+      qb.andWhere(`(t.${plantColumn} IN (:...plantIds) OR t.${plantColumn} IS NULL)`, { plantIds: scopedPlantIds });
     }
 
     const totalQb = qb.clone().select('COUNT(1)', 'count');

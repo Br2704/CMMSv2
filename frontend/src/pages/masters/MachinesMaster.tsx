@@ -437,7 +437,7 @@ export default function MachinesMaster() {
       }
       const response = await listCostCenters({
         page: 1,
-        limit: 100,
+        limit: 1000,
         plantId: resolvedPlantId,
       });
 

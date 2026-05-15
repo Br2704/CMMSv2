@@ -20,7 +20,7 @@ import {
     ArrowRight,
     ShieldCheck,
     ClipboardCheck,
-    Maximize2,
+    Maximize,
 } from "lucide-react";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -996,7 +996,7 @@ export default function VisitorExperience() {
                                                 <p className="text-xs text-muted-foreground leading-relaxed">Secure digital handshake for automated industrial check-in and zone authorization.</p>
                                             </div>
                                             <Button className="w-full h-12 gap-2 rounded-2xl gradient-primary shadow-xl shadow-primary/20" onClick={() => setQrScannerOpen(true)}>
-                                                <Maximize2 size={18} /> Launch Scanner
+                                                <Maximize size={18} /> Launch Scanner
                                             </Button>
                                         </div>
                                     </div>

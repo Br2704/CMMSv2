@@ -19,11 +19,8 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    if (import.meta.env.DEV) {
-      // Keep this client-side log only in development diagnostics.
-      // eslint-disable-next-line no-console
-      console.error("Unhandled UI error", error, info);
-    }
+    // eslint-disable-next-line no-console
+    console.error("[AppErrorBoundary] Unhandled UI error", error?.message || error, info?.componentStack ? info.componentStack.slice(0, 200) : "");
   }
 
   render() {

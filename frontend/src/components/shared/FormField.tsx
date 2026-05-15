@@ -47,10 +47,10 @@ export function InputField({
   name,
 }: InputFieldProps) {
   const generatedId = useId().replace(/:/g, "");
-  const normalizedLabel = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const normalizedLabel = (label || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   const fieldId = id ?? `${normalizedLabel || "input"}-${generatedId}`;
   const fieldName = name ?? (normalizedLabel || `input-${generatedId}`);
-  const hasLabel = label.trim().length > 0;
+  const hasLabel = (label || "").trim().length > 0;
   return (
     <div className={cn(hasLabel ? "space-y-2" : "space-y-0", className)}>
       {hasLabel ? (
@@ -99,9 +99,10 @@ export function TextareaField({
   name,
 }: TextareaFieldProps) {
   const generatedId = useId().replace(/:/g, "");
-  const normalizedLabel = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const normalizedLabel = (label || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   const fieldId = id ?? `${normalizedLabel || "textarea"}-${generatedId}`;
   const fieldName = name ?? (normalizedLabel || `textarea-${generatedId}`);
+  const hasLabel = (label || "").trim().length > 0;
   return (
     <div className={cn("space-y-2", className)}>
       <Label htmlFor={fieldId} className="flex items-center gap-1 text-sm font-medium">
@@ -147,10 +148,10 @@ export function SelectField({
   name,
 }: SelectFieldProps) {
   const generatedId = useId().replace(/:/g, "");
-  const normalizedLabel = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const normalizedLabel = (label || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   const fieldId = id ?? `${normalizedLabel || "select"}-${generatedId}`;
   const fieldName = name ?? (normalizedLabel || `select-${generatedId}`);
-  const hasLabel = label.trim().length > 0;
+  const hasLabel = (label || "").trim().length > 0;
   const inlineFieldClass = !hasLabel ? "w-full sm:w-[160px] min-w-[140px] flex-shrink-0" : "";
   return (
     <div className={cn(hasLabel ? "space-y-2" : "space-y-0", inlineFieldClass, className)}>

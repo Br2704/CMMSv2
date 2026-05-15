@@ -635,7 +635,7 @@ export default function UsersMaster() {
       if (!plantId) return trimmed;
 
       if (!departmentAliasByPlant.has(plantId)) {
-        const response = await listDepartments({ page: 1, limit: 500, plantId, includeInactive: false });
+        const response = await listDepartments({ page: 1, limit: 1000, plantId, includeInactive: false });
         const aliasMap = new Map<string, string>();
         response.data.forEach((department) => {
           aliasMap.set(normalizeLookupValue(department.name), department.name);

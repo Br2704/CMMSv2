@@ -46,5 +46,5 @@ export function applyPlantScope<T extends ObjectLiteral>(
     qb.andWhere('1=0');
     return;
   }
-  qb.andWhere(`${alias}.${plantColumn} IN (:...plantIds)`, { plantIds: scoped });
+  qb.andWhere(`(${alias}.${plantColumn} IN (:...plantIds) OR ${alias}.${plantColumn} IS NULL)`, { plantIds: scoped });
 }

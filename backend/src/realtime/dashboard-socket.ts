@@ -54,7 +54,7 @@ export function startDashboardSocketServer(server: HttpServer) {
   });
 
   server.on('upgrade', (request, socket, head) => {
-    const pathname = request.url ? new URL(request.url, `http://${request.headers.host}`).pathname : '';
+    const pathname = request.url ? request.url.split('?')[0] : '';
     
     if (pathname === DASHBOARD_SOCKET_PATH) {
       dashboardSocketServer?.handleUpgrade(request, socket, head, (ws) => {
