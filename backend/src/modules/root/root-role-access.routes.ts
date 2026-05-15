@@ -252,17 +252,13 @@ rootRoleAccessRouter.delete('/orgs/:orgId/roles/:roleId', async (req, res, next)
       return;
     }
 
-    if (role.isSystem || isSystemManagedOrganizationRole(role.key)) {
-      res.status(409).json(fail('System role cannot be deleted'));
+    if (role.key === 'SUPERADMIN') {
+      res.status(409).json(fail('SUPERADMIN role cannot be deleted'));
       return;
     }
 
-    const assignedUsers = await AppDataSource.getRepository(UserEntity).count({ where: { orgRoleId: role.id, isActive: true } });
-    if (assignedUsers > 0) {
-      res.status(409).json(fail('Role is assigned to users'));
-      return;
-    }
-
+    await AppDataSource.getRepository(UserEntity).update({ orgRoleId: role.id }, { orgRoleId: null });
+    
     await roleRepo.delete({ id: role.id });
     await AppDataSource.getRepository(OrgRolePermissionEntity).delete({ roleId: role.id });
     await bumpOrgRbacVersion(params.orgId);
