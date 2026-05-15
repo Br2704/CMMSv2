@@ -658,54 +658,264 @@ export default function Assets() {
     if (!assetIdFromQuery && !searchParams.get("view") && !searchParams.get("from")) return;
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete("assetId");
+  const workOrdersByAsset = useMemo(() => {
+    const map = new Map<string, WorkOrderSummary[]>();
+    workOrders.forEach((workOrder) => {
+      if (!workOrder.assetId) return;
+      const bucket = map.get(workOrder.assetId) || [];
+      bucket.push(workOrder);
+      map.set(workOrder.assetId, bucket);
+    });
+    return map;
+  }, [workOrders]);
+
+  const assetsWithOpenWo = useMemo(
+    () =>
+      visibleAssets.filter((asset) => (workOrdersByAsset.get(asset.id) || []).some((workOrder) => workOrder.status && workOrder.status !== "CLOSED")).length,
+    [visibleAssets, workOrdersByAsset],
+  );
+
+  const handlePrefetchAssetKpi = async (assetId: string) => {
+    if (!assetId) return;
+    if (kpiPrefetchInFlightRef.current.has(assetId)) return;
+    if (assetKpiPreview[assetId] && !assetKpiPreview[assetId].loading) return;
+
+    kpiPrefetchInFlightRef.current.add(assetId);
+    setAssetKpiPreview((current) => {
+      const previous = current[assetId];
+      if (previous && !previous.loading) return current;
+      return {
+        ...current,
+        [assetId]: {
+          mttr: previous?.mttr || "-",
+          mtbf: previous?.mtbf || "-",
+          loading: true,
+        },
+      };
+    });
+
+    try {
+      const response = await getAssetOverview(assetId);
+      setAssetKpiPreview((current) => ({
+        ...current,
+        [assetId]: {
+          mttr: formatMinutes(response.data.analytics.reliability?.mttrMinutes),
+          mtbf: formatMinutes(response.data.analytics.reliability?.mtbfMinutes),
+          loading: false,
+        },
+      }));
+    } catch {
+      setAssetKpiPreview((current) => ({
+        ...current,
+        [assetId]: {
+          mttr: current[assetId]?.mttr || "-",
+          mtbf: current[assetId]?.mtbf || "-",
+          loading: false,
+        },
+      }));
+    } finally {
+      kpiPrefetchInFlightRef.current.delete(assetId);
+    }
+  };
+
+  const openAssetFromContext = async (
+    assetId: string,
+    options?: {
+      openDialog?: boolean;
+      targetTab?: "flow" | "list";
+      blinkInMindmap?: boolean;
+    },
+  ) => {
+    let resolvedAsset = assets.find((asset) => asset.id === assetId) || null;
+    if (!resolvedAsset) {
+      const response = await getAsset(assetId);
+      resolvedAsset = response.data;
+    }
+
+    if (!resolvedAsset) {
+      throw new Error("Machine not found for this QR");
+    }
+
+    if (resolvedAsset.plantId) {
+      setSelectedPlantId(resolvedAsset.plantId);
+    }
+    setSelectedDepartmentId(resolvedAsset.departmentId || "");
+    setSelectedModuleId(resolvedAsset.moduleId || "");
+    setSelectedAsset(resolvedAsset);
+
+    const openDialog = options?.openDialog ?? true;
+    const targetTab = options?.targetTab ?? "list";
+
+    setActiveTab(targetTab);
+    setIsViewOpen(openDialog);
+
+    if (options?.blinkInMindmap) {
+      setQrBlinkAssetId(resolvedAsset.id);
+      if (qrBlinkTimeoutRef.current) {
+        window.clearTimeout(qrBlinkTimeoutRef.current);
+      }
+      qrBlinkTimeoutRef.current = window.setTimeout(() => {
+        setQrBlinkAssetId((current) => (current === resolvedAsset?.id ? null : current));
+      }, 2200);
+    }
+
+    return resolvedAsset;
+  };
+
+  const handleAssetQrDecoded = async (rawValue: string) => {
+    setResolvingQr(true);
+    try {
+      const parsed = parseQrContent(rawValue);
+      let scannedMachineId = parsed.machineId || "";
+
+      if (!scannedMachineId && parsed.machineCode) {
+        const resolvedByCode = await resolveQrMachineCode(parsed.machineCode, parsed.token);
+        scannedMachineId = resolvedByCode.data.asset?.id || "";
+      }
+
+      if (!scannedMachineId && parsed.token) {
+        const resolved = await resolveQrToken(parsed.token);
+        scannedMachineId = resolved.data.asset?.id || "";
+      }
+
+      if (!scannedMachineId) {
+        throw new Error("Invalid machine QR. Please rescan.");
+      }
+
+      const locatedAsset = await openAssetFromContext(scannedMachineId, {
+        openDialog: false,
+        targetTab: "flow",
+        blinkInMindmap: true,
+      });
+      setFlowSearch(`${locatedAsset.code} ${locatedAsset.name}`);
+      toast.success("Machine located in enterprise mindmap");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Unable to resolve machine QR");
+      setIsQrScannerOpen(true);
+    } finally {
+      setResolvingQr(false);
+    }
+  };
+
+  const openWorkOrderHistory = (asset: Asset) => {
+    navigate(`/work-orders?assetId=${asset.id}`);
+  };
+
+  const assetColumns = [
+    {
+      key: "machine",
+      header: "Machine",
+      render: (asset: Asset) => <div><p className="font-medium">{asset.code}</p><p className="text-xs text-muted-foreground">{asset.name}</p></div>,
+    },
+    {
+      key: "hierarchy",
+      header: "Department / Module",
+      render: (asset: Asset) => {
+        const department = departments.find((item) => item.id === asset.departmentId);
+        const module = modules.find((item) => item.id === asset.moduleId);
+        return <div><p className="text-sm">{department ? `${department.code} - ${department.name}` : "-"}</p><p className="text-xs text-muted-foreground">{module ? `${module.code ? `${module.code} - ` : ""}${module.name}` : "-"}</p></div>;
+      },
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (asset: Asset) => <StatusBadge variant={assetStatusVariant(asset.status)}>{asset.status.replace(/_/g, " ")}</StatusBadge>,
+    },
+    {
+      key: "wo",
+      header: "WO History",
+      render: (asset: Asset) => `${(workOrdersByAsset.get(asset.id) || []).length}`,
+      hideOnMobile: true,
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      render: (asset: Asset) => (
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={() => { setSelectedAsset(asset); setIsViewOpen(true); }} aria-label={`View ${asset.name}`}>
+            <Eye className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => openWorkOrderHistory(asset)} aria-label={`Work order history for ${asset.name}`}>
+            <History className="h-4 w-4" />
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  const isLoading = masterDataQuery.isLoading || workOrdersQuery.isLoading;
+  const handleRaiseWorkOrder = () => {
+    if (!selectedAsset?.id) return;
+    navigate(`/work-orders?assetId=${selectedAsset.id}&mode=create-breakdown`);
+  };
+  const clearAssetQueryParams = () => {
+    if (!assetIdFromQuery && !searchParams.get("view") && !searchParams.get("from")) return;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("assetId");
     nextParams.delete("view");
     nextParams.delete("from");
     setSearchParams(nextParams, { replace: true });
   };
 
   return (
-    <PageShell className="space-y-4 sm:space-y-6">
-      <PageHeader
-        title="Assets"
-        subtitle="Advanced machine hierarchy and QR-assisted machine lookup"
-        actions={
-          <Button variant="outline" className="gap-2" onClick={() => setIsQrScannerOpen(true)} disabled={resolvingQr}>
-            <QrCode className="h-4 w-4" />
-            {resolvingQr ? "Resolving QR..." : "QR Scan"}
+    <PageShell className="safe-area-inset space-y-6">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        <PageHeader
+          title="Machine Directory"
+          subtitle="Advanced asset intelligence and hierarchy management"
+          className="lg:mb-0"
+        />
+        <div className="flex items-center gap-3">
+          <Button 
+            variant="outline" 
+            className="h-11 gap-2 rounded-xl border-border/60 bg-white/50 backdrop-blur-md hover:bg-white shadow-sm" 
+            onClick={() => setIsQrScannerOpen(true)} 
+            disabled={resolvingQr}
+          >
+            <QrCode className="h-4 w-4 text-primary" />
+            <span className="font-semibold">{resolvingQr ? "Resolving..." : "QR Scan"}</span>
           </Button>
-        }
-      />
+        </div>
+      </div>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "flow" | "list")} className="space-y-4">
-        <TabsList className="grid h-auto w-full grid-cols-2">
-          <TabsTrigger value="list">Machine Directory</TabsTrigger>
-          <TabsTrigger value="flow">Machine Flow Chart</TabsTrigger>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "flow" | "list")} className="space-y-6">
+        <TabsList className="grid h-12 w-full max-w-[400px] grid-cols-2 rounded-2xl bg-muted/50 p-1.5 backdrop-blur-md">
+          <TabsTrigger value="list" className="rounded-xl font-bold uppercase tracking-widest text-[10px]">Directory</TabsTrigger>
+          <TabsTrigger value="flow" className="rounded-xl font-bold uppercase tracking-widest text-[10px]">Flow Chart</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="flow" className="space-y-4">
-          <Card className="border-border/70 bg-gradient-to-br from-card to-muted/30 shadow-card">
-            <CardContent className="pt-5">
-              <div className="flex flex-wrap items-center gap-2">
-                {userIsSuperAdmin ? (
-                  <select aria-label="Flow chart plant filter" className="h-9 min-w-[220px] rounded-md border border-input bg-background px-3 text-sm" value={selectedPlantId} onChange={(event) => {
-                    setSelectedPlantId(event.target.value);
-                    setSelectedDepartmentId("");
-                    setSelectedModuleId("");
-                  }}>
-                    <option value="">All Plants</option>
-                    {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode || plant.plantName}</option>)}
-                  </select>
-                ) : (
-                  <div className="flex h-9 min-w-[220px] items-center rounded-md border border-input bg-background px-3 text-sm">
-                    {selectedPlant ? (selectedPlant.plantCode || selectedPlant.plantName) : "Plant Not Assigned"}
-                  </div>
-                )}
+        <TabsContent value="flow" className="space-y-6">
+          <Card className="overflow-hidden rounded-[2rem] border-none bg-white/40 shadow-industrial backdrop-blur-xl">
+            <CardContent className="p-5">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-3 rounded-2xl bg-white/60 p-1 pl-4 border border-white/50 shadow-sm">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Context</span>
+                  {userIsSuperAdmin ? (
+                    <select 
+                      aria-label="Flow chart plant filter" 
+                      className="h-9 min-w-[200px] rounded-xl border-none bg-transparent px-2 text-sm font-bold focus:ring-0" 
+                      value={selectedPlantId} 
+                      onChange={(event) => {
+                        setSelectedPlantId(event.target.value);
+                        setSelectedDepartmentId("");
+                        setSelectedModuleId("");
+                      }}
+                    >
+                      <option value="">All Plants</option>
+                      {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode || plant.plantName}</option>)}
+                    </select>
+                  ) : (
+                    <div className="flex h-9 min-w-[200px] items-center px-2 text-sm font-bold">
+                      {selectedPlant ? (selectedPlant.plantCode || selectedPlant.plantName) : "Plant Not Assigned"}
+                    </div>
+                  )}
+                </div>
 
                 <Button
                   type="button"
                   size="sm"
-                  variant="outline"
-                  className="h-9"
+                  variant="ghost"
+                  className="h-11 rounded-2xl font-bold uppercase tracking-widest text-[10px] text-slate-500 hover:bg-white/60"
                   onClick={() => {
                     setSelectedDepartmentId("");
                     setSelectedModuleId("");
@@ -713,179 +923,191 @@ export default function Assets() {
                     setQrBlinkAssetId(null);
                   }}
                 >
-                  Reset
+                  <RotateCcw className="mr-2 h-3.5 w-3.5" />
+                  Reset View
                 </Button>
               </div>
             </CardContent>
           </Card>
 
-          <EnterpriseAssetGraph
-            plants={plants}
-            departments={departments}
-            modules={modules}
-            assets={assets.filter((asset) => asset.isActive)}
-            workOrdersByAsset={workOrdersByAsset}
-            selectedPlantId={selectedPlantId}
-            selectedDepartmentId={selectedDepartmentId}
-            selectedModuleId={selectedModuleId}
-            selectedAssetId={selectedAsset?.id || null}
-            searchTerm={flowSearch}
-            statusFilter="all"
-            user={user}
-            userIsSuperAdmin={userIsSuperAdmin}
-            blinkAssetId={qrBlinkAssetId}
-            assetKpiPreview={assetKpiPreview}
-            onSearchChange={setFlowSearch}
-            onSelectPlant={(plantId) => {
-              setSelectedPlantId(plantId);
-              setSelectedDepartmentId("");
-              setSelectedModuleId("");
-            }}
-            onSelectDepartment={(departmentId) => {
-              setSelectedDepartmentId(departmentId);
-              setSelectedModuleId("");
-            }}
-            onSelectModule={setSelectedModuleId}
-            onSelectAsset={(asset) => {
-              setSelectedAsset(asset);
-              setIsViewOpen(true);
-              setActiveTab("flow");
-            }}
-            onPrefetchAssetKpi={(assetId) => {
-              void handlePrefetchAssetKpi(assetId);
-            }}
-          />
+          <div className="relative overflow-hidden rounded-[2.5rem] border border-white/40 bg-white/30 shadow-industrial backdrop-blur-md min-h-[600px]">
+            <EnterpriseAssetGraph
+              plants={plants}
+              departments={departments}
+              modules={modules}
+              assets={assets.filter((asset) => asset.isActive)}
+              workOrdersByAsset={workOrdersByAsset}
+              selectedPlantId={selectedPlantId}
+              selectedDepartmentId={selectedDepartmentId}
+              selectedModuleId={selectedModuleId}
+              selectedAssetId={selectedAsset?.id || null}
+              searchTerm={flowSearch}
+              statusFilter="all"
+              user={user}
+              userIsSuperAdmin={userIsSuperAdmin}
+              blinkAssetId={qrBlinkAssetId}
+              assetKpiPreview={assetKpiPreview}
+              onSearchChange={setFlowSearch}
+              onSelectPlant={(plantId) => {
+                setSelectedPlantId(plantId);
+                setSelectedDepartmentId("");
+                setSelectedModuleId("");
+              }}
+              onSelectDepartment={(departmentId) => {
+                setSelectedDepartmentId(departmentId);
+                setSelectedModuleId("");
+              }}
+              onSelectModule={setSelectedModuleId}
+              onSelectAsset={(asset) => {
+                setSelectedAsset(asset);
+                setIsViewOpen(true);
+                setActiveTab("flow");
+              }}
+              onPrefetchAssetKpi={(assetId) => {
+                void handlePrefetchAssetKpi(assetId);
+              }}
+            />
+          </div>
         </TabsContent>
 
-        <TabsContent value="list" className="space-y-4">
-          <Card className="border-border/70 bg-gradient-to-br from-card to-muted/30 shadow-sm">
-            <CardContent className="space-y-4 pt-5">
-              <div className="rounded-lg border bg-card p-4 shadow-sm">
-                <div className="grid items-center gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                  <div className="w-full">
-                    <label className="mb-1 block text-xs text-muted-foreground">Search</label>
-                    <div className="relative w-full">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
-                        className="h-10 w-full pl-9"
-                        placeholder="Search machine code, name, model, serial..."
-                      />
-                    </div>
-                  </div>
+        <TabsContent value="list" className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+             <Card className="overflow-hidden rounded-[2rem] border-none bg-gradient-to-br from-teal-500/10 to-transparent shadow-sm backdrop-blur-xl">
+               <CardContent className="p-6">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-600 mb-1">Total Assets</p>
+                  <p className="text-3xl font-black text-slate-900">{visibleAssets.length}</p>
+                  <div className="mt-2 h-1 w-12 rounded-full bg-teal-500/20" />
+               </CardContent>
+             </Card>
+             <Card className="overflow-hidden rounded-[2rem] border-none bg-gradient-to-br from-rose-500/10 to-transparent shadow-sm backdrop-blur-xl">
+               <CardContent className="p-6">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-600 mb-1">Active Maintenance</p>
+                  <p className="text-3xl font-black text-slate-900">{assetsWithOpenWo}</p>
+                  <div className="mt-2 h-1 w-12 rounded-full bg-rose-500/20" />
+               </CardContent>
+             </Card>
+             <Card className="overflow-hidden rounded-[2rem] border-none bg-gradient-to-br from-sky-500/10 to-transparent shadow-sm backdrop-blur-xl">
+               <CardContent className="p-6">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-600 mb-1">Current Scope</p>
+                  <p className="truncate text-sm font-bold text-slate-700">
+                    {userIsSuperAdmin && !selectedPlantId ? "GLOBAL" : selectedPlant?.plantCode || "-"} • {selectedDepartment?.code || "ALL"}
+                  </p>
+                  <div className="mt-2 h-1 w-12 rounded-full bg-sky-500/20" />
+               </CardContent>
+             </Card>
+          </div>
 
-                  <div className="w-full">
-                    <label className="mb-1 block text-xs text-muted-foreground">Plant</label>
-                    {userIsSuperAdmin ? (
-                      <select
-                        aria-label="Machine list plant filter"
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                        value={selectedPlantId}
-                        onChange={(event) => {
-                          setSelectedPlantId(event.target.value);
-                          setSelectedDepartmentId("");
-                          setSelectedModuleId("");
-                        }}
-                      >
-                        <option value="">All Plants</option>
-                        {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode}</option>)}
-                      </select>
-                    ) : (
-                      <div className="flex h-10 w-full items-center rounded-md border border-input bg-background px-3 text-sm">
-                        {selectedPlant ? (selectedPlant.plantCode || selectedPlant.plantName) : "Plant Not Assigned"}
-                      </div>
-                    )}
+          <Card className="rounded-[2.5rem] border-none bg-white/40 shadow-industrial backdrop-blur-xl">
+            <CardContent className="space-y-6 p-6">
+              <div className="grid items-end gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Search Machine</label>
+                  <div className="relative">
+                    <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      className="h-11 rounded-xl border-border/40 bg-white/60 pl-10 focus-visible:ring-primary/20 shadow-sm"
+                      placeholder="Code, Name, Model..."
+                    />
                   </div>
+                </div>
 
-                  <div className="w-full">
-                    <label className="mb-1 block text-xs text-muted-foreground">Department</label>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Plant Unit</label>
+                  {userIsSuperAdmin ? (
                     <select
-                      aria-label="Machine list department filter"
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      value={selectedDepartmentId}
+                      aria-label="Machine list plant filter"
+                      className="h-11 w-full rounded-xl border-border/40 bg-white/60 px-4 text-sm font-bold shadow-sm focus:ring-primary/20"
+                      value={selectedPlantId}
                       onChange={(event) => {
-                        setSelectedDepartmentId(event.target.value);
+                        setSelectedPlantId(event.target.value);
+                        setSelectedDepartmentId("");
                         setSelectedModuleId("");
                       }}
                     >
-                      <option value="">All Departments</option>
-                      {departmentsForPlant.map((department) => <option key={department.id} value={department.id}>{department.code} - {department.name}</option>)}
+                      <option value="">All Plants</option>
+                      {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode}</option>)}
                     </select>
-                  </div>
+                  ) : (
+                    <div className="flex h-11 w-full items-center rounded-xl border border-border/40 bg-white/60 px-4 text-sm font-bold shadow-sm">
+                      {selectedPlant ? (selectedPlant.plantCode || selectedPlant.plantName) : "Plant Not Assigned"}
+                    </div>
+                  )}
+                </div>
 
-                  <div className="w-full">
-                    <label className="mb-1 block text-xs text-muted-foreground">Module</label>
-                    <select
-                      aria-label="Machine list module filter"
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      value={selectedModuleId}
-                      onChange={(event) => setSelectedModuleId(event.target.value)}
-                    >
-                      <option value="">All Modules</option>
-                      {modulesForScope.map((module) => <option key={module.id} value={module.id}>{module.code ? `${module.code} - ` : ""}{module.name}</option>)}
-                    </select>
-                  </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Department</label>
+                  <select
+                    aria-label="Machine list department filter"
+                    className="h-11 w-full rounded-xl border-border/40 bg-white/60 px-4 text-sm font-bold shadow-sm focus:ring-primary/20"
+                    value={selectedDepartmentId}
+                    onChange={(event) => {
+                      setSelectedDepartmentId(event.target.value);
+                      setSelectedModuleId("");
+                    }}
+                  >
+                    <option value="">All Departments</option>
+                    {departmentsForPlant.map((department) => <option key={department.id} value={department.id}>{department.code} - {department.name}</option>)}
+                  </select>
+                </div>
 
-                  <div className="w-full">
-                    <label className="mb-1 block text-xs text-muted-foreground">Status</label>
-                    <select
-                      aria-label="Machine list status filter"
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      value={statusFilter}
-                      onChange={(event) => setStatusFilter(event.target.value as AssetStatusFilter)}
-                    >
-                      <option value="all">All Status</option>
-                      <option value="ACTIVE">Active</option>
-                      <option value="UNDER_MAINTENANCE">Under Maintenance</option>
-                      <option value="INACTIVE">Inactive</option>
-                    </select>
-                  </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Machine Status</label>
+                  <select
+                    aria-label="Machine list status filter"
+                    className="h-11 w-full rounded-xl border-border/40 bg-white/60 px-4 text-sm font-bold shadow-sm focus:ring-primary/20"
+                    value={statusFilter}
+                    onChange={(event) => setStatusFilter(event.target.value as AssetStatusFilter)}
+                  >
+                    <option value="all">All Status</option>
+                    <option value="ACTIVE">Active</option>
+                    <option value="UNDER_MAINTENANCE">Maintenance</option>
+                    <option value="INACTIVE">Inactive</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Card className="border-border/60"><CardContent className="pt-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Machines In Scope</p><p className="mt-1 text-2xl font-bold">{visibleAssets.length}</p></CardContent></Card>
-                <Card className="border-border/60"><CardContent className="pt-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">With Open Work Orders</p><p className="mt-1 text-2xl font-bold">{assetsWithOpenWo}</p></CardContent></Card>
-                <Card className="border-border/60"><CardContent className="pt-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Hierarchy Path</p><p className="mt-1 text-sm font-medium">{userIsSuperAdmin && !selectedPlantId ? "ALL-PLANTS" : selectedPlant?.plantCode || "-"} / {selectedDepartment?.code || "ALL-DEPT"} / {selectedModule?.code || "ALL-MOD"}</p></CardContent></Card>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-card">
-            <CardHeader><CardTitle className="text-base sm:text-lg">Machines List</CardTitle></CardHeader>
-            <CardContent>
               {isLoading ? (
-                <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+                <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary opacity-20" />
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Synchronizing Directory</p>
+                </div>
               ) : (
-                <ResponsiveTable
-                  data={visibleAssets}
-                  columns={assetColumns}
-                  keyExtractor={(asset) => asset.id}
-                  emptyMessage="No machines found for the selected hierarchy and filters."
-                  mobileCard={(asset) => {
-                    const department = departments.find((item) => item.id === asset.departmentId);
-                    const module = modules.find((item) => item.id === asset.moduleId);
-                    return (
-                      <MobileCard
-                        onView={() => { setSelectedAsset(asset); setIsViewOpen(true); }}
-                        actions={[
-                          {
-                            label: "Work Order History",
-                            icon: <History className="mr-2 h-4 w-4" />,
-                            onClick: () => openWorkOrderHistory(asset),
-                          },
-                        ]}
-                      >
-                        <MobileCardHeader title={asset.code} subtitle={asset.name} badge={<StatusBadge variant={assetStatusVariant(asset.status)}>{asset.status.replace(/_/g, " ")}</StatusBadge>} />
-                        <MobileCardRow label="Department" value={department ? department.code : "-"} />
-                        <MobileCardRow label="Module" value={module ? module.code || module.name : "-"} />
-                        <MobileCardRow label="Type" value={asset.assetType || "-"} />
-                        <MobileCardRow label="WO History" value={(workOrdersByAsset.get(asset.id) || []).length} />
-                      </MobileCard>
-                    );
-                  }}
-                />
+                <div className="rounded-[2rem] border border-white/40 bg-white/20 shadow-sm overflow-hidden">
+                  <ResponsiveTable
+                    data={visibleAssets}
+                    columns={assetColumns}
+                    keyExtractor={(asset) => asset.id}
+                    emptyMessage="No machines found for the selected filters."
+                    mobileCard={(asset) => {
+                      const department = departments.find((item) => item.id === asset.departmentId);
+                      const module = modules.find((item) => item.id === asset.moduleId);
+                      return (
+                        <MobileCard
+                          onView={() => { setSelectedAsset(asset); setIsViewOpen(true); }}
+                          actions={[
+                            {
+                              label: "Work Order History",
+                              icon: <History className="mr-2 h-4 w-4" />,
+                              onClick: () => openWorkOrderHistory(asset),
+                            },
+                          ]}
+                        >
+                          <MobileCardHeader 
+                            title={asset.code} 
+                            subtitle={asset.name} 
+                            badge={<StatusBadge variant={assetStatusVariant(asset.status)}>{asset.status.replace(/_/g, " ")}</StatusBadge>} 
+                          />
+                          <MobileCardRow label="Department" value={department ? department.code : "-"} />
+                          <MobileCardRow label="Module" value={module ? module.code || module.name : "-"} />
+                          <MobileCardRow label="Type" value={asset.assetType || "-"} />
+                          <MobileCardRow label="WO History" value={(workOrdersByAsset.get(asset.id) || []).length} />
+                        </MobileCard>
+                      );
+                    }}
+                  />
+                </div>
               )}
             </CardContent>
           </Card>
@@ -911,10 +1133,12 @@ export default function Assets() {
         }}
         title={selectedAsset?.code || "Machine"}
         subtitle={selectedAsset?.name}
-        contentClassName="sm:max-w-[760px]"
+        contentClassName="sm:max-w-[760px] rounded-[2.5rem] border-none bg-white/95 backdrop-blur-xl"
       >
         {overviewQuery.isLoading ? (
-          <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+          </div>
         ) : overviewQuery.data?.data ? (
           <AssetOverviewPanel
             overview={overviewQuery.data.data}
@@ -924,7 +1148,9 @@ export default function Assets() {
             onRaiseWorkOrder={handleRaiseWorkOrder}
           />
         ) : selectedAsset ? (
-          <div className="rounded-lg border border-dashed border-border/70 p-6 text-sm text-muted-foreground">Machine overview could not be loaded.</div>
+          <div className="rounded-3xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">
+            Machine intelligence snapshot could not be generated.
+          </div>
         ) : null}
       </ViewDialog>
     </PageShell>

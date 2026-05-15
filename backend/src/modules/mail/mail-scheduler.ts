@@ -24,21 +24,21 @@ function uniqueUserIds(values: Array<string | null | undefined>): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
 }
 
-async function getEscalationEmails(
+async function getEscalationUsers(
   level: number,
   plantId: string | null | undefined,
-): Promise<string[]> {
+): Promise<{ emails: string[]; userIds: string[] }> {
   const configRepo = AppDataSource.getRepository(SlaConfigEntity);
   const config = await configRepo.findOne({ where: { isActive: true, scope: 'GLOBAL' }, order: { createdAt: 'DESC' } });
   const roleKey = config ? (config as any)[`escalationRole${level}`] as string | null : null;
-  if (!roleKey) return [];
+  if (!roleKey) return { emails: [], userIds: [] };
 
   const userRoleRepo = AppDataSource.getRepository(UserRoleEntity);
   const profileRepo = AppDataSource.getRepository(ProfileEntity);
   const userRepo = AppDataSource.getRepository(UserEntity);
 
   const roles = await userRoleRepo.find({ where: { role: roleKey.toUpperCase() } });
-  if (roles.length === 0) return [];
+  if (roles.length === 0) return { emails: [], userIds: [] };
 
   let userIds = roles.map((r) => r.userId);
   if (plantId) {
@@ -51,9 +51,12 @@ async function getEscalationEmails(
 
   const users = await userRepo.find({
     where: userIds.map((uid) => ({ id: uid, isActive: true })),
-    select: ['email'],
+    select: ['id', 'email'],
   });
-  return users.map((u) => u.email).filter((e): e is string => Boolean(e));
+  return {
+    emails: users.map((u) => u.email).filter((e): e is string => Boolean(e)),
+    userIds: users.map((u) => u.id),
+  };
 }
 
 async function updateEscalationHistory(
@@ -197,10 +200,11 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
       );
 
       const recipients = uniqueUserIds([workOrder.assigned_to, workOrder.raised_by]);
-      const escalationEmails = await getEscalationEmails(nextLevel, workOrder.plant_id);
+      const { emails: escalationEmails, userIds: escalationUserIds } = await getEscalationUsers(nextLevel, workOrder.plant_id);
+      const allRecipients = uniqueUserIds([...recipients, ...escalationUserIds]);
 
-      if (recipients.length > 0) {
-        const rows = recipients.map((userId) =>
+      if (allRecipients.length > 0) {
+        const rows = allRecipients.map((userId) =>
           notificationRepo.create({
             userId,
             title: `Work Order Escalation L${nextLevel}`,
@@ -211,7 +215,7 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
           }),
         );
         await notificationRepo.save(rows);
-        recipients.forEach((userId) => touchedUsers.add(userId));
+        allRecipients.forEach((userId) => touchedUsers.add(userId));
       }
 
       await updateEscalationHistory(
@@ -219,7 +223,7 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
         workOrder.wo_number,
         nextLevel,
         'NOT_CLOSED',
-        recipients,
+        allRecipients,
         escalationEmails,
       );
 
@@ -240,8 +244,13 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
 
     if (isReminder && currentLevel > 0) {
       const recipients = uniqueUserIds([workOrder.assigned_to, workOrder.raised_by]);
+      const { emails: levelEmails, userIds: levelUserIds } = await getEscalationUsers(currentLevel, workOrder.plant_id);
+      const { emails: managerEmails, userIds: managerUserIds } = await getEscalationUsers(Math.min(currentLevel + 2, 4), workOrder.plant_id);
+      
+      const allRecipients = uniqueUserIds([...recipients, ...levelUserIds, ...managerUserIds]);
+      const allEmails = Array.from(new Set([...levelEmails, ...managerEmails]));
 
-      const rows = recipients.map((userId) =>
+      const rows = allRecipients.map((userId) =>
         notificationRepo.create({
           userId,
           title: `Work Order Reminder L${currentLevel}`,
@@ -253,7 +262,7 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
       );
       if (rows.length > 0) {
         await notificationRepo.save(rows);
-        recipients.forEach((userId) => touchedUsers.add(userId));
+        allRecipients.forEach((userId) => touchedUsers.add(userId));
       }
 
       await activityRepo.save(
@@ -269,26 +278,18 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
         }),
       );
 
-      if (isMailConfigured()) {
-        const managerEmails = await getEscalationEmails(Math.min(currentLevel + 2, 4), workOrder.plant_id);
-        const allEmails = Array.from(new Set([
-          ...(await getEscalationEmails(currentLevel, workOrder.plant_id)),
-          ...managerEmails,
-        ]));
-
-        if (allEmails.length > 0) {
-          const woData: WoNotificationData = {
-            woId: workOrder.id,
-            woNumber: workOrder.wo_number,
-            assetId: workOrder.asset_id ?? undefined,
-            plantId: workOrder.plant_id ?? undefined,
-            priority: workOrder.priority,
-            problemDescription: workOrder.problem_description ?? undefined,
-            location: workOrder.reported_location ?? undefined,
-            escalationLevel: currentLevel,
-          };
-          await sendWorkOrderReminderEmails(woData, allEmails);
-        }
+      if (isMailConfigured() && allEmails.length > 0) {
+        const woData: WoNotificationData = {
+          woId: workOrder.id,
+          woNumber: workOrder.wo_number,
+          assetId: workOrder.asset_id ?? undefined,
+          plantId: workOrder.plant_id ?? undefined,
+          priority: workOrder.priority,
+          problemDescription: workOrder.problem_description ?? undefined,
+          location: workOrder.reported_location ?? undefined,
+          escalationLevel: currentLevel,
+        };
+        await sendWorkOrderReminderEmails(woData, allEmails);
       }
     }
   }

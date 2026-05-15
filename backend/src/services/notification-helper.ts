@@ -290,3 +290,53 @@ export async function sendSlaBreachEmails(
     });
   });
 }
+
+export async function sendWorkOrderRejectedEmails(
+  data: WoNotificationData,
+  recipientId?: string | null,
+): Promise<void> {
+  if (!isMailConfigured() || !recipientId) return;
+  const templateData = await buildWoData({ ...data, status: 'REJECTED' });
+  const email = await resolveUserEmail(recipientId);
+  if (!email) return;
+
+  const { subject, html } = buildMail({ template: 'workOrderAssigned', data: templateData as any });
+
+  enqueueMail({
+    recipient: email,
+    subject: `Work Order Reopened: ${data.woNumber}`,
+    htmlBody: html,
+    templateName: 'workOrderRejected',
+    templateData: templateData as Record<string, unknown>,
+    woId: data.woId,
+    woNumber: data.woNumber,
+    eventType: 'WORK_ORDER_REJECTED',
+  });
+}
+
+export async function sendWorkOrderCancelledEmails(
+  data: WoNotificationData,
+  recipientIds: string[],
+): Promise<void> {
+  if (!isMailConfigured() || recipientIds.length === 0) return;
+  const templateData = await buildWoData({ ...data, status: 'CANCELLED' });
+  const emails = await Promise.all(recipientIds.map(resolveUserEmail));
+  const validEmails = emails.filter((e): e is string => Boolean(e));
+
+  if (validEmails.length === 0) return;
+
+  const { subject, html } = buildMail({ template: 'workOrderCompleted', data: templateData as any });
+
+  validEmails.forEach((recipient) => {
+    enqueueMail({
+      recipient,
+      subject: `Work Order Cancelled: ${data.woNumber}`,
+      htmlBody: html,
+      templateName: 'workOrderCancelled',
+      templateData: templateData as Record<string, unknown>,
+      woId: data.woId,
+      woNumber: data.woNumber,
+      eventType: 'WORK_ORDER_CANCELLED',
+    });
+  });
+}

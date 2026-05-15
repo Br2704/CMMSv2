@@ -10,6 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { listWorkOrderMasters } from "@/api/workOrderMasters";
 import { humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
+import { cn } from "@/lib/utils";
 
 interface RecentWOsProps {
   workOrders: any[];
@@ -25,6 +26,7 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
       return response.data || [];
     },
   });
+
   const categoryLabels = useMemo(() => {
     const map = new Map<string, string>();
     workOrderMasters
@@ -51,73 +53,99 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.5 }}>
-      <Card className="shadow-card">
-        <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle className="text-lg font-semibold">Recent Work Orders</CardTitle>
-            <p className="text-sm text-muted-foreground">Latest maintenance activities for your role</p>
+      <Card className="rounded-[2.5rem] border-none shadow-industrial overflow-hidden bg-white/40 backdrop-blur-xl">
+        <CardHeader className="p-8 border-b border-white/20 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle className="text-2xl font-black tracking-tight text-slate-900">Recent Work Orders</CardTitle>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Live Maintenance Feed</p>
           </div>
-          <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => navigate("/work-orders")}>View All</Button>
+          <Button 
+            variant="outline" 
+            onClick={() => navigate("/work-orders")}
+            className="h-12 px-6 rounded-2xl border-slate-200 bg-white/80 hover:bg-white hover:shadow-md transition-all font-bold"
+          >
+            Open Command Center
+          </Button>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {isLoading ? (
-            <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-          ) : workOrders.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No work orders found for your role.</p>
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+            </div>
           ) : (
             <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>WO Number</TableHead>
-                    <TableHead>Asset</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Raised</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              <table className="w-full text-left">
+                <thead className="bg-slate-50/50 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <tr>
+                    <th className="px-8 py-6">WO ID</th>
+                    <th className="px-6 py-6">Asset Detail</th>
+                    <th className="px-6 py-6">Classification</th>
+                    <th className="px-6 py-6">Status & Priority</th>
+                    <th className="px-8 py-6 text-right">Age</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
                   {workOrders.map((wo: any) => (
-                    <TableRow key={wo.id} className="group cursor-pointer hover:bg-muted/50" onClick={() => navigate("/work-orders")}>
-                      <TableCell className="font-medium text-primary">{wo.wo_number}</TableCell>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{wo.assets?.name || "-"}</p>
-                          <p className="text-xs text-muted-foreground">{wo.assets?.code}</p>
+                    <tr 
+                      key={wo.id} 
+                      className="group cursor-pointer hover:bg-white/60 transition-colors"
+                      onClick={() => navigate("/work-orders")}
+                    >
+                      <td className="px-8 py-6">
+                        <span className="text-base font-black text-primary group-hover:underline underline-offset-4 decoration-2">
+                          #{wo.wo_number}
+                        </span>
+                      </td>
+                      <td className="px-6 py-6">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-bold text-slate-900 group-hover:text-primary transition-colors">{wo.assets?.name || "System Generic"}</span>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{wo.assets?.code || "N/A"}</span>
                         </div>
-                      </TableCell>
-                      <TableCell><span className="text-sm">{resolveCategoryLabel(wo.category, wo.plant_id)}</span></TableCell>
-                      <TableCell>
-                        <StatusBadge variant={wo.priority === "CRITICAL" ? "critical" : wo.priority === "HIGH" ? "warning" : "default"}>
-                          {wo.priority}
-                        </StatusBadge>
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge
-                          status={wo.status}
-                          variant={
-                            wo.status === "CLOSED"
-                              ? "completed"
-                              : wo.status === "IN_PROGRESS"
-                                ? "in_progress"
-                                : wo.status === "USER_VERIFICATION"
-                                  ? "critical"
-                                : wo.status === "APPROVAL_PENDING"
-                                  ? "critical"
-                                  : wo.status === "REJECTED"
-                                    ? "error"
-                                    : "warning"
-                          }
-                        />
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatDistanceToNow(new Date(wo.created_at), { addSuffix: true })}
-                      </TableCell>
-                    </TableRow>
+                      </td>
+                      <td className="px-6 py-6">
+                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100/50 text-[10px] font-black uppercase tracking-widest text-slate-500 border border-slate-200/30">
+                           {resolveCategoryLabel(wo.category, wo.plant_id)}
+                         </div>
+                      </td>
+                      <td className="px-6 py-6">
+                        <div className="flex items-center gap-3">
+                          <StatusBadge
+                            status={wo.status}
+                            variant={
+                              wo.status === "CLOSED" ? "success" :
+                              wo.status === "IN_PROGRESS" ? "info" :
+                              ["USER_VERIFICATION", "APPROVAL_PENDING", "REJECTED"].includes(wo.status) ? "critical" : "warning"
+                            }
+                            className="text-[10px] font-black tracking-widest uppercase"
+                            showDot={false}
+                          />
+                          <div className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            wo.priority === "CRITICAL" ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]" :
+                            wo.priority === "HIGH" ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]" :
+                            "bg-emerald-500"
+                          )} />
+                        </div>
+                      </td>
+                      <td className="px-8 py-6 text-right">
+                        <div className="flex flex-col items-end">
+                          <span className="text-sm font-black text-slate-700">
+                            {formatDistanceToNow(new Date(wo.created_at), { addSuffix: false })}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Elapsed</span>
+                        </div>
+                      </td>
+                    </tr>
                   ))}
-                </TableBody>
-              </Table>
+                  {workOrders.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-8 py-20 text-center">
+                        <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">No recent work orders found</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>

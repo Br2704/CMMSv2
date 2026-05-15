@@ -16,7 +16,7 @@ import { enforcePlantScope, resolvePlantFilter, resolveScopedPlantId } from '../
 import type { GenericRecord, ListResult } from '../_core/crud.types';
 import { CrudService } from '../_core/crud.service';
 import { notifyBreakdownWorkOrderRaised } from '../amc/amc.helpers';
-import { sendNewWorkOrderEmails, sendWorkOrderAssignedEmails, sendWorkOrderCompletedEmails, sendWorkOrderClosedEmails } from '../../services/notification-helper';
+import { sendNewWorkOrderEmails, sendWorkOrderAssignedEmails, sendWorkOrderCompletedEmails, sendWorkOrderClosedEmails, sendWorkOrderRejectedEmails, sendWorkOrderCancelledEmails } from '../../services/notification-helper';
 import { isMailConfigured } from '../../services/mail.service';
 import { applySpareUsageDelta, formatSpareUsageSummary, normalizeSpareUsage } from '../inventory/spare-consumption';
 import { ensureDefaultWorkOrderMasters } from '../workOrderMasters/work-order-master.helpers';
@@ -935,7 +935,6 @@ class WorkOrdersService extends CrudService {
           manager,
         );
       }
-
       return updated;
     });
   }
@@ -1568,6 +1567,21 @@ class WorkOrdersService extends CrudService {
         manager,
       );
 
+      if (isMailConfigured()) {
+        sendWorkOrderRejectedEmails(
+          {
+            woId: String(existing.id),
+            woNumber: String(existing.wo_number),
+            assetId: String(existing.asset_id ?? ''),
+            plantId: String(existing.plant_id ?? ''),
+            priority: String(existing.priority ?? 'MEDIUM'),
+            problemDescription: String(existing.problem_description ?? ''),
+            location: String(existing.reported_location ?? ''),
+          },
+          existing.assigned_to as string | null | undefined,
+        ).catch(() => {});
+      }
+
       return updated;
     });
   }
@@ -1620,6 +1634,21 @@ class WorkOrdersService extends CrudService {
         })),
         manager,
       );
+
+      if (isMailConfigured()) {
+        sendWorkOrderCancelledEmails(
+          {
+            woId: String(existing.id),
+            woNumber: String(existing.wo_number),
+            assetId: String(existing.asset_id ?? ''),
+            plantId: String(existing.plant_id ?? ''),
+            priority: String(existing.priority ?? 'MEDIUM'),
+            problemDescription: String(existing.problem_description ?? ''),
+            location: String(existing.reported_location ?? ''),
+          },
+          recipients,
+        ).catch(() => {});
+      }
 
       return updated;
     });

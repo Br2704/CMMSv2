@@ -206,14 +206,14 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
           >
             <div
               className={cn(
-                "flex h-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/70 bg-background/80",
-                isCollapsed ? "w-11" : "w-28",
+                "flex shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-2 transition-all duration-300",
+                isCollapsed ? "h-12 w-12" : "h-12 w-32 shadow-sm border border-slate-100",
               )}
             >
               <img
                 src={resolvedLogo}
                 alt={organizationName ? `${organizationName} logo` : "Organization logo"}
-                className="max-h-8 w-full object-contain"
+                className="h-full w-full object-contain"
                 onError={(event) => {
                   event.currentTarget.onerror = null;
                   event.currentTarget.src = "/jkfenner/jkfenner-logo.svg";

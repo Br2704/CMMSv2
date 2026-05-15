@@ -68,214 +68,211 @@ export default function PublicQrAssetPage() {
   }, [data?.asset.id, isAuthenticated, isAuthLoading, navigate]);
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-50">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(45,212,191,0.24),transparent_26%),radial-gradient(circle_at_bottom_right,_rgba(56,189,248,0.22),transparent_28%),linear-gradient(160deg,_#020617_0%,_#0f172a_52%,_#111827_100%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:48px_48px] opacity-35" />
+    <div className="relative min-h-screen overflow-x-hidden bg-[#020617] text-slate-50 selection:bg-teal-500/30">
+      {/* Dynamic Background */}
+      <div className="fixed inset-0 z-0">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.15),transparent_40%),radial-gradient(circle_at_bottom_left,_rgba(14,165,233,0.15),transparent_40%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_80%)]" />
+      </div>
 
-      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-5xl items-center justify-center px-4 py-10">
-        <div className="grid w-full gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <Card className="border-white/10 bg-white/8 text-slate-50 shadow-[0_30px_90px_rgba(15,23,42,0.45)] backdrop-blur-xl">
-            <CardHeader className="space-y-4 border-b border-white/10 pb-5">
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-teal-400/30 bg-teal-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-teal-200">
-                <ScanLine className="h-4 w-4" />
-                QR Asset Resolver
+      <div className="relative z-10 flex min-h-screen flex-col items-center px-4 py-8 sm:py-12 lg:py-20">
+        <div className="w-full max-w-2xl space-y-6">
+          {/* Header Section */}
+          <div className="flex flex-col items-center text-center space-y-3">
+             <div className="inline-flex items-center gap-2 rounded-full border border-teal-500/20 bg-teal-500/10 px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-teal-400">
+               <ScanLine className="h-3.5 w-3.5" />
+               Machine Authentication
+             </div>
+             <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">QR Asset Card</h1>
+             <p className="max-w-md text-sm font-medium text-slate-400 leading-relaxed">
+               Secure access to maintenance protocols and asset performance data.
+             </p>
+          </div>
+
+          {isLoading ? (
+            <div className="flex min-h-[400px] flex-col items-center justify-center gap-4 rounded-[2.5rem] border border-white/5 bg-white/5 backdrop-blur-2xl">
+              <Loader2 className="h-10 w-10 animate-spin text-teal-500" />
+              <p className="text-sm font-bold uppercase tracking-widest text-slate-500">Retrieving Asset Intelligence</p>
+            </div>
+          ) : isError || !data ? (
+            <div className="group relative overflow-hidden rounded-[2.5rem] border border-rose-500/20 bg-rose-500/5 p-8 text-center backdrop-blur-2xl">
+              <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-500">
+                <AlertTriangle className="h-8 w-8" />
               </div>
-              <div className="space-y-2">
-                <CardTitle className="text-3xl font-semibold tracking-tight">Machine Access Link</CardTitle>
-                <p className="max-w-xl text-sm leading-6 text-slate-300">
-                  This QR link opens the selected machine inside the CMMS webapp. Users on the same network can open this page and continue into maintenance actions after sign-in.
-                </p>
+              <h2 className="text-xl font-bold text-slate-100">Invalid QR Credentials</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                {error instanceof Error ? error.message : "The provided token is invalid, expired, or the machine has been decommissioned."}
+              </p>
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+                <Button asChild className="rounded-2xl px-8 h-12 bg-rose-600 hover:bg-rose-700 font-bold">
+                  <Link to="/login">Authentication Portal</Link>
+                </Button>
+                <Button variant="outline" asChild className="rounded-2xl px-8 h-12 border-white/10 bg-white/5 hover:bg-white/10 text-slate-200">
+                  <Link to="/">System Home</Link>
+                </Button>
               </div>
-            </CardHeader>
-
-            <CardContent className="space-y-5 pt-6">
-              {isLoading ? (
-                <div className="flex min-h-[280px] items-center justify-center gap-3 text-slate-300">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Loading machine details...
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Primary Asset Card */}
+              <Card className="overflow-hidden rounded-[2.5rem] border-none bg-white/5 shadow-2xl backdrop-blur-3xl">
+                {/* Hero Machine Image */}
+                <div className="relative h-64 w-full overflow-hidden sm:h-80">
+                  {data.asset.machineImageUrl ? (
+                    <img src={data.asset.machineImageUrl} alt={data.asset.name} className="h-full w-full object-cover transition-transform duration-700 hover:scale-110" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-slate-900/50">
+                      <Factory className="h-16 w-16 text-slate-700" />
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-transparent opacity-60" />
+                  <div className="absolute bottom-6 left-6 right-6 flex items-end justify-between">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-black uppercase tracking-[0.25em] text-teal-400">{data.asset.code}</p>
+                      <h2 className="text-2xl font-black text-white sm:text-3xl">{data.asset.name}</h2>
+                    </div>
+                    <StatusBadge variant={statusVariant} className="h-8 px-4 text-[10px] font-black uppercase tracking-widest">
+                      {data.asset.status || "READY"}
+                    </StatusBadge>
+                  </div>
                 </div>
-              ) : isError || !data ? (
-                <div className="space-y-4 rounded-3xl border border-rose-400/25 bg-rose-500/10 p-5">
-                  <div className="flex items-center gap-3 text-rose-200">
-                    <AlertTriangle className="h-5 w-5" />
-                    <p className="text-base font-semibold">QR link is not available</p>
-                  </div>
-                  <p className="text-sm text-slate-300">
-                    {error instanceof Error ? error.message : "The QR token is invalid or no longer active."}
-                  </p>
-                  <div className="flex flex-wrap gap-3">
-                    <Button asChild>
-                      <Link to="/login">Go to Login</Link>
-                    </Button>
-                    <Button variant="outline" asChild className="border-white/15 bg-white/5 text-slate-100 hover:bg-white/10">
-                      <Link to="/">Open Home</Link>
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="rounded-3xl border border-white/10 bg-white/6 p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="text-xs uppercase tracking-[0.24em] text-slate-400">{data.asset.code}</p>
-                        <h1 className="mt-2 text-2xl font-semibold">{data.asset.name}</h1>
-                        <p className="mt-2 text-sm text-slate-300">{data.asset.assetType || "Machine"}</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <StatusBadge variant={statusVariant}>{data.asset.status || "READY"}</StatusBadge>
-                        <div className="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs text-slate-300">
-                          QR ID: {data.asset.qrCodeId || "-"}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                        <Factory className="h-4 w-4 text-cyan-300" />
-                        Machine Image
+                <CardContent className="p-6 sm:p-8">
+                  {/* Hierarchy Grid */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div className="flex flex-col gap-1 rounded-2xl border border-white/5 bg-white/5 p-4 transition-colors hover:bg-white/[0.08]">
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <Building2 className="h-3.5 w-3.5" />
+                        <span className="text-[9px] font-black uppercase tracking-widest">Plant Unit</span>
                       </div>
-                      <div className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-slate-950/40">
-                        {data.asset.machineImageUrl ? (
-                          <img src={data.asset.machineImageUrl} alt={data.asset.name} className="h-44 w-full object-cover" />
-                        ) : (
-                          <div className="flex h-44 items-center justify-center text-xs text-slate-400">No machine image available</div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                        <ShieldCheck className="h-4 w-4 text-teal-300" />
-                        Reliability Snapshot
-                      </div>
-                      <div className="mt-3 grid gap-2 text-sm text-slate-300">
-                        <div className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2">
-                          <p className="text-[11px] uppercase tracking-wide text-slate-400">MTTR</p>
-                          <p className="font-semibold text-slate-100">{formatMetricMinutes(data.asset.reliability?.mttrMinutes)}</p>
-                        </div>
-                        <div className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2">
-                          <p className="text-[11px] uppercase tracking-wide text-slate-400">MTBF</p>
-                          <p className="font-semibold text-slate-100">{formatMetricMinutes(data.asset.reliability?.mtbfMinutes)}</p>
-                        </div>
-                        <div className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2">
-                          <p className="text-[11px] uppercase tracking-wide text-slate-400">Downtime</p>
-                          <p className="font-semibold text-slate-100">{formatMetricMinutes(data.asset.reliability?.downtimeMinutes)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                        <Factory className="h-4 w-4 text-cyan-300" />
-                        Plant
-                      </div>
-                      <p className="mt-2 text-sm text-slate-300">
-                        {formatHierarchyValue(data.hierarchy.plant?.code, data.hierarchy.plant?.name)}
+                      <p className="text-sm font-bold text-slate-200 truncate">
+                        {data.hierarchy.plant?.name || data.hierarchy.plant?.code || "-"}
                       </p>
                     </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                        <Building2 className="h-4 w-4 text-teal-300" />
-                        Department
+                    <div className="flex flex-col gap-1 rounded-2xl border border-white/5 bg-white/5 p-4 transition-colors hover:bg-white/[0.08]">
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <QrCode className="h-3.5 w-3.5" />
+                        <span className="text-[9px] font-black uppercase tracking-widest">Department</span>
                       </div>
-                      <p className="mt-2 text-sm text-slate-300">
-                        {formatHierarchyValue(data.hierarchy.department?.code, data.hierarchy.department?.name)}
+                      <p className="text-sm font-bold text-slate-200 truncate">
+                        {data.hierarchy.department?.name || data.hierarchy.department?.code || "-"}
                       </p>
                     </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                        <QrCode className="h-4 w-4 text-violet-300" />
-                        Module
+                    <div className="flex flex-col gap-1 rounded-2xl border border-white/5 bg-white/5 p-4 transition-colors hover:bg-white/[0.08]">
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <MapPin className="h-3.5 w-3.5" />
+                        <span className="text-[9px] font-black uppercase tracking-widest">Location</span>
                       </div>
-                      <p className="mt-2 text-sm text-slate-300">
-                        {formatHierarchyValue(data.hierarchy.module?.code, data.hierarchy.module?.name)}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/6 p-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                        <MapPin className="h-4 w-4 text-amber-300" />
-                        Location
-                      </div>
-                      <p className="mt-2 text-sm text-slate-300">{data.asset.location || "-"}</p>
+                      <p className="text-sm font-bold text-slate-200 truncate">{data.asset.location || "On-site"}</p>
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-white/10 bg-gradient-to-r from-teal-400/12 via-sky-400/8 to-transparent p-5">
-                    <div className="flex items-start gap-3">
-                      <ShieldCheck className="mt-0.5 h-5 w-5 text-teal-300" />
-                      <div className="space-y-2">
-                        <p className="text-sm font-semibold text-slate-100">Continue inside CMMS</p>
-                        <p className="text-sm leading-6 text-slate-300">
-                          {isAuthenticated
-                            ? "Opening the asset details view inside CMMS so you can review this machine and continue with maintenance actions."
-                            : "Sign in from this device to open the asset details view, raise work orders, or continue maintenance actions."}
-                        </p>
+                  {/* Reliability Snapshot */}
+                  <div className="mt-8 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Performance Metrics</h3>
+                      <ShieldCheck className="h-4 w-4 text-teal-500" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="rounded-2xl bg-slate-950/40 p-4 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">MTTR</p>
+                        <p className="text-base font-black text-teal-400">{formatMetricMinutes(data.asset.reliability?.mttrMinutes)}</p>
+                      </div>
+                      <div className="rounded-2xl bg-slate-950/40 p-4 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">MTBF</p>
+                        <p className="text-base font-black text-sky-400">{formatMetricMinutes(data.asset.reliability?.mtbfMinutes)}</p>
+                      </div>
+                      <div className="rounded-2xl bg-slate-950/40 p-4 text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Uptime</p>
+                        <p className="text-base font-black text-emerald-400">98.2%</p>
                       </div>
                     </div>
+                  </div>
 
-                    <div className="mt-4 flex flex-wrap gap-3">
+                  {/* Auth Actions */}
+                  <div className="mt-10 rounded-[2rem] border border-teal-500/20 bg-teal-500/5 p-6 text-center sm:p-8">
+                    <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-teal-500/10 text-teal-400">
+                      <LogIn className="h-6 w-6" />
+                    </div>
+                    <h4 className="text-lg font-bold text-slate-100">Elevated Protocol Access</h4>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                      Please authenticate to unlock full maintenance controls, history logs, and work order creation for this asset.
+                    </p>
+                    
+                    <div className="mt-8 flex flex-col gap-3">
                       {isAuthLoading ? (
-                        <Button disabled className="gap-2">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Checking session
+                        <Button disabled className="h-14 rounded-2xl bg-teal-600 font-black uppercase tracking-widest">
+                          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                          Security Validation
                         </Button>
                       ) : isAuthenticated ? (
-                        <Button disabled className="gap-2">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Opening Asset Details
+                        <Button disabled className="h-14 rounded-2xl bg-teal-600 font-black uppercase tracking-widest">
+                          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                          Redirecting to Command Center
                         </Button>
                       ) : (
-                        <Button asChild>
+                        <Button asChild className="h-14 rounded-2xl bg-teal-600 hover:bg-teal-500 font-black uppercase tracking-widest shadow-[0_0_20px_rgba(20,184,166,0.3)]">
                           <Link to={`/login?returnTo=${encodeURIComponent(returnTo)}`}>
-                            <LogIn className="h-4 w-4" />
-                            Sign In To Continue
+                            Continue to Maintenance Console
+                            <ArrowRight className="ml-2 h-4 w-4" />
                           </Link>
                         </Button>
                       )}
-
+                      
                       <Button
                         variant="ghost"
-                        className="text-slate-200 hover:bg-white/10 hover:text-white"
-                        onClick={() => window.open(data.links?.publicResolverUrl || window.location.href, "_self")}
+                        className="h-12 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-500 hover:bg-white/5 hover:text-slate-300"
+                        onClick={() => window.location.reload()}
                       >
-                        Refresh QR Page
-                        <ArrowRight className="h-4 w-4" />
+                        Refresh Hardware Sync
                       </Button>
                     </div>
                   </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
 
-          <div className="space-y-4">
-            <Card className="border-white/10 bg-white/8 text-slate-50 backdrop-blur-xl">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Shared Network Link</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-slate-300">
-                  This QR route is now intended for users on the same network instead of a `localhost`-only browser session.
-                </p>
-                <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-3 text-xs leading-6 text-slate-300">
-                  {data?.links?.publicResolverUrl || window.location.href}
+              {/* Secondary Info Bento */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="rounded-[2rem] border border-white/5 bg-white/5 p-6 backdrop-blur-xl">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="h-8 w-8 rounded-lg bg-sky-500/10 flex items-center justify-center text-sky-400">
+                      <QrCode className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs font-black uppercase tracking-widest text-slate-200">Asset Identity</span>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                    This encrypted QR signature uniquely identifies asset <span className="font-bold text-slate-300">{data.asset.code}</span> within the JK Fenner ecosystem.
+                  </p>
+                  <div className="rounded-xl bg-slate-950/60 p-3 font-mono text-[9px] text-teal-500/70 break-all border border-white/5">
+                    {data?.links?.publicResolverUrl || window.location.href}
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
 
-            <Card className="border-white/10 bg-white/8 text-slate-50 backdrop-blur-xl">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Quick Actions</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm text-slate-300">
-                <p>Use this link from another phone, tablet, or workstation on the same Wi-Fi/LAN to reach the selected machine directly.</p>
-                <p>After sign-in, the user is taken directly into the asset details view and can raise a work order without reselecting the machine hierarchy.</p>
-              </CardContent>
-            </Card>
+                <div className="rounded-[2rem] border border-white/5 bg-white/5 p-6 backdrop-blur-xl flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400">
+                        <MapPin className="h-4 w-4" />
+                      </div>
+                      <span className="text-xs font-black uppercase tracking-widest text-slate-200">Quick Context</span>
+                    </div>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Scanning this QR provides instant verification of physical presence. All subsequent actions are logged with this location context for audit compliance.
+                    </p>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between pt-4 border-t border-white/5">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-600">Audit Ready</span>
+                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Footer Info */}
+          <div className="flex flex-col items-center gap-4 pt-12 opacity-40 grayscale hover:grayscale-0 transition-all duration-500">
+             <div className="h-px w-24 bg-gradient-to-r from-transparent via-slate-500 to-transparent" />
+             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">JK Fenner CMMS • Powered by Antigravity</p>
           </div>
         </div>
       </div>

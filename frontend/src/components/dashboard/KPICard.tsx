@@ -65,39 +65,73 @@ export function KPICard({
 }: KPICardProps) {
   return (
     <motion.div
+      whileHover={{ y: -5, scale: 1.02 }}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
-      className={cn(kpiCardVariants({ variant }), className)}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className={cn(
+        "group relative overflow-hidden rounded-[2rem] border p-6 transition-all duration-500",
+        "bg-white/40 backdrop-blur-xl shadow-industrial-sm hover:shadow-industrial",
+        variant === "primary" ? "border-primary/20 bg-gradient-to-br from-primary/[0.08] to-transparent" :
+        variant === "success" ? "border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.08] to-transparent" :
+        variant === "warning" ? "border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] to-transparent" :
+        variant === "destructive" ? "border-rose-500/20 bg-gradient-to-br from-rose-500/[0.08] to-transparent" :
+        variant === "info" ? "border-sky-500/20 bg-gradient-to-br from-sky-500/[0.08] to-transparent" :
+        "border-slate-200/60 bg-white/60",
+        className
+      )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1.5 sm:space-y-2">
-          <p className="break-words text-xs font-medium leading-snug text-muted-foreground sm:text-sm">{title}</p>
-          <div className="flex items-baseline gap-1 sm:gap-2 flex-wrap">
-            <h3 className="break-words text-lg font-bold tracking-tight sm:text-2xl lg:text-3xl">{value}</h3>
-            {trend && (
-              <span
-                className={cn(
-                  "text-xs sm:text-sm font-medium",
-                  trend.isPositive ? "text-success" : "text-destructive"
-                )}
-              >
-                {trend.isPositive ? "+" : ""}
-                {trend.value}%
-              </span>
-            )}
+      <div className="relative z-10 flex items-start justify-between">
+        <div className="space-y-4">
+          <div className="space-y-1">
+             <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 group-hover:text-slate-600 transition-colors">
+               {title}
+             </p>
+             <h3 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
+               {value}
+             </h3>
           </div>
-          {subtitle && (
-            <p className="break-words text-[11px] leading-snug text-muted-foreground sm:text-xs">{subtitle}</p>
-          )}
+          
+          <div className="flex items-center gap-3">
+             {trend && (
+               <div className={cn(
+                 "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase",
+                 trend.isPositive ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600"
+               )}>
+                 {trend.isPositive ? "+" : ""}{trend.value}%
+               </div>
+             )}
+             {subtitle && (
+               <p className="text-[11px] font-bold text-slate-400 group-hover:text-slate-500 transition-colors">
+                 {subtitle}
+               </p>
+             )}
+          </div>
         </div>
-        <div className={cn(iconContainerVariants({ variant }), "self-start")}>
-          <Icon className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6" />
+
+        <div className={cn(
+          "flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-500 group-hover:scale-110",
+          variant === "primary" ? "bg-primary/10 text-primary shadow-lg shadow-primary/10" :
+          variant === "success" ? "bg-emerald-500/10 text-emerald-600 shadow-lg shadow-emerald-500/10" :
+          variant === "warning" ? "bg-amber-500/10 text-amber-600 shadow-lg shadow-amber-500/10" :
+          variant === "destructive" ? "bg-rose-500/10 text-rose-600 shadow-lg shadow-rose-500/10" :
+          variant === "info" ? "bg-sky-500/10 text-sky-600 shadow-lg shadow-sky-500/10" :
+          "bg-slate-100 text-slate-500"
+        )}>
+          <Icon className="h-7 w-7" />
         </div>
       </div>
       
-      {/* Decorative gradient */}
-      <div className="absolute -bottom-1 -right-1 h-24 w-24 rounded-full bg-gradient-to-br from-primary/5 to-transparent blur-2xl" />
+      {/* Dynamic Ambient Glow */}
+      <div className={cn(
+        "absolute -right-6 -bottom-6 h-32 w-32 rounded-full blur-3xl opacity-20 transition-opacity group-hover:opacity-40",
+        variant === "primary" ? "bg-primary" :
+        variant === "success" ? "bg-emerald-500" :
+        variant === "warning" ? "bg-amber-500" :
+        variant === "destructive" ? "bg-rose-500" :
+        variant === "info" ? "bg-sky-500" :
+        "bg-slate-300"
+      )} />
     </motion.div>
   );
 }

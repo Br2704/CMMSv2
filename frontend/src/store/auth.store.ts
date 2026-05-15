@@ -292,5 +292,30 @@ export const isIncharge = (user: AppUser | null): boolean => {
     "UTILITY_INCHARGE",
     "TOOLCHANGE_INCHARGE",
     "CALIBRATION_INCHARGE",
+    "MAINTENANCE_MANAGER",
   ]);
+};
+
+export const isMaintenanceManager = (user: AppUser | null): boolean => {
+  return hasRole(user, ["MAINTENANCE_MANAGER"]);
+};
+
+export const isMaintenanceUser = (user: AppUser | null): boolean => {
+  return hasRole(user, ["MAINTENANCE_USER", "MAINTENANCE_MANAGER", "TECHNICIAN"]);
+};
+
+export const isHRUser = (user: AppUser | null): boolean => {
+  return hasRole(user, ["HR_USER"]);
+};
+
+export const isSafetyOfficer = (user: AppUser | null): boolean => {
+  return hasRole(user, ["SAFETY_OFFICER"]);
+};
+
+export const isInventoryManager = (user: AppUser | null): boolean => {
+  return hasRole(user, ["INVENTORY_MANAGER", "STORE_USER"]);
+};
+
+export const isProductionUser = (user: AppUser | null): boolean => {
+  return hasRole(user, ["PRODUCTION_USER", "OPERATOR"]);
 };

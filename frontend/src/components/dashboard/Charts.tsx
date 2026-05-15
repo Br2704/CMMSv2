@@ -43,7 +43,7 @@ function ChartCard({ title, subtitle, children, delay = 0 }: ChartCardProps) {
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </CardHeader>
         <CardContent>
-          <div className="h-[280px]">{children}</div>
+          <div className="h-[320px] w-full">{children}</div>
         </CardContent>
       </Card>
     </motion.div>
@@ -181,32 +181,4 @@ export function MTBFTrendChart({ data }: { data: { date: string; value: number }
   );
 }
 
-// Asset Status (Donut)
-export function AssetStatusChart({ data }: { data: { name: string; value: number }[] }) {
-  return (
-    <ChartCard title="Asset Status" subtitle="Current asset health overview" delay={0.4}>
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={data}
-            cx="50%"
-            cy="50%"
-            innerRadius={60}
-            outerRadius={95}
-            paddingAngle={3}
-            dataKey="value"
-            nameKey="name"
-            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-            labelLine={false}
-          >
-            {data.map((_, idx) => (
-              <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
-            ))}
-          </Pie>
-          <Tooltip contentStyle={tooltipStyle} />
-          <Legend />
-        </PieChart>
-      </ResponsiveContainer>
-    </ChartCard>
-  );
-}
+

@@ -116,13 +116,19 @@ export default function SLAConfigMaster() {
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">SLA & Escalation Engine</h1>
-          <p className="text-sm text-muted-foreground">Configure service level agreements, escalation rules, and monitor compliance</p>
+        <div className="flex items-center gap-4">
+          <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 shadow-inner">
+            <Gauge className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-foreground">SLA & Escalation Engine</h1>
+            <p className="text-sm text-muted-foreground font-medium">Precision response management & automated accountability</p>
+          </div>
         </div>
-        <Button onClick={openNew} size="sm"><Plus className="h-4 w-4 mr-2" />New SLA Rule</Button>
-      </div>
+        <Button onClick={openNew} className="gradient-primary shadow-glow h-10 px-6 rounded-xl font-bold">
+          <Plus className="h-4 w-4 mr-2" />
+          New SLA Rule
+        </Button>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="border-l-4 border-l-blue-500"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Active Rules</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{(stats as any).totalActiveRules ?? 0}</p></CardContent></Card>

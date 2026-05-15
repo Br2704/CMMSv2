@@ -5,6 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+
+
 import { format, formatDistanceToNow, subHours } from "date-fns";
 import {
   Plus, Search, Eye, MoreHorizontal, Play, CheckCircle, Loader2, RefreshCw,
@@ -22,7 +26,7 @@ import { InputField, SelectField, TextareaField } from "@/components/shared/Form
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { SpareUsageEditor, type SpareUsageDraft } from "@/components/spares/SpareUsageEditor";
-import { useAuthStore, isAdmin, isIncharge, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore, isAdmin, isIncharge, isSuperAdmin, isMaintenanceManager, isMaintenanceUser, isProductionUser } from "@/store/auth.store";
 import { getStoredAccessToken } from "@/api/http";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -56,6 +60,7 @@ import { resolveQrMachineCode, resolveQrToken, type QrResolveData } from "@/api/
 import { compressImage } from "@/mobile/media";
 import { hoursToMinutes } from "@/lib/time";
 import { broadcastWorkOrderSync, subscribeWorkOrderSync } from "@/lib/work-order-sync";
+import { cn } from "@/lib/utils";
 
 const INCHARGE_CATEGORY_MAP: Record<string, string> = {
   MECHANICAL_INCHARGE: "MECHANICAL",
@@ -100,6 +105,39 @@ function normalizeDraftAttachments(input: unknown): PhotoAttachment[] {
 function getInchargeCategories(roles: string[]): string[] {
   return roles.filter((r) => INCHARGE_CATEGORY_MAP[r]).map((r) => INCHARGE_CATEGORY_MAP[r]);
 }
+
+const WorkflowTimeline = ({ status, createdAt, openedAt, closedAt }: { status: string, createdAt: string, openedAt?: string | null, closedAt?: string | null }) => {
+  const steps = [
+    { label: "Raised", date: createdAt, active: true },
+    { label: "Assigned", date: openedAt, active: !!openedAt || ["IN_PROGRESS", "USER_VERIFICATION", "APPROVAL_PENDING", "CLOSED"].includes(status) },
+    { label: "In Progress", date: openedAt, active: ["IN_PROGRESS", "USER_VERIFICATION", "APPROVAL_PENDING", "CLOSED"].includes(status) },
+    { label: "Resolved", date: closedAt, active: ["USER_VERIFICATION", "APPROVAL_PENDING", "CLOSED"].includes(status) },
+    { label: "Verified", date: closedAt, active: status === "CLOSED" },
+  ];
+
+  return (
+    <div className="flex items-center justify-between w-full px-4 py-8">
+      {steps.map((step, idx) => (
+        <div key={step.label} className="flex flex-col items-center relative flex-1">
+          <div className={`h-10 w-10 rounded-2xl flex items-center justify-center z-10 transition-all duration-500 shadow-sm ${
+            step.active ? "bg-primary text-white shadow-glow" : "bg-slate-100 text-slate-400"
+          }`}>
+            {step.active ? <CheckCircle className="h-5 w-5" /> : <div className="h-2 w-2 rounded-full bg-current" />}
+          </div>
+          <span className={`mt-3 text-[10px] font-black uppercase tracking-widest ${step.active ? "text-primary" : "text-slate-400"}`}>
+            {step.label}
+          </span>
+          {step.date && <span className="mt-1 text-[9px] font-bold text-slate-400">{format(new Date(step.date), "dd MMM, HH:mm")}</span>}
+          {idx < steps.length - 1 && (
+            <div className={`absolute top-5 left-1/2 w-full h-[2px] -z-0 ${
+              steps[idx+1].active ? "bg-primary" : "bg-slate-100"
+            }`} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
 
 const PRIORITY_OPTIONS = [
   { value: "CRITICAL", label: "Critical" },
@@ -1511,13 +1549,16 @@ export default function WorkOrders() {
 
   const canExecuteWO = (wo: any) => {
     if (!user) return false;
+    if (isSuperAdmin(user) || isMaintenanceManager(user)) return true;
     if (isOwnedByCurrentUser(wo.assigned_to)) return true;
-    return !wo.assigned_to && isOwnedByCurrentUser(wo.raised_by);
+    return isMaintenanceUser(user) && (!wo.assigned_to || isOwnedByCurrentUser(wo.assigned_to));
   };
 
   const canReviewWO = (wo: any) => {
     if (!user) return false;
-    return ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status) && (isOwnedByCurrentUser(wo.raised_by) || userIsAdmin);
+    if (!["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status)) return false;
+    if (isSuperAdmin(user) || isMaintenanceManager(user) || isAdmin(user)) return true;
+    return isOwnedByCurrentUser(wo.raised_by);
   };
 
 
@@ -1594,15 +1635,28 @@ export default function WorkOrders() {
       />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:gap-4">
-        {kpiCards.map((kpi) => (
-          <motion.div key={kpi.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <Card className="h-full shadow-card">
-              <CardContent className="pt-4 pb-4 px-4">
-                <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-lg bg-muted ${kpi.color}`}><kpi.icon className="h-4 w-4" /></div>
+        {kpiCards.map((kpi, idx) => (
+          <motion.div 
+            key={kpi.label} 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.1 }}
+          >
+            <Card className="group relative overflow-hidden border-none bg-gradient-to-br from-card to-muted/30 shadow-card hover:shadow-xl transition-all duration-300">
+              <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-primary/5 blur-2xl group-hover:bg-primary/10 transition-colors" />
+              <CardContent className="p-5">
+                <div className="flex items-center gap-4">
+                  <div className={cn(
+                    "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-border/50 transition-transform group-hover:scale-110 duration-300",
+                    kpi.color.replace('text-', 'text-')
+                  )}>
+                    <kpi.icon className="h-6 w-6" />
+                  </div>
                   <div className="min-w-0">
-                    <p className="text-xl font-bold sm:text-2xl">{kpi.value}</p>
-                    <p className="break-words text-xs leading-snug text-muted-foreground">{kpi.label}</p>
+                    <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">{kpi.label}</p>
+                    <div className="flex items-baseline gap-1">
+                      <p className="text-2xl font-black tracking-tight text-foreground">{kpi.value}</p>
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -1612,68 +1666,99 @@ export default function WorkOrders() {
       </div>
 
       {(userIsAdmin || userIsIncharge || Boolean(user)) && !isAssetHistoryMode && (
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/70 bg-card/60 p-3 shadow-sm">
-          <Button variant={activeTab === "assigned" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("assigned")}>Assigned to Me ({assignedWorkOrders.length})</Button>
-          <Button variant={activeTab === "raised" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("raised")}>Raised by Me ({raisedWorkOrders.length})</Button>
-          {userIsIncharge && <Button variant={activeTab === "incharge" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("incharge")}>{inchargeCategories.join(", ")} ({inchargeWorkOrders.length})</Button>}
-          {userIsAdmin && <Button variant={activeTab === "all" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("all")}>All Work Orders ({allWorkOrders.length})</Button>}
-          <Button
-            variant={activeTab === "approval" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveTab("approval")}
-          >
-            Verification Queue ({myApprovalQueueCount})
-          </Button>
-          <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-            <span>{isFetching ? "Syncing updates..." : `Last synced ${lastSyncedLabel}`}</span>
-            <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => void refetch()} disabled={isFetching || !authEnabled}>
-              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
-              Refresh
+        <div className="flex flex-wrap items-center gap-2 rounded-3xl border border-white/40 bg-white/40 p-1.5 shadow-sm backdrop-blur-md">
+          {[
+            { id: 'assigned', label: 'Assigned to Me', count: assignedWorkOrders.length },
+            { id: 'raised', label: 'Raised by Me', count: raisedWorkOrders.length },
+            ...(userIsIncharge ? [{ id: 'incharge', label: inchargeCategories.join(", "), count: inchargeWorkOrders.length }] : []),
+            ...(userIsAdmin ? [{ id: 'all', label: 'All Work Orders', count: allWorkOrders.length }] : []),
+            { id: 'approval', label: 'Verification Queue', count: myApprovalQueueCount }
+          ].map((tab) => (
+            <Button
+              key={tab.id}
+              variant={activeTab === tab.id ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setActiveTab(tab.id as any)}
+              className={cn(
+                "rounded-2xl px-4 font-semibold transition-all h-9",
+                activeTab === tab.id ? "shadow-lg shadow-primary/20" : "text-muted-foreground hover:bg-white/50"
+              )}
+            >
+              {tab.label}
+              <Badge variant="outline" className={cn(
+                "ml-2 border-none px-1.5 text-[10px]",
+                activeTab === tab.id ? "bg-white/20 text-white" : "bg-muted/50"
+              )}>
+                {tab.count}
+              </Badge>
+            </Button>
+          ))}
+          
+          <div className="ml-auto hidden items-center gap-3 pr-2 text-xs text-muted-foreground lg:flex">
+            <div className="flex flex-col items-end">
+              <span className="font-medium text-foreground">{isFetching ? "Synchronizing..." : "Operational Data"}</span>
+              <span className="text-[10px] opacity-70">Synced {lastSyncedLabel}</span>
+            </div>
+            <Button 
+              variant="outline" 
+              size="icon" 
+              className="h-8 w-8 rounded-full border-none bg-white shadow-sm hover:scale-110 transition-transform" 
+              onClick={() => void refetch()} 
+              disabled={isFetching || !authEnabled}
+            >
+              <RefreshCw className={cn("h-4 w-4 text-primary", isFetching && "animate-spin")} />
             </Button>
           </div>
         </div>
       )}
 
       {isAssetHistoryMode && (
-        <Card className="shadow-card">
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <div>
-              <p className="text-sm font-semibold text-foreground">Machine-Scoped History</p>
-              <p className="text-xs text-muted-foreground">
-                Showing work orders only for {prefetchedAsset?.code || "the selected machine"}.
-              </p>
+        <Card className="border-none bg-primary/5 shadow-sm overflow-hidden">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4 px-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-full bg-primary/10">
+                <History className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-foreground tracking-tight">Machine-Scoped History</p>
+                <p className="text-xs text-muted-foreground">
+                  Analyzing performance trends for <span className="font-semibold text-primary">{prefetchedAsset?.code || "the selected machine"}</span>.
+                </p>
+              </div>
             </div>
-            <Button variant="outline" size="sm" onClick={clearAssetHistoryFilter}>
+            <Button variant="outline" size="sm" onClick={clearAssetHistoryFilter} className="rounded-xl border-primary/20 hover:bg-primary/5">
               View All Machines
             </Button>
           </CardContent>
         </Card>
       )}
 
-      <Card className="shadow-card">
-        <CardContent className="pt-4 pb-4">
+      <Card className="border-none shadow-card bg-card/40 backdrop-blur-sm">
+        <CardContent className="p-4">
           <FilterToolbar
             search={
-              <>
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-10 pl-9" />
-              </>
+              <div className="relative w-full">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground opacity-50" />
+                <Input 
+                  placeholder="Quick search by WO#, asset, or description..." 
+                  value={searchQuery} 
+                  onChange={(e) => setSearchQuery(e.target.value)} 
+                  className="h-11 pl-10 bg-white/50 border-none shadow-inner focus-visible:ring-primary/20" 
+                />
+              </div>
             }
             filters={
-              <>
+              <div className="flex flex-wrap gap-2">
                 <SelectField label="" value={statusFilter} onChange={setStatusFilter} options={[
                   { value: "all", label: "All Status" },
                   { value: "RAISED", label: "Raised" }, { value: "TRIAGED", label: "Triaged" }, { value: "ASSIGNED", label: "Assigned" }, { value: "OPENED", label: "Opened" },
                   { value: "IN_PROGRESS", label: "In Progress" }, { value: "USER_VERIFICATION", label: "Waiting for Verification" },
                   { value: "REJECTED", label: "Rejected" }, { value: "CLOSED", label: "Completed" },
-                ]} className="w-full sm:w-[160px] min-w-[140px] flex-shrink-0" />
+                ]} className="w-full sm:w-[160px] h-11" />
                 <SelectField label="" value={categoryFilter} onChange={setCategoryFilter} options={[
                   { value: "all", label: "All Categories" }, ...filterCategoryOptions
-                ]} className="w-full sm:w-[160px] min-w-[140px] flex-shrink-0" />
-                <SelectField label="" value={typeFilter} onChange={setTypeFilter} options={[
-                  { value: "all", label: "All Types" }, ...filterTypeOptions
-                ]} className="w-full sm:w-[160px] min-w-[140px] flex-shrink-0" />
-              </>
+                ]} className="w-full sm:w-[160px] h-11" />
+              </div>
             }
           />
         </CardContent>
@@ -2098,6 +2183,16 @@ export default function WorkOrders() {
                 </>
               ) : null}
             </div>
+
+            <Card className="border-none shadow-sm bg-slate-50/50 rounded-3xl overflow-hidden">
+               <WorkflowTimeline 
+                  status={selectedWO.status} 
+                  createdAt={selectedWO.created_at} 
+                  openedAt={selectedWO.opened_at} 
+                  closedAt={selectedWO.closed_at} 
+               />
+            </Card>
+
             <DetailSection title="Work Order">
               <DetailRow label="WO Number" value={selectedWO.wo_number} />
               <DetailRow label="Type" value={resolveWorkOrderLabel("WO_TYPE", selectedWO.wo_type, selectedWO.plant_id, workOrderMasters)} />

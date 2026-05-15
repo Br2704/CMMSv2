@@ -996,7 +996,7 @@ export default function VisitorExperience() {
                                                 <h3 className="text-xl font-black italic tracking-tight">SCAN VISITOR PASS</h3>
                                                 <p className="text-xs text-muted-foreground leading-relaxed">Secure digital handshake for automated industrial check-in and zone authorization.</p>
                                             </div>
-                                            <Button className="w-full h-12 gap-2 rounded-2xl gradient-primary shadow-xl shadow-primary/20" onClick={() => setQrScannerOpen(true)}>
+                                            <Button className="w-full h-12 gap-2 rounded-2xl gradient-primary shadow-xl shadow-primary/20" onClick={() => setApprovalQrOpen(true)}>
                                                 <Maximize size={18} /> Launch Scanner
                                             </Button>
                                         </div>

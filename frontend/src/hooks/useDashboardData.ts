@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { dbClient } from "@/api/dbClient";
 import { getGateDashboardSummary } from "@/api/gates";
 import { getStoredAccessToken } from "@/api/http";
-import { useAuthStore, isAdmin, isIncharge, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore, isAdmin, isIncharge, isSuperAdmin, isMaintenanceUser, isProductionUser, isSafetyOfficer, isHRUser } from "@/store/auth.store";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useMemo, useRef } from "react";
 import { useDashboardRealtime } from "@/hooks/useDashboardRealtime";
@@ -91,6 +91,11 @@ export function useDashboardData(selectedPlantId?: string | null) {
   const userIsAdmin = isAdmin(user);
   const userIsSuperAdmin = isSuperAdmin(user);
   const userIsIncharge = isIncharge(user);
+  const userIsMaintenance = isMaintenanceUser(user);
+  const userIsProduction = isProductionUser(user);
+  const userIsSafety = isSafetyOfficer(user);
+  const userIsHR = isHRUser(user);
+  
   const inchargeCategories = useMemo(() => getInchargeCategories(user?.roles || []), [user?.roles]);
   const canReadWorkOrders = hasModuleAccess("workorders", "view");
   const canReadAssets = hasModuleAccess("assets", "view");
@@ -433,8 +438,8 @@ export function useDashboardData(selectedPlantId?: string | null) {
       .sort((a, b) => a.plantCode.localeCompare(b.plantCode));
   }, [userIsSuperAdmin, activePlants, assets, workOrders, pmSchedules, calibrations, now24h]);
 
-  // Recent WOs (top 5 from filtered)
-  const recentWOs = filteredWOs.slice(0, 5);
+  // Recent WOs (top 10 from filtered)
+  const recentWOs = filteredWOs.slice(0, 10);
 
   return {
     isLoading,
@@ -447,12 +452,16 @@ export function useDashboardData(selectedPlantId?: string | null) {
     },
     charts: {
       woByCategoryData, woByStatusData, woByPriorityData,
-      woTrendData, mttrTrendData, mtbfTrendData, assetStatusData,
+      woTrendData, mttrTrendData, mtbfTrendData,
     },
     comparisonRows,
     recentWOs,
     userIsSuperAdmin,
     userIsAdmin,
     userIsIncharge,
+    userIsMaintenance,
+    userIsProduction,
+    userIsSafety,
+    userIsHR,
   };
 }
