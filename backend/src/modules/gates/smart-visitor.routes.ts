@@ -299,7 +299,7 @@ async function createTemporaryVisitorIdentity(input: {
   const userRoleRepo = input.manager.getRepository(UserRoleEntity);
   const plantRepo = input.manager.getRepository(PlantEntity);
 
-  const visitorRole = await ensureRoleCatalogEntry(roleRepo, 'TEMPORARY_VISITOR', {
+  const visitorRole = await ensureRoleCatalogEntry(roleRepo, 'VISITOR', {
     description: 'Temporary visitor access role created from smart gate workflow',
     isSystem: true,
   });
@@ -345,7 +345,7 @@ async function createTemporaryVisitorIdentity(input: {
   const userRole = userRoleRepo.create({
     userId: createdUser.id,
     roleId: visitorRole.id,
-    role: 'TEMPORARY_VISITOR',
+    role: 'VISITOR',
     plantId: input.plantId,
   });
   await userRoleRepo.save(userRole);
@@ -497,7 +497,7 @@ async function findSessionByLookup(input: {
 
   const isVisitor = (input.auth.roles ?? []).some((role) => {
     const normalized = role.toUpperCase();
-    return normalized === 'VISITOR' || normalized === 'TEMPORARY_VISITOR';
+    return normalized === 'VISITOR';
   });
   if (isVisitor) {
     return sessionRepo.findOne({

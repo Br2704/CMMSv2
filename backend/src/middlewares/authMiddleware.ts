@@ -90,7 +90,7 @@ function buildFallbackPermissionsForRole(role: string): Record<string, string[]>
   if (normalized === 'VENDOR') {
     return fromModules(['AMC'], readOnly);
   }
-  if (normalized === 'VISITOR' || normalized === 'TEMPORARY_VISITOR') {
+  if (normalized === 'VISITOR') {
     return {};
   }
   if (normalized === 'SECURITY_USER' || normalized === 'SECURITY') {

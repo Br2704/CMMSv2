@@ -24,7 +24,6 @@ const SYSTEM_ORG_ROLE_DEFINITIONS = [
   { key: 'SECURITY', name: 'SECURITY', isSystem: true },
   { key: 'VENDOR', name: 'VENDOR', isSystem: true },
   { key: 'VISITOR', name: 'VISITOR', isSystem: true },
-  { key: 'TEMPORARY_VISITOR', name: 'TEMPORARY_VISITOR', isSystem: true },
   { key: 'USER', name: 'USER', isSystem: true },
 ] as const;
 

@@ -135,49 +135,12 @@ function applySystemRolePolicy(roleKey: string, input: OrgRolePermissionMap) {
     return next;
   }
 
-  if (normalizedRoleKey === "ADMIN") {
-    const next = buildFullAccessMapFromCatalog(normalized);
-    delete next.PLANTS;
-    delete next["MASTERS.PLANT"];
-    next.ORGANIZATIONS = ["READ"];
-    return next;
-  }
-
-  if (normalizedRoleKey === "VISITOR") {
-    return {};
-  }
-
-  if (normalizedRoleKey === "VENDOR") {
-    const actions = normalizeActions(normalized.AMC);
-    return { AMC: actions.length > 0 ? actions : ["READ"] };
-  }
-
-  if (normalizedRoleKey === "SECURITY") {
-    const actions = normalizeActions(normalized.GATES);
-    return { GATES: actions.length > 0 ? actions : ["READ"] };
-  }
-
-  if (normalizedRoleKey === "USER") {
-    const filtered: OrgRolePermissionMap = {};
-    Object.entries(normalized).forEach(([moduleKey, actions]) => {
-      if (moduleKey === "MASTERS" || moduleKey.startsWith("MASTERS.")) return;
-      if (SYSTEM_USER_BLOCKED_MODULES.has(moduleKey)) return;
-      filtered[moduleKey] = actions;
-    });
-    return filtered;
-  }
-
   return normalized;
 }
 
 function getSystemRolePolicyHint(roleKey: string): string | null {
   const normalizedRoleKey = normalizeRoleKeyForPolicy(roleKey);
   if (normalizedRoleKey === "SUPERADMIN") return "SUPERADMIN policy is fixed: full organization access across modules, with Plant Master limited to view and edit.";
-  if (normalizedRoleKey === "ADMIN") return "ADMIN policy is fixed: all modules except Plant Master.";
-  if (normalizedRoleKey === "USER") return "USER policy is enforced: governance/master module permissions are removed.";
-  if (normalizedRoleKey === "VENDOR") return "VENDOR policy is enforced: AMC-only access.";
-  if (normalizedRoleKey === "VISITOR") return "VISITOR policy is enforced: no page access.";
-  if (normalizedRoleKey === "SECURITY") return "SECURITY policy is enforced: gate-entry-only access.";
   return null;
 }
 
@@ -657,7 +620,7 @@ export default function RootRoleAccessMaster() {
                   size="sm"
                   variant="destructive"
                   onClick={() => setIsDeleteRoleOpen(true)}
-                  disabled={!selectedRole || selectedRole.isSystem}
+                  disabled={!selectedRole || selectedRole.key === "SUPERADMIN"}
                 >
                   <Trash2 className="mr-1 h-4 w-4" />
                   Delete
@@ -848,7 +811,7 @@ export default function RootRoleAccessMaster() {
                     ))}
                   </div>
 
-                  {selectedRole?.isSystem ? (
+                  {selectedRole?.key === "SUPERADMIN" ? (
                     <div className="rounded-2xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-xs text-amber-900">
                       {getSystemRolePolicyHint(selectedRole.key) || "System role policy is enforced for this role."}
                     </div>

@@ -2,18 +2,16 @@ import { RBAC_ACTIONS, RBAC_MODULE_KEYS, normalizeActions, normalizeModuleKey, n
 
 export type PermissionMap = Record<string, string[]>;
 
-const SYSTEM_MANAGED_ORG_ROLE_KEYS = new Set(['SUPERADMIN', 'ADMIN', 'USER', 'VENDOR', 'VISITOR', 'TEMPORARY_VISITOR', 'SECURITY']);
+const SYSTEM_MANAGED_ORG_ROLE_KEYS = new Set(['SUPERADMIN']);
 const USER_BLOCKED_MODULES = new Set(['MASTERS', 'PLANTS', 'ORGANIZATIONS', 'ROLE_ACCESS', 'MODULES', 'DEPARTMENTS', 'USERS', 'VENDORS', 'SHIFTS']);
 const ADMIN_BLOCKED_MODULES = new Set([] as string[]);
 const VENDOR_ALLOWED_MODULES = new Set(['AMC']);
 const SECURITY_ALLOWED_MODULES = new Set(['GATES']);
 const VISITOR_ALLOWED_MODULES = new Set(['GATES']);
-const TEMPORARY_VISITOR_ALLOWED_MODULES = new Set(['GATES']);
 
 function normalizeSystemRoleKey(roleKey: string): string {
   const normalized = normalizeRoleName(roleKey);
   if (normalized === 'SECURITY_USER') return 'SECURITY';
-  if (normalized === 'TEMP_VISITOR') return 'TEMPORARY_VISITOR';
   return normalized;
 }
 
@@ -90,11 +88,6 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
     return map;
   }
 
-  if (normalizedRole === 'TEMPORARY_VISITOR') {
-    const map = pickAllowedModules(normalizedInput, TEMPORARY_VISITOR_ALLOWED_MODULES);
-    map.GATES = normalizeActions(Array.from(new Set([...(map.GATES ?? []), 'READ', 'CREATE'])));
-    return map;
-  }
 
   if (normalizedRole === 'VENDOR') {
     const map = pickAllowedModules(normalizedInput, VENDOR_ALLOWED_MODULES);
