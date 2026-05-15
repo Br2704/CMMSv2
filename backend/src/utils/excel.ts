@@ -68,24 +68,14 @@ function worksheetXmlForSheet(title: string, sheet: Sheet, branding: WorkbookBra
 
   const headerRows: string[] = [];
   if (isFirstSheet) {
+    headerRows.push(rowXml([`<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sOrgHeader\"><Data ss:Type=\"String\">${escapeXml(organizationName.toUpperCase())}</Data></Cell>`]));
     headerRows.push(rowXml([`<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sTitle\"><Data ss:Type=\"String\">${escapeXml(title)}</Data></Cell>`]));
     headerRows.push(
       rowXml([
-        `<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sMeta\"><Data ss:Type=\"String\">${escapeXml(`Organization: ${organizationName}`)}</Data></Cell>`,
+        `<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sMeta\"><Data ss:Type=\"String\">${escapeXml(`Generated: ${generatedAt}`)}</Data></Cell>`,
       ]),
     );
-    if (branding.organizationLogoUrl) {
-      headerRows.push(
-        rowXml([
-          `<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sMeta\"><Data ss:Type=\"String\">${escapeXml(`Organization Logo: ${branding.organizationLogoUrl}`)}</Data></Cell>`,
-        ]),
-      );
-    }
-    headerRows.push(
-      rowXml([
-        `<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sMeta\"><Data ss:Type=\"String\">${escapeXml(`Generated At: ${generatedAt}`)}</Data></Cell>`,
-      ]),
-    );
+    // Spacing
     headerRows.push(rowXml([`<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sBody\"><Data ss:Type=\"String\"></Data></Cell>`]));
   }
 
@@ -93,6 +83,9 @@ function worksheetXmlForSheet(title: string, sheet: Sheet, branding: WorkbookBra
   const bodyRows = safeRows.map((row) => rowXml(Array.from({ length: columnCount }, (_, index) => cellXml(row[index] ?? "", "sBody"))));
   const footerRows = [
     rowXml([`<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sBody\"><Data ss:Type=\"String\"></Data></Cell>`]),
+    rowXml([
+      `<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sTamOptix\"><Data ss:Type=\"String\">TamOptiX Technologies | Intelligent CMMS Platform</Data></Cell>`,
+    ]),
     rowXml([
       `<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sFooter\"><Data ss:Type=\"String\">${escapeXml(footerBranding)}</Data></Cell>`,
     ]),
@@ -123,23 +116,40 @@ export function createSimpleExcelWorkbook(title: string, sheets: Sheet[], brandi
  <DocumentProperties xmlns=\"urn:schemas-microsoft-com:office:office\">
   <Title>${escapeXml(title)}</Title>
  </DocumentProperties>
- <Styles>
+  <Styles>
   <Style ss:ID=\"Default\" ss:Name=\"Normal\">
-   <Alignment ss:Vertical=\"Center\"/>
-   <Font ss:FontName=\"Calibri\" ss:Size=\"11\"/>
+   <Alignment ss:Vertical=\"Center\" ss:Horizontal=\"Left\"/>
+   <Font ss:FontName=\"Segoe UI\" ss:Size=\"10\"/>
   </Style>
   <Style ss:ID=\"sTitle\">
-   <Font ss:FontName=\"Calibri\" ss:Bold=\"1\" ss:Size=\"16\" ss:Color=\"#0F172A\"/>
+   <Font ss:FontName=\"Segoe UI\" ss:Bold=\"1\" ss:Size=\"18\" ss:Color=\"#000000\"/>
+   <Alignment ss:Horizontal=\"Left\" ss:Vertical=\"Center\"/>
+   <Borders>
+    <Border ss:Position=\"Bottom\" ss:LineStyle=\"Continuous\" ss:Weight=\"2\" ss:Color=\"#000000\"/>
+   </Borders>
+  </Style>
+  <Style ss:ID=\"sOrgHeader\">
+   <Font ss:FontName=\"Segoe UI\" ss:Bold=\"1\" ss:Size=\"14\" ss:Color=\"#000000\"/>
    <Alignment ss:Horizontal=\"Left\" ss:Vertical=\"Center\"/>
   </Style>
   <Style ss:ID=\"sMeta\">
-   <Font ss:FontName=\"Calibri\" ss:Italic=\"1\" ss:Size=\"10\" ss:Color=\"#334155\"/>
+   <Font ss:FontName=\"Segoe UI\" ss:Size=\"9\" ss:Color=\"#4B5563\"/>
    <Alignment ss:Horizontal=\"Left\" ss:Vertical=\"Center\"/>
   </Style>
   <Style ss:ID=\"sHeader\">
-   <Font ss:FontName=\"Calibri\" ss:Bold=\"1\" ss:Size=\"11\" ss:Color=\"#FFFFFF\"/>
+   <Font ss:FontName=\"Segoe UI\" ss:Bold=\"1\" ss:Size=\"10\" ss:Color=\"#FFFFFF\"/>
    <Alignment ss:Horizontal=\"Center\" ss:Vertical=\"Center\" ss:WrapText=\"1\"/>
-   <Interior ss:Color=\"#1E3A5F\" ss:Pattern=\"Solid\"/>
+   <Interior ss:Color=\"#000000\" ss:Pattern=\"Solid\"/>
+   <Borders>
+    <Border ss:Position=\"Bottom\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#000000\"/>
+    <Border ss:Position=\"Left\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#000000\"/>
+    <Border ss:Position=\"Right\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#000000\"/>
+    <Border ss:Position=\"Top\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#000000\"/>
+   </Borders>
+  </Style>
+  <Style ss:ID=\"sBody\">
+   <Font ss:FontName=\"Segoe UI\"/>
+   <Alignment ss:Horizontal=\"Left\" ss:Vertical=\"Center\" ss:WrapText=\"1\"/>
    <Borders>
     <Border ss:Position=\"Bottom\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#D1D5DB\"/>
     <Border ss:Position=\"Left\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#D1D5DB\"/>
@@ -147,17 +157,12 @@ export function createSimpleExcelWorkbook(title: string, sheets: Sheet[], brandi
     <Border ss:Position=\"Top\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#D1D5DB\"/>
    </Borders>
   </Style>
-  <Style ss:ID=\"sBody\">
-   <Alignment ss:Horizontal=\"Left\" ss:Vertical=\"Center\" ss:WrapText=\"1\"/>
-   <Borders>
-    <Border ss:Position=\"Bottom\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#E5E7EB\"/>
-    <Border ss:Position=\"Left\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#E5E7EB\"/>
-    <Border ss:Position=\"Right\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#E5E7EB\"/>
-    <Border ss:Position=\"Top\" ss:LineStyle=\"Continuous\" ss:Weight=\"1\" ss:Color=\"#E5E7EB\"/>
-   </Borders>
-  </Style>
   <Style ss:ID=\"sFooter\">
-   <Font ss:FontName=\"Calibri\" ss:Italic=\"1\" ss:Size=\"9\" ss:Color=\"#475569\"/>
+   <Font ss:FontName=\"Segoe UI\" ss:Italic=\"1\" ss:Size=\"8\" ss:Color=\"#6B7280\"/>
+   <Alignment ss:Horizontal=\"Left\" ss:Vertical=\"Center\"/>
+  </Style>
+  <Style ss:ID=\"sTamOptix\">
+   <Font ss:FontName=\"Segoe UI\" ss:Bold=\"1\" ss:Size=\"9\" ss:Color=\"#111827\"/>
    <Alignment ss:Horizontal=\"Left\" ss:Vertical=\"Center\"/>
   </Style>
  </Styles>

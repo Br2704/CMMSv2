@@ -28,6 +28,7 @@ interface InputFieldProps extends BaseFieldProps {
   onChange: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  autoComplete?: string;
 }
 
 export function InputField({
@@ -40,6 +41,7 @@ export function InputField({
   error,
   hint,
   disabled,
+  autoComplete,
   className,
   id,
   name,
@@ -65,6 +67,7 @@ export function InputField({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
+        autoComplete={autoComplete}
         className={cn("h-10 w-full", error && "border-destructive")}
       />
       {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}

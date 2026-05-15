@@ -62,8 +62,9 @@ function normalizePhoneDigits(value: string | null | undefined) {
   return String(value ?? "").replace(/[^0-9]/g, "");
 }
 
-function isSecurityRole(role: string) {
-  const normalized = role
+function isSecurityRole(role: string | null | undefined) {
+  if (!role) return false;
+  const normalized = String(role)
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "_")

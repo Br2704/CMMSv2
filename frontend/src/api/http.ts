@@ -223,6 +223,9 @@ export async function ensureAccessToken(): Promise<boolean> {
   const refreshed = await refreshAccessToken();
   if (refreshed) {
     bootstrapRefreshAttempted = false;
+  } else {
+    // If we had session evidence/hint but refresh failed, we are definitely unauthorized
+    await handleUnauthorized();
   }
   return refreshed;
 }

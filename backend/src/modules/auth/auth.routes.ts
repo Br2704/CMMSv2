@@ -44,6 +44,8 @@ import {
 import { recordSecurityEvent } from '../../utils/securityEvents';
 import { buildTotpOtpauthUri, generateTotpSecret, verifyTotpCode } from '../../utils/totp';
 import { resolveUserOrganizationScope } from '../../utils/userOrganization';
+import { isStrongPassword, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_POLICY_MESSAGE } from '../../utils/passwordPolicy';
+import { isSafeImageValue } from '../../utils/fileValidation';
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -65,6 +67,27 @@ const mfaEnableSchema = z.object({
 const mfaDisableSchema = z.object({
   password: z.string().min(1),
   code: z.string().trim().regex(/^\d{6}$/).optional(),
+});
+
+const updateProfileSchema = z.object({
+  fullName: z.string().min(1).optional(),
+  phone: z.string().nullable().optional(),
+  profileImageUrl: z
+    .string()
+    .trim()
+    .max(2_500_000)
+    .refine((value) => isSafeImageValue(value), 'profileImageUrl must be a valid secure image URL or supported data URL')
+    .optional()
+    .nullable(),
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z
+    .string()
+    .min(PASSWORD_MIN_LENGTH)
+    .max(PASSWORD_MAX_LENGTH)
+    .refine((value) => isStrongPassword(value), PASSWORD_POLICY_MESSAGE),
 });
 
 const CSRF_HEADER_NAME = 'x-csrf-token';
@@ -670,6 +693,7 @@ async function issueTokens(
     sub: user.id,
     email: user.email,
     roles: roleNames,
+    organizationId: user.organizationId ?? null,
     plantIds,
     accessAllPlants: isOrganizationScope,
     mfaVerified: options?.mfaVerified ?? !user.mfaEnabled,
@@ -910,6 +934,7 @@ authRouter.post('/auth/login', authLoginRateLimiter, validateRequest({ body: log
         sub: user.id,
         email: user.email,
         roles: me.roles,
+        organizationId: me.organizationId ?? null,
         plantIds: me.plantIds ?? [],
         accessAllPlants: Boolean(me.accessAllPlants),
         mfaVerified: user.mfaEnabled,
@@ -1261,6 +1286,73 @@ authRouter.post('/auth/mfa/disable', requireAuth, validateRequest({ body: mfaDis
       userAgent: getUserAgent(req),
     });
     res.json(ok({ mfaEnabled: false }, 'MFA disabled'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+authRouter.patch('/auth/profile', requireAuth, validateRequest({ body: updateProfileSchema }), async (req, res, next) => {
+  try {
+    const body = updateProfileSchema.parse(req.body);
+    const userRepo = AppDataSource.getRepository(UserEntity);
+    const profileRepo = AppDataSource.getRepository(ProfileEntity);
+
+    const user = await userRepo.findOneBy({ id: req.auth!.userId });
+    if (!user) {
+      res.status(404).json(fail('User not found'));
+      return;
+    }
+
+    const profile = await profileRepo.findOneBy({ userId: user.id });
+    if (!profile) {
+      res.status(404).json(fail('Profile not found'));
+      return;
+    }
+
+    if (body.fullName !== undefined) {
+      user.fullName = body.fullName;
+      profile.fullName = body.fullName;
+    }
+    if (body.phone !== undefined) {
+      user.phone = body.phone;
+      profile.phone = body.phone;
+    }
+    if (body.profileImageUrl !== undefined) {
+      profile.profileImageUrl = body.profileImageUrl;
+    }
+
+    await userRepo.save(user);
+    await profileRepo.save(profile);
+
+    await audit('auth.profile.update', { userId: user.id, module: 'AUTH', statusCode: 200 });
+    res.json(ok({ user, profile }, 'Profile updated successfully'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+authRouter.post('/auth/change-password', requireAuth, validateRequest({ body: changePasswordSchema }), async (req, res, next) => {
+  try {
+    const body = changePasswordSchema.parse(req.body);
+    const userRepo = AppDataSource.getRepository(UserEntity);
+
+    const user = await userRepo.findOneBy({ id: req.auth!.userId });
+    if (!user) {
+      res.status(404).json(fail('User not found'));
+      return;
+    }
+
+    const passwordOk = await comparePassword(body.currentPassword, user.passwordHash);
+    if (!passwordOk) {
+      res.status(401).json(fail('Current password is incorrect'));
+      return;
+    }
+
+    user.passwordHash = await hashPassword(body.newPassword);
+    await userRepo.save(user);
+
+    await audit('auth.password.change', { userId: user.id, module: 'AUTH', statusCode: 200 });
+    res.json(ok(null, 'Password changed successfully'));
   } catch (error) {
     next(error);
   }

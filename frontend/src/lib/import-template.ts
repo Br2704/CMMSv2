@@ -1,3 +1,6 @@
+import * as XLSX from "xlsx-js-style";
+import ExcelJS from "exceljs";
+
 export interface CsvTemplateColumn {
   key: string;
   label?: string;
@@ -37,7 +40,7 @@ export interface ExcelTemplateConfig {
 }
 
 export function normalizeHeaderName(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^-+|-+$/g, "");
 }
 
 export function parseCsvRows(content: string): string[][] {
@@ -96,7 +99,28 @@ export function parseCsvRows(content: string): string[][] {
 
 export function isCsvHelperRow(row: string[]) {
   const firstCell = (row[0] || "").trim();
-  return firstCell.length === 0 || firstCell.startsWith("#") || firstCell.startsWith("__");
+  const lowerFirst = firstCell.toLowerCase();
+
+  // Explicit helper markers
+  if (firstCell.startsWith("#") || firstCell.startsWith("__")) return true;
+
+  // Skip our specific enterprise template metadata rows
+  if (lowerFirst.startsWith("guidance:") || lowerFirst.startsWith("validation:")) return true;
+
+  // Skip badge row: check if the first cell is exactly "REQUIRED" or "OPTIONAL"
+  const upperFirst = firstCell.toUpperCase();
+  if (upperFirst === "REQUIRED" || upperFirst === "OPTIONAL") return true;
+
+  // Skip label row: our labels in Row 2 always end with " *" for required or have a specific style.
+  // We check if the first cell ends with " *" or matches the known header key but with spaces.
+  if (firstCell.endsWith(" *")) return true;
+
+  // Skip the example row ONLY if it's explicitly marked
+  if (lowerFirst.startsWith("example:") || lowerFirst.includes("sample user") || lowerFirst.includes("example user") || lowerFirst.includes("sample mch") || lowerFirst.includes("example mch")) {
+    return true;
+  }
+
+  return false;
 }
 
 function csvCell(value: string) {
@@ -164,168 +188,252 @@ export function downloadEnterpriseCsvTemplate(config: CsvTemplateConfig) {
   ]);
 }
 
-function escapeXml(value: string) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
 
-function excelCell(value: string, styleId = "body", type: "String" | "Number" = "String") {
-  const safeType = type === "Number" && /^-?\d+(\.\d+)?$/.test(value.trim()) ? "Number" : "String";
-  return `<Cell ss:StyleID="${styleId}"><Data ss:Type="${safeType}">${escapeXml(value)}</Data></Cell>`;
-}
 
-function excelRow(cells: string[], height?: number) {
-  return `<Row${height ? ` ss:Height="${height}"` : ""}>${cells.join("")}</Row>`;
-}
+// ── ExcelJS Enterprise Template Generation ──────────────────────────────────────
 
-function excelValidationXml(columnIndex: number, values: string[], startRow: number, endRow: number) {
-  const options = Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).slice(0, 80);
-  if (options.length === 0) return "";
-  return `<DataValidation xmlns="urn:schemas-microsoft-com:office:excel">
-   <Range>R${startRow}C${columnIndex}:R${endRow}C${columnIndex}</Range>
-   <Type>List</Type>
-   <Value>"${escapeXml(options.join(","))}"</Value>
-   <InputTitle>Allowed values</InputTitle>
-   <InputMessage>Select a value from the configured master-data list.</InputMessage>
-   <ErrorTitle>Invalid value</ErrorTitle>
-   <ErrorMessage>Use one of the allowed values from the dropdown/reference sheet.</ErrorMessage>
-  </DataValidation>`;
-}
+export async function downloadEnterpriseExcelTemplate(config: ExcelTemplateConfig) {
+  const workbook = new ExcelJS.Workbook();
+  const cols = config.columns;
 
-function excelDateValidationXml(columnIndex: number, startRow: number, endRow: number) {
-  return `<DataValidation xmlns="urn:schemas-microsoft-com:office:excel">
-   <Range>R${startRow}C${columnIndex}:R${endRow}C${columnIndex}</Range>
-   <Type>Date</Type>
-   <Min>2000-01-01</Min>
-   <Max>2099-12-31</Max>
-   <InputTitle>Date format</InputTitle>
-   <InputMessage>Use YYYY-MM-DD format.</InputMessage>
-   <ErrorTitle>Invalid date</ErrorTitle>
-   <ErrorMessage>Enter a valid date between 2000-01-01 and 2099-12-31.</ErrorMessage>
-  </DataValidation>`;
-}
+  // ── INSTRUCTIONS SHEET (First Sheet) ────────────────────────────────────────
+  const instrSheet = workbook.addWorksheet("Instructions");
+  instrSheet.getColumn(1).width = 10;
+  instrSheet.getColumn(2).width = 25;
+  instrSheet.getColumn(3).width = 80;
 
-function downloadExcelXml(fileName: string, xml: string) {
-  const isXlsx = fileName.endsWith(".xlsx");
-  const mime = isXlsx ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.ms-excel";
-  const blob = new Blob([xml], { type: `${mime};charset=utf-8` });
-  const url = URL.createObjectURL(blob);
+  const bannerRow = instrSheet.addRow(["IMPORT GUIDE & BEST PRACTICES"]);
+  bannerRow.height = 35;
+  bannerRow.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+  bannerRow.getCell(1).font = { bold: true, color: { argb: "FFFFFFFF" }, size: 14 };
+  bannerRow.getCell(1).alignment = { vertical: "middle", horizontal: "left" };
+  instrSheet.mergeCells(1, 1, 1, 3);
+
+  const titleRow = instrSheet.addRow([config.title]);
+  titleRow.height = 25;
+  titleRow.getCell(1).font = { bold: true, color: { argb: "FF334155" }, size: 12 };
+  instrSheet.mergeCells(2, 1, 2, 3);
+
+  instrSheet.addRow([]); // Blank spacer
+
+  const headRow = instrSheet.addRow(["Step", "Action", "Details"]);
+  headRow.height = 20;
+  [1, 2, 3].forEach(c => {
+    const cell = headRow.getCell(c);
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF475569" } };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
+    cell.alignment = { vertical: "middle", horizontal: "left" };
+  });
+
+  const steps = [
+    ["1", "Open Upload Sheet", `Go to the '${config.uploadSheetName}' tab to enter your data.`],
+    ["2", "Required Fields", "RED headers marked with * are mandatory — blank rows will be skipped."],
+    ["3", "Optional Fields", "BLUE headers are optional — leave blank if not applicable."],
+    ["4", "Dropdowns", "Click any data cell to see the dropdown arrow. Pick a valid value."],
+    ["5", "Dates", "Enter dates as YYYY-MM-DD (e.g. 2024-06-15)."],
+    ["6", "Frozen Rows", "The top 5 header rows are frozen — scroll down to enter all records."],
+    ["7", "Upload", "Save and upload via Bulk Actions > Import Spreadsheet on the portal."],
+  ];
+
+  steps.forEach((step, index) => {
+    const row = instrSheet.addRow(step);
+    row.height = 24;
+    const isAlt = index % 2 === 1;
+    [1, 2, 3].forEach(c => {
+      const cell = row.getCell(c);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isAlt ? "FFFFFFFF" : "FFF8FAFC" } };
+      cell.font = { color: { argb: "FF334155" }, size: 10 };
+      cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+      cell.border = { bottom: { style: "thin", color: { argb: "FFE2E8F0" } } };
+    });
+  });
+
+  instrSheet.addRow([]);
+  const footerRow = instrSheet.addRow(["", "Powered by TamOptiX Technologies"]);
+  footerRow.getCell(2).font = { italic: true, color: { argb: "FF94A3B8" }, size: 9 };
+
+
+  // ── UPLOAD SHEET (Main Data Entry) ──────────────────────────────────────────
+  const isUserTemplate = config.fileName.toLowerCase().includes("user");
+  const headerRowCount = isUserTemplate ? 6 : 5; // User wants row 7 for users (6 header rows), row 6 for machines (5 header rows)
+
+  const ws = workbook.addWorksheet(config.uploadSheetName, {
+    views: [{ state: "frozen", xSplit: 0, ySplit: headerRowCount, activePane: "bottomLeft" }]
+  });
+
+  // Set column widths and keys
+  ws.columns = cols.map(c => ({
+    header: c.key,
+    key: c.key,
+    width: Math.max((c.width || 120) / 7.5, 15)
+  }));
+
+  // Add the 5 header rows manually to apply complex styles
+  // Row 1: Keys
+  const row1 = ws.getRow(1);
+  row1.values = cols.map(c => c.key);
+  row1.height = 18;
+  cols.forEach((_, i) => {
+    const cell = row1.getCell(i + 1);
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
+    cell.font = { color: { argb: "FFCBD5E1" }, size: 8, italic: true };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+  });
+
+  // Row 2: Labels
+  const row2 = ws.getRow(2);
+  row2.values = cols.map(c => `${c.label || c.key}${c.required ? " *" : ""}`);
+  row2.height = 36;
+  cols.forEach((c, i) => {
+    const cell = row2.getCell(i + 1);
+    const isReq = !!c.required;
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isReq ? "FFDC2626" : "FF0284C7" } };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.border = { bottom: { style: "thick", color: { argb: isReq ? "FF991B1B" : "FF0369A1" } } };
+  });
+
+  // Row 3: Badges
+  const row3 = ws.getRow(3);
+  row3.values = cols.map(c => (c.required ? "REQUIRED" : "OPTIONAL"));
+  row3.height = 16;
+  cols.forEach((c, i) => {
+    const cell = row3.getCell(i + 1);
+    const isReq = !!c.required;
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isReq ? "FFFEF2F2" : "FFF0F9FF" } };
+    cell.font = { bold: true, color: { argb: isReq ? "FFEF4444" : "FF0EA5E9" }, size: 9 };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.border = { bottom: { style: "thin", color: { argb: isReq ? "FFFCA5A5" : "FF7DD3FC" } } };
+  });
+
+  // Row 4: Descriptions (Guidance)
+  const row4 = ws.getRow(4);
+  row4.values = cols.map((c, i) => (i === 0 ? `GUIDANCE: ${c.description || ""}` : c.description || c.format || ""));
+  row4.height = 44;
+  cols.forEach((_, i) => {
+    const cell = row4.getCell(i + 1);
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+    cell.font = { italic: true, color: { argb: "FF64748B" }, size: 9 };
+    cell.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
+    cell.border = { bottom: { style: "thin", color: { argb: "FFE2E8F0" } } };
+  });
+
+  // Row 5: Validation/Format (Optional, only for Users to shift data to Row 7)
+  if (isUserTemplate) {
+    const rowV = ws.getRow(5);
+    rowV.values = cols.map((c, i) => (i === 0 ? `VALIDATION: ${c.format || "Allowed list only"}` : c.format || "Allowed list only"));
+    rowV.height = 18;
+    cols.forEach((_, i) => {
+      const cell = rowV.getCell(i + 1);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
+      cell.font = { italic: true, color: { argb: "FF475569" }, size: 9 };
+      cell.alignment = { horizontal: "left", vertical: "middle" };
+      cell.border = { bottom: { style: "thin", color: { argb: "FFCBD5E1" } } };
+    });
+  }
+
+  // Row 5/6: Examples
+  const exampleRowIdx = isUserTemplate ? 6 : 5;
+  const rowE = ws.getRow(exampleRowIdx);
+  rowE.values = cols.map((c, i) => (i === 0 ? `EXAMPLE: ${c.example || ""}` : c.example || ""));
+  rowE.height = 20;
+  cols.forEach((_, i) => {
+    const cell = rowE.getCell(i + 1);
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+    cell.font = { color: { argb: "FFB45309" }, size: 10, italic: true };
+    cell.alignment = { horizontal: "left", vertical: "middle" };
+    cell.border = { bottom: { style: "medium", color: { argb: "FFF59E0B" } } };
+  });
+
+  // Add initial rows (starting from row 6 or 7)
+  const dataStartRow = exampleRowIdx + 1;
+  config.rows.forEach((rowData, rIdx) => {
+    const row = ws.getRow(dataStartRow + rIdx);
+    row.values = rowData;
+    row.height = 22;
+    cols.forEach((_, cIdx) => {
+      const cell = row.getCell(cIdx + 1);
+      cell.font = { color: { argb: "FF334155" }, size: 11 };
+      cell.alignment = { vertical: "middle", horizontal: "left" };
+      cell.border = { bottom: { style: "thin", color: { argb: "FFE2E8F0" } }, right: { style: "thin", color: { argb: "FFE2E8F0" } } };
+    });
+  });
+
+  // ── REFERENCE SHEET & DATA VALIDATION ───────────────────────────────────────
+  const refSheet = workbook.addWorksheet("Reference", { state: "hidden" });
+  const validCols = cols.filter(c => c.allowedValues && c.allowedValues.length > 0);
+
+  if (validCols.length > 0) {
+    // Header for Reference sheet
+    const refHeaderRow = refSheet.getRow(1);
+    validCols.forEach((c, i) => {
+      const cell = refHeaderRow.getCell(i + 1);
+      cell.value = c.label || c.key;
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0284C7" } };
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    });
+
+    validCols.forEach((col, vIdx) => {
+      const uniqueValues = Array.from(new Set(col.allowedValues?.map(v => v.trim()).filter(Boolean) || []));
+      uniqueValues.forEach((val, rIdx) => {
+        refSheet.getRow(rIdx + 2).getCell(vIdx + 1).value = val;
+      });
+
+      // Apply Data Validation to the main sheet
+      const colLetter = ws.getColumn(col.key).letter;
+      const refColLetter = refSheet.getColumn(vIdx + 1).letter;
+      const range = `${colLetter}${dataStartRow}:${colLetter}1000`;
+      
+      ws.dataValidations.model[range] = {
+        type: "list",
+        allowBlank: true,
+        formulae: [`Reference!$${refColLetter}$2:$${refColLetter}$${uniqueValues.length + 1}`],
+        showErrorMessage: true,
+        errorStyle: "warning",
+        errorTitle: "Invalid Selection",
+        error: "Please pick a valid value from the list.",
+        showInputMessage: true,
+        promptTitle: "Allowed Values",
+        prompt: "Pick a value from the dropdown list."
+      };
+    });
+  }
+
+  // Handle Date validations
+  cols.forEach((col) => {
+    if (col.type === "date") {
+      const colLetter = ws.getColumn(col.key).letter;
+      const range = `${colLetter}${dataStartRow}:${colLetter}1000`;
+      ws.dataValidations.model[range] = {
+        type: "date",
+        operator: "between",
+        allowBlank: true,
+        formulae: [new Date(2000, 0, 1), new Date(2099, 11, 31)],
+        showErrorMessage: true,
+        errorStyle: "warning",
+        errorTitle: "Invalid Date",
+        error: "Please enter a valid date (YYYY-MM-DD) between 2000 and 2100.",
+        showInputMessage: true,
+        promptTitle: "Date Format",
+        prompt: "YYYY-MM-DD (e.g., 2024-06-15)"
+      };
+    }
+  });
+
+  // ── FINAL DOWNLOAD ──────────────────────────────────────────────────────────
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = window.URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
+  
+  let finalName = config.fileName;
+  finalName = finalName.replace(/\.(xml|xls)$/i, ".xlsx");
+  if (!finalName.toLowerCase().endsWith(".xlsx")) finalName += ".xlsx";
+  
+  anchor.download = finalName;
   anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-}
-
-export function downloadEnterpriseExcelTemplate(config: ExcelTemplateConfig) {
-  const headers = config.columns.map((column) => `${column.key}${column.required ? " *" : ""}`);
-  const headerKeys = config.columns.map((column) => column.key);
-  const notes = config.columns.map((column) => [column.label, column.description, column.format].filter(Boolean).join(" - "));
-  const uploadStartRow = 7;
-  const validationStartRow = uploadStartRow;
-  const validationEndRow = 500;
-  const columnXml = config.columns
-    .map((column) => `<Column ss:AutoFitWidth="0" ss:Width="${column.width || 130}"/>`)
-    .join("");
-  const validations = config.columns
-    .map((column, index) => {
-      if (column.allowedValues?.length) return excelValidationXml(index + 1, column.allowedValues, validationStartRow, validationEndRow);
-      if (column.type === "date") return excelDateValidationXml(index + 1, validationStartRow, validationEndRow);
-      return "";
-    })
-    .join("");
-
-  const instructionText = (config.instructions || [
-    "Fill data in the Machine Upload sheet only.",
-    "Required columns are marked with * and highlighted.",
-    "Use dropdown values where available. Do not rename database column headers.",
-    "Dates must be in YYYY-MM-DD format.",
-  ]).join(" ");
-
-  const uploadRows = [
-    excelRow([`<Cell ss:MergeAcross="${Math.max(0, config.columns.length - 1)}" ss:StyleID="title"><Data ss:Type="String">${escapeXml(config.title)}</Data></Cell>`], 28),
-    excelRow([`<Cell ss:MergeAcross="${Math.max(0, config.columns.length - 1)}" ss:StyleID="subtitle"><Data ss:Type="String">${escapeXml(instructionText)}</Data></Cell>`], 42),
-    excelRow(config.columns.map((column) => excelCell(column.required ? "Required" : "Optional", column.required ? "requiredFlag" : "optionalFlag")), 22),
-    excelRow(notes.map((note) => excelCell(note, "note")), 44),
-    excelRow(headerKeys.map((header) => excelCell(header, "technicalHeader")), 20),
-    excelRow(headers.map((header, index) => excelCell(header, config.columns[index].required ? "requiredHeader" : "header")), 24),
-    ...config.rows.map((row, rowIndex) =>
-      excelRow(
-        config.columns.map((column, columnIndex) =>
-          excelCell(row[columnIndex] || "", rowIndex % 2 === 0 ? "body" : "bodyAlt", column.type === "number" ? "Number" : "String"),
-        ),
-      ),
-    ),
-  ].join("\n");
-
-  const referenceRows = [
-    excelRow([excelCell("Reference Group", "header"), excelCell("Allowed Value", "header")]),
-    ...(config.referenceSections || []).flatMap((section) => {
-      const values = section.values.length > 0 ? section.values : ["No values available"];
-      return values.map((value) => excelRow([excelCell(section.title, "body"), excelCell(value, "body")]));
-    }),
-  ].join("\n");
-
-  const fieldRows = [
-    excelRow(["Field", "Required", "Type", "Allowed Values", "Description"].map((value) => excelCell(value, "header"))),
-    ...config.columns.map((column) =>
-      excelRow([
-        excelCell(column.key, "body"),
-        excelCell(column.required ? "Yes" : "No", column.required ? "requiredFlag" : "optionalFlag"),
-        excelCell(column.type || "text", "body"),
-        excelCell(optionText(column.allowedValues) || "Free text", "body"),
-        excelCell([column.label, column.description, column.format].filter(Boolean).join(" - "), "body"),
-      ]),
-    ),
-  ].join("\n");
-
-  const instructionRows = [
-    excelRow([excelCell("Step", "header"), excelCell("Guidance", "header")]),
-    excelRow([excelCell("1", "body"), excelCell("Download a blank template for production imports or a demo file for examples.", "body")]),
-    excelRow([excelCell("2", "body"), excelCell("Fill the Machine Upload sheet. Keep the technical header row unchanged.", "body")]),
-    excelRow([excelCell("3", "body"), excelCell("Use dropdown/reference values for plant, department, module, type, asset type, criticality, status, vendor, and cost center.", "body")]),
-    excelRow([excelCell("4", "body"), excelCell("Upload the saved .xls or CSV file from Machine Master. Errors show exact row numbers.", "body")]),
-  ].join("\n");
-
-  const xml = `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
- <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
-  <Title>${escapeXml(config.title)}</Title>
- </DocumentProperties>
- <Styles>
-  <Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11"/></Style>
-  <Style ss:ID="title"><Font ss:FontName="Calibri" ss:Bold="1" ss:Size="16" ss:Color="#0F172A"/><Interior ss:Color="#E0F2FE" ss:Pattern="Solid"/></Style>
-  <Style ss:ID="subtitle"><Alignment ss:WrapText="1" ss:Vertical="Top"/><Font ss:FontName="Calibri" ss:Size="10" ss:Color="#334155"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>
-  <Style ss:ID="header"><Font ss:FontName="Calibri" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1E3A5F" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-  <Style ss:ID="requiredHeader"><Font ss:FontName="Calibri" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#B91C1C" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center" ss:WrapText="1"/></Style>
-  <Style ss:ID="technicalHeader"><Font ss:FontName="Calibri" ss:Bold="1" ss:Color="#1E293B"/><Interior ss:Color="#E2E8F0" ss:Pattern="Solid"/></Style>
-  <Style ss:ID="requiredFlag"><Font ss:FontName="Calibri" ss:Bold="1" ss:Color="#7F1D1D"/><Interior ss:Color="#FEE2E2" ss:Pattern="Solid"/></Style>
-  <Style ss:ID="optionalFlag"><Font ss:FontName="Calibri" ss:Color="#334155"/><Interior ss:Color="#E0F2FE" ss:Pattern="Solid"/></Style>
-  <Style ss:ID="note"><Alignment ss:WrapText="1" ss:Vertical="Top"/><Font ss:FontName="Calibri" ss:Size="9" ss:Color="#475569"/><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/></Style>
-  <Style ss:ID="body"><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/></Borders></Style>
-  <Style ss:ID="bodyAlt"><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/></Borders></Style>
- </Styles>
- <Worksheet ss:Name="${escapeXml(config.uploadSheetName)}">
-  <Table>${columnXml}${uploadRows}</Table>
-  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><FreezePanes/><FrozenNoSplit/><SplitHorizontal>6</SplitHorizontal><TopRowBottomPane>6</TopRowBottomPane><ActivePane>2</ActivePane></WorksheetOptions>
-  ${validations}
- </Worksheet>
- <Worksheet ss:Name="Instructions"><Table><Column ss:Width="90"/><Column ss:Width="620"/>${instructionRows}</Table></Worksheet>
- <Worksheet ss:Name="Field Guide"><Table><Column ss:Width="140"/><Column ss:Width="80"/><Column ss:Width="80"/><Column ss:Width="280"/><Column ss:Width="420"/>${fieldRows}</Table></Worksheet>
- <Worksheet ss:Name="Master Data"><Table><Column ss:Width="180"/><Column ss:Width="360"/>${referenceRows}</Table><WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><Visible>SheetHidden</Visible></WorksheetOptions></Worksheet>
-</Workbook>`;
-
-  downloadExcelXml(config.fileName, xml);
+  window.URL.revokeObjectURL(url);
 }
 
 /** Find the header row in a 2D array by scanning for a known column name.
@@ -338,7 +446,7 @@ export function findHeaderRowFromRows(rows: string[][], requiredHeader: string):
     .map((row, index) => ({ row, index }))
     .filter(({ row }) => row.some((cell) => normalizeHeaderName(cell.replace(/\s+\*$/, "")) === requiredHeader))
     .map(({ index }) => index);
-  const headerIndex = headerIndexes[headerIndexes.length - 1] ?? -1;
+  const headerIndex = headerIndexes[0] ?? -1;
   if (headerIndex < 0) return rows;
 
   const headerRow = rows[headerIndex].map((cell) => cell.replace(/\s+\*$/, ""));
@@ -359,7 +467,7 @@ export function parseExcelXmlRows(content: string, requiredHeader: string) {
     .map((row, index) => ({ row, index }))
     .filter(({ row }) => row.some((cell) => normalizeHeaderName(cell.replace(/\s+\*$/, "")) === requiredHeader))
     .map(({ index }) => index);
-  const headerIndex = headerIndexes[headerIndexes.length - 1] ?? -1;
+  const headerIndex = headerIndexes[0] ?? -1;
   if (headerIndex < 0) return [];
   const headerRow = rows[headerIndex].map((cell) => cell.replace(/\s+\*$/, ""));
   return [headerRow, ...rows.slice(headerIndex + 1).filter((row) => row.some((cell) => cell.trim().length > 0))];

@@ -16,6 +16,19 @@ const ROOT_ADMIN_MODULE_ALLOWLIST = new Set([
   'NOTIFICATIONS',
   'LOGS',
   'SECURITY',
+  'VISITOR',
+  'WORKORDERS',
+  'ASSETS',
+  'PM',
+  'CALIBRATION',
+  'AMC',
+  'REPORTS',
+  'ANALYTICS',
+  'GATES',
+  'SHIFTS',
+  'BENCHMARKING',
+  'SAFETY',
+  'ESG',
 ]);
 
 const MODULE_ALIASES: Record<string, string[]> = {

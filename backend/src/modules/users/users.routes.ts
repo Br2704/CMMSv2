@@ -314,7 +314,7 @@ usersRouter.post('/users', requirePermission('USERS', 'CREATE'), async (req, res
     const requestedSystemRole = requestedRoles.find((role) => isSystemGlobalRole(role));
     const resolvedOrganizationId = requestedSystemRole === 'ROOT_ADMIN'
       ? null
-      : await resolveOrganizationIdForPlant(resolvedPlantId);
+      : (await resolveOrganizationIdForPlant(resolvedPlantId)) ?? req.auth!.organizationId ?? null;
     if (!requestedSystemRole && resolvedPlantId && !resolvedOrganizationId) {
       conflict('Organization could not be resolved for selected plant');
     }

@@ -58,6 +58,7 @@ describe('dashboard websocket hardening', () => {
             sub: 'test-user-id',
             email: 'security.tester@example.com',
             roles: ['ADMIN'],
+            organizationId: 'test-org-id',
             plantIds: [],
             accessAllPlants: true,
             mfaVerified: true,

@@ -102,6 +102,7 @@ describe('Security Hardening Tests', () => {
       const token = jwt.signAccessToken({
         ...testPayload,
         roles: ['USER'],
+        organizationId: null,
         plantIds: [],
         accessAllPlants: false,
       });

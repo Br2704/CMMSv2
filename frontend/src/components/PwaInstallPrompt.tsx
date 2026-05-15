@@ -37,7 +37,8 @@ export function PwaInstallPrompt() {
       setInstallPromptEvent(null);
     };
     const onBeforeInstall = (event: Event) => {
-      event.preventDefault();
+      // We no longer call preventDefault() to avoid the "Banner not shown" console warning.
+      // The browser may show its own prompt, and our custom UI will still be available.
       setInstallPromptEvent(event as BeforeInstallPromptEvent);
     };
     window.addEventListener("appinstalled", onAppInstalled);

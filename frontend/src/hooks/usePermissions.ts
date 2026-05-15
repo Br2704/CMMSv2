@@ -68,8 +68,8 @@ const FEATURE_BY_MODULE: Record<string, string> = {
   diagnostics: "ADVANCED_ANALYTICS",
 };
 
-function normalizeAction(action: string): string {
-  const input = action.toUpperCase();
+function normalizeAction(action: string | null | undefined): string {
+  const input = (action || "").toUpperCase();
   if (input === "VIEW" || input === "READ") return "READ";
   if (input === "CREATE" || input === "ADD") return "CREATE";
   if (input === "EDIT" || input === "UPDATE") return "UPDATE";
@@ -78,12 +78,14 @@ function normalizeAction(action: string): string {
 }
 
 function normalizeModuleIds(moduleId: string): string[] {
+  if (!moduleId) return ["*"];
   const key = moduleId.toLowerCase();
   const aliases = MODULE_ALIAS[key] ?? [moduleId, "*"];
   return aliases.map((item) => item.toUpperCase());
 }
 
-function normalizeRole(role: string): string {
+function normalizeRole(role: string | null | undefined): string {
+  if (!role) return "USER";
   const normalized = role
     .trim()
     .toUpperCase()
@@ -98,17 +100,15 @@ function normalizeRole(role: string): string {
 }
 
 function policyAllowsModule(moduleId: string, roles: string[]): boolean {
+  if (!moduleId) return true;
   const normalizedRoles = roles.map(normalizeRole);
   const normalizedModuleId = moduleId.trim();
   const normalizedModuleLower = normalizedModuleId.toLowerCase();
   const upperModuleId = normalizedModuleId.toUpperCase();
 
   if (normalizedModuleLower === "security-center" || upperModuleId === "SECURITY-CENTER") {
-    return (
-      normalizedRoles.includes("ROOT_ADMIN") ||
-      normalizedRoles.includes("SUPERADMIN") ||
-      normalizedRoles.includes("ADMIN")
-    );
+    if (normalizedRoles.some(r => ["ROOT_ADMIN", "SUPERADMIN", "ADMIN"].includes(r))) return true;
+    // Fall through to let explicit permission maps grant access
   }
 
   if (normalizedRoles.includes("ROOT_ADMIN")) {
@@ -120,29 +120,33 @@ function policyAllowsModule(moduleId: string, roles: string[]): boolean {
   }
 
   if (normalizedRoles.includes("ADMIN")) {
-    if (upperModuleId === "PLANTS" || normalizedModuleLower === "masters.plant") {
-      return false;
-    }
+    // ADMIN (Plant Admin) can now access Plant Master (READ-only via hasModuleAccess)
     return true;
+  }
+
+  if (normalizedRoles.includes("MAINTENANCE")) {
+    const allowed = ["dashboard", "workorders", "assets", "pmpd", "pm", "calibration", "logs"];
+    return allowed.includes(normalizedModuleLower) || allowed.includes(upperModuleId.toLowerCase());
   }
 
   if (normalizedRoles.includes("USER")) {
-    if (upperModuleId === "PLANTS" || normalizedModuleLower === "masters" || normalizedModuleLower.startsWith("masters.")) {
-      return false;
-    }
-    return true;
+    const allowed = ["workorders", "assets", "visitor-experience", "logs", "notifications", "profile"];
+    return allowed.includes(normalizedModuleLower) || allowed.includes(upperModuleId.toLowerCase());
   }
 
   if (normalizedRoles.includes("VENDOR")) {
-    return upperModuleId === "AMC" || normalizedModuleLower === "amc";
+    const allowed = ["workorders", "notifications", "profile"];
+    return allowed.includes(normalizedModuleLower) || allowed.includes(upperModuleId.toLowerCase());
   }
 
   if (normalizedRoles.includes("SECURITY")) {
-    return upperModuleId === "GATES" || normalizedModuleLower === "security-gate" || normalizedModuleLower === "visitor-experience";
+    const allowed = ["gates", "security-gate", "notifications", "profile"];
+    return allowed.includes(normalizedModuleLower) || allowed.includes(upperModuleId.toLowerCase());
   }
 
   if (normalizedRoles.includes("VISITOR") || normalizedRoles.includes("TEMPORARY_VISITOR")) {
-    return upperModuleId === "GATES" || normalizedModuleLower === "security-gate" || normalizedModuleLower === "visitor-experience";
+    const allowed = ["visitor-experience", "notifications", "profile"];
+    return allowed.includes(normalizedModuleLower) || allowed.includes(upperModuleId.toLowerCase());
   }
 
   return true;
@@ -191,6 +195,7 @@ export function usePermissions() {
   const roleKey = permissionsMe?.roleKey || userRoles[0] || "USER";
 
   const resolveFeatureForModule = (moduleId: string): string | null => {
+    if (!moduleId) return null;
     const normalized = moduleId.trim().toLowerCase();
     return FEATURE_BY_MODULE[normalized] || null;
   };
@@ -207,14 +212,19 @@ export function usePermissions() {
     const requestedAction = normalizeAction(action);
     const acceptableModuleIds = normalizeModuleIds(moduleId);
 
-    // Super admins are not blocked by feature flags or transient RBAC sync gaps,
-    // except Plant Master create/delete which is intentionally restricted.
-    if (normalizedRoles.includes("SUPERADMIN")) {
-      const isPlantModule = acceptableModuleIds.some((moduleKey) => moduleKey === "PLANTS" || moduleKey === "MASTERS.PLANT");
-      if (isPlantModule && (requestedAction === "CREATE" || requestedAction === "DELETE")) {
-        return false;
-      }
+    // Root admins have absolute governance access.
+    // Super admins have full access within their organizational scope.
+    if (normalizedRoles.includes("ROOT_ADMIN") || normalizedRoles.includes("SUPERADMIN")) {
       return true;
+    }
+
+    // ADMIN role (Plant/Org Admin) can VIEW Plant Master but cannot CREATE, UPDATE, or DELETE.
+    // This ensures they only see their scoped data (handled in component) without modification rights.
+    if (normalizedRoles.includes("ADMIN")) {
+      const isPlantModule = acceptableModuleIds.some((moduleKey) => moduleKey === "PLANTS" || moduleKey === "MASTERS.PLANT");
+      if (isPlantModule) {
+        return requestedAction === "READ";
+      }
     }
 
     if (!hasFeatureAccess(moduleId)) return false;

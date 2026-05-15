@@ -39,23 +39,22 @@ const DEFAULT_ORG_ROLES = [
 async function ensureDefaultOrgRoles(organizationId: string) {
   const roleRepo = AppDataSource.getRepository(OrgRoleEntity);
   const catalogRepo = AppDataSource.getRepository(RoleEntity);
+
   for (const roleDef of DEFAULT_ORG_ROLES) {
-    const existing = await roleRepo.findOneBy({ organizationId, key: roleDef.key });
     await ensureRoleCatalogEntry(catalogRepo, roleDef.key, {
       description: `${roleDef.name} role`,
       isSystem: true,
     });
-    if (existing) {
-      continue;
-    }
-    await roleRepo.save(
-      roleRepo.create({
+
+    await roleRepo.upsert(
+      {
         organizationId,
         key: roleDef.key,
         name: roleDef.name,
         isSystem: roleDef.isSystem,
         isActive: true,
-      }),
+      },
+      ['organizationId', 'key'],
     );
   }
 }
@@ -343,7 +342,9 @@ rootRoleAccessRouter.get('/orgs/:orgId/rbac/version', async (req, res, next) => 
     const normalizedRoles = req.auth?.roles.map((role) => normalizeRoleName(role)) ?? [];
     const normalizedRoleKey = normalizeRoleName(req.auth?.roleKey ?? '');
     const isRootAdmin = normalizedRoleKey === 'ROOT_ADMIN' || normalizedRoles.includes('ROOT_ADMIN');
-    if (!isRootAdmin && req.auth?.organizationId !== params.orgId) {
+    const isSuperAdmin = normalizedRoleKey === 'SUPERADMIN' || normalizedRoles.includes('SUPERADMIN');
+
+    if (!isRootAdmin && !isSuperAdmin && req.auth?.organizationId !== params.orgId) {
       res.status(403).json(fail('Forbidden'));
       return;
     }

@@ -7,8 +7,10 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   ShieldCheck,
-  Trash2,
+  Trash2, Download,
+  Copy,
 } from "lucide-react";
 
 import { ApiError } from "@/api/http";
@@ -213,7 +215,10 @@ export default function RootRoleAccessMaster() {
   const [isRenameRoleOpen, setIsRenameRoleOpen] = useState(false);
   const [isDeleteRoleOpen, setIsDeleteRoleOpen] = useState(false);
   const [roleNameInput, setRoleNameInput] = useState("");
+  const [roleSearchQuery, setRoleSearchQuery] = useState("");
   const [isRoleSubmitting, setIsRoleSubmitting] = useState(false);
+  const [isCloneRoleOpen, setIsCloneRoleOpen] = useState(false);
+  const [roleToClone, setRoleToClone] = useState<OrgRole | null>(null);
 
   const autosaveRequestRef = useRef(0);
   const didLoadPermissionsRef = useRef(false);
@@ -231,6 +236,19 @@ export default function RootRoleAccessMaster() {
     [permissionMap, selectedPage],
   );
   const permissionDirty = serializePermissionMap(permissionMap) !== serializePermissionMap(permissionInitial);
+  const filteredRoles = useMemo(
+    () =>
+      roles.filter((role) => {
+        if (!roleSearchQuery) return true;
+        const query = roleSearchQuery.toLowerCase();
+        return role.name.toLowerCase().includes(query) || role.key.toLowerCase().includes(query);
+      }).sort((a, b) => {
+        if (a.isSystem !== b.isSystem) return a.isSystem ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      }),
+    [roles, roleSearchQuery],
+  );
+
   const allowedPages = useMemo(
     () => NON_ROOT_PAGE_SECTIONS.flatMap((section) => NON_ROOT_APP_PAGES.filter((page) => page.section === section)),
     [],
@@ -485,6 +503,54 @@ export default function RootRoleAccessMaster() {
           ? `Synced${lastSyncedAt ? ` at ${formatSyncTime(lastSyncedAt)}` : ""}`
           : "Ready";
 
+  const handleCloneRole = async () => {
+    if (!selectedOrgId || !roleToClone) return;
+    const name = roleNameInput.trim();
+    const key = buildRoleKey(name);
+    if (!name || !key) {
+      toast.error("Role name is required");
+      return;
+    }
+
+    setIsRoleSubmitting(true);
+    try {
+      // 1. Create the new role
+      const response = await createOrgRole(selectedOrgId, { key, name, isActive: true });
+      const newRoleId = response.data.id;
+
+      // 2. Fetch source permissions
+      const sourcePermsResponse = await getOrgRolePermissions(selectedOrgId, roleToClone.id);
+      const sourcePerms = sanitizePermissionMap(sourcePermsResponse.data || {});
+
+      // 3. Save permissions to new role
+      await saveOrgRolePermissions(selectedOrgId, newRoleId, sourcePerms);
+
+      await fetchRoles(selectedOrgId);
+      setSelectedRoleId(newRoleId);
+      setRoleNameInput("");
+      setIsCloneRoleOpen(false);
+      setRoleToClone(null);
+      invalidatePermissionsCache();
+      toast.success(`Role cloned as ${name}`);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to clone role"));
+    } finally {
+      setIsRoleSubmitting(false);
+    }
+  };
+
+  const handleGrantAll = () => {
+    if (!selectedPage) return;
+    setPermissionMap((current) => writePageActions(current, selectedPage, [...APP_PERMISSION_ACTIONS]));
+    toast.success(`Full access granted for ${selectedPage.title}`);
+  };
+
+  const handleRevokeAll = () => {
+    if (!selectedPage) return;
+    setPermissionMap((current) => writePageActions(current, selectedPage, []));
+    toast.success(`All access revoked for ${selectedPage.title}`);
+  };
+
   return (
     <PageShell className="overflow-hidden">
       <div className="space-y-4">
@@ -538,12 +604,54 @@ export default function RootRoleAccessMaster() {
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground">Roles for {selectedOrganization?.name || "the selected organization"}.</p>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <InputField
+                  value={roleSearchQuery}
+                  onChange={setRoleSearchQuery}
+                  placeholder="Search roles..."
+                  className="h-9 pl-9 text-xs"
+                />
+              </div>
             </CardHeader>
             <CardContent className="flex min-h-0 flex-1 flex-col gap-3 pt-0">
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="outline" onClick={openRenameRole} disabled={!selectedRole}>
                   <Pencil className="mr-1 h-4 w-4" />
                   Rename
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (!selectedRole) return;
+                    setRoleToClone(selectedRole);
+                    setRoleNameInput(`${selectedRole.name} Copy`);
+                    setIsCloneRoleOpen(true);
+                  }}
+                  disabled={!selectedRole}
+                >
+                  <Copy className="mr-1 h-4 w-4" />
+                  Clone
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (!selectedRole) return;
+                    const blob = new Blob([JSON.stringify(permissionMap, null, 2)], { type: "application/json" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${selectedRole.key}_permissions.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  disabled={!selectedRole}
+                  title="Export Role Config as JSON"
+                >
+                  <Download className="mr-1 h-4 w-4" />
+                  Export
                 </Button>
                 <Button
                   size="sm"
@@ -565,13 +673,13 @@ export default function RootRoleAccessMaster() {
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Loading roles...
                 </div>
-              ) : roles.length === 0 ? (
+              ) : filteredRoles.length === 0 ? (
                 <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-                  No roles found for this organization.
+                  No roles match your search.
                 </div>
               ) : (
                 <div className="space-y-2 overflow-y-auto pr-1">
-                  {roles.map((role) => {
+                  {filteredRoles.map((role) => {
                     const isCurrent = role.id === selectedRoleId;
                     return (
                       <button
@@ -593,10 +701,10 @@ export default function RootRoleAccessMaster() {
                               {role.isActive ? "Active" : "Inactive"}
                             </StatusBadge>
                             {role.isSystem ? (
-                              <StatusBadge variant="info" showDot={false}>
-                                System
-                              </StatusBadge>
-                            ) : null}
+                              <StatusBadge variant="info" showDot={false}>System Role</StatusBadge>
+                            ) : (
+                              <StatusBadge variant="warning" showDot={false}>Custom Role</StatusBadge>
+                            )}
                           </div>
                         </div>
                       </button>
@@ -610,7 +718,7 @@ export default function RootRoleAccessMaster() {
           <Card className="flex min-h-0 flex-col shadow-card">
             <CardHeader className="space-y-3 pb-3">
               <CardTitle className="text-base">Pages</CardTitle>
-              <p className="text-sm text-muted-foreground">Choose one page and edit only that page's access.</p>
+              <p className="text-sm text-muted-foreground">Choose one page and edit only that page's access. The View badge indicates if this page will appear in the user's sidebar (Effective Permission Preview).</p>
             </CardHeader>
             <CardContent className="min-h-0 flex-1 overflow-y-auto pt-0">
               {!selectedRole ? (
@@ -671,7 +779,17 @@ export default function RootRoleAccessMaster() {
                     {selectedPage ? `${selectedPage.title} access for ${selectedRole?.name || "the selected role"}.` : "Select a page to continue."}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {selectedPage && (
+                    <div className="mr-2 flex gap-1">
+                      <Button size="xs" variant="outline" className="h-7 px-2 text-[10px]" onClick={handleGrantAll}>
+                        Grant All
+                      </Button>
+                      <Button size="xs" variant="outline" className="h-7 px-2 text-[10px]" onClick={handleRevokeAll}>
+                        Revoke All
+                      </Button>
+                    </div>
+                  )}
                   {selectedRole ? (
                     <StatusBadge variant="info" showDot={false}>
                       {selectedRole.name}
@@ -791,6 +909,23 @@ export default function RootRoleAccessMaster() {
         onConfirm={handleDeleteRole}
         isLoading={isRoleSubmitting}
       />
+
+      <FormDialog
+        open={isCloneRoleOpen}
+        onOpenChange={setIsCloneRoleOpen}
+        title="Clone Role"
+        description={`Create a new role by copying permissions from ${roleToClone?.name}.`}
+        onSubmit={handleCloneRole}
+        submitLabel={isRoleSubmitting ? "Cloning..." : "Clone Role"}
+      >
+        <InputField label="New Role Name" value={roleNameInput} onChange={setRoleNameInput} placeholder="e.g. Maintenance Planner" required />
+        <div className="space-y-2">
+          <Label className="text-xs font-medium">New Role Key</Label>
+          <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+            {buildRoleKey(roleNameInput) || "Role key will be generated from the name"}
+          </div>
+        </div>
+      </FormDialog>
     </PageShell>
   );
 }

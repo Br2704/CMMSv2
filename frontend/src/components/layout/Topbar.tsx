@@ -14,7 +14,9 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useBrandingStore } from "@/store/branding.store";
 import { formatDistanceToNow } from "date-fns";
 import { ViewDialog, DetailRow, DetailSection } from "@/components/shared/ViewDialog";
+import { ProfileEditDialog } from "@/components/shared/ProfileEditDialog";
 import { toast } from "sonner";
+import { UserCog } from "lucide-react";
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -24,6 +26,7 @@ interface TopbarProps {
 export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
   const { user, logout, activePlantCode, activePlantName } = useAuthStore();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const isRootUser = isRootAdmin(user);
   const brandingOrganizationName = useBrandingStore((state) => state.organizationName);
@@ -38,9 +41,11 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
   const notificationsSubtitle =
     notifications.length === 0 ? "No updates right now" : `${unreadCount} unread of ${notifications.length}`;
 
-  const getInitials = (name: string) => {
+  const getInitials = (name: string | undefined | null) => {
+    if (!name) return "U";
     return name
       .split(" ")
+      .filter(Boolean)
       .map((n) => n[0])
       .join("")
       .toUpperCase();
@@ -264,7 +269,7 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
                   <p className="text-sm text-muted-foreground">{user.email}</p>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {user.roles.map((role) => (
+                  {user?.roles?.map((role) => (
                     <StatusBadge key={role} variant={getRoleBadgeVariant(role)} showDot={false}>
                       {role.replace(/_/g, " ")}
                     </StatusBadge>
@@ -287,7 +292,18 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
               <DetailRow label="Status" value={<span className="inline-flex items-center gap-2"><Shield className="h-4 w-4 text-muted-foreground" />{user.isActive ? "Active" : "Inactive"}</span>} />
             </DetailSection>
 
-            <div className="flex justify-end">
+            <div className="flex justify-between items-center pt-2">
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => {
+                  setIsProfileOpen(false);
+                  setIsEditProfileOpen(true);
+                }}
+              >
+                <UserCog className="h-4 w-4" />
+                Edit Profile
+              </Button>
               <Button variant="destructive" className="gap-2" onClick={logout}>
                 <LogOut className="h-4 w-4" />
                 Logout
@@ -296,6 +312,8 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
           </div>
         ) : null}
       </ViewDialog>
+
+      <ProfileEditDialog open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen} />
     </header>
   );
 }

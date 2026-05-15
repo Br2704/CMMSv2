@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -62,12 +63,21 @@ export default function Login() {
   }, [searchParams]);
 
   const resolvePostLoginPath = (targetUser: Parameters<typeof isSuperAdmin>[0]): string => {
-    if (!returnTo) return "/";
-    const isRootOnlyPath = returnTo.startsWith("/root/");
-    if (isRootOnlyPath && !isRootAdmin(targetUser)) {
-      return "/";
+    if (!targetUser) return "/";
+    const roles = (targetUser.roles || []).map(r => r.toUpperCase());
+    
+    if (returnTo) {
+      const isRootOnlyPath = returnTo.startsWith("/root/");
+      if (isRootOnlyPath && isRootAdmin(targetUser)) return returnTo;
+      if (!isRootOnlyPath) return returnTo;
     }
-    return returnTo;
+
+    if (roles.includes("ROOT_ADMIN")) return "/root/dashboard";
+    if (roles.includes("SECURITY") || roles.includes("SECURITY_USER")) return "/security-gate";
+    if (roles.includes("VENDOR")) return "/work-orders";
+    if (roles.includes("VISITOR") || roles.includes("TEMPORARY_VISITOR")) return "/visitor-experience";
+    
+    return "/";
   };
 
   useEffect(() => {

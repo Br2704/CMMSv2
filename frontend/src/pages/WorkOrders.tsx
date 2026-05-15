@@ -303,7 +303,7 @@ export default function WorkOrders() {
     },
   });
 
-  const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "incharge" | "all" | "approval">("assigned");
+  const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "incharge" | "all" | "approval" | "vendor">("assigned");
 
   const { data: allWorkOrders = [], isLoading, isFetching, refetch, dataUpdatedAt } = useQuery({
     queryKey: ["work_orders", ...activePlantIds, activeTab, actorIds],
@@ -342,11 +342,14 @@ export default function WorkOrders() {
   const activeAssetHistoryId = assetIdFromQuery?.trim() || "";
   const isAssetHistoryMode = Boolean(activeAssetHistoryId);
 
+  const normalizedRoles = useMemo(() => (user?.roles ?? []).map((role) => (role || "").toUpperCase()), [user?.roles]);
+
   useEffect(() => {
+    const userIsVendor = normalizedRoles.includes("VENDOR");
     if (!authEnabled || activeTabInitializedRef.current) return;
-    setActiveTab(userIsAdmin ? "all" : userIsIncharge ? "incharge" : "assigned");
+    setActiveTab(userIsAdmin ? "all" : userIsVendor ? "vendor" : userIsIncharge ? "incharge" : "assigned");
     activeTabInitializedRef.current = true;
-  }, [authEnabled, userIsAdmin, userIsIncharge]);
+  }, [authEnabled, userIsAdmin, userIsIncharge, normalizedRoles]);
 
   useEffect(() => {
     if (activeTab === "all" && !userIsAdmin) {
@@ -367,6 +370,9 @@ export default function WorkOrders() {
     if (userIsIncharge && activeTab === "incharge") return inchargeWorkOrders;
     if (activeTab === "approval") return approvalQueueWorkOrders;
     if (userIsAdmin && activeTab === "all") return allWorkOrders;
+    if (activeTab === "vendor") {
+      return allWorkOrders.filter((wo: any) => wo.vendor_id === user?.id || wo.assigned_vendor_id === user?.id);
+    }
     return assignedWorkOrders;
   }, [activeTab, allWorkOrders, approvalQueueWorkOrders, assignedWorkOrders, inchargeWorkOrders, isAssetHistoryMode, raisedWorkOrders, userIsAdmin, userIsIncharge]);
 
@@ -1096,7 +1102,7 @@ export default function WorkOrders() {
 
   const confirmManualVerification = () => {
     if (!verifyTargetWO) return;
-    const manualCode = manualMachineCode.trim();
+    const manualCode = (manualMachineCode || "").trim();
     if (!manualCode) {
       toast.error("Enter the assigned machine code to continue");
       return;
@@ -1235,7 +1241,7 @@ export default function WorkOrders() {
       }
 
       if (!resolved) {
-        const rawCandidate = rawValue.trim();
+        const rawCandidate = (rawValue || "").trim();
         if (rawCandidate) {
           try {
             const response = await resolveQrMachineCode(rawCandidate);
@@ -1265,7 +1271,7 @@ export default function WorkOrders() {
       toast.error("Confirm all safety checks before starting work");
       return;
     }
-    if (!openData.initial_assessment.trim()) {
+    if (!(openData.initial_assessment || "").trim()) {
       toast.error("Initial assessment is required before work begins");
       return;
     }
@@ -1273,7 +1279,7 @@ export default function WorkOrders() {
       toast.error("Scan the assigned machine QR before starting work");
       return;
     }
-    if (verificationMethod === "MANUAL_ENTRY" && !manualMachineCode.trim()) {
+    if (verificationMethod === "MANUAL_ENTRY" && !(manualMachineCode || "").trim()) {
       toast.error("Enter the assigned machine code before starting work");
       return;
     }
@@ -1284,8 +1290,8 @@ export default function WorkOrders() {
         verification_method: verificationMethod,
         scanned_asset_id: verificationMethod === "QR_SCAN" ? verifiedAssetId : null,
         manual_machine_code: verificationMethod === "MANUAL_ENTRY" ? manualMachineCode.trim() : null,
-        initial_assessment: openData.initial_assessment.trim(),
-        assigned_to_notes: openData.assigned_to_notes.trim() || null,
+        initial_assessment: (openData.initial_assessment || "").trim(),
+        assigned_to_notes: (openData.assigned_to_notes || "").trim() || null,
         estimated_time_minutes: Math.max(0, Number.parseInt(openData.estimated_minutes, 10) || 0),
         safety_checklist: {
           ...safetyChecklist,

@@ -239,15 +239,26 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
 function HomeRoute() {
   const { user } = useAuthStore();
-  const normalizedRoles = (user?.roles ?? []).map((role) => role.toUpperCase());
-  const isVisitorOnly = normalizedRoles.length > 0 && normalizedRoles.every((role) => role === "VISITOR" || role === "TEMPORARY_VISITOR");
-
+  const normalizedRoles = (user?.roles ?? []).map((role) => (role || "").toUpperCase());
+  
   if (isRootAdmin(user)) {
     return <Navigate to="/root/dashboard" replace />;
   }
 
-  if (isVisitorOnly) {
+  if (normalizedRoles.includes("SECURITY") || normalizedRoles.includes("SECURITY_USER")) {
+    return <Navigate to="/security-gate" replace />;
+  }
+
+  if (normalizedRoles.includes("VENDOR")) {
+    return <Navigate to="/work-orders" replace />;
+  }
+
+  if (normalizedRoles.includes("VISITOR") || normalizedRoles.includes("TEMPORARY_VISITOR")) {
     return <Navigate to="/visitor-experience" replace />;
+  }
+
+  if (normalizedRoles.includes("USER")) {
+    return <Navigate to="/work-orders" replace />;
   }
 
   return (

@@ -56,7 +56,11 @@ export function FormDialog({
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {description && <DialogDescription>{description}</DialogDescription>}
+          {description ? (
+            <DialogDescription>{description}</DialogDescription>
+          ) : (
+            <DialogDescription className="sr-only">Form dialog for {title}</DialogDescription>
+          )}
         </DialogHeader>
         <div className="grid gap-4 py-4">{children}</div>
         <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end sm:space-x-0">

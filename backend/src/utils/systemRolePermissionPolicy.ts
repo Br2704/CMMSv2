@@ -4,7 +4,7 @@ export type PermissionMap = Record<string, string[]>;
 
 const SYSTEM_MANAGED_ORG_ROLE_KEYS = new Set(['SUPERADMIN', 'ADMIN', 'USER', 'VENDOR', 'VISITOR', 'TEMPORARY_VISITOR', 'SECURITY']);
 const USER_BLOCKED_MODULES = new Set(['MASTERS', 'PLANTS', 'ORGANIZATIONS', 'ROLE_ACCESS', 'MODULES', 'DEPARTMENTS', 'USERS', 'VENDORS', 'SHIFTS']);
-const ADMIN_BLOCKED_MODULES = new Set(['PLANTS']);
+const ADMIN_BLOCKED_MODULES = new Set([] as string[]);
 const VENDOR_ALLOWED_MODULES = new Set(['AMC']);
 const SECURITY_ALLOWED_MODULES = new Set(['GATES']);
 const VISITOR_ALLOWED_MODULES = new Set(['GATES']);
@@ -80,6 +80,7 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
   if (normalizedRole === 'ADMIN') {
     const map = buildAllModulesPermissionMap(ADMIN_BLOCKED_MODULES);
     map.ORGANIZATIONS = ['READ'];
+    map.PLANTS = ['READ'];
     return map;
   }
 

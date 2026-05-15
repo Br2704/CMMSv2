@@ -50,16 +50,23 @@ export function startDashboardSocketServer(server: HttpServer) {
   }
 
   dashboardSocketServer = new WebSocketServer({
-    server,
-    path: DASHBOARD_SOCKET_PATH,
+    noServer: true,
+  });
+
+  server.on('upgrade', (request, socket, head) => {
+    const pathname = request.url ? new URL(request.url, `http://${request.headers.host}`).pathname : '';
+    
+    if (pathname === DASHBOARD_SOCKET_PATH) {
+      dashboardSocketServer?.handleUpgrade(request, socket, head, (ws) => {
+        dashboardSocketServer?.emit('connection', ws, request);
+      });
+    }
   });
 
   dashboardSocketServer.on('connection', (socket: WebSocket, request: IncomingMessage) => {
-    logger.info({ path: request.url }, 'Dashboard WebSocket upgrade received');
+    logger.info({ path: request.url, ip: request.socket.remoteAddress }, 'Dashboard WebSocket connected');
 
     const token = extractToken(request);
-    logger.info({ hasToken: !!token }, 'Dashboard WebSocket token extraction');
-
     if (!token) {
       logger.warn({ url: request.url }, 'Dashboard WebSocket rejected: missing token');
       socket.close(4001, 'Unauthorized');

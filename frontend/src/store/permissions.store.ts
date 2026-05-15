@@ -60,8 +60,8 @@ function emitPermissionsInvalidationSignal() {
   }
 }
 
-function normalizeAction(action: string): string {
-  const input = action.trim().toUpperCase();
+function normalizeAction(action: string | null | undefined): string {
+  const input = (action || "").trim().toUpperCase();
   if (input === "VIEW") return "READ";
   if (input === "ADD") return "CREATE";
   if (input === "EDIT") return "UPDATE";
@@ -69,7 +69,8 @@ function normalizeAction(action: string): string {
   return input;
 }
 
-function normalizeRole(role: string): string {
+function normalizeRole(role: string | null | undefined): string {
+  if (!role) return "USER";
   const normalized = role
     .trim()
     .toUpperCase()
@@ -128,7 +129,7 @@ function normalizePermissionMap(permissionMap: Record<string, string[]> | undefi
   const normalized: Record<string, string[]> = {};
   if (!permissionMap) return normalized;
   Object.entries(permissionMap).forEach(([moduleKey, actions]) => {
-    const nextModule = moduleKey.trim().toUpperCase();
+    const nextModule = (moduleKey || "").trim().toUpperCase();
     if (!nextModule) return;
     normalized[nextModule] = Array.from(new Set((actions ?? []).map((action) => normalizeAction(action)).filter(Boolean)));
   });
@@ -138,7 +139,7 @@ function normalizePermissionMap(permissionMap: Record<string, string[]> | undefi
 function buildPermissionKeys(permissionMap: Record<string, string[]>): string[] {
   const keys = new Set<string>();
   Object.entries(permissionMap).forEach(([moduleKey, actions]) => {
-    const moduleName = moduleKey.trim().toLowerCase();
+    const moduleName = (moduleKey || "").trim().toLowerCase();
     actions.forEach((action) => {
       keys.add(`${moduleName}.${normalizeAction(action).toLowerCase()}`);
     });
@@ -615,8 +616,8 @@ export const usePermissionsStore = create<PermissionsStoreState>((set, get) => (
     });
   },
 
-  can: (moduleKey: string, action = "READ") => {
-    const normalizedModule = moduleKey.trim().toUpperCase();
+  can: (moduleKey: string | null | undefined, action = "READ") => {
+    const normalizedModule = (moduleKey || "").trim().toUpperCase();
     const normalizedAction = normalizeAction(action);
     const permissionMap = get().permissionsMe?.permissions ?? {};
     const actions = [...(permissionMap[normalizedModule] ?? []), ...(permissionMap["*"] ?? [])].map((item) => item.toUpperCase());

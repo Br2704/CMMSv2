@@ -200,6 +200,16 @@ setUnauthorizedCallback(() => {
     s.setSession(null);
     s.setActivePlant(null, null, null);
   }
+
+  // Force redirect to login if not already there or on a public page
+  if (typeof window !== "undefined") {
+    const path = window.location.pathname;
+    const isPublic = path === "/login" || path.startsWith("/qr/") || path.startsWith("/assets/");
+    if (!isPublic) {
+      const returnTo = encodeURIComponent(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+      window.location.href = `/login?returnTo=${returnTo}`;
+    }
+  }
 });
 
 export async function initializeAuthState(): Promise<void> {

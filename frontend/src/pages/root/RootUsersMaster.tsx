@@ -76,8 +76,9 @@ function getErrorStatus(error: unknown) {
   return undefined;
 }
 
-function normalizeRoleKey(role: string) {
-  const normalized = role.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+function normalizeRoleKey(role: string | null | undefined) {
+  if (!role) return "USER";
+  const normalized = String(role || "").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   if (normalized === "SECURITY_USER") return "SECURITY";
   return normalized;
 }

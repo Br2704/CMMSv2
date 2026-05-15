@@ -199,8 +199,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
           <Link
             to={homeHref}
             className={cn(
-              "flex min-w-0 flex-1 items-center overflow-hidden",
-              isCollapsed && "lg:justify-center",
+              "flex min-w-0 flex-1 items-center justify-center overflow-hidden",
             )}
             onClick={handleNavItemClick}
             title={resolvedTitle}

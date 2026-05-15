@@ -23,39 +23,40 @@ export function createSimplePdf(lines: string[], options: SimplePdfOptions = {})
 
   const commands: string[] = [];
 
-  // Header card
-  commands.push('0.95 0.96 0.98 rg');
-  commands.push('40 770 515 52 re');
-  commands.push('f');
-  commands.push('0.78 0.82 0.88 RG');
-  commands.push('40 770 m');
-  commands.push('555 770 l');
+  // Header - Professional Letterhead
+  commands.push('0 g'); // Black color for text
+  if (subtitle) {
+    commands.push(textLineCommand(subtitle.toUpperCase(), 50, 805, 16)); // Organization Name prominent
+  }
+  commands.push(textLineCommand(title, 50, 788, 12)); // Report Title
+  commands.push(textLineCommand(`Generated: ${generatedAt}`, 50, 775, 8)); // Generation date
+
+  // Decorative header line
+  commands.push('0.1 0.1 0.1 RG');
+  commands.push('40 765 m');
+  commands.push('555 765 l');
   commands.push('S');
 
-  if (options.organizationLogoUrl) {
-    commands.push(textLineCommand(`Organization Logo: ${options.organizationLogoUrl}`, 50, 810, 8));
-  }
-  commands.push(textLineCommand(title, 50, 791, 14));
-  if (subtitle) {
-    commands.push(textLineCommand(subtitle, 50, 778, 10));
-  }
-  commands.push(textLineCommand(`Generated At: ${generatedAt}`, 50, 764, 8));
-
   // Body
-  let y = 742;
+  let y = 740;
   for (const line of safeLines) {
     if (y < 72) break;
     commands.push(textLineCommand(line, 50, y, 10));
     y -= 14;
   }
 
-  // Footer
-  commands.push('0.78 0.82 0.88 RG');
-  commands.push('40 54 m');
-  commands.push('555 54 l');
+  // Footer - TamOptiX Branding
+  commands.push('0.8 0.8 0.8 RG');
+  commands.push('40 60 m');
+  commands.push('555 60 l');
   commands.push('S');
-  commands.push(textLineCommand(footerBranding, 50, 38, 8));
-  commands.push(textLineCommand('Page 1', 520, 38, 8));
+  
+  // Footer text
+  commands.push('0.3 0.3 0.3 rg'); // Dark gray
+  commands.push(textLineCommand('TamOptiX Technologies | Intelligent CMMS Platform', 50, 48, 7));
+  commands.push(textLineCommand(footerBranding, 50, 38, 6));
+  commands.push(textLineCommand('CONFIDENTIAL', 280, 48, 6));
+  commands.push(textLineCommand('Page 1', 520, 48, 7));
 
   const stream = commands.join('\n');
 

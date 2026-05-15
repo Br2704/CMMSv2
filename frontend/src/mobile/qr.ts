@@ -14,8 +14,8 @@ function extractTokenFromPath(pathname: string): string | undefined {
   return undefined;
 }
 
-export function parseQrContent(content: string): ParsedQrContent {
-  const trimmed = content.trim();
+export function parseQrContent(content: string | null | undefined): ParsedQrContent {
+  const trimmed = (content || "").trim();
 
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
     try {

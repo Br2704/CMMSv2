@@ -118,7 +118,8 @@ const MINDMAP_STATE_VERSION = 1;
 
 const isActiveMachineStatus = (status: string | undefined) => status?.toUpperCase() === "ACTIVE";
 
-function normalizeRoleName(role: string) {
+function normalizeRoleName(role: string | null | undefined) {
+  if (!role) return "USER";
   return role.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
@@ -568,7 +569,9 @@ export function EnterpriseAssetMindmap({
     if (!isUserScope) return null;
     const key = (user?.department || "").trim().toLowerCase();
     if (!key) return null;
-    return departments.find((department) => department.name.trim().toLowerCase() === key || department.code.trim().toLowerCase() === key)?.id ?? null;
+    return departments.find((department) => 
+      (department.name || "").trim().toLowerCase() === key || (department.code || "").trim().toLowerCase() === key
+    )?.id ?? null;
   }, [departments, isUserScope, user?.department]);
 
   const scopedAssets = useMemo(() => {

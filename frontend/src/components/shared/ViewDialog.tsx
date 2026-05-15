@@ -31,8 +31,10 @@ export function ViewDialog({
           <div className="flex items-start justify-between">
             <div>
               <DialogTitle className="text-xl">{title}</DialogTitle>
-              {subtitle && (
+              {subtitle ? (
                 <DialogDescription className="mt-1">{subtitle}</DialogDescription>
+              ) : (
+                <DialogDescription className="sr-only">Details for {title}</DialogDescription>
               )}
             </div>
           </div>

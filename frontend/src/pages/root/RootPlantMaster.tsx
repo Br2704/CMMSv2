@@ -184,7 +184,8 @@ export default function RootPlantMaster() {
     if (user?.plantId) {
       return plants.filter((plant) => plant.id === user.plantId);
     }
-    return plants;
+    // If not root/superadmin and no plantId assigned, they should see nothing (high security)
+    return [];
   }, [isRootUser, isScopedSuperAdmin, plants, user?.plantId]);
 
   const filtered = useMemo(() => {
@@ -256,6 +257,11 @@ export default function RootPlantMaster() {
   };
 
   const handleSubmit = async () => {
+    if (!canEditPlant && (isEditing || !canAddPlant)) {
+      toast.error("You do not have permission to perform this action");
+      return;
+    }
+
     if (!formData.plantCode.trim() || !formData.plantName.trim() || !formData.organizationId) {
       toast.error("Plant code, name and organization are required");
       return;

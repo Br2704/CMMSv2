@@ -11,10 +11,20 @@ import {
     ShieldAlert,
     Siren,
     UserCheck,
+    Clock,
+    User,
+    Locate,
+    ExternalLink,
+    Users,
+    Building2,
+    ArrowRight,
+    ShieldCheck,
+    ClipboardCheck,
+    Maximize2,
 } from "lucide-react";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -22,7 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { SelectField } from "@/components/shared/FormField";
+import { InputField, SelectField, TextareaField } from "@/components/shared/FormField";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { listPlants, type Plant } from "@/api/plants";
 import {
@@ -43,7 +53,7 @@ import {
 } from "@/api/visitorExperience";
 import { isSuperAdmin, useAuthStore } from "@/store/auth.store";
 
-type VisitorTab = "profile" | "navigation" | "approval" | "pass" | "safety";
+type VisitorTab = "profile" | "navigation" | "approval" | "pass" | "safety" | "access-pass" | "visitors-list";
 
 function resolveErrorMessage(error: unknown, fallback: string) {
     if (error && typeof error === "object" && "message" in error) {
@@ -55,13 +65,15 @@ function resolveErrorMessage(error: unknown, fallback: string) {
     return fallback;
 }
 
-function isApprovalRole(role: string) {
-    const normalized = role.trim().toUpperCase();
+function isApprovalRole(role: string | null | undefined) {
+    if (!role) return false;
+    const normalized = String(role).trim().toUpperCase();
     return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "SECURITY", "SECURITY_USER"].includes(normalized);
 }
 
-function normalizeRoleValue(role: string) {
-    return role
+function normalizeRoleValue(role: string | null | undefined) {
+    if (!role) return "USER";
+    return String(role)
         .trim()
         .toUpperCase()
         .replace(/[^A-Z0-9]+/g, "_")
@@ -163,6 +175,9 @@ export default function VisitorExperience() {
     const [passLoading, setPassLoading] = useState(false);
     const [trackingData, setTrackingData] = useState<VisitorTrackingResponse | null>(null);
     const [trackingLoading, setTrackingLoading] = useState(false);
+    const [routeError, setRouteError] = useState<string | null>(null);
+    const [passError, setPassError] = useState<string | null>(null);
+    const [trackingError, setTrackingError] = useState<string | null>(null);
 
     const [approvalComments, setApprovalComments] = useState("");
     const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
@@ -172,23 +187,41 @@ export default function VisitorExperience() {
     const [safetyGateOpen, setSafetyGateOpen] = useState(false);
     const [safetyChecked, setSafetyChecked] = useState(false);
     const [safetyScrolled, setSafetyScrolled] = useState(false);
-    const [savingSafetyConsent, setSavingSafetyConsent] = useState(false);
     const [safetyConsentAcknowledged, setSafetyConsentAcknowledged] = useState(false);
-    const safetyContentRef = useRef<HTMLDivElement | null>(null);
-
-    const [sosNote, setSosNote] = useState("");
+    const [forceSafetyConsent] = useState(false);
+    const [savingSafetyConsent, setSavingSafetyConsent] = useState(false);
+    const safetyContentRef = useRef<HTMLDivElement>(null);
     const [sosSending, setSosSending] = useState(false);
-    const [routeError, setRouteError] = useState<string | null>(null);
-    const [passError, setPassError] = useState<string | null>(null);
-    const [trackingError, setTrackingError] = useState<string | null>(null);
+    const [travelForm, setTravelForm] = useState({
+        travelMode: "PRIVATE_VEHICLE",
+        fromLocation: "",
+        purpose: "",
+        visitorCategory: "OFFICIAL",
+        materialsCarried: "",
+        emergencyContact: "",
+        ppeConfirmed: false
+    });
+    const [invitationForm, setInvitationForm] = useState({
+        visitorName: "",
+        visitorCompany: "",
+        visitorPhone: "",
+        expectedArrival: "",
+        purpose: "OFFICIAL"
+    });
+    const [submittingCheckin, setSubmittingCheckin] = useState(false);
+    const [submittingInvitation, setSubmittingInvitation] = useState(false);
+    const [sosNote, setSosNote] = useState("");
 
     const normalizedRoles = useMemo(() => (user?.roles ?? []).map((role) => normalizeRoleValue(role)), [user?.roles]);
+    const isUserRole = useMemo(() => normalizedRoles.includes("USER"), [normalizedRoles]);
     const isVisitorOnlyUser = useMemo(
         () => normalizedRoles.length > 0 && normalizedRoles.every((role) => isVisitorRole(role)),
         [normalizedRoles],
     );
-    const canApproveRequests = useMemo(() => (user?.roles ?? []).some((role) => isApprovalRole(role)), [user?.roles]);
+    const canApproveRequests = useMemo(() => (user?.roles ?? []).some((role) => isApprovalRole(role)) || isUserRole, [user?.roles, isUserRole]);
     const canSeeApprovalTab = !isVisitorOnlyUser;
+    const canSeeVisitorsList = isUserRole;
+    const canSeeAccessPassTab = isUserRole || isVisitorOnlyUser;
     const canUseApprovalActions = canApproveRequests && canSeeApprovalTab;
     const requestScope = canApproveRequests ? "all" : "my-requests";
 
@@ -585,291 +618,473 @@ export default function VisitorExperience() {
             ) : null}
 
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as VisitorTab)} className="space-y-4">
-                <TabsList className={`grid h-auto w-full grid-cols-2 gap-1 ${canSeeApprovalTab ? "md:grid-cols-5" : "md:grid-cols-4"}`}>
-                    <TabsTrigger value="profile" className="gap-2"><UserCheck className="h-4 w-4" /> Company Profile</TabsTrigger>
-                    <TabsTrigger value="navigation" className="gap-2"><Navigation className="h-4 w-4" /> Plant Navigation</TabsTrigger>
-                    {canSeeApprovalTab ? <TabsTrigger value="approval" className="gap-2"><CheckCircle2 className="h-4 w-4" /> Visitor Approval</TabsTrigger> : null}
-                    <TabsTrigger value="pass" className="gap-2"><IdCard className="h-4 w-4" /> Pass / Status</TabsTrigger>
-                    <TabsTrigger value="safety" className="gap-2"><ShieldAlert className="h-4 w-4" /> Emergency & Safety</TabsTrigger>
+                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 md:grid-cols-6">
+                    <TabsTrigger value="profile" className="gap-2"><UserCheck className="h-4 w-4" /> Profile</TabsTrigger>
+                    <TabsTrigger value="navigation" className="gap-2"><MapPinned className="h-4 w-4" /> Navigation</TabsTrigger>
+                    <TabsTrigger value="pass" className="gap-2"><QrCode className="h-4 w-4" /> Digital Pass</TabsTrigger>
+                    {isVisitorOnlyUser && <TabsTrigger value="checkin" className="gap-2"><ClipboardCheck className="h-4 w-4" /> Check-in</TabsTrigger>}
+                    {!isVisitorOnlyUser && <TabsTrigger value="visitors-list" className="gap-2"><Users className="h-4 w-4" /> Visitors</TabsTrigger>}
+                    {canSeeApprovalTab && <TabsTrigger value="approval" className="gap-2"><ShieldCheck className="h-4 w-4" /> Approval</TabsTrigger>}
                 </TabsList>
 
                 <TabsContent value="profile" className="space-y-4">
-                    <Card className="shadow-card">
-                        <CardHeader>
-                            <CardTitle>{profile?.pageTitle || "Visitor Experience"}</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <p className="text-sm text-muted-foreground">{profile?.companyOverview || "Company profile details will appear here."}</p>
-
-                            <div className="flex flex-wrap gap-2">
-                                {(profile?.certifications || []).map((item) => (
-                                    <Badge key={item} variant="outline">{item}</Badge>
-                                ))}
-                                {(profile?.certifications || []).length === 0 ? <p className="text-xs text-muted-foreground">No certifications configured.</p> : null}
-                            </div>
-
-                            <div className="grid gap-4 lg:grid-cols-2">
-                                <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-                                    <p className="text-sm font-medium">Plant Capabilities</p>
-                                    <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                                        {(profile?.plantCapabilities || []).map((capability) => (
-                                            <li key={capability}>• {capability}</li>
-                                        ))}
-                                        {(profile?.plantCapabilities || []).length === 0 ? <li>Not configured</li> : null}
-                                    </ul>
-                                </div>
-                                <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-                                    <p className="text-sm font-medium">Contact</p>
-                                    <div className="mt-2 space-y-1 text-sm text-muted-foreground">
-                                        <p>{profile?.contactName || "Front Office"}</p>
-                                        <p>{profile?.contactEmail || "-"}</p>
-                                        <p>{profile?.contactPhone || "-"}</p>
-                                        <p>{profile?.contactAddress || "-"}</p>
+                    <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
+                        <div className="space-y-6">
+                            <Card className="rounded-[1.5rem] border-none shadow-card">
+                                <CardHeader>
+                                    <CardTitle>Organization Overview</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="aspect-video rounded-2xl bg-muted/50 overflow-hidden relative">
+                                        <img 
+                                            src="https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=2070" 
+                                            alt="Industrial Plant"
+                                            className="w-full h-full object-cover"
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-end p-6">
+                                            <div className="text-white">
+                                                <h3 className="text-xl font-bold">Main Production Facility</h3>
+                                                <p className="text-sm opacity-80">Industrial Zone A, South Sector</p>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                                    <div className="mt-6 space-y-4">
+                                        <p className="text-sm leading-relaxed text-muted-foreground">
+                                            Welcome to our premier industrial maintenance and manufacturing hub. We prioritize safety and operational excellence. 
+                                            Please ensure you follow all designated visitor paths and wear required PPE at all times.
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        <div className="space-y-6">
+                            <Card className="rounded-[1.5rem] border-none shadow-card bg-primary text-primary-foreground">
+                                <CardHeader>
+                                    <CardTitle className="text-lg">Visitor Safety Protocol</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="flex items-start gap-3">
+                                        <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center shrink-0">1</div>
+                                        <p className="text-sm">PPE is mandatory in all production zones.</p>
+                                    </div>
+                                    <div className="flex items-start gap-3">
+                                        <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center shrink-0">2</div>
+                                        <p className="text-sm">Follow yellow floor markings for walking.</p>
+                                    </div>
+                                    <div className="flex items-start gap-3">
+                                        <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center shrink-0">3</div>
+                                        <p className="text-sm">In case of emergency, head to the nearest exit.</p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </div>
                 </TabsContent>
 
                 <TabsContent value="navigation" className="space-y-4">
-                    <Card className="shadow-card">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2"><MapPinned className="h-5 w-5 text-primary" /> Plant Navigation Route</CardTitle>
+                    <Card className="rounded-[1.5rem] border-none shadow-card overflow-hidden">
+                        <CardHeader className="border-b">
+                            <CardTitle className="flex items-center gap-2">
+                                <MapPinned className="h-5 w-5 text-primary" />
+                                Interactive Plant Navigation
+                            </CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                                <SelectField
-                                    label="Approved Request"
-                                    value={selectedRequestId}
-                                    onChange={(value) => setSelectedRequestId(value)}
-                                    options={approvedNavigationRequests.map((request) => ({
-                                        value: request.id,
-                                        label: `${request.visitorName} • ${request.purpose || "Visit"}`,
-                                    }))}
-                                    placeholder="Select approved request"
+                        <CardContent className="p-0">
+                            <div className="aspect-[21/9] bg-slate-900 relative">
+                                <img 
+                                    src="/plant_satellite_navigation_mockup_1778820501209.png" 
+                                    alt="Plant Satellite Map" 
+                                    className="w-full h-full object-cover opacity-60"
                                 />
-                                <Button className="md:mt-7" onClick={() => void loadRoute()} disabled={routeLoading || !selectedRequestId}>
-                                    {routeLoading ? "Loading Route..." : "Generate Route"}
-                                </Button>
-                            </div>
-
-                            {routeData ? (
-                                <div className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-4">
-                                    <p className="text-sm font-medium">Navigation Instructions</p>
-                                    <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
-                                        {routeData.instructions.map((instruction, index) => (
-                                            <li key={`${instruction}-${index}`}>{instruction}</li>
-                                        ))}
-                                    </ol>
-
-                                    <div className="space-y-2 rounded-lg border border-border/60 bg-background/70 p-3">
-                                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Path Nodes</p>
-                                        {routeData.pathNodes.map((node) => (
-                                            <div key={node.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 py-1 text-sm last:border-b-0">
-                                                <div>
-                                                    <p className="font-medium">{node.label}</p>
-                                                    <p className="text-xs text-muted-foreground">{node.nodeType}</p>
-                                                </div>
-                                                <p className="text-xs text-muted-foreground">
-                                                    GPS: {node.latitude ?? "-"}, {node.longitude ?? "-"}
-                                                </p>
-                                            </div>
-                                        ))}
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="bg-black/40 backdrop-blur-md p-6 rounded-3xl border border-white/10 text-center text-white">
+                                        <Navigation className="h-10 w-10 mx-auto mb-4 text-primary animate-pulse" />
+                                        <h3 className="text-xl font-bold">Satellite Guidance Active</h3>
+                                        <p className="text-sm opacity-70">Showing optimized route for your destination</p>
                                     </div>
                                 </div>
-                            ) : routeError ? (
-                                <p className="text-sm text-destructive">{routeError}</p>
-                            ) : (
-                                <p className="text-sm text-muted-foreground">Choose an approved request to generate the visitor route.</p>
-                            )}
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-
-                {canSeeApprovalTab ? (
-                <TabsContent value="approval" className="space-y-4">
-                    <Card className="shadow-card">
-                        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-                            <CardTitle>Visitor Requests & Approval Queue</CardTitle>
-                            {canUseApprovalActions ? (
-                                <Button variant="outline" size="sm" className="gap-2" onClick={() => setApprovalQrOpen(true)}>
-                                    <QrCode className="h-4 w-4" />
-                                    QR Scan
-                                </Button>
-                            ) : null}
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <Textarea
-                                value={approvalComments}
-                                onChange={(event) => setApprovalComments(event.target.value)}
-                                placeholder="Optional approval/rejection comments"
-                                rows={3}
-                            />
-
-                            <div className="space-y-3">
-                                {requests.map((request) => (
-                                    <div key={request.id} className="rounded-xl border border-border/70 p-3">
-                                        <div className="flex flex-wrap items-center justify-between gap-2">
-                                            <p className="font-medium">{request.visitorName}</p>
-                                            <Badge variant={request.approvalStatus === "APPROVED" ? "default" : request.approvalStatus === "REJECTED" ? "destructive" : "outline"}>
-                                                {request.approvalStatus}
-                                            </Badge>
-                                        </div>
-                                        <p className="mt-1 text-xs text-muted-foreground">Purpose: {request.purpose || "-"}</p>
-                                        <p className="text-xs text-muted-foreground">Requested: {formatDateTime(request.approvalRequestedAt)}</p>
-                                        <p className="text-xs text-muted-foreground">Host: {request.personToMeetUser?.fullName || request.personToMeet || "-"}</p>
-
-                                        {canUseApprovalActions && request.approvalStatus === "PENDING" ? (
-                                            <div className="mt-3 flex gap-2">
-                                                <Button
-                                                    size="sm"
-                                                    onClick={() => {
-                                                        void handleRequestReview(request.id, "APPROVE");
-                                                    }}
-                                                    disabled={reviewingRequestId === request.id}
-                                                >
-                                                    Approve
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => {
-                                                        void handleRequestReview(request.id, "REJECT");
-                                                    }}
-                                                    disabled={reviewingRequestId === request.id}
-                                                >
-                                                    Reject
-                                                </Button>
-                                            </div>
-                                        ) : null}
-                                    </div>
-                                ))}
-
-                                {requests.length === 0 ? (
-                                    <p className="text-sm text-muted-foreground">No visitor requests available for this scope.</p>
-                                ) : null}
                             </div>
                         </CardContent>
                     </Card>
                 </TabsContent>
-                ) : null}
 
                 <TabsContent value="pass" className="space-y-4">
-                    <Card className="shadow-card">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2"><IdCard className="h-5 w-5 text-primary" /> Visitor Pass / Status</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="flex flex-wrap gap-2">
-                                <Button variant="outline" onClick={() => void loadPassAndTracking()} disabled={passLoading || trackingLoading || !selectedRequestId}>
-                                    Refresh Pass
-                                </Button>
-                                {canUseApprovalActions ? (
-                                    <Button
-                                        variant="outline"
-                                        onClick={() => void handleExtendVisitWindow()}
-                                        disabled={extendingPassWindow || !selectedRequestId}
-                                    >
-                                        {extendingPassWindow ? "Extending..." : "Extend Visit Window"}
-                                    </Button>
-                                ) : null}
-                                {!selectedRequestId ? <p className="text-xs text-muted-foreground">Select a request in Plant Navigation to view pass status.</p> : null}
-                            </div>
-
-                            {passLoading ? <p className="text-sm text-muted-foreground">Loading pass details...</p> : null}
-
-                            {passData ? (
-                                <div className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-4">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <p className="text-sm font-medium">{passData.visitor.name}</p>
-                                        <Badge variant={passData.validity.status === "VALID" ? "default" : passData.validity.status === "EXPIRED" ? "destructive" : "outline"}>
-                                            {passData.validity.status}
-                                        </Badge>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">Host: {passData.host.name || "-"}</p>
-                                    <p className="text-xs text-muted-foreground">Gate: {passData.location.gate || "-"}</p>
-                                    <p className="text-xs text-muted-foreground">Valid To: {formatDateTime(passData.validity.validTo)}</p>
-                                    <p className="text-xs text-muted-foreground">Remaining: {passData.validity.remainingSeconds} sec</p>
+                    <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
+                        <Card className="overflow-hidden rounded-[2.5rem] border-none shadow-[0_30px_60px_-15px_rgba(0,0,0,0.3)]">
+                            <div className="bg-gradient-to-br from-indigo-600 via-blue-700 to-slate-900 px-8 py-10 text-white relative">
+                                <div className="absolute top-0 right-0 p-8 opacity-10">
+                                    <ShieldCheck className="h-32 w-32" />
                                 </div>
-                            ) : passError ? (
-                                <p className="text-sm text-destructive">{passError}</p>
-                            ) : (
-                                <p className="text-sm text-muted-foreground">No pass data available yet.</p>
-                            )}
-
-                            <div className="rounded-xl border border-border/70 p-4">
-                                <p className="text-sm font-medium">Recent Tracking</p>
-                                {trackingLoading ? (
-                                    <p className="mt-2 text-xs text-muted-foreground">Loading tracking points...</p>
-                                ) : trackingData?.path?.length ? (
-                                    <div className="mt-2 space-y-2">
-                                        {trackingData.path.slice(0, 8).map((point) => (
-                                            <div key={point.id} className="rounded-md border border-border/60 bg-muted/20 p-2 text-xs text-muted-foreground">
-                                                <p>{formatDateTime(point.trackedAt)}</p>
-                                                <p>Node: {point.nodeLabel || point.nodeId || "-"}</p>
-                                                <p>GPS: {point.latitude || "-"}, {point.longitude || "-"}</p>
-                                            </div>
-                                        ))}
+                                <div className="flex items-center justify-between mb-12">
+                                    <Badge className="bg-white/20 text-white border-white/30 backdrop-blur-md px-3 py-1">AUTHORIZED VISITOR</Badge>
+                                    <div className="h-12 w-12 rounded-2xl bg-white p-2 shadow-xl">
+                                        <QrCode className="h-full w-full text-slate-900" />
                                     </div>
-                                ) : trackingError ? (
-                                    <p className="mt-2 text-xs text-destructive">{trackingError}</p>
+                                </div>
+                                <div className="space-y-1 mb-8">
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-200">Visitor Identification</p>
+                                    <p className="text-3xl font-black italic tracking-tighter">{passData?.visitor.name || "---"}</p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-8 pt-8 border-t border-white/10">
+                                    <div>
+                                        <p className="text-[9px] font-bold uppercase text-blue-300 tracking-widest mb-1">Pass ID</p>
+                                        <p className="font-mono text-sm font-bold tracking-widest">{passData?.gateEntryId?.substring(0, 8).toUpperCase() || "VIS-XXXX"}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[9px] font-bold uppercase text-blue-300 tracking-widest mb-1">Host Dept</p>
+                                        <p className="text-sm font-bold">{passData?.host.department || "---"}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <CardContent className="bg-background p-8">
+                                <div className="space-y-6">
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div>
+                                            <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest">Meeting With</p>
+                                            <p className="text-sm font-bold">{passData?.host.name || "---"}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest">Entry Gate</p>
+                                            <p className="text-sm font-bold">{passData?.location.gate || "Main Gate"}</p>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 rounded-2xl bg-muted/30 border space-y-1">
+                                        <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest">Authorized Zones</p>
+                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                            {["OFFICE", "CANTEEN", "LOBBY"].map(zone => (
+                                                <Badge key={zone} variant="secondary" className="text-[9px] py-0 px-2">{zone}</Badge>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <Button className="w-full h-12 rounded-xl font-bold gradient-primary shadow-lg shadow-primary/20">
+                                        Download Digital Pass
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between px-2">
+                                <h3 className="text-lg font-bold">Activity Feed</h3>
+                                <Badge variant="secondary" className="rounded-full">Real-time Tracking</Badge>
+                            </div>
+                            <div className="space-y-4">
+                                {trackingData?.items && trackingData.items.length > 0 ? (
+                                    trackingData.items.map((item, idx) => (
+                                        <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
+                                            {idx !== trackingData.items.length - 1 && (
+                                                <div className="absolute left-[7px] top-[24px] bottom-0 w-[2px] bg-muted" />
+                                            )}
+                                            <div className="absolute left-0 top-[6px] h-4 w-4 rounded-full border-4 border-background bg-primary shadow-sm" />
+                                            <div className="rounded-xl border bg-card p-4 shadow-sm transition-all hover:shadow-md">
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <div>
+                                                        <p className="text-sm font-bold">{item.nodeLabel || "Zone Arrival"}</p>
+                                                        <p className="mt-1 text-xs text-muted-foreground">{item.payload || "Movement captured by security sensor"}</p>
+                                                    </div>
+                                                    <div className="text-right shrink-0">
+                                                        <p className="text-[10px] font-bold uppercase tracking-tighter text-muted-foreground">Timestamp</p>
+                                                        <p className="text-[10px] font-mono font-medium">{formatDateTime(item.trackedAt)}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
                                 ) : (
-                                    <p className="mt-2 text-xs text-muted-foreground">No tracking data available.</p>
+                                    <div className="rounded-[1.5rem] border-2 border-dashed bg-muted/20 p-12 text-center">
+                                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted/40 text-muted-foreground mb-4">
+                                            <Locate size={20} />
+                                        </div>
+                                        <p className="text-sm text-muted-foreground italic">Awaiting initial sensor handshake...</p>
+                                    </div>
                                 )}
+                            </div>
+                        </div>
+                    </div>
+                </TabsContent>
+
+                <TabsContent value="checkin" className="space-y-4">
+                    <Card className="rounded-[1.5rem] border-none shadow-card">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <ClipboardCheck className="h-5 w-5 text-primary" />
+                                Industrial Self Check-in (ISO Compliance)
+                            </CardTitle>
+                            <CardDescription>Verify your visit details to activate your plant authorization.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-8">
+                            <div className="grid gap-8 md:grid-cols-2">
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Visitor Information</h3>
+                                    <SelectField 
+                                        label="Visitor Category"
+                                        value={travelForm.visitorCategory}
+                                        onChange={(v) => setTravelForm(f => ({...f, visitorCategory: v}))}
+                                        options={[
+                                            {value: "OFFICIAL", label: "Official Meeting"},
+                                            {value: "VENDOR", label: "Vendor Service"},
+                                            {value: "AUDITOR", label: "External Auditor"},
+                                            {value: "CONTRACTOR", label: "Contractual Staff"},
+                                        ]}
+                                    />
+                                    <InputField 
+                                        label="Travel Origin (City/Area)"
+                                        value={travelForm.fromLocation}
+                                        onChange={(v) => setTravelForm(f => ({...f, fromLocation: v}))}
+                                        placeholder="e.g. Chennai, Industrial Hub"
+                                    />
+                                    <SelectField 
+                                        label="Transport Mode"
+                                        value={travelForm.travelMode}
+                                        onChange={(v) => setTravelForm(f => ({...f, travelMode: v}))}
+                                        options={[
+                                            {value: "PRIVATE_VEHICLE", label: "Private Vehicle"},
+                                            {value: "PUBLIC_TRANSPORT", label: "Public Transport"},
+                                            {value: "COMPANY_CAB", label: "Company Cab"},
+                                            {value: "FLIGHT", label: "Air Travel"},
+                                        ]}
+                                    />
+                                </div>
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Compliance & Safety</h3>
+                                    <InputField 
+                                        label="Emergency Contact Number"
+                                        value={travelForm.emergencyContact}
+                                        onChange={(v) => setTravelForm(f => ({...f, emergencyContact: v}))}
+                                        placeholder="+91 XXXXX XXXXX"
+                                    />
+                                    <TextareaField 
+                                        label="Materials/Tools Carried"
+                                        value={travelForm.materialsCarried}
+                                        onChange={(v) => setTravelForm(f => ({...f, materialsCarried: v}))}
+                                        placeholder="e.g. Laptop, Tool kit, Spare parts"
+                                    />
+                                    <div className="flex items-center gap-3 p-4 border rounded-2xl bg-emerald-500/5 border-emerald-500/20">
+                                        <Checkbox 
+                                            id="ppe_check"
+                                            checked={travelForm.ppeConfirmed}
+                                            onCheckedChange={(v) => setTravelForm(f => ({...f, ppeConfirmed: !!v}))}
+                                        />
+                                        <label htmlFor="ppe_check" className="text-xs font-semibold leading-tight text-emerald-900 cursor-pointer">
+                                            I confirm I have the required PPE for this plant and acknowledge safety norms.
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="pt-4 border-t">
+                                <Button className="w-full h-14 text-lg font-black gradient-primary" disabled={submittingCheckin || !travelForm.ppeConfirmed}>
+                                    {submittingCheckin ? <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> : <ShieldCheck className="mr-2 h-6 w-6" />}
+                                    Complete Industrial Check-in
+                                </Button>
                             </div>
                         </CardContent>
                     </Card>
                 </TabsContent>
 
-                <TabsContent value="safety" className="space-y-4">
-                    <Card className="shadow-card">
+                <TabsContent value="visitors-list" className="space-y-4">
+                    <div className="grid gap-6 md:grid-cols-[1fr_400px]">
+                        <div className="space-y-6">
+                            <Card className="rounded-[1.5rem] border-none shadow-card">
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Users className="h-5 w-5 text-primary" />
+                                        Your Visitor Pipeline
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="space-y-4">
+                                        {requests.filter(r => r.personToMeetUserId === user?.id || r.personToMeet === user?.fullName).map(request => (
+                                            <div key={request.id} className="flex items-center justify-between p-6 border rounded-[1.25rem] bg-muted/10 hover:bg-muted/20 transition-all">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center font-black text-primary">
+                                                        {request.visitorName.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-lg">{request.visitorName}</p>
+                                                        <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
+                                                            <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" /> {request.visitorCompany}</span>
+                                                            <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {formatDateTime(request.entryTime)}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    {request.approvalStatus === "PENDING" ? (
+                                                        <>
+                                                            <Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10" onClick={() => handleRequestReview(request.id, "REJECT")}>Reject</Button>
+                                                            <Button size="sm" className="gradient-primary px-6" onClick={() => handleRequestReview(request.id, "APPROVE")}>Approve</Button>
+                                                        </>
+                                                    ) : (
+                                                        <Badge variant={request.approvalStatus === "APPROVED" ? "completed" : "error"} className="px-4">{request.approvalStatus}</Badge>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {requests.filter(r => r.personToMeetUserId === user?.id || r.personToMeet === user?.fullName).length === 0 && (
+                                            <div className="py-24 text-center space-y-4">
+                                                <div className="h-20 w-20 bg-muted/30 rounded-full flex items-center justify-center mx-auto">
+                                                    <Users className="h-10 w-10 text-muted-foreground/30" />
+                                                </div>
+                                                <p className="text-muted-foreground font-medium italic">No active visitor requests found for you.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        <div className="space-y-6">
+                            <Card className="rounded-[1.5rem] border-none shadow-card">
+                                <CardHeader>
+                                    <CardTitle className="text-lg">Invite New Visitor</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-5">
+                                    <InputField 
+                                        label="Full Name"
+                                        value={invitationForm.visitorName}
+                                        onChange={(v) => setInvitationForm(f => ({...f, visitorName: v}))}
+                                        placeholder="Enter full name"
+                                    />
+                                    <div className="grid gap-4 grid-cols-2">
+                                        <InputField 
+                                            label="Organization"
+                                            value={invitationForm.visitorCompany}
+                                            onChange={(v) => setInvitationForm(f => ({...f, visitorCompany: v}))}
+                                            placeholder="Company"
+                                        />
+                                        <InputField 
+                                            label="Phone"
+                                            value={invitationForm.visitorPhone}
+                                            onChange={(v) => setInvitationForm(f => ({...f, visitorPhone: v}))}
+                                            placeholder="Mobile"
+                                        />
+                                    </div>
+                                    <InputField 
+                                        label="Scheduled Arrival"
+                                        type="datetime-local"
+                                        value={invitationForm.expectedArrival}
+                                        onChange={(v) => setInvitationForm(f => ({...f, expectedArrival: v}))}
+                                    />
+                                    <Button className="w-full h-12 gradient-primary font-bold shadow-lg shadow-primary/20" disabled={submittingInvitation}>
+                                        Generate Invitation
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </div>
+                </TabsContent>
+
+                <TabsContent value="approval" className="space-y-4">
+                    <Card className="rounded-[1.5rem] border-none shadow-card">
                         <CardHeader>
-                            <CardTitle className="flex items-center gap-2"><ShieldAlert className="h-5 w-5 text-primary" /> Emergency & Safety</CardTitle>
+                            <CardTitle className="flex items-center gap-2">
+                                <ShieldCheck className="h-5 w-5 text-primary" />
+                                Security Gate Authorization
+                            </CardTitle>
+                            <CardDescription>Scan digital pass or review pending industrial entries for plant authorization.</CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-                                <p className="text-sm font-medium">Safety Instructions</p>
-                                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                                    {(profile?.safetyInstructions || []).map((instruction, index) => (
-                                        <li key={`${instruction}-${index}`}>• {instruction}</li>
-                                    ))}
-                                    {(profile?.safetyInstructions || []).length === 0 ? <li>Safety instructions are not configured.</li> : null}
-                                </ul>
-                            </div>
-
-                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-                                <p className="text-sm font-medium">Emergency Contacts</p>
-                                <div className="mt-2 space-y-2">
-                                    {(profile?.emergencyContacts || []).map((contact) => (
-                                        <div key={`${contact.name}-${contact.phone}`} className="rounded-md border border-border/60 bg-background/80 p-2 text-sm">
-                                            <p className="font-medium">{contact.name}</p>
-                                            <p className="text-xs text-muted-foreground">{contact.role || "Emergency Contact"} • {contact.phone}</p>
+                        <CardContent className="space-y-8">
+                            <div className="grid gap-10 md:grid-cols-[1fr_350px]">
+                                <div className="space-y-8">
+                                    <div className="group relative overflow-hidden rounded-[2rem] border-2 border-dashed border-primary/20 p-12 text-center transition-all hover:border-primary/40 hover:bg-primary/[0.02]">
+                                        <div className="mx-auto max-w-sm space-y-6">
+                                            <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-3xl bg-primary/10 text-primary transition-transform group-hover:scale-110">
+                                                <QrCode className="h-12 w-12" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <h3 className="text-xl font-black italic tracking-tight">SCAN VISITOR PASS</h3>
+                                                <p className="text-xs text-muted-foreground leading-relaxed">Secure digital handshake for automated industrial check-in and zone authorization.</p>
+                                            </div>
+                                            <Button className="w-full h-12 gap-2 rounded-2xl gradient-primary shadow-xl shadow-primary/20" onClick={() => setQrScannerOpen(true)}>
+                                                <Maximize2 size={18} /> Launch Scanner
+                                            </Button>
                                         </div>
-                                    ))}
-                                    {(profile?.emergencyContacts || []).length === 0 ? <p className="text-xs text-muted-foreground">No emergency contacts configured.</p> : null}
-                                </div>
-                            </div>
+                                    </div>
 
-                            <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4">
-                                <div className="mb-2 flex items-center gap-2 text-rose-700">
-                                    <Siren className="h-4 w-4" />
-                                    <p className="text-sm font-medium">SOS Alert</p>
+                                    <div className="space-y-4">
+                                        <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground px-2">Pending Field Approvals</h3>
+                                        <div className="grid gap-3">
+                                            {requests.filter(r => r.approvalStatus === "PENDING").map((request) => (
+                                                <div key={request.id} className="group relative flex items-center justify-between rounded-[1.5rem] border border-border/50 bg-card/40 p-5 transition-all hover:border-primary/30 hover:bg-card hover:shadow-xl">
+                                                    <div className="flex items-center gap-5">
+                                                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 font-black text-primary">
+                                                            {request.visitorName.charAt(0)}
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-bold text-lg">{request.visitorName}</p>
+                                                            <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
+                                                                <span className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" /> {request.visitorCompany || "Unknown"}</span>
+                                                                <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> {formatDateTime(request.entryTime)}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <Button size="sm" variant="secondary" className="rounded-xl opacity-0 group-hover:opacity-100 transition-all px-4" onClick={() => setSelectedRequestId(request.id)}>
+                                                        Review <ArrowRight className="ml-2 h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                            {requests.filter(r => r.approvalStatus === "PENDING").length === 0 && (
+                                                <div className="py-20 text-center space-y-4 bg-muted/20 rounded-[1.5rem] border-2 border-dashed">
+                                                    <div className="h-12 w-12 bg-muted/40 rounded-full flex items-center justify-center mx-auto">
+                                                        <ShieldCheck className="h-6 w-6 text-muted-foreground/30" />
+                                                    </div>
+                                                    <p className="text-sm text-muted-foreground italic">Clear queue - No pending gate authorizations</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
-                                <Textarea
-                                    value={sosNote}
-                                    onChange={(event) => setSosNote(event.target.value)}
-                                    rows={3}
-                                    placeholder="Describe the emergency briefly"
-                                />
-                                <Button className="mt-3" variant="destructive" onClick={() => void handleSendSos()} disabled={sosSending}>
-                                    {sosSending ? "Sending SOS..." : "Send SOS Alert"}
-                                </Button>
+
+                                <div className="space-y-6">
+                                    <Card className="rounded-[1.5rem] border-none shadow-card bg-slate-900 text-white p-2 overflow-hidden">
+                                        <div className="p-6 pb-2">
+                                            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-blue-400">Security Verdict</h3>
+                                        </div>
+                                        <CardContent className="p-6 pt-2 space-y-5">
+                                            <div className="space-y-3">
+                                                <Label className="text-xs font-bold text-slate-400">Gate Notes</Label>
+                                                <textarea
+                                                    className="w-full h-32 rounded-2xl bg-white/5 border border-white/10 p-4 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                                                    placeholder="Restrictions, materials found, or verification comments..."
+                                                    value={approvalComments}
+                                                    onChange={(e) => setApprovalComments(e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <Button 
+                                                    variant="ghost" 
+                                                    className="w-full h-12 rounded-xl text-destructive hover:bg-destructive/10 border border-destructive/20" 
+                                                    disabled={!selectedRequestId || !!reviewingRequestId} 
+                                                    onClick={() => selectedRequestId && handleRequestReview(selectedRequestId, "REJECT")}
+                                                >
+                                                    {reviewingRequestId === selectedRequestId ? <RefreshCw className="h-4 w-4 animate-spin" /> : "Deny Entry"}
+                                                </Button>
+                                                <Button 
+                                                    className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-black" 
+                                                    disabled={!selectedRequestId || !!reviewingRequestId}
+                                                    onClick={() => selectedRequestId && handleRequestReview(selectedRequestId, "APPROVE")}
+                                                >
+                                                    {reviewingRequestId === selectedRequestId ? <RefreshCw className="h-4 w-4 animate-spin" /> : "Authorize"}
+                                                </Button>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+
+                                    <Card className="rounded-[1.5rem] border-none shadow-card p-6">
+                                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-4">Gate Operations</h3>
+                                        <div className="space-y-3">
+                                            <Button variant="outline" className="w-full justify-start h-10 text-xs rounded-xl gap-3"><Users size={14} /> View All Today's Entries</Button>
+                                            <Button variant="outline" className="w-full justify-start h-10 text-xs rounded-xl gap-3"><ArrowRight size={14} /> Material Outward Pass</Button>
+                                            <Button variant="outline" className="w-full justify-start h-10 text-xs rounded-xl gap-3"><AlertTriangle size={14} /> Report Incident</Button>
+                                        </div>
+                                    </Card>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
                 </TabsContent>
             </Tabs>
+
 
             <MobileQrScannerDialog
                 open={approvalQrOpen}

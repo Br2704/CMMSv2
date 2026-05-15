@@ -142,3 +142,17 @@ export async function getMe(): Promise<MeResponse> {
   });
   return response.data;
 }
+
+export async function updateProfile(data: { fullName?: string; phone?: string | null; profileImageUrl?: string | null }) {
+  return httpRequest<{ success: true; data: { user: any; profile: any } }>("/auth/profile", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function changePassword(data: { currentPassword: string; newPassword: string }) {
+  return httpRequest<{ success: true; data: null }>("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}

@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import type { Asset } from "@/api/assets";
 import type { Department } from "@/api/departments";
 import type { MachineModule } from "@/api/modules";
@@ -104,17 +105,17 @@ interface EnterpriseAssetGraphProps {
 
 const LEVEL_X = {
   plant: 80,
-  department: 430,
-  module: 780,
-  machine: 1130,
-  overflow: 1130,
+  department: 520,
+  module: 940,
+  machine: 1360,
+  overflow: 1360,
 } as const;
 
-const RADIAL_DEPTH_X = [90, 430, 770, 1110] as const;
+const RADIAL_DEPTH_X = [90, 520, 940, 1360] as const;
 const RADIAL_CURVE_X = [0, 28, 52, 72] as const;
 const RADIAL_CURVE_Y = [0, 20, 34, 44] as const;
 
-const VERTICAL_GAP = 110;
+const VERTICAL_GAP = 130;
 const MAX_VISIBLE_MACHINES_PER_MODULE = 28;
 const MINDMAP_STATE_VERSION = 1;
 
@@ -585,7 +586,9 @@ export function EnterpriseAssetGraph({
     if (!isUserScope) return null;
     const key = (user?.department || "").trim().toLowerCase();
     if (!key) return null;
-    return departments.find((department) => department.name.trim().toLowerCase() === key || department.code.trim().toLowerCase() === key)?.id ?? null;
+    return departments.find((department) => 
+      (department.name || "").trim().toLowerCase() === key || (department.code || "").trim().toLowerCase() === key
+    )?.id ?? null;
   }, [departments, isUserScope, user?.department]);
 
   const scopedAssets = useMemo(() => {
@@ -930,6 +933,8 @@ export function EnterpriseAssetGraph({
         target,
         type: "smoothstep",
         markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
       });
     };
 
@@ -1539,8 +1544,24 @@ export function EnterpriseAssetGraph({
           </Button>
 
           <Badge variant="secondary">Drilldown: {drilldownLevel}</Badge>
-
+          <div className="flex items-center gap-2 border-l border-border/70 pl-2 ml-2">
+            <span className="text-xs text-muted-foreground font-medium">Zoom: {Math.round(zoomLevel * 100)}%</span>
+            <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={() => {
+              toast.info("PNG export requires the html-to-image package to be installed first.");
+            }}>
+               Export PNG
+            </Button>
+          </div>
         </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground mt-2 px-1">
+         <span className="font-semibold text-foreground">Legend:</span>
+         <span className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-blue-500/20 border border-blue-500/40"></div> Plant</span>
+         <span className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-sky-500/20 border border-sky-500/40"></div> Dept</span>
+         <span className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-violet-500/20 border border-violet-500/40"></div> Module</span>
+         <span className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-card border border-border/70"></div> Machine</span>
+         <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Active</span>
+         <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-rose-500"></div> Breakdown</span>
       </div>
 
       <div className="relative h-[690px] overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-slate-50/90 via-cyan-50/50 to-slate-100/70 dark:border-white/10 dark:from-slate-900/70 dark:via-slate-900/50 dark:to-slate-800/60">

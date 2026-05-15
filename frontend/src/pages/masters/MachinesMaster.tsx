@@ -1,3 +1,24 @@
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore, isAdmin, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
@@ -301,6 +322,13 @@ export default function MachinesMaster() {
   const canSelectPlant = isSuperAdmin(user) || isRootAdmin(user);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants, invalidateOptions } = useMastersOptions();
+
+  const [importSummary, setImportSummary] = useState<{
+    rows: any[];
+    failures: string[];
+    fileName: string;
+  } | null>(null);
+  const [isImportConfirmOpen, setIsImportConfirmOpen] = useState(false);
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -941,19 +969,44 @@ export default function MachinesMaster() {
     }
   };
 
-  const handleBulkMachineFileChange = async (file: File | null) => {
+    const handleBulkMachineFileChange = async (file: File | null) => {
     if (!file) return;
     try {
+      setBulkUploading(true);
       const rawRows = await parseFileContent(file);
       const rows = findHeaderRowFromRows(rawRows, "machine_code");
       if (rows.length < 2) {
         toast.error("Upload file must include a header and at least one machine row");
         return;
       }
-      await processMachineRows(rows);
+
+      // Explicitly skip enterprise template headers: Row 1 is header, Rows 2-5 are helper/metadata.
+      // findHeaderRowFromRows returns [header, ...data].
+      // If header is Row 1, index 0 is Header, index 1-4 are helpers, index 5 is Row 6.
+      const dataRows = rows.slice(5).filter((row) => row.some(cell => cell.trim().length > 0));
+      if (dataRows.length === 0) {
+        toast.error("Upload file must include at least one valid machine record starting from Row 6");
+        return;
+      }
+
+      setImportSummary({
+        rows: [rows[0], ...dataRows],
+        failures: [],
+        fileName: file.name,
+      });
+      setIsImportConfirmOpen(true);
     } catch (error: any) {
       toast.error(error?.message || "Failed to read spreadsheet file");
+    } finally {
+      setBulkUploading(false);
     }
+  };
+
+  const confirmBulkImport = async () => {
+    if (!importSummary) return;
+    setIsImportConfirmOpen(false);
+    await processMachineRows(importSummary.rows);
+    setImportSummary(null);
   };
 
   const handleDownloadMachineTemplate = async () => {
@@ -1003,7 +1056,7 @@ export default function MachinesMaster() {
     ];
 
     downloadEnterpriseExcelTemplate({
-      fileName: "machine_bulk_upload_demo.xls",
+      fileName: "machine_bulk_upload_demo.xlsx",
       title: "CMMS Machine Master Demo Upload Template",
       uploadSheetName: "Machine Upload",
       columns: [
@@ -1711,28 +1764,33 @@ export default function MachinesMaster() {
                 type="file"
                 accept=".csv,text/csv,.xls,application/vnd.ms-excel,text/xml"
                 className="hidden"
-                aria-label="Bulk upload machine Excel or CSV"
-                title="Bulk upload machine Excel or CSV"
                 onChange={(event) => {
                   const file = event.target.files?.[0] || null;
                   void handleBulkMachineFileChange(file);
                   event.target.value = "";
                 }}
               />
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full gap-2 sm:w-auto"
-                onClick={() => bulkUploadInputRef.current?.click()}
-                disabled={bulkUploading}
-              >
-                <Upload className="h-4 w-4" />
-                {bulkUploading ? "Uploading..." : "Bulk Upload Machines"}
-              </Button>
-              <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => void handleDownloadMachineTemplate()}>
-                <Download className="h-4 w-4" />
-                Demo
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="gap-2">
+                    <Upload className="h-4 w-4" />
+                    {bulkUploading ? "Processing..." : "Bulk Actions"}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>Data Management</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => bulkUploadInputRef.current?.click()} disabled={bulkUploading}>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Import Spreadsheet
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void handleDownloadMachineTemplate()}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download Demo Template
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               <Button onClick={handleAdd} className="gap-2" size="sm">
                 <Plus className="h-4 w-4" />
                 Add Machine
@@ -2644,6 +2702,57 @@ export default function MachinesMaster() {
       />
 
       <DeleteConfirmDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} title="Delete Machine" itemName={selectedMachine?.name} onConfirm={confirmDelete} isLoading={saving} />
+
+      <AlertDialog open={isImportConfirmOpen} onOpenChange={setIsImportConfirmOpen}>
+        <AlertDialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bulk Import Review - {importSummary?.fileName}</AlertDialogTitle>
+            <AlertDialogDescription>
+              We found {importSummary?.rows.length ? importSummary.rows.length - 1 : 0} machine record(s) in your file. 
+              Please review the data preview below before finalizing the import.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          
+          <ScrollArea className="flex-1 h-[350px] my-4 border rounded-md">
+            <div className="p-1 min-w-full overflow-x-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableRow>
+                    {importSummary?.rows[0]?.slice(0, 8).map((header: string, i: number) => (
+                      <TableHead key={i} className="whitespace-nowrap text-[11px] h-8">{header}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {importSummary?.rows.slice(1, 21).map((row: string[], rowIndex: number) => (
+                    <TableRow key={rowIndex}>
+                      {row.slice(0, 8).map((cell, cellIndex) => (
+                        <TableCell key={cellIndex} className="whitespace-nowrap text-[11px] py-1 max-w-[150px] truncate">
+                          {cell}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                  {importSummary && importSummary.rows.length > 21 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-muted-foreground py-2 text-[11px]">
+                        ... and {importSummary.rows.length - 21} more rows
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </ScrollArea>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setImportSummary(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void confirmBulkImport()} disabled={bulkUploading}>
+              {bulkUploading ? "Processing..." : "Confirm & Import Data"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageShell>
   );
 }

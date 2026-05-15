@@ -44,7 +44,7 @@ function buildFallbackPermissionsForRole(role: string): Record<string, string[]>
   }
   if (normalized === 'ADMIN') {
     const map = Object.fromEntries(RBAC_MODULE_KEYS.map((moduleKey) => [moduleKey, allActions])) as Record<string, string[]>;
-    delete map.PLANTS;
+    map.PLANTS = ['READ'];
     delete map.ROLE_ACCESS;
     delete map.BENCHMARKING;
     map.ORGANIZATIONS = ['READ'];
@@ -363,10 +363,10 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
 
     if (!effectiveRoles.includes('SUPERADMIN') && effectiveRoles.some((role) => normalizeRole(role) === 'ADMIN')) {
-      delete permissionMap.PLANTS;
       delete permissionMap.ROLE_ACCESS;
       if (roleKey === 'ADMIN') {
         permissionMap.ORGANIZATIONS = ['READ'];
+        permissionMap.PLANTS = ['READ'];
       }
     }
 

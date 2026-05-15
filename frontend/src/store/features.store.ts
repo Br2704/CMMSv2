@@ -28,7 +28,7 @@ export const useFeaturesStore = create<FeaturesState>((set, get) => ({
       const response = await getFeaturesMe();
       const enabledList = Array.isArray(response.data.enabled) ? response.data.enabled : [];
       const mappedFromEnabled = Object.fromEntries(
-        enabledList.map((item) => [item.trim().toUpperCase(), true]),
+        enabledList.map((item) => [(item || "").trim().toUpperCase(), true]),
       ) as FeatureMap;
       const featureMap = response.data.features ?? mappedFromEnabled;
 
@@ -48,8 +48,8 @@ export const useFeaturesStore = create<FeaturesState>((set, get) => ({
     }
   },
 
-  isFeatureEnabled: (featureKey: string) => {
-    const key = featureKey.trim().toUpperCase();
+  isFeatureEnabled: (featureKey: string | null | undefined) => {
+    const key = (featureKey || "").trim().toUpperCase();
     const features = get().features;
     if (!(key in features)) return true;
     return features[key] === true;

@@ -7,6 +7,26 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Plus, Search, Edit, Trash2, Users, Eye, EyeOff, Upload, Download } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import BackButton from "@/components/masters/BackButton";
 import { FormDialog } from "@/components/shared/FormDialog";
 import { ViewDialog, DetailRow, DetailSection } from "@/components/shared/ViewDialog";
@@ -113,7 +133,8 @@ function getValidationIssueMessage(error: unknown) {
   return null;
 }
 
-function normalizeRoleKey(role: string) {
+function normalizeRoleKey(role: string | null | undefined) {
+  if (!role) return "USER";
   const normalized = role.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   if (normalized === "SUPER_ADMIN" || normalized === "SUPERADMIN") return "SUPERADMIN";
   if (normalized === "ROOTADMIN" || normalized === "ROOT_ADMIN") return "ROOT_ADMIN";
@@ -173,6 +194,13 @@ export default function UsersMaster() {
   const canSelectPlant = currentIsSuperAdmin || currentIsRootAdmin;
   const defaultPlantId = currentUser?.plantId || "";
   const { plantsOptions, fetchPlants, fetchDepartments: syncDepartmentsOptions, invalidateOptions } = useMastersOptions();
+
+  const [importSummary, setImportSummary] = useState<{
+    rows: any[];
+    failures: string[];
+    fileName: string;
+  } | null>(null);
+  const [isImportConfirmOpen, setIsImportConfirmOpen] = useState(false);
 
   const isSuperAdminRole = (role: string) => role.toUpperCase() === "SUPERADMIN" || role.toUpperCase() === "SUPER_ADMIN";
   const isRootAdminRole = (role: string) => role.toUpperCase() === "ROOT_ADMIN";
@@ -762,19 +790,44 @@ export default function UsersMaster() {
     }
   };
 
-  const handleBulkUsersFileChange = async (file: File | null) => {
+    const handleBulkUsersFileChange = async (file: File | null) => {
     if (!file) return;
     try {
+      setBulkUploading(true);
       const rawRows = await parseFileContent(file);
       const rows = findHeaderRowFromRows(rawRows, "user_code");
       if (rows.length < 2) {
         toast.error("Upload file must include a header and at least one user row");
         return;
       }
-      await processUserRows(rows);
-    } catch (error: unknown) {
+
+      // Explicitly skip enterprise template headers: Row 1 is header, Rows 2-6 are helper/metadata. 
+      // findHeaderRowFromRows returns [header, ...data].
+      // If header is Row 1, index 0 is Header, index 1-5 are helpers, index 6 is Row 7.
+      const dataRows = rows.slice(6).filter((row) => row.some(cell => cell.trim().length > 0));
+      if (dataRows.length === 0) {
+        toast.error("Upload file must include at least one valid user record starting from Row 7");
+        return;
+      }
+
+      setImportSummary({
+        rows: [rows[0], ...dataRows],
+        failures: [],
+        fileName: file.name,
+      });
+      setIsImportConfirmOpen(true);
+    } catch (error: any) {
       toast.error(getErrorMessage(error, "Failed to read spreadsheet file"));
+    } finally {
+      setBulkUploading(false);
     }
+  };
+
+  const confirmBulkImport = async () => {
+    if (!importSummary) return;
+    setIsImportConfirmOpen(false);
+    await processUserRows(importSummary.rows);
+    setImportSummary(null);
   };
 
   const handleDownloadUsersTemplate = async () => {
@@ -797,9 +850,9 @@ export default function UsersMaster() {
           "PLANT_CODE_OR_ID",
           "Maintenance",
           `+91-90000000${String(index + 1).padStart(2, "0")}`,
-          "true",
+          "Active",
         ])
-      : [["USR001", "Sample User", "sample.user@example.com", "TempPass@123", "USER", "PLANT_CODE_OR_ID", "Maintenance", "+91-9000000001", "true"]];
+      : [["USR001", "Sample User", "sample.user@example.com", "TempPass@123", "USER", "PLANT_CODE_OR_ID", "Maintenance", "+91-9000000001", "Active"]];
 
     const plantValues = plantsOptions.map((plant) => plant.label || plant.value).filter(Boolean);
     const departmentValues = departments
@@ -807,7 +860,7 @@ export default function UsersMaster() {
       .filter(Boolean);
 
     downloadEnterpriseExcelTemplate({
-      fileName: "user_bulk_upload_demo.xls",
+      fileName: "user_bulk_upload_demo.xlsx",
       title: "CMMS User Management Demo Upload Template",
       uploadSheetName: "User Upload",
       columns: [
@@ -819,7 +872,7 @@ export default function UsersMaster() {
         { key: "plant", label: "Plant", required: true, example: plantValues[0] || "PLANT_CODE_OR_ID", allowedValues: plantValues, description: "Accepts plant code, name, or id when available.", width: 180 },
         { key: "department", label: "Department", example: departmentValues[0] || "Maintenance", allowedValues: departmentValues, description: "Accepts department code or name.", width: 180 },
         { key: "phone", label: "Phone", example: "+91-9000000001", format: "Optional contact number.", width: 140 },
-        { key: "is_active", label: "Status", example: "true", allowedValues: ["true", "false", "active", "inactive", "yes", "no"], description: "Defaults to true when left blank.", width: 120 },
+        { key: "is_active", label: "Status", example: "Active", allowedValues: ["Active", "Inactive"], description: "Defaults to Active when left blank.", width: 120 },
       ],
       rows: sampleRows,
       instructions: [
@@ -924,28 +977,32 @@ export default function UsersMaster() {
                 type="file"
                 accept=".xls,.csv,text/csv,application/vnd.ms-excel,text/xml"
                 className="hidden"
-                aria-label="Bulk upload users Excel or CSV"
-                title="Bulk upload users Excel or CSV"
                 onChange={(event) => {
                   const file = event.target.files?.[0] || null;
                   void handleBulkUsersFileChange(file);
                   event.target.value = "";
                 }}
               />
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full gap-2 sm:w-auto"
-                onClick={() => bulkUploadInputRef.current?.click()}
-                disabled={bulkUploading || allowedBulkRoleOptions.length === 0}
-              >
-                <Upload className="h-4 w-4" />
-                {bulkUploading ? "Uploading..." : "Bulk Upload Users"}
-              </Button>
-              <Button type="button" variant="outline" className="w-full gap-2 sm:w-auto" onClick={() => void handleDownloadUsersTemplate()}>
-                <Download className="h-4 w-4" />
-                Demo File
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="gap-2">
+                    <Upload className="h-4 w-4" />
+                    {bulkUploading ? "Processing..." : "Bulk Actions"}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>Data Management</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => bulkUploadInputRef.current?.click()} disabled={bulkUploading}>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Import Spreadsheet
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void handleDownloadUsersTemplate()}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download Demo Template
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               {roleOptions.length > 0 ? (
                 <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
                   <Plus className="h-4 w-4" />
@@ -1046,14 +1103,14 @@ export default function UsersMaster() {
           </div>
           <InputField label="User Code" value={formData.userCode} onChange={(value) => setFormData({ ...formData, userCode: value })} placeholder="USR001" required />
           <InputField label="Full Name" value={formData.fullName} onChange={(value) => setFormData({ ...formData, fullName: value })} placeholder="Rajesh Kumar" required />
-          <InputField label="Email" value={formData.email} onChange={(value) => setFormData({ ...formData, email: value })} placeholder="user@company.com" type="email" required />
+          <InputField label="Email" value={formData.email} onChange={(value) => setFormData({ ...formData, email: value })} placeholder="user@company.com" type="email" required autoComplete="off" />
           <div className="space-y-2">
             <Label className="flex items-center gap-1">
               Password
               {!selectedUser && <span className="text-destructive">*</span>}
             </Label>
             <div className="relative">
-              <Input value={formData.password} onChange={(event) => setFormData({ ...formData, password: event.target.value })} type={showPassword ? "text" : "password"} placeholder={selectedUser ? "Leave blank to keep existing password" : "Min 8 characters"} className="pr-10" />
+              <Input value={formData.password} onChange={(event) => setFormData({ ...formData, password: event.target.value })} type={showPassword ? "text" : "password"} placeholder={selectedUser ? "Leave blank to keep existing password" : "Min 12 characters"} className="pr-10" autoComplete="new-password" />
               <Button type="button" variant="ghost" size="icon" className="absolute right-0 top-0 h-10 w-10" onClick={() => setShowPassword((prev) => !prev)}>
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
@@ -1152,6 +1209,57 @@ export default function UsersMaster() {
         onConfirm={confirmDelete}
         isLoading={submitting}
       />
+
+      <AlertDialog open={isImportConfirmOpen} onOpenChange={setIsImportConfirmOpen}>
+        <AlertDialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bulk Import Review - {importSummary?.fileName}</AlertDialogTitle>
+            <AlertDialogDescription>
+              We found {importSummary?.rows.length ? importSummary.rows.length - 1 : 0} user record(s) in your file. 
+              Please review the data preview below before finalizing the import.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          
+          <ScrollArea className="flex-1 h-[350px] my-4 border rounded-md">
+            <div className="p-1 min-w-full overflow-x-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableRow>
+                    {importSummary?.rows[0]?.slice(0, 8).map((header: string, i: number) => (
+                      <TableHead key={i} className="whitespace-nowrap text-[11px] h-8">{header}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {importSummary?.rows.slice(1, 21).map((row: string[], rowIndex: number) => (
+                    <TableRow key={rowIndex}>
+                      {row.slice(0, 8).map((cell, cellIndex) => (
+                        <TableCell key={cellIndex} className="whitespace-nowrap text-[11px] py-1 max-w-[150px] truncate">
+                          {cell}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                  {importSummary && importSummary.rows.length > 21 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-muted-foreground py-2 text-[11px]">
+                        ... and {importSummary.rows.length - 21} more rows
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </ScrollArea>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setImportSummary(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void confirmBulkImport()} disabled={bulkUploading}>
+              {bulkUploading ? "Processing..." : "Confirm & Import Data"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageShell>
   );
 }
