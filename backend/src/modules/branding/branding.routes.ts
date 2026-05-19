@@ -160,6 +160,22 @@ async function sendOrganizationAsset(
   }
 
   if (/^https?:\/\//i.test(rawAsset)) {
+    try {
+      const parsed = new URL(rawAsset);
+      const allowedHosts = new Set([
+        'localhost',
+        '127.0.0.1',
+        ...(process.env.FRONTEND_URL ? [new URL(process.env.FRONTEND_URL).hostname] : []),
+        ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(o => { try { return new URL(o.trim()).hostname; } catch { return ''; } }).filter(Boolean) : []),
+      ]);
+      if (!allowedHosts.has(parsed.hostname)) {
+        await sendDefaultAsset(res, kind, size);
+        return;
+      }
+    } catch {
+      await sendDefaultAsset(res, kind, size);
+      return;
+    }
     res.redirect(rawAsset);
     return;
   }
@@ -283,7 +299,6 @@ brandingRouter.get('/branding/manifest', async (req, res) => {
       id: '/', name: 'CMMS', short_name: 'CMMS', description: 'Maintenance Platform',
       start_url: '/', display: 'standalone', background_color: '#ffffff', theme_color: '#0f172a',
       icons: [
-        { src: '/jkfenner/jkfenner-favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
         { src: '/jkfenner/jkfenner-logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       ],
     });
@@ -314,7 +329,6 @@ brandingRouter.get('/branding/manifest', async (req, res) => {
       background_color: DEFAULT_BG_COLOR,
       theme_color: themeColor,
       icons: [
-        { src: '/jkfenner/jkfenner-favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
         { src: '/jkfenner/jkfenner-logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
         { src: '/jkfenner/jkfenner-logo.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       ],

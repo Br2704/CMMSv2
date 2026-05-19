@@ -1,7 +1,11 @@
 const DB_NAME = "cmms_mobile";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const CACHE_STORE = "cache";
 const QUEUE_STORE = "sync_queue";
+const DRAFTS_STORE = "drafts";
+const WORK_ORDERS_STORE = "work_orders";
+const ASSETS_STORE = "assets";
+const MASTERS_STORE = "masters";
 
 export interface CachedRecord<T = unknown> {
   key: string;
@@ -19,6 +23,9 @@ export interface QueuedMutation {
 }
 
 function openDb(): Promise<IDBDatabase> {
+  if (typeof window === "undefined" || !window.indexedDB) {
+    return Promise.reject(new Error("indexedDB not available"));
+  }
   return new Promise((resolve, reject) => {
     const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -30,6 +37,18 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(QUEUE_STORE)) {
         const queueStore = db.createObjectStore(QUEUE_STORE, { keyPath: "id", autoIncrement: true });
         queueStore.createIndex("createdAt", "createdAt");
+      }
+      if (!db.objectStoreNames.contains(DRAFTS_STORE)) {
+        db.createObjectStore(DRAFTS_STORE, { keyPath: "key" });
+      }
+      if (!db.objectStoreNames.contains(WORK_ORDERS_STORE)) {
+        db.createObjectStore(WORK_ORDERS_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(ASSETS_STORE)) {
+        db.createObjectStore(ASSETS_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(MASTERS_STORE)) {
+        db.createObjectStore(MASTERS_STORE, { keyPath: "key" });
       }
     };
 

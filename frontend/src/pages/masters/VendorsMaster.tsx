@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import { useAuthStore, isAdmin } from "@/store/auth.store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -180,7 +179,7 @@ export default function VendorsMaster() {
   return (
     <div className="space-y-4 sm:space-y-6">
       <BackButton />
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight lg:text-3xl">Vendor Master</h1>
           <p className="text-sm text-muted-foreground">Manage vendors and suppliers</p>
@@ -191,7 +190,7 @@ export default function VendorsMaster() {
             Add Vendor
           </Button>
         )}
-      </motion.div>
+      </div>
       <Card className="shadow-card">
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

@@ -27,10 +27,9 @@ function uniqueUserIds(values: Array<string | null | undefined>): string[] {
 async function getEscalationUsers(
   level: number,
   plantId: string | null | undefined,
+  slaConfig: SlaConfigEntity | null,
 ): Promise<{ emails: string[]; userIds: string[] }> {
-  const configRepo = AppDataSource.getRepository(SlaConfigEntity);
-  const config = await configRepo.findOne({ where: { isActive: true, scope: 'GLOBAL' }, order: { createdAt: 'DESC' } });
-  const roleKey = config ? (config as any)[`escalationRole${level}`] as string | null : null;
+  const roleKey = slaConfig ? (slaConfig as any)[`escalationRole${level}`] as string | null : null;
   if (!roleKey) return { emails: [], userIds: [] };
 
   const userRoleRepo = AppDataSource.getRepository(UserRoleEntity);
@@ -94,6 +93,33 @@ async function updateEscalationHistory(
   }
 }
 
+function findSlaConfig(
+  wo: { plant_id: string | null; category: string | null; priority: string },
+  configs: SlaConfigEntity[]
+): SlaConfigEntity | null {
+  // 1. Plant match
+  if (wo.plant_id) {
+    const plantConfig = configs.find(c => c.scope === 'PLANT' && c.scopeValue === wo.plant_id && c.priority === wo.priority);
+    if (plantConfig) return plantConfig;
+  }
+  // 2. Category match
+  if (wo.category) {
+    const categoryConfig = configs.find(c => c.scope === 'CATEGORY' && c.scopeValue?.toUpperCase() === (wo.category as string).toUpperCase() && c.priority === wo.priority);
+    if (categoryConfig) return categoryConfig;
+  }
+  // 3. Priority match
+  const priorityConfig = configs.find(c => c.scope === 'PRIORITY' && c.priority === wo.priority);
+  if (priorityConfig) return priorityConfig;
+
+  // 4. Global Priority match
+  const globalPriorityConfig = configs.find(c => c.scope === 'GLOBAL' && c.priority === wo.priority);
+  if (globalPriorityConfig) return globalPriorityConfig;
+
+  // 5. Fallback to any active Global config
+  const globalConfig = configs.find(c => c.scope === 'GLOBAL');
+  return globalConfig || null;
+}
+
 export async function runEnhancedEscalationScheduler(): Promise<void> {
   if (!AppDataSource.isInitialized) return;
 
@@ -103,18 +129,13 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
   const notificationRepo = manager.getRepository(NotificationEntity);
   const configRepo = manager.getRepository(SlaConfigEntity);
 
-  const slaConfig = await configRepo.findOne({ where: { isActive: true, scope: 'GLOBAL' }, order: { createdAt: 'DESC' } });
-  const escalationMin1 = slaConfig?.escalation1Minutes ?? 30;
-  const escalationMin2 = slaConfig?.escalation2Minutes ?? 60;
-  const escalationMin3 = slaConfig?.escalation3Minutes ?? 120;
-  const escalationMin4 = slaConfig?.escalation4Minutes ?? 240;
-  const reminderInterval = slaConfig?.reminderIntervalMinutes ?? 60;
-  const ESCALATION_INTERVALS = [escalationMin1, escalationMin2, escalationMin3, escalationMin4];
+  const slaConfigs = await configRepo.find({ where: { isActive: true }, order: { createdAt: 'DESC' } });
 
   const candidates = await manager
     .createQueryBuilder()
     .select('wo.id', 'id')
     .addSelect('wo.wo_number', 'wo_number')
+    .addSelect('wo.category', 'category')
     .addSelect('wo.asset_id', 'asset_id')
     .addSelect('wo.plant_id', 'plant_id')
     .addSelect('wo.raised_by', 'raised_by')
@@ -132,6 +153,7 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
     .getRawMany<{
       id: string;
       wo_number: string;
+      category: string | null;
       asset_id: string | null;
       plant_id: string | null;
       raised_by: string | null;
@@ -152,6 +174,14 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
   const touchedUsers = new Set<string>();
 
   for (const workOrder of candidates) {
+    const matchedSla = findSlaConfig(workOrder, slaConfigs);
+    const escalationMin1 = matchedSla?.escalation1Minutes ?? 30;
+    const escalationMin2 = matchedSla?.escalation2Minutes ?? 60;
+    const escalationMin3 = matchedSla?.escalation3Minutes ?? 120;
+    const escalationMin4 = matchedSla?.escalation4Minutes ?? 240;
+    const reminderInterval = matchedSla?.reminderIntervalMinutes ?? 60;
+    const ESCALATION_INTERVALS = [escalationMin1, escalationMin2, escalationMin3, escalationMin4];
+
     const baseline = toDate(workOrder.started_at) || toDate(workOrder.accepted_at) || toDate(workOrder.created_at) || now;
     const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - baseline.getTime()) / 60000));
     const currentLevel = Number(workOrder.escalation_level ?? 0) || 0;
@@ -200,7 +230,7 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
       );
 
       const recipients = uniqueUserIds([workOrder.assigned_to, workOrder.raised_by]);
-      const { emails: escalationEmails, userIds: escalationUserIds } = await getEscalationUsers(nextLevel, workOrder.plant_id);
+      const { emails: escalationEmails, userIds: escalationUserIds } = await getEscalationUsers(nextLevel, workOrder.plant_id, matchedSla);
       const allRecipients = uniqueUserIds([...recipients, ...escalationUserIds]);
 
       if (allRecipients.length > 0) {
@@ -227,10 +257,11 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
         escalationEmails,
       );
 
-      if (isMailConfigured() && escalationEmails.length > 0) {
+      if ((await isMailConfigured()) && escalationEmails.length > 0) {
         const woData: WoNotificationData = {
           woId: workOrder.id,
           woNumber: workOrder.wo_number,
+          category: workOrder.category ?? undefined,
           assetId: workOrder.asset_id ?? undefined,
           plantId: workOrder.plant_id ?? undefined,
           priority: workOrder.priority,
@@ -244,8 +275,8 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
 
     if (isReminder && currentLevel > 0) {
       const recipients = uniqueUserIds([workOrder.assigned_to, workOrder.raised_by]);
-      const { emails: levelEmails, userIds: levelUserIds } = await getEscalationUsers(currentLevel, workOrder.plant_id);
-      const { emails: managerEmails, userIds: managerUserIds } = await getEscalationUsers(Math.min(currentLevel + 2, 4), workOrder.plant_id);
+      const { emails: levelEmails, userIds: levelUserIds } = await getEscalationUsers(currentLevel, workOrder.plant_id, matchedSla);
+      const { emails: managerEmails, userIds: managerUserIds } = await getEscalationUsers(Math.min(currentLevel + 2, 4), workOrder.plant_id, matchedSla);
       
       const allRecipients = uniqueUserIds([...recipients, ...levelUserIds, ...managerUserIds]);
       const allEmails = Array.from(new Set([...levelEmails, ...managerEmails]));
@@ -278,10 +309,11 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
         }),
       );
 
-      if (isMailConfigured() && allEmails.length > 0) {
+      if ((await isMailConfigured()) && allEmails.length > 0) {
         const woData: WoNotificationData = {
           woId: workOrder.id,
           woNumber: workOrder.wo_number,
+          category: workOrder.category ?? undefined,
           assetId: workOrder.asset_id ?? undefined,
           plantId: workOrder.plant_id ?? undefined,
           priority: workOrder.priority,

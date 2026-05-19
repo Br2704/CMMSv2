@@ -6,6 +6,7 @@ import { buildMail } from './mail-templates';
 export interface WoNotificationData {
   woId: string;
   woNumber: string;
+  category?: string;
   assetId?: string;
   plantId?: string;
   priority: string;
@@ -89,6 +90,7 @@ async function buildWoData(raw: WoNotificationData): Promise<Record<string, unkn
   return {
     woNumber: raw.woNumber,
     assetName: assetName || 'Unknown Asset',
+    category: raw.category || 'N/A',
     problemDescription: raw.problemDescription || '',
     priority: raw.priority || 'MEDIUM',
     location: raw.location || '',
@@ -105,7 +107,7 @@ export async function sendNewWorkOrderEmails(
   data: WoNotificationData,
   raiserId?: string | null,
 ): Promise<void> {
-  if (!isMailConfigured()) return;
+  if (!(await isMailConfigured())) return;
 
   const templateData = await buildWoData(data);
 
@@ -138,7 +140,7 @@ export async function sendWorkOrderAssignedEmails(
   data: WoNotificationData,
   teamId?: string | null,
 ): Promise<void> {
-  if (!isMailConfigured()) return;
+  if (!(await isMailConfigured())) return;
   const templateData = await buildWoData(data);
   const emails = await resolveTeamMemberEmails(teamId);
   if (emails.length === 0) return;
@@ -164,7 +166,7 @@ export async function sendWorkOrderCompletedEmails(
   raiserId?: string | null,
   assignedToId?: string | null,
 ): Promise<void> {
-  if (!isMailConfigured()) return;
+  if (!(await isMailConfigured())) return;
   const templateData = await buildWoData({ ...data, status: 'COMPLETED' });
   const emails = new Set<string>();
 
@@ -195,7 +197,7 @@ export async function sendWorkOrderClosedEmails(
   raiserId?: string | null,
   assignedToId?: string | null,
 ): Promise<void> {
-  if (!isMailConfigured()) return;
+  if (!(await isMailConfigured())) return;
   const templateData = await buildWoData({ ...data, status: 'CLOSED' });
   const emails = new Set<string>();
 
@@ -226,7 +228,7 @@ export async function sendWorkOrderEscalationEmails(
   level: number,
   emails: string[],
 ): Promise<void> {
-  if (!isMailConfigured() || emails.length === 0) return;
+  if (!(await isMailConfigured()) || emails.length === 0) return;
   const templateData = await buildWoData({ ...data, escalationLevel: level, status: 'ESCALATED' });
   const { subject, html } = buildMail({ template: 'workOrderEscalated', data: templateData as any });
 
@@ -249,7 +251,7 @@ export async function sendWorkOrderReminderEmails(
   data: WoNotificationData,
   emails: string[],
 ): Promise<void> {
-  if (!isMailConfigured() || emails.length === 0) return;
+  if (!(await isMailConfigured()) || emails.length === 0) return;
   const templateData = await buildWoData(data);
   const { subject, html } = buildMail({ template: 'workOrderReminder', data: templateData as any });
 
@@ -295,7 +297,7 @@ export async function sendWorkOrderRejectedEmails(
   data: WoNotificationData,
   recipientId?: string | null,
 ): Promise<void> {
-  if (!isMailConfigured() || !recipientId) return;
+  if (!(await isMailConfigured()) || !recipientId) return;
   const templateData = await buildWoData({ ...data, status: 'REJECTED' });
   const email = await resolveUserEmail(recipientId);
   if (!email) return;
@@ -318,7 +320,7 @@ export async function sendWorkOrderCancelledEmails(
   data: WoNotificationData,
   recipientIds: string[],
 ): Promise<void> {
-  if (!isMailConfigured() || recipientIds.length === 0) return;
+  if (!(await isMailConfigured()) || recipientIds.length === 0) return;
   const templateData = await buildWoData({ ...data, status: 'CANCELLED' });
   const emails = await Promise.all(recipientIds.map(resolveUserEmail));
   const validEmails = emails.filter((e): e is string => Boolean(e));

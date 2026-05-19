@@ -165,30 +165,31 @@ function AssetOverviewPanel({
                 </div>
 
                 <div 
-                  className="group relative h-32 w-32 shrink-0 cursor-pointer rounded-2xl border border-slate-100 bg-slate-50 p-2 transition-all hover:bg-slate-100"
-                  onClick={handleCopyResolverUrl}
-                >
-                   {qrLoading ? (
-                     <div className="flex h-full items-center justify-center">
-                        <Loader2 className="h-6 w-6 animate-spin text-slate-300" />
-                     </div>
-                   ) : qrImageUrl ? (
-                     <>
-                        <img src={qrImageUrl} alt="Asset QR" className="h-full w-full object-contain mix-blend-multiply" />
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100 rounded-2xl">
-                           <span className="text-[8px] font-black text-white uppercase tracking-widest">Copy Link</span>
-                        </div>
-                     </>
-                   ) : (
-                     <div className="flex h-full items-center justify-center text-slate-300">
-                        <QrCode className="h-8 w-8" />
-                     </div>
-                   )}
-                </div>
-             </div>
+                   className="group relative h-32 w-32 shrink-0 cursor-pointer rounded-[2rem] border border-slate-100 bg-white p-3 transition-all hover:shadow-industrial-lg hover:border-primary/20"
+                   onClick={handleCopyResolverUrl}
+                   title="Click to copy machine link"
+                 >
+                    {qrLoading ? (
+                      <div className="flex h-full items-center justify-center">
+                         <Loader2 className="h-6 w-6 animate-spin text-primary/20" />
+                      </div>
+                    ) : qrImageUrl ? (
+                      <>
+                         <img src={qrImageUrl} alt="Asset QR" className="h-full w-full object-contain transition-transform group-hover:scale-95" />
+                         <div className="absolute inset-0 flex items-center justify-center bg-primary/5 opacity-0 transition-opacity group-hover:opacity-100 rounded-[2rem]">
+                            <QrCode className="h-6 w-6 text-primary animate-pulse" />
+                         </div>
+                      </>
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-slate-200">
+                         <QrCode className="h-10 w-10" />
+                      </div>
+                    )}
+                 </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
       <div className="rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-sm">
          <div className="flex items-center justify-between mb-6">

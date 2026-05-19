@@ -17,7 +17,7 @@ const DANGEROUS_USER_AGENTS = [
   /gobuster/i,
 ];
 
-const SQL_INJECTION_PATTERN = /(?:SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|TRUNCATE)/i;
+export const SQL_INJECTION_PATTERN = /(?:SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|TRUNCATE|UNION\s+ALL\s+SELECT|\bOR\b\s+['"]?\d+['"]?\s*=\s*['"]?\d+|(?:--|\/\*|\*\/|#|\bWAITFOR\b\s+DELAY\s+['"]\d+:\d+:\d+['"]|\bBENCHMARK\b\(|\bSLEEP\b\())/i;
 const SCRIPT_INJECTION_PATTERN = /(?:<\?php|<script|javascript:|on\w+=)/i;
 const PATH_TRAVERSAL_PATTERN = /(?:(?:\.\.(?:\/|\\))|(?:%2e%2e(?:\/|\\)))/i;
 const CODE_EXECUTION_PATTERN = /(?:eval\(|exec\(|system\(|shell_exec\()/i;

@@ -1,7 +1,7 @@
 import { httpRequest } from "@/api/http";
 import type { ApiListResponse, ApiResponse, DeleteResult } from "@/api/types";
 
-export type WorkOrderMasterOptionType = "CATEGORY" | "WO_TYPE" | "FAILURE_CODE";
+export type WorkOrderMasterOptionType = "CATEGORY" | "WO_TYPE" | "FAILURE_CODE" | "TEMPLATE";
 
 export interface WorkOrderMaster {
   id: string;

@@ -1,35 +1,59 @@
 import { Router } from 'express';
+import { z } from 'zod';
+import { env } from '../../config/env';
 import { AppDataSource } from '../../database/data-source';
 import { PushSubscriptionEntity } from '../../database/entities/push-subscription.entity';
+import { UserEntity } from '../../database/entities/user.entity';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { ok } from '../../utils/apiResponse';
 
 export const pushRouter = Router();
 
-function getVapidConfiguration(): { publicKey: string; privateKey: string } {
-  const publicKey = process.env.VAPID_PUBLIC_KEY || '';
-  const privateKey = process.env.VAPID_PRIVATE_KEY || '';
+let devVapidConfig: { publicKey: string; privateKey: string } | null = null;
+
+function resolveVapidConfiguration(): { publicKey: string; privateKey: string } | null {
+  const publicKey = process.env.VAPID_PUBLIC_KEY?.trim() || '';
+  const privateKey = process.env.VAPID_PRIVATE_KEY?.trim() || '';
   if (publicKey && privateKey) {
     return { publicKey, privateKey };
   }
-  const webPush = require('web-push');
-  const vapidKeys = webPush.generateVAPIDKeys();
-  return { publicKey: vapidKeys.publicKey, privateKey: vapidKeys.privateKey };
+  if (env.NODE_ENV === 'production') {
+    return null;
+  }
+  if (!devVapidConfig) {
+    const webPush = require('web-push');
+    devVapidConfig = webPush.generateVAPIDKeys();
+  }
+  return devVapidConfig;
 }
 
-const vapidConfig = getVapidConfiguration();
-
 pushRouter.get('/push/vapid-public-key', (_req, res) => {
+  const vapidConfig = resolveVapidConfiguration();
+  if (!vapidConfig) {
+    res.status(503).json({ error: 'Push notifications are not configured' });
+    return;
+  }
   res.json({ publicKey: vapidConfig.publicKey });
+});
+
+const pushSubscribeSchema = z.object({
+  subscription: z.object({
+    endpoint: z.string().url(),
+    keys: z.object({
+      p256dh: z.string().min(1),
+      auth: z.string().min(1),
+    }),
+  }),
 });
 
 pushRouter.post('/push/subscribe', requireAuth, async (req, res, next) => {
   try {
-    const { subscription } = req.body;
-    if (!subscription || !subscription.endpoint || !subscription.keys) {
+    const parsed = pushSubscribeSchema.safeParse(req.body);
+    if (!parsed.success) {
       res.status(400).json({ error: 'Invalid subscription' });
       return;
     }
+    const { subscription } = parsed.data;
     const repo = AppDataSource.getRepository(PushSubscriptionEntity);
     const existing = await repo.findOne({
       where: { userId: req.auth!.userId, endpoint: subscription.endpoint },
@@ -55,13 +79,18 @@ pushRouter.post('/push/subscribe', requireAuth, async (req, res, next) => {
   }
 });
 
+const pushUnsubscribeSchema = z.object({
+  endpoint: z.string().min(1),
+});
+
 pushRouter.post('/push/unsubscribe', requireAuth, async (req, res, next) => {
   try {
-    const { endpoint } = req.body;
-    if (!endpoint) {
+    const parsed = pushUnsubscribeSchema.safeParse(req.body);
+    if (!parsed.success) {
       res.status(400).json({ error: 'Missing endpoint' });
       return;
     }
+    const { endpoint } = parsed.data;
     const repo = AppDataSource.getRepository(PushSubscriptionEntity);
     await repo.delete({ userId: req.auth!.userId, endpoint });
     res.json(ok({ unsubscribed: true }));
@@ -72,6 +101,10 @@ pushRouter.post('/push/unsubscribe', requireAuth, async (req, res, next) => {
 
 export async function sendPushNotification(userId: string, title: string, body: string, url?: string): Promise<void> {
   try {
+    const vapidConfig = resolveVapidConfiguration();
+    if (!vapidConfig) {
+      return;
+    }
     const webPush = require('web-push');
     webPush.setVapidDetails(
       'mailto:admin@cmms.local',
@@ -104,19 +137,21 @@ export async function sendPushNotificationToRole(
   url?: string
 ): Promise<void> {
   try {
-    const query = `
-      SELECT DISTINCT u.id FROM users u
-      JOIN user_roles ur ON ur.user_id = u.id
-      JOIN roles r ON r.id = ur.role_id
-      WHERE r.name = $1
-    `;
-    const params: string[] = [role];
+    const userRepo = AppDataSource.getRepository(UserEntity);
+    const qb = userRepo
+      .createQueryBuilder('u')
+      .select('DISTINCT u.id')
+      .innerJoin('user_roles', 'ur', 'ur.user_id = u.id')
+      .innerJoin('roles', 'r', 'r.id = ur.role_id')
+      .where('r.name = :role', { role });
+
     if (plantId) {
-      // users associated with the plant
+      qb.andWhere('u.organization_id IN (SELECT p.organization_id FROM plants p WHERE p.id = :plantId)', { plantId });
     }
-    const result = await AppDataSource.query(query, params);
+
+    const result = await qb.getRawMany<{ id: string }>();
     await Promise.allSettled(
-      result.map((row: { id: string }) =>
+      result.map((row) =>
         sendPushNotification(row.id, title, body, url)
       )
     );

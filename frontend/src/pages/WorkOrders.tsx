@@ -1,19 +1,15 @@
-import { useState, useMemo, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-
-
 import { format, formatDistanceToNow, subHours } from "date-fns";
 import {
   Plus, Search, Eye, MoreHorizontal, Play, CheckCircle, Loader2, RefreshCw,
   ClipboardList, Clock, CheckSquare, AlertTriangle, Send, Wrench, QrCode,
-  Bell, BellOff, History, XCircle
+  Bell, BellOff, History, MessageCircle, XCircle
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -43,15 +39,18 @@ import { listSpareItems, type SpareItem } from "@/api/inventory";
 import { listWorkOrderMasters, type WorkOrderMaster, type WorkOrderMasterOptionType } from "@/api/workOrderMasters";
 import { listWorkOrderTeamMappings, type WorkOrderTeamMapping } from "@/api/workOrderTeamMappings";
 import { listMaintenanceTeams } from "@/api/maintenanceTeams";
+import { listUsers, type UserProfile } from "@/api/users";
 import {
   approveWorkOrder,
-  cancelWorkOrder,
   createWorkOrder,
   listWorkOrderActivity,
   listWorkOrders,
   rejectWorkOrder,
   startWorkOrder,
   submitWorkOrderForApproval,
+  addWorkOrderActivity,
+  exportWorkOrdersCSV,
+  bulkUpdateWorkOrders,
 } from "@/api/workorders";
 import { humanizeWorkOrderCode, normalizeWorkOrderCode, resolveWorkOrderLabel } from "@/config/work-order-masters";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
@@ -140,35 +139,83 @@ const WorkflowTimeline = ({ status, createdAt, openedAt, closedAt }: { status: s
 };
 
 const PRIORITY_OPTIONS = [
-  { value: "CRITICAL", label: "Critical" },
-  { value: "HIGH", label: "High" },
-  { value: "MEDIUM", label: "Medium" },
-  { value: "LOW", label: "Low" },
+  { value: "CRITICAL", label: "Production Line stoppage" },
+  { value: "MEDIUM", label: "No production line stoppage" },
 ];
 
-const getInitialRaiseFormData = (plantId = "") => ({
+const formatPriorityLabel = (priority: string) => {
+  if (priority === "CRITICAL") return "Production Line stoppage";
+  return "No production line stoppage";
+};
+
+interface RaiseFormData {
+  plant_id: string;
+  department_id: string;
+  module_id: string;
+  asset_id: string;
+  issue_title: string;
+  problem_description: string;
+  priority: string;
+  reported_location: string;
+  remarks: string;
+  category: string;
+  wo_type: string;
+}
+const getInitialRaiseFormData = (plantId = ""): RaiseFormData => ({
   plant_id: plantId,
   department_id: "",
   module_id: "",
   asset_id: "",
-  category: "",
-  priority: "",
+  issue_title: "",
   problem_description: "",
+  priority: "MEDIUM",
+  reported_location: "",
+  remarks: "",
+  category: "",
   wo_type: "",
-  failure_code: "",
-  sub_category: "",
 });
 
+const EMPTY_OPEN_DATA = {
+  initial_assessment: "",
+  category: "",
+  assigned_to: "",
+  estimated_minutes: "",
+  expected_downtime_minutes: "",
+  assessment_remarks: "",
+  assigned_to_notes: "",
+};
+
+const EMPTY_WHY_WHY = {
+  why_1: "",
+  why_2: "",
+  why_3: "",
+  why_4: "",
+  why_5: "",
+  root_reason: "",
+  corrective_prevention: "",
+  recurrence_prevention: "",
+};
+
 const EMPTY_CLOSE_DATA = {
+  wo_type: "BREAKDOWN",
   root_cause: "",
   action_taken: "",
+  corrective_action: "",
   failure_code: "",
+  actual_failure_category: "",
+  why_why: { ...EMPTY_WHY_WHY },
+  preventive_recommendation: "",
+  manpower_used: "",
   parts_replaced: "",
+  spare_used: false,
+  downtime_minutes: "",
+  completion_at: "",
   operator_fault: false,
-  warranty_claim: false,
   follow_up_required: false,
   follow_up_team_id: "",
   follow_up_notes: "",
+  follow_up_support_category: "MECHANICAL",
+  follow_up_urgency: "MEDIUM",
   remarks: "",
 };
 
@@ -187,8 +234,9 @@ function getStatusVariant(status: string) {
   if (status === "CLOSED") return "completed" as const;
   if (status === "CANCELLED") return "error" as const;
   if (status === "IN_PROGRESS") return "in_progress" as const;
-  if (status === "USER_VERIFICATION") return "critical" as const;
-  if (status === "APPROVAL_PENDING") return "critical" as const;
+  if (status === "USER_VERIFICATION") return "approval_pending" as const;
+  if (status === "APPROVAL_PENDING") return "approval_pending" as const;
+  if (status === "REASSIGNED") return "warning" as const;
   if (status === "ASSIGNED") return "primary" as const;
   if (status === "TRIAGED") return "info" as const;
   if (status === "REJECTED") return "error" as const;
@@ -223,16 +271,30 @@ function buildSpareUsagePayload(rows: SpareUsageDraft[], availableSpares: SpareI
   return rows
     .map((row) => {
       const quantity = Number.parseInt(row.quantity, 10);
+      if (!Number.isFinite(quantity) || quantity <= 0) return null;
+
+      if (row.isManual) {
+        const spareName = (row.spareName || "").trim();
+        if (!spareName) return null;
+        return {
+          spare_item_id: `manual-${spareName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+          quantity,
+          spare_name: spareName,
+          is_manual: true,
+        };
+      }
+
       const spare = spareById.get(row.spareItemId);
-      if (!spare || !Number.isFinite(quantity) || quantity <= 0) return null;
+      if (!spare) return null;
       return {
         spare_item_id: spare.id,
         quantity,
         spare_name: spare.name,
         spare_code: spare.code,
+        is_manual: false,
       };
     })
-    .filter((item): item is { spare_item_id: string; quantity: number; spare_name: string; spare_code: string } => Boolean(item));
+    .filter((item): item is { spare_item_id: string; quantity: number; spare_name: string; spare_code: string; is_manual: boolean } => Boolean(item));
 }
 
 function sortWorkOrderMasters(left: WorkOrderMaster, right: WorkOrderMaster) {
@@ -341,7 +403,7 @@ export default function WorkOrders() {
     },
   });
 
-  const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "incharge" | "all" | "approval" | "vendor">("assigned");
+  const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "incharge" | "team" | "all" | "approval" | "vendor">("assigned");
 
   const { data: allWorkOrders = [], isLoading, isFetching, refetch, dataUpdatedAt } = useQuery({
     queryKey: ["work_orders", ...activePlantIds, activeTab, actorIds],
@@ -353,11 +415,6 @@ export default function WorkOrders() {
   });
 
   const isOwnedByCurrentUser = (value: unknown) => typeof value === "string" && actorIds.has(value);
-
-  const assignedWorkOrders = useMemo(() => {
-    if (!user || actorIds.size === 0) return [];
-    return allWorkOrders.filter((wo: any) => isOwnedByCurrentUser(wo.assigned_to));
-  }, [actorIds, allWorkOrders, user]);
 
   const raisedWorkOrders = useMemo(() => {
     if (!user || actorIds.size === 0) return [];
@@ -377,6 +434,48 @@ export default function WorkOrders() {
     );
   }, [allWorkOrders, userIsAdmin]);
 
+  const { data: userMaintenanceTeams = [] } = useQuery({
+    queryKey: ["wo_user_teams", ...activePlantIds],
+    enabled: Boolean(authEnabled),
+    queryFn: async () => {
+      const response = await listMaintenanceTeams({ plantId: activePlantIds[0], page: 1, limit: 500, includeInactive: false });
+      return response.data || [];
+    },
+  });
+
+  const userTeamCategories = useMemo(() => {
+    const userId = user?.authId || user?.id;
+    if (!userId || userMaintenanceTeams.length === 0 || workOrderTeamMappings.length === 0) return new Set<string>();
+    const userTeamIds = new Set(
+      userMaintenanceTeams
+        .filter((team) => team.teamLeaderId === userId || (team.teamMemberIds ?? []).includes(userId))
+        .map((t) => t.id)
+    );
+    return new Set(
+      workOrderTeamMappings
+        .filter((mapping) => userTeamIds.has(mapping.teamId))
+        .map((mapping) => mapping.category)
+    );
+  }, [userMaintenanceTeams, workOrderTeamMappings, user?.authId, user?.id]);
+
+  const userIsPartOfTeam = userTeamCategories.size > 0;
+
+  const assignedWorkOrders = useMemo(() => {
+    if (!user || actorIds.size === 0) return [];
+    return allWorkOrders.filter(
+      (wo: any) =>
+        isOwnedByCurrentUser(wo.assigned_to) ||
+        (userTeamCategories.size > 0 && userTeamCategories.has(wo.category) && !isOwnedByCurrentUser(wo.raised_by))
+    );
+  }, [actorIds, allWorkOrders, user, userTeamCategories]);
+
+  const teamWorkOrders = useMemo(() => {
+    if (userTeamCategories.size === 0) return [];
+    return allWorkOrders.filter(
+      (wo: any) => userTeamCategories.has(wo.category) && !isOwnedByCurrentUser(wo.raised_by),
+    );
+  }, [allWorkOrders, userTeamCategories]);
+
   const activeAssetHistoryId = assetIdFromQuery?.trim() || "";
   const isAssetHistoryMode = Boolean(activeAssetHistoryId);
 
@@ -385,9 +484,9 @@ export default function WorkOrders() {
   useEffect(() => {
     const userIsVendor = normalizedRoles.includes("VENDOR");
     if (!authEnabled || activeTabInitializedRef.current) return;
-    setActiveTab(userIsAdmin ? "all" : userIsVendor ? "vendor" : userIsIncharge ? "incharge" : "assigned");
+    setActiveTab(userIsAdmin ? "all" : userIsVendor ? "vendor" : userIsIncharge ? "incharge" : userIsPartOfTeam ? "team" : "assigned");
     activeTabInitializedRef.current = true;
-  }, [authEnabled, userIsAdmin, userIsIncharge, normalizedRoles]);
+  }, [authEnabled, userIsAdmin, userIsIncharge, normalizedRoles, userIsPartOfTeam]);
 
   useEffect(() => {
     if (activeTab === "all" && !userIsAdmin) {
@@ -397,7 +496,10 @@ export default function WorkOrders() {
     if (activeTab === "incharge" && !userIsIncharge) {
       setActiveTab(userIsAdmin ? "all" : "assigned");
     }
-  }, [activeTab, userIsAdmin, userIsIncharge]);
+    if (activeTab === "team" && !userIsPartOfTeam) {
+      setActiveTab(userIsAdmin ? "all" : "assigned");
+    }
+  }, [activeTab, userIsAdmin, userIsIncharge, userIsPartOfTeam]);
 
   const displayedOrders = useMemo(() => {
     if (isAssetHistoryMode) {
@@ -407,12 +509,13 @@ export default function WorkOrders() {
     if (activeTab === "raised") return raisedWorkOrders;
     if (userIsIncharge && activeTab === "incharge") return inchargeWorkOrders;
     if (activeTab === "approval") return approvalQueueWorkOrders;
+    if (activeTab === "team") return teamWorkOrders;
     if (userIsAdmin && activeTab === "all") return allWorkOrders;
     if (activeTab === "vendor") {
       return allWorkOrders.filter((wo: any) => wo.vendor_id === user?.id || wo.assigned_vendor_id === user?.id);
     }
     return assignedWorkOrders;
-  }, [activeTab, allWorkOrders, approvalQueueWorkOrders, assignedWorkOrders, inchargeWorkOrders, isAssetHistoryMode, raisedWorkOrders, userIsAdmin, userIsIncharge]);
+  }, [activeTab, allWorkOrders, approvalQueueWorkOrders, assignedWorkOrders, inchargeWorkOrders, isAssetHistoryMode, raisedWorkOrders, teamWorkOrders, userIsAdmin, userIsIncharge]);
 
   const kpiSource =
     isAssetHistoryMode
@@ -421,7 +524,9 @@ export default function WorkOrders() {
         ? approvalQueueWorkOrders
         : activeTab === "incharge"
           ? inchargeWorkOrders
-          : activeTab === "all"
+        : activeTab === "team"
+          ? teamWorkOrders
+        : activeTab === "all"
             ? allWorkOrders
             : activeTab === "raised"
               ? raisedWorkOrders
@@ -436,6 +541,8 @@ export default function WorkOrders() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const myApprovalQueueCount = approvalQueueWorkOrders.length;
 
@@ -452,7 +559,7 @@ export default function WorkOrders() {
       [wo.wo_number, wo.assets?.name, wo.assets?.code, wo.category, wo.status]
         .filter((value): value is string => typeof value === "string")
         .some((value) => value.toLowerCase().includes(normalizedSearch));
-    const effectiveStatusFilter = activeTab === "approval" ? "USER_VERIFICATION" : statusFilter;
+    const effectiveStatusFilter = activeTab === "approval" ? "APPROVAL_PENDING" : statusFilter;
     const matchesStatus =
       effectiveStatusFilter === "all" ||
       (effectiveStatusFilter === "USER_VERIFICATION"
@@ -460,7 +567,9 @@ export default function WorkOrders() {
         : wo.status === effectiveStatusFilter);
     const matchesCat = categoryFilter === "all" || wo.category === categoryFilter;
     const matchesType = typeFilter === "all" || wo.wo_type === typeFilter;
-    return matchesAsset && matchesSearch && matchesStatus && matchesCat && matchesType;
+    const matchesDateFrom = !dateFrom || new Date(wo.created_at) >= new Date(dateFrom);
+    const matchesDateTo = !dateTo || new Date(wo.created_at) <= new Date(dateTo + "T23:59:59");
+    return matchesAsset && matchesSearch && matchesStatus && matchesCat && matchesType && matchesDateFrom && matchesDateTo;
   });
 
   const clearAssetHistoryFilter = () => {
@@ -495,12 +604,10 @@ export default function WorkOrders() {
     notes: "",
   });
   const [closeAttachments, setCloseAttachments] = useState<PhotoAttachment[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [reviewMode, setReviewMode] = useState<"approve" | "reject">("approve");
   const [reviewData, setReviewData] = useState(() => ({ ...EMPTY_REVIEW_DATA }));
-  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
-  const [cancelReason, setCancelReason] = useState("");
-  const [cancelling, setCancelling] = useState(false);
   const [formData, setFormData] = useState(() => getInitialRaiseFormData(user?.plantId || ""));
   const [photoAttachments, setPhotoAttachments] = useState<PhotoAttachment[]>([]);
   const [reviewTargetWO, setReviewTargetWO] = useState<any>(null);
@@ -781,39 +888,8 @@ export default function WorkOrders() {
     }
   }, [assetIdFromQuery, prefetchedAsset, searchParams, user?.plantId]);
 
-  useEffect(() => {
-    const currentWoType = formData.wo_type;
-
-    if (plantWorkOrderTypeOptions.length === 0) {
-      if (!currentWoType) return;
-      setFormData((prev) => ({ ...prev, wo_type: "" }));
-      return;
-    }
-
-    if (currentWoType && plantWorkOrderTypeOptions.some((option) => option.value === currentWoType)) return;
-
-    setFormData((prev) => ({
-      ...prev,
-      wo_type: plantWorkOrderTypeOptions[0].value,
-    }));
-  }, [formData.wo_type, plantWorkOrderTypeOptions]);
-
-  useEffect(() => {
-    if (!formData.category) return;
-    if (routedCategoryOptions.some((option) => option.value === formData.category)) return;
-    setFormData((prev) => ({ ...prev, category: "" }));
-  }, [formData.category, routedCategoryOptions]);
-
-  useEffect(() => {
-    if (!formData.failure_code) return;
-    if (plantFailureCodeOptions.some((option) => option.value === formData.failure_code)) return;
-    setFormData((prev) => ({ ...prev, failure_code: "" }));
-  }, [formData.failure_code, plantFailureCodeOptions]);
-
   // Open WO form
-  const [openData, setOpenData] = useState({
-    assigned_to_notes: "", estimated_minutes: "", initial_assessment: "",
-  });
+  const [openData, setOpenData] = useState({ ...EMPTY_OPEN_DATA });
 
   // Close WO form
   const [closeData, setCloseData] = useState(() => ({ ...EMPTY_CLOSE_DATA }));
@@ -843,6 +919,26 @@ export default function WorkOrders() {
       return (response.data || []).filter((team) => team.isActive);
     },
   });
+
+  const technicianPlantId = verifyTargetWO?.plant_id || closingWO?.plant_id || formData.plant_id || null;
+  const { data: technicianUsers = [] } = useQuery({
+    queryKey: ["wo_technicians", technicianPlantId || "none"],
+    enabled: Boolean(technicianPlantId),
+    queryFn: async () => {
+      const response = await listUsers({ page: 1, limit: 500, plantId: technicianPlantId || undefined });
+      return (response.data || []) as UserProfile[];
+    },
+  });
+  const technicianOptions = useMemo(
+    () =>
+      technicianUsers
+        .filter((profile) => profile.isActive !== false)
+        .map((profile) => ({
+          value: profile.authId || profile.id,
+          label: profile.fullName || profile.email || profile.id,
+        })),
+    [technicianUsers],
+  );
 
   const closeFollowUpTeamOptions = useMemo(
     () =>
@@ -1154,7 +1250,7 @@ export default function WorkOrders() {
     }
 
     setIsManualVerifyOpen(false);
-    setIsSafetyOpen(true);
+    setIsOpenFormOpen(true);
   };
 
   const handleQrDecodedForVerification = async (rawValue: string) => {
@@ -1190,7 +1286,7 @@ export default function WorkOrders() {
     setVerificationMethod("QR_SCAN");
     setVerifiedAssetId(scannedMachineId);
     setIsQrVerifyOpen(false);
-    setIsSafetyOpen(true);
+    setIsOpenFormOpen(true);
   };
 
   const applyRaiseMachineSelectionFromQr = (resolved: QrResolveData) => {
@@ -1345,7 +1441,7 @@ export default function WorkOrders() {
       setVerifiedAssetId(null);
       setManualMachineCode("");
       setOpeningWOId(null);
-      setOpenData({ assigned_to_notes: "", estimated_minutes: "", initial_assessment: "" });
+      setOpenData({ ...EMPTY_OPEN_DATA });
       triggerWorkOrderLiveSync();
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Failed to start work");
@@ -1363,26 +1459,14 @@ export default function WorkOrders() {
       { label: "Department", value: formData.department_id },
       { label: "Module", value: formData.module_id },
       { label: "Machine", value: formData.asset_id },
-      { label: "Work Order Type", value: formData.wo_type },
-      { label: "Work Order Category", value: formData.category },
+      { label: "Category", value: formData.category },
+      { label: "Issue Title", value: formData.issue_title.trim() },
+      { label: "Problem Details", value: formData.problem_description.trim() },
       { label: "Priority", value: formData.priority },
-      { label: "Reported Problem", value: formData.problem_description.trim() },
     ].filter((field) => !field.value);
 
     if (missingFields.length > 0) {
       toast.error(`Required: ${missingFields.map((field) => field.label).join(", ")}`);
-      return;
-    }
-    if (!plantWorkOrderTypeOptions.some((option) => option.value === formData.wo_type)) {
-      toast.error("Select a valid work order type from Work Order Config Master");
-      return;
-    }
-    if (!routedCategoryOptions.some((option) => option.value === formData.category)) {
-      toast.error("Select a valid work order category from Work Order Config Master");
-      return;
-    }
-    if (formData.failure_code && !plantFailureCodeOptions.some((option) => option.value === formData.failure_code)) {
-      toast.error("Select a valid failure code from Work Order Config Master");
       return;
     }
     if (!raisedByUserId) {
@@ -1392,17 +1476,17 @@ export default function WorkOrders() {
 
     setIsRaisingWorkOrder(true);
     try {
-      const normalizedLocation =
-        (typeof (selectedAsset as any)?.location === "string" ? (selectedAsset as any).location.trim() : "") || null;
+      const assetLocation =
+        (typeof (selectedAsset as any)?.location === "string" ? (selectedAsset as any).location.trim() : "") || "";
+      const normalizedLocation = formData.reported_location.trim() || assetLocation || null;
       const payload = {
         asset_id: formData.asset_id,
-        category: formData.category,
         priority: formData.priority,
-        problem_description: formData.problem_description.trim(),
-        wo_type: formData.wo_type,
-        failure_code: formData.failure_code || null,
-        sub_category: formData.sub_category || null,
+        category: formData.category,
+        problem_description: `${formData.issue_title.trim()}\n\n${formData.problem_description.trim()}`,
         reported_location: normalizedLocation,
+        remarks: formData.remarks.trim() || null,
+        plant_id: formData.plant_id,
         ...(photoAttachments.length > 0 ? { attachments: photoAttachments } : {}),
       };
 
@@ -1419,28 +1503,91 @@ export default function WorkOrders() {
   };
 
   const openOpenForm = (woId: string) => {
-    setOpeningWOId(woId);
-    setOpenData({ assigned_to_notes: "", estimated_minutes: "", initial_assessment: "" });
-    setIsOpenFormOpen(true);
-  };
-
-  const handleOpenWO = async () => {
-    if (!openingWOId) return;
-    const wo = allWorkOrders.find((w: any) => w.id === openingWOId);
+    const wo = allWorkOrders.find((w: any) => w.id === woId);
     if (!wo) {
       toast.error("Unable to load the selected work order");
       return;
     }
-    if (!openData.initial_assessment.trim()) {
-      toast.error("Initial assessment is required before opening the work order");
+    setOpeningWOId(woId);
+    setVerifyTargetWO(wo);
+    setOpenData({
+      ...EMPTY_OPEN_DATA,
+      category: wo.category || "",
+      assigned_to: wo.assigned_to || user?.authId || "",
+    });
+    setVerificationMethod("QR_SCAN");
+    setVerifiedAssetId(null);
+    setManualMachineCode("");
+    setSafetyChecklist({ ppe_worn: false, machine_isolated: false, safety_lock_applied: false, notes: "" });
+    setIsOpenFormOpen(false);
+    setIsQrVerifyOpen(true);
+  };
+
+  const handleOpenWO = async () => {
+    if (!openingWOId || !verifyTargetWO || isStartingWorkOrder) return;
+    if (verificationMethod === "QR_SCAN" && !verifiedAssetId) {
+      toast.error("Complete machine QR identification before assessment");
       return;
     }
-    setIsOpenFormOpen(false);
-    openQrVerification(wo);
+    if (verificationMethod === "MANUAL_ENTRY" && !manualMachineCode.trim()) {
+      toast.error("Enter the machine code before assessment");
+      return;
+    }
+    if (!openData.initial_assessment.trim()) {
+      toast.error("Initial assessment is required");
+      return;
+    }
+    if (!openData.category) {
+      toast.error("Work order category is required");
+      return;
+    }
+    if (!openData.assigned_to) {
+      toast.error("Assigned technician is required");
+      return;
+    }
+    if (!safetyChecklist.ppe_worn || !safetyChecklist.machine_isolated || !safetyChecklist.safety_lock_applied) {
+      toast.error("Confirm all safety checks before starting work");
+      return;
+    }
+
+    setIsStartingWorkOrder(true);
+    try {
+      const response = await startWorkOrder(verifyTargetWO.id, {
+        verification_method: verificationMethod,
+        scanned_asset_id: verificationMethod === "QR_SCAN" ? verifiedAssetId : null,
+        manual_machine_code: verificationMethod === "MANUAL_ENTRY" ? manualMachineCode.trim() : null,
+        initial_assessment: openData.initial_assessment.trim(),
+        category: openData.category,
+        assigned_to: openData.assigned_to,
+        estimated_time_minutes: Math.max(0, Number.parseInt(openData.estimated_minutes, 10) || 0),
+        expected_downtime_minutes: Math.max(0, Number.parseInt(openData.expected_downtime_minutes, 10) || 0),
+        assessment_remarks: openData.assessment_remarks.trim() || null,
+        safety_checklist: {
+          ...safetyChecklist,
+          confirmed_at: new Date().toISOString(),
+        },
+      });
+      const updated = response?.data;
+      if (updated?.status === "REASSIGNED") {
+        toast.success("Work order reassigned to the correct maintenance team");
+      } else {
+        toast.success("Work order opened and work started");
+      }
+      setIsOpenFormOpen(false);
+      setIsQrVerifyOpen(false);
+      setVerifyTargetWO(null);
+      setOpeningWOId(null);
+      setOpenData({ ...EMPTY_OPEN_DATA });
+      triggerWorkOrderLiveSync();
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to open work order");
+    } finally {
+      setIsStartingWorkOrder(false);
+    }
   };
 
   const handleCloseWithDetails = async () => {
-    if (!closingWOId) return;
+    if (!closingWOId || !closingWO) return;
     const spareConsumption = buildSpareUsagePayload(closeSpareUsage, closeAvailableSpares);
     const issueDetails = closeData.root_cause.trim();
     const workPerformed = closeData.action_taken.trim();
@@ -1448,10 +1595,35 @@ export default function WorkOrders() {
     const materialsUsed = closeData.parts_replaced.trim();
     const followUpNotes = closeData.follow_up_notes.trim();
 
-    if (!issueDetails || !workPerformed || !remarks || (!materialsUsed && spareConsumption.length === 0)) {
-      toast.error("Issue details, work performed, materials used, and remarks are required");
+    const baseline = new Date(closingWO.started_at || closingWO.opened_at || closingWO.created_at);
+    const downtimeMinutes = closeData.downtime_minutes
+      ? Math.max(0, Number.parseInt(closeData.downtime_minutes, 10) || 0)
+      : Math.max(0, Math.floor((new Date().getTime() - baseline.getTime()) / 60000));
+
+    if (!closeData.wo_type || !issueDetails || !workPerformed || !closeData.corrective_action.trim() || !remarks) {
+      toast.error("Work order type, issue details, work performed, corrective action, and remarks are required");
       return;
     }
+
+    if (closeData.spare_used && spareConsumption.length === 0 && !materialsUsed) {
+      toast.error("Add spare usage or materials when spares were used");
+      return;
+    }
+
+    if (!closeData.spare_used && !materialsUsed && spareConsumption.length === 0) {
+      // Explicit no-spare confirmation is acceptable.
+    }
+
+    const whyWhyRequired = downtimeMinutes > 120;
+    const whyWhy = closeData.why_why;
+    if (whyWhyRequired) {
+      const missingWhy = Object.values(whyWhy).some((value) => !String(value || "").trim());
+      if (missingWhy) {
+        toast.error("Complete all Why-Why analysis fields for downtime over 120 minutes");
+        return;
+      }
+    }
+
     if (closeData.failure_code && !closeFailureCodeOptions.some((option) => option.value === closeData.failure_code)) {
       toast.error("Select a valid failure code from Work Order Config Master");
       return;
@@ -1467,25 +1639,36 @@ export default function WorkOrders() {
 
     try {
       await submitWorkOrderForApproval(closingWOId, {
+        wo_type: closeData.wo_type,
         issue_details: issueDetails,
+        root_cause: issueDetails,
         work_performed_description: workPerformed,
-        materials_used: materialsUsed || "Structured spare usage attached",
+        corrective_action: closeData.corrective_action.trim(),
+        materials_used: materialsUsed || (closeData.spare_used ? "Spare usage recorded" : "No spares used"),
+        spare_used: closeData.spare_used,
         attachments: closeAttachments.length > 0 ? closeAttachments : undefined,
         remarks,
         failure_code: closeData.failure_code || null,
+        actual_failure_category: closeData.actual_failure_category || null,
+        why_why_analysis: whyWhyRequired ? whyWhy : null,
+        preventive_recommendation: closeData.preventive_recommendation || null,
+        manpower_used: closeData.manpower_used || null,
+        downtime_minutes: downtimeMinutes,
+        completion_at: closeData.completion_at || new Date().toISOString(),
         parts_replaced: materialsUsed || null,
         spare_consumption: spareConsumption,
         operator_fault: closeData.operator_fault,
-        warranty_claim: closeData.warranty_claim,
         follow_up_required: closeData.follow_up_required,
         follow_up_team_id: closeData.follow_up_required ? closeData.follow_up_team_id : null,
         follow_up_notes: followUpNotes || null,
+        follow_up_support_category: closeData.follow_up_support_category || "MECHANICAL",
+        follow_up_urgency: closeData.follow_up_urgency || "MEDIUM",
       });
     } catch (error: any) {
       toast.error(error?.message || "Failed to complete work order");
       return;
     }
-    toast.success(closeData.follow_up_required ? "Work order routed for follow-up" : "Work order sent for user verification");
+    toast.success(closeData.follow_up_required ? "Follow-up support work order created" : "Work order sent for requester approval");
     triggerWorkOrderLiveSync();
     void queryClient.invalidateQueries({ queryKey: ["dashboard_metrics"] });
     void queryClient.invalidateQueries({ queryKey: ["spare-maintenance-items"] });
@@ -1581,7 +1764,7 @@ export default function WorkOrders() {
     },
     { key: "asset", header: "Asset", render: (wo: any) => (<div><p className="font-medium">{wo.assets?.name || "-"}</p><p className="text-xs text-muted-foreground">{wo.assets?.code}</p></div>) },
     { key: "category", header: "Category", render: (wo: any) => resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id, workOrderMasters), hideOnMobile: true },
-    { key: "priority", header: "Priority", render: (wo: any) => <StatusBadge variant={wo.priority === "CRITICAL" ? "critical" : wo.priority === "HIGH" ? "warning" : "default"}>{wo.priority}</StatusBadge> },
+    { key: "priority", header: "Priority", render: (wo: any) => <StatusBadge variant={wo.priority === "CRITICAL" ? "critical" : "default"}>{formatPriorityLabel(wo.priority)}</StatusBadge> },
     { key: "status", header: "Status", render: (wo: any) => <StatusBadge status={wo.status} variant={getStatusVariant(wo.status)} /> },
     { key: "escalation", header: "Alert", hideOnMobile: true, render: (wo: any) => (
       <div className="flex items-center gap-1">
@@ -1598,7 +1781,7 @@ export default function WorkOrders() {
             <DropdownMenuItem onClick={() => handleView(wo)}><Eye className="mr-2 h-4 w-4" />View Details</DropdownMenuItem>
             {canExecuteWO(wo) && (
               <>
-                {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED"].includes(wo.status)) && <DropdownMenuItem onClick={() => openOpenForm(wo.id)}><Play className="mr-2 h-4 w-4" />Open & Assess</DropdownMenuItem>}
+                {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED"].includes(wo.status)) && <DropdownMenuItem onClick={() => openOpenForm(wo.id)}><Play className="mr-2 h-4 w-4" />Open & Assess</DropdownMenuItem>}
                 {wo.status === "IN_PROGRESS" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Complete & Send for Verification</DropdownMenuItem>}
                 {wo.status === "REJECTED" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Revise & Resubmit</DropdownMenuItem>}
               </>
@@ -1611,9 +1794,6 @@ export default function WorkOrders() {
             )}
             {!canReviewWO(wo) && ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status) && (
               <DropdownMenuItem disabled className="text-muted-foreground">Awaiting raiser verification</DropdownMenuItem>
-            )}
-            {(["RAISED", "ASSIGNED", "OPENED", "TRIAGED"].includes(wo.status) && canExecuteWO(wo)) && (
-              <DropdownMenuItem onClick={() => { setSelectedWO(wo); setIsCancelDialogOpen(true); }} className="text-destructive"><XCircle className="mr-2 h-4 w-4" />Cancel Work Order</DropdownMenuItem>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -1636,12 +1816,7 @@ export default function WorkOrders() {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:gap-4">
         {kpiCards.map((kpi, idx) => (
-          <motion.div 
-            key={kpi.label} 
-            initial={{ opacity: 0, y: 20 }} 
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.1 }}
-          >
+          <div key={idx}>
             <Card className="group relative overflow-hidden border-none bg-gradient-to-br from-card to-muted/30 shadow-card hover:shadow-xl transition-all duration-300">
               <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-primary/5 blur-2xl group-hover:bg-primary/10 transition-colors" />
               <CardContent className="p-5">
@@ -1661,7 +1836,7 @@ export default function WorkOrders() {
                 </div>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
         ))}
       </div>
 
@@ -1671,6 +1846,7 @@ export default function WorkOrders() {
             { id: 'assigned', label: 'Assigned to Me', count: assignedWorkOrders.length },
             { id: 'raised', label: 'Raised by Me', count: raisedWorkOrders.length },
             ...(userIsIncharge ? [{ id: 'incharge', label: inchargeCategories.join(", "), count: inchargeWorkOrders.length }] : []),
+            ...(userIsPartOfTeam ? [{ id: 'team', label: 'My Team', count: teamWorkOrders.length }] : []),
             ...(userIsAdmin ? [{ id: 'all', label: 'All Work Orders', count: allWorkOrders.length }] : []),
             { id: 'approval', label: 'Verification Queue', count: myApprovalQueueCount }
           ].map((tab) => (
@@ -1752,17 +1928,93 @@ export default function WorkOrders() {
                 <SelectField label="" value={statusFilter} onChange={setStatusFilter} options={[
                   { value: "all", label: "All Status" },
                   { value: "RAISED", label: "Raised" }, { value: "TRIAGED", label: "Triaged" }, { value: "ASSIGNED", label: "Assigned" }, { value: "OPENED", label: "Opened" },
-                  { value: "IN_PROGRESS", label: "In Progress" }, { value: "USER_VERIFICATION", label: "Waiting for Verification" },
+                  { value: "IN_PROGRESS", label: "In Progress" }, { value: "REASSIGNED", label: "Reassigned" },
+                  { value: "APPROVAL_PENDING", label: "Pending Approval" }, { value: "USER_VERIFICATION", label: "Pending Approval" },
                   { value: "REJECTED", label: "Rejected" }, { value: "CLOSED", label: "Completed" },
                 ]} className="w-full sm:w-[160px] h-11" />
                 <SelectField label="" value={categoryFilter} onChange={setCategoryFilter} options={[
                   { value: "all", label: "All Categories" }, ...filterCategoryOptions
                 ]} className="w-full sm:w-[160px] h-11" />
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={function(e) { setDateFrom(e.target.value); }}
+                    className="h-11 w-[150px] bg-white/50 border-none shadow-inner"
+                    title="From date"
+                  />
+                  <span className="text-xs text-muted-foreground">to</span>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={function(e) { setDateTo(e.target.value); }}
+                    className="h-11 w-[150px] bg-white/50 border-none shadow-inner"
+                    title="To date"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-11 gap-2"
+                  onClick={function() { exportWorkOrdersCSV({
+                    status: statusFilter !== "all" ? statusFilter : undefined,
+                    category: categoryFilter !== "all" ? categoryFilter : undefined,
+                    date_from: dateFrom || undefined,
+                    date_to: dateTo || undefined,
+                    ...(activePlantIds.length === 1 ? { plantId: activePlantIds[0] } : {}),
+                  }).catch(function() { toast.error("Export failed"); }); }}
+                  title="Export to CSV"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  Export CSV
+                </Button>
               </div>
             }
           />
         </CardContent>
       </Card>
+
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/30 p-3 backdrop-blur-sm animate-in slide-in-from-top-2">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              checked={selectedIds.size === filtered.length && filtered.length > 0}
+              onCheckedChange={function(checked) {
+                if (checked) setSelectedIds(new Set(filtered.map(function(wo) { return wo.id; })));
+                else setSelectedIds(new Set());
+              }}
+              aria-label="Select all"
+            />
+            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 ml-auto">
+            <Button variant="outline" size="sm" onClick={function() {
+              var ids = Array.from(selectedIds);
+              ids.forEach(function(id) {
+                approveWorkOrder(id, { comments: "Bulk closed" }).catch(function() {});
+              });
+              toast.success("Bulk closing " + ids.length + " work orders");
+              setSelectedIds(new Set());
+            }}>
+              Close Selected
+            </Button>
+            <Button variant="outline" size="sm" onClick={function() {
+              exportWorkOrdersCSV({
+                status: statusFilter !== "all" ? statusFilter : undefined,
+                category: categoryFilter !== "all" ? categoryFilter : undefined,
+                date_from: dateFrom || undefined,
+                date_to: dateTo || undefined,
+              }).catch(function() { toast.error("Export failed"); });
+              setSelectedIds(new Set());
+            }}>
+              Export CSV
+            </Button>
+            <Button variant="ghost" size="sm" onClick={function() { setSelectedIds(new Set()); }}>
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Card className="shadow-card">
         <CardHeader className="pb-3">
@@ -1773,6 +2025,8 @@ export default function WorkOrders() {
                 ? "Category Work Orders"
                 : activeTab === "approval"
                     ? "User Verification Queue"
+                  : activeTab === "team"
+                    ? "My Team Work Orders"
                   : activeTab === "all"
                     ? "All Work Orders"
                     : activeTab === "raised"
@@ -1793,7 +2047,7 @@ export default function WorkOrders() {
                   <MobileCardHeader title={wo.wo_number} subtitle={wo.assets?.name} badge={<StatusBadge status={wo.status} variant={getStatusVariant(wo.status)} />} />
                   <MobileCardRow label="Type" value={resolveWorkOrderLabel("WO_TYPE", wo.wo_type, wo.plant_id, workOrderMasters)} />
                   <MobileCardRow label="Category" value={resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id, workOrderMasters)} />
-                  <MobileCardRow label="Priority" value={wo.priority} />
+                  <MobileCardRow label="Priority" value={formatPriorityLabel(wo.priority)} />
                   <MobileCardRow label="Raised" value={formatDistanceToNow(new Date(wo.created_at), { addSuffix: true })} />
                 </MobileCard>
               )}
@@ -1803,10 +2057,10 @@ export default function WorkOrders() {
       </Card>
 
       {/* ===== RAISE WORK ORDER FORM (Enhanced) ===== */}
-      <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title="Raise Work Order" description="Create a detailed maintenance work order" onSubmit={handleSubmit} submitLabel="Raise Work Order" isLoading={isRaisingWorkOrder} size="xl">
+      <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title="Raise Work Order" description="Create a maintenance work order" onSubmit={handleSubmit} submitLabel="Raise Work Order" isLoading={isRaisingWorkOrder} size="xl">
         <div className="space-y-6">
           <div className="rounded-2xl border border-border/70 bg-card/80 p-4 sm:p-5 shadow-sm">
-            <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground"><Wrench className="h-4 w-4" />Machine Scope</h3>
+            <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground"><Wrench className="h-4 w-4" />Machine Selection</h3>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <SelectField
                 label="Plant"
@@ -1816,7 +2070,6 @@ export default function WorkOrders() {
                 placeholder={userIsSuperAdmin ? "Select plant" : "Assigned plant"}
                 disabled={!userIsSuperAdmin || plantOptions.length === 0}
                 required
-                hint={userIsSuperAdmin ? "Start with the plant where the issue occurred." : "Fixed from the logged-in user's plant access."}
               />
               <SelectField
                 label="Department"
@@ -1829,7 +2082,6 @@ export default function WorkOrders() {
                 placeholder={formData.plant_id ? "Select department" : "Select plant first"}
                 disabled={!formData.plant_id}
                 required
-                hint="This narrows the available modules and machines."
               />
               <SelectField
                 label="Module"
@@ -1842,7 +2094,6 @@ export default function WorkOrders() {
                 placeholder={formData.department_id ? "Select module" : "Select department first"}
                 disabled={!formData.department_id}
                 required
-                hint="Select the module before choosing the machine."
               />
               <SelectField
                 label="Machine"
@@ -1852,11 +2103,10 @@ export default function WorkOrders() {
                 placeholder={formData.module_id ? "Select machine" : "Select module first"}
                 disabled={!formData.module_id || assetOptions.length === 0}
                 required
-                hint={isHierarchyLoading || isAssetsLoading ? "Loading machine hierarchy..." : "Machine is the asset against which the work order will be raised."}
               />
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-primary/25 bg-primary/5 p-3">
+            <div className="mt-4 flex items-center gap-3 rounded-xl border border-dashed border-primary/20 bg-primary/5 p-3">
               <Button
                 type="button"
                 variant="outline"
@@ -1865,85 +2115,42 @@ export default function WorkOrders() {
                 disabled={isResolvingRaiseQr}
               >
                 <QrCode className="h-4 w-4" />
-                {isResolvingRaiseQr ? "Resolving scanned machine..." : "Scan Machine QR"}
+                {isResolvingRaiseQr ? "Resolving..." : "Scan Machine QR"}
               </Button>
               <p className="text-xs text-muted-foreground">
-                Scan machine QR to auto-fill plant, department, module, and machine selection.
+                Scan machine QR code to auto-select hierarchy fields.
               </p>
-            </div>
-
-            <div className="mt-4 grid gap-3 rounded-xl border border-dashed border-primary/20 bg-primary/5 p-3 text-sm sm:grid-cols-4">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Plant</p>
-                <p className="mt-1 font-medium text-foreground">{selectedPlant ? selectedPlant.plantCode : "Not selected"}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Department</p>
-                <p className="mt-1 font-medium text-foreground">{selectedDepartment ? selectedDepartment.code : "Not selected"}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Module</p>
-                <p className="mt-1 font-medium text-foreground">{selectedModule ? selectedModule.code || selectedModule.name : "Not selected"}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Machine</p>
-                <p className="mt-1 font-medium text-foreground">{selectedAsset ? selectedAsset.code : "Not selected"}</p>
-              </div>
             </div>
           </div>
 
           <div className="rounded-2xl border border-border/70 bg-card/80 p-4 sm:p-5 shadow-sm">
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">Work Order Details</h3>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">Reporter Details</h3>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <InputField
                 label="Raised By"
                 value={raisedByLabel}
                 onChange={() => { }}
                 disabled
-                hint="Auto-filled from the logged-in user."
               />
               <InputField
                 label="Date & Time"
                 value={raisedAtLabel}
                 onChange={() => { }}
                 disabled
-                hint="Auto-filled from the current system date and time."
               />
+            </div>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-card/80 p-4 sm:p-5 shadow-sm">
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">Issue Details</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <SelectField
-                label="Work Order Type"
-                value={formData.wo_type}
-                onChange={(value) => setFormData((prev) => ({ ...prev, wo_type: value }))}
-                options={plantWorkOrderTypeOptions}
-                placeholder="Select work order type"
-                disabled={plantWorkOrderTypeOptions.length === 0}
-                required
-                hint={
-                  isWorkOrderConfigLoading
-                    ? "Loading work order types..."
-                    : plantWorkOrderTypeOptions.length === 0
-                      ? "No active work order types are configured for this plant. Update Work Order Config Master first."
-                      : "Defines the maintenance workflow and expected urgency."
-                }
-              />
-              <SelectField
-                label="Work Order Category"
+                label="Category"
                 value={formData.category}
                 onChange={(value) => setFormData((prev) => ({ ...prev, category: value }))}
                 options={routedCategoryOptions}
-                placeholder={formData.department_id ? "Select category" : "Select department first"}
-                disabled={!formData.department_id || routedCategoryOptions.length === 0}
+                placeholder="Select category (e.g. MECHANICAL, ELECTRICAL)"
                 required
-                hint={
-                  !formData.department_id
-                    ? "Choose the department first to see its configured work order categories."
-                    : routedCategoryOptions.length === 0
-                      ? "No active work order categories are configured for this plant. Update Work Order Config Master first."
-                      : selectedRoutingRule
-                        ? "This category is routed through the department-wise team mapping."
-                        : routedMappingsForDepartment.length > 0
-                          ? "Only categories configured for this department are shown here."
-                          : "All active categories are available because no department-specific routing is configured yet."
-                }
+                className="sm:col-span-2"
               />
               <SelectField
                 label="Priority"
@@ -1952,16 +2159,12 @@ export default function WorkOrders() {
                 options={PRIORITY_OPTIONS}
                 placeholder="Select priority"
                 required
-                hint="Use Critical or High only when production or safety is directly affected."
+                className="sm:col-span-2"
               />
-            </div>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-card/80 p-4 sm:p-5 shadow-sm">
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">Problem Details</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <TextareaField label="Reported Problem" value={formData.problem_description} onChange={(v) => setFormData({ ...formData, problem_description: v })} placeholder="Describe the reported problem clearly..." className="sm:col-span-2" required />
-              <SelectField label="Failure Code" value={formData.failure_code} onChange={(v) => setFormData({ ...formData, failure_code: v })} options={plantFailureCodeOptions} placeholder="Select if applicable" hint={isWorkOrderConfigLoading ? "Loading failure codes..." : "Optional classification for the reported issue."} />
-              <InputField label="Sub-Category" value={formData.sub_category} onChange={(v) => setFormData({ ...formData, sub_category: v })} placeholder="e.g., Hydraulic System" />
+              <InputField label="Location" value={formData.reported_location} onChange={(v) => setFormData((prev) => ({ ...prev, reported_location: v }))} placeholder={selectedAsset ? String((selectedAsset as any).location || "") : "Machine location"} className="sm:col-span-2" />
+              <InputField label="Issue Title" value={formData.issue_title} onChange={(v) => setFormData((prev) => ({ ...prev, issue_title: v }))} placeholder="Short summary" required />
+              <TextareaField label="Problem Details" value={formData.problem_description} onChange={(v) => setFormData((prev) => ({ ...prev, problem_description: v }))} placeholder="Describe symptoms and impact..." className="sm:col-span-2" required />
+              <TextareaField label="Remarks" value={formData.remarks} onChange={(v) => setFormData((prev) => ({ ...prev, remarks: v }))} placeholder="Optional remarks" className="sm:col-span-2" />
             </div>
 
             <div className="mt-4 space-y-2">
@@ -2015,11 +2218,20 @@ export default function WorkOrders() {
       </FormDialog>
 
       {/* ===== OPEN WORK ORDER FORM ===== */}
-      <FormDialog open={isOpenFormOpen} onOpenChange={setIsOpenFormOpen} title="Open & Assess Work Order" description="Capture first assessment, then continue to machine verification and safety checks." onSubmit={handleOpenWO} submitLabel="Continue to Verification" size="lg">
-        <div className="grid grid-cols-1 gap-4">
-          <TextareaField label="Initial Assessment" value={openData.initial_assessment} onChange={(v) => setOpenData({ ...openData, initial_assessment: v })} placeholder="What is your initial assessment of the problem? What do you observe?" required />
-          <InputField label="Estimated Time to Complete (minutes)" value={openData.estimated_minutes} onChange={(v) => setOpenData({ ...openData, estimated_minutes: v })} type="number" placeholder="e.g., 120" />
-          <TextareaField label="Notes / Special Instructions" value={openData.assigned_to_notes} onChange={(v) => setOpenData({ ...openData, assigned_to_notes: v })} placeholder="Any special instructions, safety precautions, or tools needed..." />
+      <FormDialog open={isOpenFormOpen} onOpenChange={setIsOpenFormOpen} title="Initial Assessment" description="Complete assessment after machine identification. Change category if the issue belongs to another discipline." onSubmit={handleOpenWO} submitLabel={isStartingWorkOrder ? "Starting..." : "Start Work"} isLoading={isStartingWorkOrder} size="lg">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <TextareaField label="Initial Assessment Details" value={openData.initial_assessment} onChange={(v) => setOpenData({ ...openData, initial_assessment: v })} placeholder="What do you observe on the machine?" className="sm:col-span-2" required />
+          <SelectField label="Work Order Category" value={openData.category} onChange={(v) => setOpenData({ ...openData, category: v })} options={filterCategoryOptions} placeholder="Select category" required />
+          <SelectField label="Technician Assigned" value={openData.assigned_to} onChange={(v) => setOpenData({ ...openData, assigned_to: v })} options={technicianOptions} placeholder="Select technician" required />
+          <InputField label="Expected Downtime (minutes)" value={openData.expected_downtime_minutes} onChange={(v) => setOpenData({ ...openData, expected_downtime_minutes: v })} type="number" placeholder="e.g., 90" required />
+          <InputField label="Estimated Repair Time (minutes)" value={openData.estimated_minutes} onChange={(v) => setOpenData({ ...openData, estimated_minutes: v })} type="number" placeholder="e.g., 120" />
+          <TextareaField label="Assessment Remarks" value={openData.assessment_remarks} onChange={(v) => setOpenData({ ...openData, assessment_remarks: v })} placeholder="Safety notes, tools required, isolation steps..." className="sm:col-span-2" />
+          <div className="sm:col-span-2 space-y-3 rounded-xl border border-dashed border-amber-300/40 bg-amber-50/40 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Safety Confirmation (required)</p>
+            <div className="flex items-center space-x-2"><Checkbox id="open-ppe" checked={safetyChecklist.ppe_worn} onCheckedChange={(c) => setSafetyChecklist((p) => ({ ...p, ppe_worn: !!c }))} /><Label htmlFor="open-ppe">PPE worn</Label></div>
+            <div className="flex items-center space-x-2"><Checkbox id="open-isolated" checked={safetyChecklist.machine_isolated} onCheckedChange={(c) => setSafetyChecklist((p) => ({ ...p, machine_isolated: !!c }))} /><Label htmlFor="open-isolated">Machine isolated</Label></div>
+            <div className="flex items-center space-x-2"><Checkbox id="open-lock" checked={safetyChecklist.safety_lock_applied} onCheckedChange={(c) => setSafetyChecklist((p) => ({ ...p, safety_lock_applied: !!c }))} /><Label htmlFor="open-lock">Safety lock applied</Label></div>
+          </div>
         </div>
       </FormDialog>
 
@@ -2030,7 +2242,7 @@ export default function WorkOrders() {
         title="Close Work Order"
         description="Complete closure details and either send to raiser verification or route to a follow-up team."
         onSubmit={handleCloseWithDetails}
-        submitLabel={closeData.follow_up_required ? "Route Follow-up Team" : "Send for User Verification"}
+        submitLabel={closeData.follow_up_required ? "Create Follow-up Support Task" : "Send for Requester Approval"}
         size="xl"
       >
         <div className="space-y-6">
@@ -2038,24 +2250,70 @@ export default function WorkOrders() {
             Drafts auto-save while this form is open so technicians can resume incomplete closure details.
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Issue & Work Summary</h3>
+            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Closure Classification</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <TextareaField label="Issue Details" value={closeData.root_cause} onChange={(v) => setCloseData({ ...closeData, root_cause: v })} placeholder="Describe the issue found during maintenance..." className="sm:col-span-2" required />
-              <SelectField label="Failure Code" value={closeData.failure_code} onChange={(v) => setCloseData({ ...closeData, failure_code: v })} options={closeFailureCodeOptions} placeholder="Select failure code" hint={closeFailureCodeOptions.length === 0 ? "No active failure codes are configured for this plant." : "Uses the active failure codes configured for this work order's plant."} />
-              <TextareaField label="Work Performed Description" value={closeData.action_taken} onChange={(v) => setCloseData({ ...closeData, action_taken: v })} placeholder="What corrective work was completed?" className="sm:col-span-2" required />
+              <SelectField label="Work Order Type" value={closeData.wo_type} onChange={(v) => setCloseData({ ...closeData, wo_type: v })} options={getScopedWorkOrderOptions(workOrderMasters, "WO_TYPE", closingWO?.plant_id || null)} required />
+              <SelectField label="Failure Code" value={closeData.failure_code} onChange={(v) => setCloseData({ ...closeData, failure_code: v })} options={closeFailureCodeOptions} placeholder="Select failure code" required />
+              <TextareaField label="Issue Details / Root Cause" value={closeData.root_cause} onChange={(v) => setCloseData({ ...closeData, root_cause: v })} placeholder="Describe the issue found during maintenance..." className="sm:col-span-2" required />
+              <SelectField 
+                label="Actual Failure Category" 
+                value={closeData.actual_failure_category} 
+                onChange={(v) => setCloseData({ ...closeData, actual_failure_category: v })} 
+                options={filterCategoryOptions} 
+                placeholder="Correct the category if needed"
+                hint="Determines which discipline (Mechanical/Electrical) this failure belongs to for MTBF reporting."
+              />
+              <TextareaField label="Work Performed Details" value={closeData.action_taken} onChange={(v) => setCloseData({ ...closeData, action_taken: v })} placeholder="What work was completed?" className="sm:col-span-2" required />
+              <TextareaField label="Corrective Action" value={closeData.corrective_action} onChange={(v) => setCloseData({ ...closeData, corrective_action: v })} placeholder="Corrective action taken" className="sm:col-span-2" required />
+              <InputField label="Downtime (minutes)" value={closeData.downtime_minutes} onChange={(v) => setCloseData({ ...closeData, downtime_minutes: v })} type="number" placeholder="Auto-calculated if empty" />
+              <InputField label="Completion Date/Time" value={closeData.completion_at} onChange={(v) => setCloseData({ ...closeData, completion_at: v })} type="datetime-local" />
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Why-Why Analysis (if downtime &gt; 120 min)</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {(["why_1", "why_2", "why_3", "why_4", "why_5"] as const).map((key, index) => (
+                <InputField key={key} label={`Why ${index + 1}`} value={closeData.why_why[key]} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, [key]: v } })} />
+              ))}
+              <InputField label="Root Reason" value={closeData.why_why.root_reason} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, root_reason: v } })} className="sm:col-span-2" />
+              <TextareaField label="Corrective Prevention" value={closeData.why_why.corrective_prevention} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, corrective_prevention: v } })} className="sm:col-span-2" />
+              <TextareaField label="Recurrence Prevention" value={closeData.why_why.recurrence_prevention} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, recurrence_prevention: v } })} className="sm:col-span-2" />
+              <TextareaField 
+                label="Preventive Recommendation" 
+                value={closeData.preventive_recommendation} 
+                onChange={(v) => setCloseData({ ...closeData, preventive_recommendation: v })} 
+                placeholder="What can we do to prevent this from happening again?" 
+              />
+              <InputField 
+                label="Manpower Used" 
+                value={closeData.manpower_used} 
+                onChange={(v) => setCloseData({ ...closeData, manpower_used: v })} 
+                placeholder="e.g. 2 Mechanical Technicians, 1 Helper" 
+              />
             </div>
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Materials, Photos & Remarks</h3>
+            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Spares, Photos & Remarks</h3>
             <div className="grid grid-cols-1 gap-4">
-              <TextareaField label="Materials Used" value={closeData.parts_replaced} onChange={(v) => setCloseData({ ...closeData, parts_replaced: v })} placeholder="List parts replaced, consumables used, or structured spares selected below..." required />
-              <SpareUsageEditor
-                title="Structured Spare Usage"
-                description="Select the actual spares used for this work order. Stock will be reduced automatically when approval is completed."
-                rows={closeSpareUsage}
-                onChange={setCloseSpareUsage}
-                options={closeSpareOptions}
-              />
+              <div className="flex flex-wrap items-center gap-4">
+                <Label className="text-sm font-medium">Spare Used?</Label>
+                <Button type="button" size="sm" variant={closeData.spare_used ? "default" : "outline"} onClick={() => setCloseData((p) => ({ ...p, spare_used: true }))}>Yes</Button>
+                <Button type="button" size="sm" variant={!closeData.spare_used ? "default" : "outline"} onClick={() => setCloseData((p) => ({ ...p, spare_used: false, }))}>No</Button>
+              </div>
+              {closeData.spare_used ? (
+                <>
+                  <SpareUsageEditor
+                    title="Spare Usage"
+                    description="Select spares from master or add manual entries when unavailable."
+                    rows={closeSpareUsage}
+                    onChange={setCloseSpareUsage}
+                    options={closeSpareOptions}
+                    allowManualEntry
+                  />
+                  <TextareaField label="Additional Materials Notes" value={closeData.parts_replaced} onChange={(v) => setCloseData({ ...closeData, parts_replaced: v })} placeholder="Optional notes for non-catalog spares" />
+                </>
+              ) : null}
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Closure Photo (optional, auto-compressed)</Label>
                 <input
@@ -2110,10 +2368,6 @@ export default function WorkOrders() {
                 <Label htmlFor="operator_fault" className="text-sm">Operator Fault</Label>
               </div>
               <div className="flex items-center space-x-2">
-                <Checkbox id="warranty_claim" checked={closeData.warranty_claim} onCheckedChange={(c) => setCloseData({ ...closeData, warranty_claim: !!c })} />
-                <Label htmlFor="warranty_claim" className="text-sm">Warranty Claim</Label>
-              </div>
-              <div className="flex items-center space-x-2">
                 <Checkbox
                   id="follow_up"
                   checked={closeData.follow_up_required}
@@ -2129,22 +2383,30 @@ export default function WorkOrders() {
               </div>
             </div>
             {closeData.follow_up_required && (
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 border-t pt-4">
+                <SelectField
+                  label="Follow-up Support Category"
+                  value={closeData.follow_up_support_category}
+                  onChange={(v) => setCloseData({ ...closeData, follow_up_support_category: v })}
+                  options={filterCategoryOptions}
+                  placeholder="Select technical discipline"
+                  required
+                />
                 <SelectField
                   label="Follow-up Team"
                   value={closeData.follow_up_team_id}
                   onChange={(v) => setCloseData({ ...closeData, follow_up_team_id: v })}
                   options={closeFollowUpTeamOptions}
                   placeholder={closeFollowUpTeamOptions.length === 0 ? "No active teams available" : "Select follow-up team"}
-                  hint={closeFollowUpTeamOptions.length === 0 ? "Create or activate a maintenance team in Team Master for this plant." : "Selected team will receive this work order for follow-up execution."}
+                  hint="The selected team will be assigned to the new support work order."
                   required
                 />
                 <TextareaField
-                  label="Follow-up Notes"
+                  label="Follow-up Instructions"
                   value={closeData.follow_up_notes}
                   onChange={(v) => setCloseData({ ...closeData, follow_up_notes: v })}
-                  placeholder="Describe what the follow-up team must verify or complete..."
-                  className="sm:col-span-1"
+                  placeholder="Specific tasks for the follow-up team..."
+                  className="sm:col-span-2"
                   required
                 />
               </div>
@@ -2196,7 +2458,7 @@ export default function WorkOrders() {
             <DetailSection title="Work Order">
               <DetailRow label="WO Number" value={selectedWO.wo_number} />
               <DetailRow label="Type" value={resolveWorkOrderLabel("WO_TYPE", selectedWO.wo_type, selectedWO.plant_id, workOrderMasters)} />
-              <DetailRow label="Priority" value={<StatusBadge variant={selectedWO.priority === "CRITICAL" ? "critical" : selectedWO.priority === "HIGH" ? "warning" : "default"}>{selectedWO.priority}</StatusBadge>} />
+              <DetailRow label="Priority" value={<StatusBadge variant={selectedWO.priority === "CRITICAL" ? "critical" : "default"}>{formatPriorityLabel(selectedWO.priority)}</StatusBadge>} />
               <DetailRow label="Category" value={resolveWorkOrderLabel("CATEGORY", selectedWO.category, selectedWO.plant_id, workOrderMasters)} />
               {selectedWO.sub_category && <DetailRow label="Sub-Category" value={selectedWO.sub_category} />}
               {selectedWO.reported_location && <DetailRow label="Location" value={selectedWO.reported_location} />}
@@ -2222,7 +2484,6 @@ export default function WorkOrders() {
             </DetailSection>
             <DetailSection title="Flags">
               <DetailRow label="Operator Fault" value={selectedWO.operator_fault ? "Yes" : "No"} />
-              <DetailRow label="Warranty Claim" value={selectedWO.warranty_claim ? "Yes" : "No"} />
               <DetailRow label="Follow-up Required" value={selectedWO.follow_up_required ? "Yes" : "No"} />
               {selectedWO.follow_up_notes && <DetailRow label="Follow-up Notes" value={selectedWO.follow_up_notes} />}
             </DetailSection>
@@ -2457,47 +2718,6 @@ export default function WorkOrders() {
         />
       </FormDialog>
 
-      <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Cancel Work Order</DialogTitle><DialogDescription>This action cannot be undone. The work order will be marked as cancelled.</DialogDescription></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Reason for cancellation <span className="text-red-500">*</span></Label>
-              <textarea
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                placeholder="Explain why this work order is being cancelled..."
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setIsCancelDialogOpen(false); setCancelReason(""); }}>Keep Work Order</Button>
-            <Button
-              variant="destructive"
-              disabled={!cancelReason.trim() || cancelling}
-              onClick={async () => {
-                if (!selectedWO || !cancelReason.trim()) return;
-                setCancelling(true);
-                try {
-                  await cancelWorkOrder(selectedWO.id, { reason: cancelReason.trim() });
-                  toast.success("Work order cancelled");
-                  setIsCancelDialogOpen(false);
-                  setCancelReason("");
-                  await refetch();
-                } catch (error: any) {
-                  toast.error(error?.message || "Failed to cancel work order");
-                } finally {
-                  setCancelling(false);
-                }
-              }}
-            >
-              {cancelling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <XCircle className="h-4 w-4 mr-2" />}
-              {cancelling ? "Cancelling..." : "Cancel Work Order"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </PageShell>
   );
 }
@@ -2506,11 +2726,13 @@ export default function WorkOrders() {
 function ActivityTimeline({ workOrderId }: { workOrderId: string }) {
   const [events, setEvents] = useState<Array<{ event_type: string; notes: string | null; occurred_at: string; actor_name?: string }>>([]);
   const [loading, setLoading] = useState(true);
+  const [newComment, setNewComment] = useState("");
+  const [sendingComment, setSendingComment] = useState(false);
 
-  useEffect(() => {
+  const loadEvents = useCallback(() => {
     let cancelled = false;
     setLoading(true);
-    listWorkOrderActivity(workOrderId, { limit: 20 })
+    listWorkOrderActivity(workOrderId, { limit: 50 })
       .then((res: any) => {
         if (!cancelled) setEvents(res?.data?.activity ?? res?.data ?? []);
       })
@@ -2519,6 +2741,26 @@ function ActivityTimeline({ workOrderId }: { workOrderId: string }) {
     return () => { cancelled = true; };
   }, [workOrderId]);
 
+  useEffect(loadEvents, [loadEvents]);
+
+  const handleAddComment = async () => {
+    if (!newComment.trim()) return;
+    setSendingComment(true);
+    try {
+      await addWorkOrderActivity(workOrderId, {
+        type: "COMMENT",
+        notes: newComment.trim(),
+      });
+      setNewComment("");
+      loadEvents();
+      toast.success("Comment added");
+    } catch {
+      toast.error("Failed to add comment");
+    } finally {
+      setSendingComment(false);
+    }
+  };
+
   const eventLabel = (type: string) => {
     const labels: Record<string, string> = {
       RAISED: 'Raised', ASSIGNED: 'Assigned', ACCEPTED: 'Accepted', WORK_STARTED: 'Work Started',
@@ -2526,6 +2768,7 @@ function ActivityTimeline({ workOrderId }: { workOrderId: string }) {
       USER_VERIFICATION_REQUESTED: 'Sent for Verification', USER_CONFIRMED_CLOSE: 'Closed',
       ADMIN_FORCE_CLOSED: 'Force Closed', USER_REOPENED: 'Reopened', ADMIN_REOPENED: 'Admin Reopened',
       FOLLOW_UP_ROUTED: 'Follow-up Routed', WORK_ORDER_ESCALATED: 'Escalated',
+      BULK_UPDATE: 'Bulk Updated',
       USER_VERIFICATION_REMINDER_6H: '6h Reminder', USER_VERIFICATION_REMINDER_24H: '24h Reminder',
       AUTO_CLOSED_SLA: 'Auto-Closed',
     };
@@ -2538,12 +2781,39 @@ function ActivityTimeline({ workOrderId }: { workOrderId: string }) {
     if (type.includes('REOPEN') || type === 'REJECTED') return AlertTriangle;
     if (type === 'WORK_STARTED') return Play;
     if (type === 'COMMENT') return Clock;
+    if (type === 'BULK_UPDATE') return RefreshCw;
     return History;
   };
 
   return (
     <div className="space-y-3">
       <h4 className="text-sm font-semibold flex items-center gap-2 border-b pb-2"><History className="h-4 w-4" />Activity Timeline</h4>
+
+      {/* Inline comment input */}
+      <div className="flex gap-2">
+        <Input
+          value={newComment}
+          onChange={function(e) { setNewComment(e.target.value); }}
+          placeholder="Add a comment..."
+          className="h-9 text-sm bg-white/50"
+          onKeyDown={function(e) {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleAddComment();
+            }
+          }}
+        />
+        <Button
+          size="sm"
+          className="h-9 gap-1"
+          onClick={handleAddComment}
+          disabled={!newComment.trim() || sendingComment}
+        >
+          {sendingComment ? <Loader2 className="h-3 w-3 animate-spin" /> : <MessageCircle className="h-3 w-3" />}
+          Send
+        </Button>
+      </div>
+
       {loading ? (
         <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : events.length === 0 ? (
@@ -2573,3 +2843,5 @@ function ActivityTimeline({ workOrderId }: { workOrderId: string }) {
     </div>
   );
 }
+
+

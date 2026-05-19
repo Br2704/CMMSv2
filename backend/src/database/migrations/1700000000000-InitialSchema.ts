@@ -27,6 +27,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
   }
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    if (await queryRunner.hasTable('users')) {
+      return;
+    }
     await queryRunner.createTable(
       new Table({
         name: 'users',

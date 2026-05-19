@@ -31,13 +31,45 @@ governanceRouter.get('/governance/overview', requireAuth, requireRole(['ROOT_ADM
       }),
     ]);
 
+    // Real subscription counts from organization data
+    const allOrgs = await organizationRepo.find({ where: { isActive: true }, select: ['subscriptionStatus'] });
+    const subscriptionStatusCounts = {
+      ACTIVE: allOrgs.filter(o => o.subscriptionStatus === 'ACTIVE').length,
+      TRIAL: allOrgs.filter(o => o.subscriptionStatus === 'TRIAL').length,
+      EXPIRING: allOrgs.filter(o => o.subscriptionStatus === 'EXPIRING' || o.subscriptionStatus === 'DRAFT').length,
+      EXPIRED: allOrgs.filter(o => o.subscriptionStatus === 'EXPIRED' || o.subscriptionStatus === 'SUSPENDED').length,
+    };
+
+    // Enrich organizations with real plant/user counts
+    const orgsWithCounts = await Promise.all(
+      recentOrganizations.map(async (org) => {
+        const [plantCount, userCount] = await Promise.all([
+          plantRepo.count({ where: { organizationId: org.id, isActive: true } }),
+          userRepo.count({ where: { organizationId: org.id, isActive: true } }),
+        ]);
+        return {
+          ...org,
+          plantsCount: plantCount,
+          usersCount: userCount,
+        };
+      }),
+    );
+
+    // Enrich plants with organization names
+    const orgMap = new Map(recentOrganizations.map((o) => [o.id, o.name]));
+    const plantsWithOrg = recentPlants.map((p) => ({
+      ...p,
+      organizationName: orgMap.get(p.organizationId) ?? 'Unknown',
+    }));
+
     res.json(
       ok({
         organizationsCount,
         plantsCount,
         usersCount,
-        recentlyCreatedOrganizations: recentOrganizations,
-        recentlyCreatedPlants: recentPlants,
+        subscriptionStatusCounts,
+        recentlyCreatedOrganizations: orgsWithCounts,
+        recentlyCreatedPlants: plantsWithOrg,
       }),
     );
   } catch (error) {

@@ -16,12 +16,14 @@ function mapQueryError(error: QueryFailedError): { status: number; message: stri
   };
 
   const code = String(dbError.code ?? '').toLowerCase();
-  const details = {
-    code: dbError.code ?? null,
-    detail: dbError.detail ?? dbError.sqlMessage ?? null,
-    table: dbError.table ?? null,
-    constraint: dbError.constraint ?? null,
-  };
+  const details = env.NODE_ENV === 'production'
+    ? { code: dbError.code ?? null }
+    : {
+        code: dbError.code ?? null,
+        detail: dbError.detail ?? dbError.sqlMessage ?? null,
+        table: dbError.table ?? null,
+        constraint: dbError.constraint ?? null,
+      };
 
   if (code === '23505' || code === 'er_dup_entry' || code === '2627' || code === '2601') {
     return { status: 409, message: 'Unique constraint violation', details };
@@ -44,27 +46,25 @@ export function errorHandler(
   res: Response,
   _next: NextFunction,
 ) {
-  if (env.NODE_ENV !== 'production') {
-    const dbError =
-      error instanceof QueryFailedError
-        ? {
-            code: (error as any).code,
-            detail: (error as any).detail,
-            table: (error as any).table,
-            constraint: (error as any).constraint,
-          }
-        : undefined;
-    logger.error(
-      {
-        route: req.originalUrl,
-        method: req.method,
-        message: error.message,
-        stack: error.stack,
-        dbError,
-      },
-      'Unhandled request error',
-    );
-  }
+  const dbError =
+    error instanceof QueryFailedError
+      ? {
+          code: (error as any).code,
+          detail: (error as any).detail,
+          table: (error as any).table,
+          constraint: (error as any).constraint,
+        }
+      : undefined;
+  logger.error(
+    {
+      route: req.originalUrl,
+      method: req.method,
+      message: error.message,
+      stack: error.stack,
+      dbError,
+    },
+    'Unhandled request error',
+  );
 
   if (error instanceof ZodError) {
     const isProduction = env.NODE_ENV === 'production';

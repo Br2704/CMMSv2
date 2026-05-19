@@ -148,8 +148,16 @@ export class AddPmTemplatesAndLinks1700000000021 implements MigrationInterface {
   private async addForeignKeyIfMissing(queryRunner: QueryRunner, tableName: string, columnName: string, referencedTableName: string) {
     const table = await queryRunner.getTable(tableName);
     if (!table) return;
-    const existing = table.foreignKeys.find((item) => item.columnNames.includes(columnName));
-    if (existing) return;
+
+    // Direct check for existing foreign key in Postgres
+    const existingFks = await queryRunner.query(`
+      SELECT constraint_name 
+      FROM information_schema.key_column_usage 
+      WHERE table_name = '${tableName}' AND column_name = '${columnName}'
+      AND constraint_name LIKE 'FK_%'
+    `);
+    if (existingFks && existingFks.length > 0) return;
+
     await queryRunner.createForeignKey(
       tableName,
       new TableForeignKey({

@@ -7,6 +7,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useMemo, useRef } from "react";
 import { useDashboardRealtime } from "@/hooks/useDashboardRealtime";
 import { subDays, subHours, format, startOfDay } from "date-fns";
+import { getDashboardKPIs } from "@/api/reports";
 
 // Map incharge roles → WO categories
 const INCHARGE_CATEGORY_MAP: Record<string, string> = {
@@ -144,7 +145,7 @@ export function useDashboardData(selectedPlantId?: string | null) {
     queryFn: async () => {
       const { data, error } = await dbClient
         .from("work_orders")
-        .select("id, plant_id, asset_id, status, category, priority, created_at, closed_at, opened_at, downtime_minutes, raised_by, assigned_to, wo_number, assets(id, code, name)")
+        .select("id, plant_id, asset_id, status, category, actual_failure_category, priority, created_at, closed_at, opened_at, downtime_minutes, raised_by, assigned_to, wo_number, assets(id, code, name)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data || [];
@@ -208,6 +209,15 @@ export function useDashboardData(selectedPlantId?: string | null) {
       const { data, error } = await dbClient.from("plants").select("id, plant_code, plant_name, is_active");
       if (error) throw error;
       return data || [];
+    },
+  });
+
+  const { data: advancedKpis, isLoading: advancedLoading } = useQuery({
+    queryKey: ["dashboard_advanced_kpis", selectedPlantId],
+    ...protectedQueryOptions,
+    queryFn: async () => {
+      const response = await getDashboardKPIs({ plantId: selectedPlantId || undefined });
+      return response.data;
     },
   });
 
@@ -290,7 +300,9 @@ export function useDashboardData(selectedPlantId?: string | null) {
   const woByCategoryData = useMemo(() => {
     const cats: Record<string, number> = {};
     filteredWOs.forEach((wo: any) => {
-      cats[wo.category] = (cats[wo.category] || 0) + 1;
+      const cat = wo.actual_failure_category || wo.category;
+      if (!cat) return;
+      cats[cat] = (cats[cat] || 0) + 1;
     });
     return Object.entries(cats).map(([name, value]) => ({ name, value }));
   }, [filteredWOs]);
@@ -449,6 +461,7 @@ export function useDashboardData(selectedPlantId?: string | null) {
       totalAssets, activeAssets, openWOs, closedLast24h,
       overduePM, pendingApproval, overdueCalibrations,
       visitorsToday, vehiclesEntered, materialsInward, materialsOutward, activeVisitors, mttrAvg, mtbfAvg, pmCompliance,
+      ...advancedKpis,
     },
     charts: {
       woByCategoryData, woByStatusData, woByPriorityData,

@@ -96,21 +96,21 @@ export function UnifiedOnboardingBanner() {
   if (!visible || dismissed) return null;
 
   return (
-    <div className="fixed bottom-6 left-4 right-4 z-[100] mx-auto max-w-lg animate-in slide-in-from-bottom-8 duration-500">
+    <div className="fixed bottom-6 left-4 right-4 z-[100] mx-auto max-w-lg ">
       <Card className="overflow-hidden border-none bg-card/40 shadow-2xl backdrop-blur-xl">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/5" />
         <CardContent className="relative p-6">
           <button 
             onClick={handleDismiss}
-            className="absolute right-4 top-4 rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="absolute right-4 top-4 rounded-full p-1 text-muted-foreground  hover:bg-muted hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
 
           <div className="flex items-start gap-5">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
-              {step === "notif" && <Bell className="h-6 w-6 animate-pulse" />}
-              {step === "install" && <Download className="h-6 w-6 animate-bounce" />}
+              {step === "notif" && <Bell className="h-6 w-6 " />}
+              {step === "install" && <Download className="h-6 w-6 " />}
               {step === "success" && <ShieldCheck className="h-6 w-6 text-emerald-500" />}
             </div>
 

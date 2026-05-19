@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -52,7 +51,7 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.5 }}>
+    <div>
       <Card className="rounded-[2.5rem] border-none shadow-industrial overflow-hidden bg-white/40 backdrop-blur-xl">
         <CardHeader className="p-8 border-b border-white/20 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
@@ -62,7 +61,7 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
           <Button 
             variant="outline" 
             onClick={() => navigate("/work-orders")}
-            className="h-12 px-6 rounded-2xl border-slate-200 bg-white/80 hover:bg-white hover:shadow-md transition-all font-bold"
+            className="h-12 px-6 rounded-2xl border-slate-200 bg-white/80 hover:bg-white font-bold"
           >
             Open Command Center
           </Button>
@@ -92,13 +91,13 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
                       onClick={() => navigate("/work-orders")}
                     >
                       <td className="px-8 py-6">
-                        <span className="text-base font-black text-primary group-hover:underline underline-offset-4 decoration-2">
+                        <span className="text-base font-black text-primary underline-offset-4 decoration-2">
                           #{wo.wo_number}
                         </span>
                       </td>
                       <td className="px-6 py-6">
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold text-slate-900 group-hover:text-primary transition-colors">{wo.assets?.name || "System Generic"}</span>
+                          <span className="text-sm font-bold text-slate-900 text-slate-900">{wo.assets?.name || "System Generic"}</span>
                           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{wo.assets?.code || "N/A"}</span>
                         </div>
                       </td>
@@ -150,6 +149,6 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
           )}
         </CardContent>
       </Card>
-    </motion.div>
+    </div>
   );
 }

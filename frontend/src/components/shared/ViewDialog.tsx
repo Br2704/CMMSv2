@@ -26,7 +26,10 @@ export function ViewDialog({
 }: ViewDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={`sm:max-w-[600px] max-h-[90vh] overflow-y-auto ${contentClassName || ""}`}>
+      <DialogContent 
+        className={`sm:max-w-[600px] max-h-[90vh] overflow-y-auto ${contentClassName || ""}`}
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <div className="flex items-start justify-between">
             <div>

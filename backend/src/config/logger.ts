@@ -26,6 +26,12 @@ const sensitiveFields = [
   '*.refreshToken',
   '*.mfaSecret',
   '*.encryptionKey',
+  'req.params',
+  'req.query',
+  'req.body.*.token',
+  'req.body.*.secret',
+  'req.body.*.password',
+  'req.body.*.key',
 ];
 
 const loggerConfig = {

@@ -52,7 +52,7 @@ export interface BulkImportValidationResult {
 export class BulkImportValidator {
     private rules: Map<string, ValidationRule> = new Map();
     private duplicateFields: Set<string> = new Set();
-    private globalContext: ValidationContext = {};
+    private globalContext: Partial<ValidationContext> = {};
 
     /**
      * Register a validation rule

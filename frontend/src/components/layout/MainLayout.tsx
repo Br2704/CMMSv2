@@ -2,13 +2,16 @@ import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
-import { BottomNav } from "./BottomNav";
+import { MobileBottomNav } from "./MobileBottomNav";
+import { OfflineIndicator } from "./OfflineIndicator";
+import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 import { buildBrandingManifestUrl } from "@/api/branding";
-import { useAuthStore } from "@/store/auth.store";
+import { useAuthStore, trackActivity } from "@/store/auth.store";
 import { useBrandingStore } from "@/store/branding.store";
 import { useFeaturesStore } from "@/store/features.store";
 import { UnifiedOnboardingBanner } from "@/components/UnifiedOnboardingBanner";
 import { cn } from "@/lib/utils";
+import { AlertTriangle } from "lucide-react";
 
 const JK_FENNER_FAVICON = "/jkfenner/jkfenner-favicon.svg";
 const TAMOPTIX_LOGO = "/tamoptix/tamoptix-logo.svg";
@@ -21,7 +24,7 @@ export function MainLayout() {
     }
     return window.localStorage.getItem("cmms:sidebar-collapsed") === "true";
   });
-  const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
+  const { user, isAuthenticated, isLoading: authLoading, isFallbackMode } = useAuthStore();
   const fetchBranding = useBrandingStore((state) => state.fetchBranding);
   const primeBranding = useBrandingStore((state) => state.primeFromSeed);
   const organizationName = useBrandingStore((state) => state.organizationName);
@@ -35,7 +38,6 @@ export function MainLayout() {
   const resetBranding = useBrandingStore((state) => state.reset);
   const loadFeatures = useFeaturesStore((state) => state.loadFeatures);
   const resetFeatures = useFeaturesStore((state) => state.reset);
-
   useEffect(() => {
     if (import.meta.env.DEV) {
       console.log("[MOUNT] MainLayout");
@@ -59,6 +61,17 @@ export function MainLayout() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("cmms:sidebar-collapsed", String(sidebarCollapsed));
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    trackActivity();
+    const interval = setInterval(trackActivity, 60_000);
+    const onVisibility = () => { if (document.visibilityState === "visible") trackActivity(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     if (authLoading) {
@@ -153,6 +166,13 @@ export function MainLayout() {
 
   return (
     <div className="min-h-screen bg-background">
+      <OfflineIndicator />
+      {isFallbackMode && (
+        <div className="fixed left-0 right-0 top-14 z-[100] flex items-center gap-2 bg-amber-500 px-4 py-2 text-sm font-medium text-white shadow-lg sm:top-16">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>Fallback Mode — Logged in as root admin. Data changes are disabled.</span>
+        </div>
+      )}
       <Sidebar
         isOpen={sidebarOpen}
         isCollapsed={sidebarCollapsed}
@@ -161,13 +181,16 @@ export function MainLayout() {
       
       <div
         className={cn(
-          "flex min-h-screen min-w-0 flex-col transition-[padding-left] duration-300",
+          "flex min-h-screen min-w-0 flex-col ",
           sidebarCollapsed ? "lg:pl-24" : "lg:pl-[280px]",
         )}
       >
         <Topbar onMenuClick={handleSidebarToggle} sidebarCollapsed={sidebarCollapsed} />
         
-        <main tabIndex={-1} data-app-main className="min-w-0 flex-1 px-3 py-4 pb-24 sm:px-6 sm:py-5 sm:pb-24 lg:px-8 lg:py-6 lg:pb-8">
+        <main className={cn(
+          "min-w-0 flex-1 px-3 py-4 pb-24 sm:px-6 sm:py-5 sm:pb-24 lg:px-8 lg:py-6 lg:pb-8",
+          isFallbackMode && "pt-14 sm:pt-16",
+        )}>
           <div className="mx-auto w-full min-w-0 max-w-[1720px]">
             <Outlet />
           </div>
@@ -182,7 +205,9 @@ export function MainLayout() {
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <BottomNav isSidebarOpen={sidebarOpen} />
+      <MobileBottomNav isSidebarOpen={sidebarOpen} />
+      {/* PWA Install Experience */}
+      <PwaInstallPrompt />
       {/* Unified Setup Experience */}
       <UnifiedOnboardingBanner />
     </div>

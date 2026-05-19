@@ -34,7 +34,7 @@ export function applySearch<T extends ObjectLiteral>(
 export function applyPlantScope<T extends ObjectLiteral>(
   qb: SelectQueryBuilder<T>,
   alias: string,
-  plantColumn: string,
+  property: string,
   auth: Express.AuthContext,
   requestedPlantId?: string,
 ) {
@@ -46,5 +46,5 @@ export function applyPlantScope<T extends ObjectLiteral>(
     qb.andWhere('1=0');
     return;
   }
-  qb.andWhere(`(${alias}.${plantColumn} IN (:...plantIds) OR ${alias}.${plantColumn} IS NULL)`, { plantIds: scoped });
+  qb.andWhere(`(${alias}.${property} IN (:...plantIds) OR ${alias}.${property} IS NULL)`, { plantIds: scoped });
 }

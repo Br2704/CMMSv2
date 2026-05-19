@@ -40,6 +40,7 @@
     "pino-http": "^10.3.0",
     "reflect-metadata": "^0.2.2",
     "typeorm": "^0.3.20",
+    "firebase-admin": "^13.0.1",
     "web-push": "^3.6.7",
     "ws": "^8.20.0",
     "zod": "^3.23.8"
@@ -53,6 +54,7 @@
     "@types/node": "^22.5.4",
     "@types/nodemailer": "^6.4.16",
     "@types/supertest": "^6.0.3",
+    "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
     "jest": "^29.7.0",
     "supertest": "^7.0.0",
@@ -61,5 +63,10 @@
     "tsx": "^4.19.1",
     "typeorm-ts-node-commonjs": "^0.3.20",
     "typescript": "^5.6.2"
+  },
+  "overrides": {
+    "glob": "^10.4.5",
+    "rimraf": "^5.0.7",
+    "uuid": "^11.0.3"
   }
 }

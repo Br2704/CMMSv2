@@ -21,6 +21,7 @@ interface FormDialogProps {
   isLoading?: boolean;
   submitDisabled?: boolean;
   size?: "sm" | "md" | "lg" | "xl";
+  contentClassName?: string;
 }
 
 const sizeClasses = {
@@ -41,18 +42,19 @@ export function FormDialog({
   isLoading = false,
   submitDisabled = false,
   size = "md",
+  contentClassName,
 }: FormDialogProps) {
-  const contentRef = useRef<HTMLDivElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        ref={contentRef}
-        className={`${sizeClasses[size]} w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-4 sm:p-6`}
+        className={`${sizeClasses[size]} w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-4 sm:p-6 ${contentClassName || ""}`}
         onOpenAutoFocus={(e) => {
           e.preventDefault();
-          requestAnimationFrame(() => contentRef.current?.focus());
+          cancelButtonRef.current?.focus();
         }}
+        onCloseAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -65,6 +67,7 @@ export function FormDialog({
         <div className="grid gap-4 py-4">{children}</div>
         <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end sm:space-x-0">
           <Button
+            ref={cancelButtonRef}
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={isLoading}

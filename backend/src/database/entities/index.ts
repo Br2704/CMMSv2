@@ -105,3 +105,5 @@ export * from './mail-queue.entity';
 export * from './escalation-history.entity';
 export * from './sla-config.entity';
 export * from './notification-settings.entity';
+export * from './maintenance-report.entity';
+export * from './system-config.entity';

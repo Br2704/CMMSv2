@@ -243,7 +243,9 @@ organizationsRouter.patch(
       where: { id: req.params.id },
       select: ['id', 'name', 'code'],
     });
-    if (organization && isProtectedOrganizationIdentity(organization)) {
+    const roles = Array.from(new Set([req.auth?.roleKey, ...(req.auth?.roles ?? [])].filter(Boolean)));
+    const isRootAdmin = roles.includes('ROOT_ADMIN');
+    if (!isRootAdmin && organization && isProtectedOrganizationIdentity(organization)) {
       res.status(403).json(fail('Protected organization cannot be modified'));
       return;
     }

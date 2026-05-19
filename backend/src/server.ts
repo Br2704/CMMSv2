@@ -202,6 +202,13 @@ async function bootstrap() {
   initializeSecretRotation();
   await ensureSelectedDatabaseExists();
   await AppDataSource.initialize();
+  logger.info('Database connection initialized');
+
+  if (process.env.NODE_ENV === 'production' || process.env.RUN_MIGRATIONS === 'true') {
+    logger.info('Running pending migrations...');
+    await AppDataSource.runMigrations();
+    logger.info('Migrations completed');
+  }
   await ensureProtectedRootAdminBootstrap();
   startReportsScheduler();
   startPmSchedulesScheduler();

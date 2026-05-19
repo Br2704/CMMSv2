@@ -7,7 +7,7 @@ import { CsvTemplateColumn, CsvTemplateConfig, ExcelTemplateConfig } from "./imp
 
 export interface EnhancedCsvTemplateColumn extends CsvTemplateColumn {
     category?: string;
-    fieldType?: "text" | "email" | "phone" | "date" | "number" | "select" | "multiselect" | "boolean" | "hierarchy";
+    fieldType?: "text" | "email" | "phone" | "date" | "number" | "select" | "multiselect" | "boolean" | "hierarchy" | "password";
     minLength?: number;
     maxLength?: number;
     pattern?: string;

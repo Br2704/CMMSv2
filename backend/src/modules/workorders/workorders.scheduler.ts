@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { logger } from '../../config/logger';
 import { AppDataSource } from '../../database/data-source';
-import { NotificationEntity, WorkOrderActivityLogEntity, WorkOrderEntity } from '../../database/entities';
+import { NotificationEntity, WorkOrderActivityLogEntity, WorkOrderEntity, SlaConfigEntity } from '../../database/entities';
 import { publishNotificationChange } from '../notifications/notification-stream';
 
 const USER_VERIFICATION_STATUS = 'USER_VERIFICATION';
@@ -9,8 +9,11 @@ const CLOSED_STATUS = 'CLOSED';
 const CANCELLED_STATUS = 'CANCELLED';
 const IN_PROGRESS_STATUS = 'IN_PROGRESS';
 const ACCEPTED_STATUS = 'ACCEPTED';
+const RAISED_STATUS = 'RAISED';
+const ASSIGNED_STATUS = 'ASSIGNED';
+const OPENED_STATUS = 'OPENED';
 const ESCALATION_EVENT = 'WORK_ORDER_ESCALATED';
-const ESCALATION_INTERVALS = [30, 60, 120, 240];
+const ESCALATION_INTERVALS = [30, 60, 90];
 const REMINDER_6H_EVENT = 'USER_VERIFICATION_REMINDER_6H';
 const REMINDER_24H_EVENT = 'USER_VERIFICATION_REMINDER_24H';
 const AUTO_CLOSED_EVENT = 'AUTO_CLOSED_SLA';
@@ -30,6 +33,38 @@ function toDate(value: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function uniqueUserIds(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+}
+
+function findSlaConfig(
+  wo: { plant_id: string | null; category: string | null; priority: string },
+  configs: SlaConfigEntity[]
+): SlaConfigEntity | null {
+  // 1. Plant match
+  if (wo.plant_id) {
+    const plantConfig = configs.find(c => c.scope === 'PLANT' && c.scopeValue === wo.plant_id && c.priority === wo.priority);
+    if (plantConfig) return plantConfig;
+  }
+  // 2. Category match
+  if (wo.category) {
+    const cat = wo.category;
+    const categoryConfig = configs.find(c => c.scope === 'CATEGORY' && c.scopeValue?.toUpperCase() === cat.toUpperCase() && c.priority === wo.priority);
+    if (categoryConfig) return categoryConfig;
+  }
+  // 3. Priority match
+  const priorityConfig = configs.find(c => c.scope === 'PRIORITY' && c.priority === wo.priority);
+  if (priorityConfig) return priorityConfig;
+
+  // 4. Global Priority match
+  const globalPriorityConfig = configs.find(c => c.scope === 'GLOBAL' && c.priority === wo.priority);
+  if (globalPriorityConfig) return globalPriorityConfig;
+
+  // 5. Fallback to any active Global config
+  const globalConfig = configs.find(c => c.scope === 'GLOBAL');
+  return globalConfig || null;
+}
+
 async function runWorkOrderEscalationScheduler() {
   if (!AppDataSource.isInitialized) {
     return;
@@ -39,6 +74,9 @@ async function runWorkOrderEscalationScheduler() {
   const workOrderRepo = manager.getRepository(WorkOrderEntity);
   const activityRepo = manager.getRepository(WorkOrderActivityLogEntity);
   const notificationRepo = manager.getRepository(NotificationEntity);
+  const configRepo = manager.getRepository(SlaConfigEntity);
+
+  const slaConfigs = await configRepo.find({ where: { isActive: true }, order: { createdAt: 'DESC' } });
 
   const candidates = await manager
     .createQueryBuilder()
@@ -46,22 +84,36 @@ async function runWorkOrderEscalationScheduler() {
     .addSelect('wo.wo_number', 'wo_number')
     .addSelect('wo.asset_id', 'asset_id')
     .addSelect('wo.plant_id', 'plant_id')
+    .addSelect('wo.category', 'category')
+    .addSelect('wo.priority', 'priority')
     .addSelect('wo.raised_by', 'raised_by')
     .addSelect('wo.assigned_to', 'assigned_to')
+    .addSelect('wo.opened_at', 'opened_at')
     .addSelect('wo.accepted_at', 'accepted_at')
     .addSelect('wo.started_at', 'started_at')
     .addSelect('wo.created_at', 'created_at')
     .addSelect('wo.escalation_level', 'escalation_level')
     .addSelect('wo.sla_due_at', 'sla_due_at')
     .from('work_orders', 'wo')
-    .where('wo.status IN (:...statuses)', { statuses: [ACCEPTED_STATUS, IN_PROGRESS_STATUS] })
+    .where('wo.status IN (:...statuses)', { 
+      statuses: [
+        RAISED_STATUS, 
+        ASSIGNED_STATUS, 
+        OPENED_STATUS, 
+        ACCEPTED_STATUS, 
+        IN_PROGRESS_STATUS
+      ] 
+    })
     .getRawMany<{
       id: string;
       wo_number: string;
       asset_id: string | null;
       plant_id: string | null;
+      category: string | null;
+      priority: string;
       raised_by: string | null;
       assigned_to: string | null;
+      opened_at: string | Date | null;
       accepted_at: string | Date | null;
       started_at: string | Date | null;
       created_at: string | Date;
@@ -77,9 +129,17 @@ async function runWorkOrderEscalationScheduler() {
   const touchedUsers = new Set<string>();
 
   for (const workOrder of candidates) {
-    const baseline = toDate(workOrder.started_at) || toDate(workOrder.accepted_at) || toDate(workOrder.created_at) || now;
+    const matchedSla = findSlaConfig(workOrder, slaConfigs);
+    const escalationMin1 = matchedSla?.escalation1Minutes ?? 30;
+    const escalationMin2 = matchedSla?.escalation2Minutes ?? 60;
+    const escalationMin3 = matchedSla?.escalation3Minutes ?? 120;
+    const escalationMin4 = matchedSla?.escalation4Minutes ?? 240;
+    const ESCALATION_INTERVALS = [escalationMin1, escalationMin2, escalationMin3, escalationMin4];
+
+    const baseline = toDate(workOrder.opened_at) || toDate(workOrder.started_at) || toDate(workOrder.accepted_at) || toDate(workOrder.created_at) || now;
     const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - baseline.getTime()) / 60000));
     const currentLevel = Number(workOrder.escalation_level ?? 0) || 0;
+    
     const nextLevel = ESCALATION_INTERVALS.findIndex((threshold, index) => elapsedMinutes >= threshold && index + 1 > currentLevel) + 1;
 
     if (nextLevel <= 0 || nextLevel <= currentLevel) {
@@ -135,10 +195,6 @@ async function runWorkOrderEscalationScheduler() {
   }
 
   touchedUsers.forEach((userId) => publishNotificationChange(userId));
-}
-
-function uniqueUserIds(values: Array<string | null | undefined>) {
-  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
 }
 
 async function runUserVerificationSlaScheduler() {

@@ -6,7 +6,6 @@ const IMAGE_MIME_TYPES = new Set([
   'image/jpg',
   'image/webp',
   'image/gif',
-  'image/svg+xml',
   'image/x-icon',
   'image/vnd.microsoft.icon',
 ]);
@@ -29,6 +28,9 @@ function isSafeRemoteUrl(value: string) {
   }
   try {
     const parsed = new URL(value);
+    if (env.NODE_ENV === 'production') {
+      return parsed.protocol === 'https:';
+    }
     return parsed.protocol === 'https:' || parsed.protocol === 'http:';
   } catch {
     return false;

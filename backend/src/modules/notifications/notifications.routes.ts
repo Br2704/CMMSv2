@@ -1,13 +1,15 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
-import { NotificationEntity, PlantEntity, ProfileEntity, UserEntity, UserRoleEntity, WorkOrderEntity } from '../../database/entities';
+import { NotificationEntity, PlantEntity, ProfileEntity, UserEntity, UserRoleEntity, WorkOrderEntity, PushSubscriptionEntity, NotificationSettingsEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { requirePermission, requireRole } from '../../middlewares/permissions';
+import { validateRequest } from '../../middlewares/validate';
 import { ok } from '../../utils/apiResponse';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { normalizeRoleName } from '../../utils/rbac';
 import { publishNotificationChange, subscribeNotificationStream } from './notification-stream';
+import { sendPushNotification, getVapidPublicKey } from '../../services/push.service';
 
 const notificationSchema = z.object({
   userId: z.string().uuid().optional(),
@@ -43,8 +45,56 @@ const broadcastSchema = z.object({
   groupKey: z.string().optional(),
 });
 
+const pushSubscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({
+    p256dh: z.string(),
+    auth: z.string(),
+  }),
+});
+
 export const notificationsRouter = Router();
 notificationsRouter.use(requireAuth);
+
+notificationsRouter.get('/notifications/vapid-key', async (_req, res) => {
+  res.json(ok({ publicKey: getVapidPublicKey() }));
+});
+
+notificationsRouter.post('/notifications/push-subscribe', validateRequest({ body: pushSubscriptionSchema }), async (req, res, next) => {
+  try {
+    const body = req.body;
+    const repo = AppDataSource.getRepository(PushSubscriptionEntity);
+    
+    let sub = await repo.findOneBy({ userId: req.auth!.userId, endpoint: body.endpoint });
+    if (!sub) {
+      sub = repo.create({
+        userId: req.auth!.userId,
+        endpoint: body.endpoint,
+        keys: body.keys,
+        userAgent: req.headers['user-agent'] || null,
+      });
+    } else {
+      sub.keys = body.keys;
+      sub.lastUsedAt = new Date();
+    }
+    
+    await repo.save(sub);
+    res.json(ok({ subscribed: true }, 'Push subscription saved'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+notificationsRouter.post('/notifications/push-unsubscribe', validateRequest({ body: z.object({ endpoint: z.string().url() }) }), async (req, res, next) => {
+  try {
+    const body = req.body as { endpoint: string };
+    const repo = AppDataSource.getRepository(PushSubscriptionEntity);
+    await repo.delete({ userId: req.auth!.userId, endpoint: body.endpoint });
+    res.json(ok({ unsubscribed: true }, 'Push subscription removed'));
+  } catch (error) {
+    next(error);
+  }
+});
 
 function normalizeNotificationText(value: string | null | undefined) {
   return String(value ?? '').toLowerCase();
@@ -65,7 +115,6 @@ notificationsRouter.get('/notifications/stream', requirePermission('NOTIFICATION
   req.on('close', () => {
     clearInterval(heartbeat);
     unsubscribe();
-    res.end();
   });
 });
 
@@ -376,6 +425,81 @@ notificationsRouter.delete('/notifications/:id', requirePermission('NOTIFICATION
     await repo.remove(row);
     publishNotificationChange(req.auth!.userId);
     res.json(ok({ id: params.id, deleted: true }, 'Notification deleted'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+notificationsRouter.get('/notifications/settings', async (req, res, next) => {
+  try {
+    const repo = AppDataSource.getRepository(NotificationSettingsEntity);
+    let settings = await repo.findOneBy({ userId: req.auth!.userId });
+    if (!settings) {
+      settings = repo.create({
+        userId: req.auth!.userId,
+        emailNotifications: true,
+        pushNotifications: true,
+        inAppNotifications: true,
+        dailyDigest: false,
+        newWoEmail: true,
+        woAssignedEmail: true,
+        woEscalationEmail: true,
+        woReminderEmail: true,
+        woCompletedEmail: true,
+        slaBreachEmail: true,
+        quietHoursStart: null,
+        quietHoursEnd: null,
+        emailDigestFrequency: 'REALTIME',
+      });
+      await repo.save(settings);
+    }
+    res.json(ok(settings, 'Notification settings fetched'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+notificationsRouter.patch('/notifications/settings', async (req, res, next) => {
+  try {
+    const repo = AppDataSource.getRepository(NotificationSettingsEntity);
+    let settings = await repo.findOneBy({ userId: req.auth!.userId });
+    if (!settings) {
+      settings = repo.create({
+        userId: req.auth!.userId,
+        emailNotifications: true,
+        pushNotifications: true,
+        inAppNotifications: true,
+        dailyDigest: false,
+        newWoEmail: true,
+        woAssignedEmail: true,
+        woEscalationEmail: true,
+        woReminderEmail: true,
+        woCompletedEmail: true,
+        slaBreachEmail: true,
+        quietHoursStart: null,
+        quietHoursEnd: null,
+        emailDigestFrequency: 'REALTIME',
+      });
+    }
+    const body = z.object({
+      emailNotifications: z.boolean().optional(),
+      pushNotifications: z.boolean().optional(),
+      inAppNotifications: z.boolean().optional(),
+      dailyDigest: z.boolean().optional(),
+      newWoEmail: z.boolean().optional(),
+      woAssignedEmail: z.boolean().optional(),
+      woEscalationEmail: z.boolean().optional(),
+      woReminderEmail: z.boolean().optional(),
+      woCompletedEmail: z.boolean().optional(),
+      slaBreachEmail: z.boolean().optional(),
+      quietHoursStart: z.string().nullable().optional(),
+      quietHoursEnd: z.string().nullable().optional(),
+      emailDigestFrequency: z.string().optional(),
+    }).parse(req.body);
+
+    Object.assign(settings, body);
+    await repo.save(settings);
+    res.json(ok(settings, 'Notification settings updated'));
   } catch (error) {
     next(error);
   }

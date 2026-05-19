@@ -14,7 +14,7 @@ import { AssetReliabilityKpiEntity } from './database/entities';
 import { auditLogger } from './middlewares/auditLogger';
 import { errorHandler } from './middlewares/errorHandler';
 import { apiNotFoundHandler } from './middlewares/notFoundHandler';
-import { exportsRateLimiter, generalApiRateLimiter, mutatingApiRateLimiter } from './middlewares/rateLimiter';
+import { exportsRateLimiter, generalApiRateLimiter, mutatingApiRateLimiter, heavyApiRateLimiter } from './middlewares/rateLimiter';
 import { sanitizeInput } from './middlewares/sanitizeInput';
 import { securityHeadersMiddleware, threatDetectionMiddleware, requestValidationMiddleware } from './middlewares/securityHeaders';
 import { router } from './routes';
@@ -102,9 +102,7 @@ app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(cookieParser());
 app.use(requestValidationMiddleware);
 app.use(securityHeadersMiddleware);
-if (env.NODE_ENV === 'production') {
-  app.use(threatDetectionMiddleware);
-}
+app.use(threatDetectionMiddleware);
 app.use(generalApiRateLimiter);
 app.use(mutatingApiRateLimiter);
 app.use(sanitizeInput);
@@ -271,6 +269,8 @@ app.get(`${env.API_PREFIX}/qr/public/machine/:machineCode`, (req, res, next) => 
   })();
 });
 
+app.use(`${env.API_PREFIX}/reports`, heavyApiRateLimiter);
+app.use(`${env.API_PREFIX}/benchmarking`, heavyApiRateLimiter);
 app.use(`${env.API_PREFIX}/exports`, exportsRateLimiter);
 app.use(env.API_PREFIX, router);
 app.use(env.API_PREFIX, apiNotFoundHandler);

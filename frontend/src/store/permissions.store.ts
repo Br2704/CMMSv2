@@ -81,6 +81,10 @@ function normalizeRole(role: string | null | undefined): string {
   if (normalized === "PLANT_ADMIN" || normalized === "PLANTADMIN") return "ADMIN";
   if (normalized === "ORG_ADMIN" || normalized === "ORGANIZATION_ADMIN") return "ADMIN";
   if (normalized === "SECURITY_USER") return "SECURITY";
+  if (normalized === "MECHANICAL_INCHARGE" || normalized === "ELECTRICAL_INCHARGE" || normalized === "UTILITY_INCHARGE" || normalized === "DEPARTMENT_INCHARGE") return "MECHANICAL_INCHARGE";
+  if (normalized === "TOOLCHANGE_INCHARGE") return "TOOLCHANGE_INCHARGE";
+  if (normalized === "CALIBRATION_INCHARGE") return "CALIBRATION_INCHARGE";
+  if (normalized === "OPERATOR") return "PRODUCTION_USER";
   return normalized || "USER";
 }
 
@@ -91,11 +95,19 @@ function rolePrecedence(roleKey: string): number {
   if (normalized === "ADMIN") return 200;
   if (normalized === "MAINTENANCE_MANAGER") return 180;
   if (normalized === "ENGINEER") return 140;
+  if (normalized === "MECHANICAL_INCHARGE") return 135;
+  if (normalized === "TOOLCHANGE_INCHARGE") return 133;
+  if (normalized === "CALIBRATION_INCHARGE") return 132;
   if (normalized === "TECHNICIAN") return 130;
   if (normalized === "STORE_USER") return 125;
+  if (normalized === "MAINTENANCE_USER") return 120;
+  if (normalized === "PRODUCTION_USER") return 115;
   if (normalized === "VIEWER") return 110;
   if (normalized === "VENDOR") return 105;
   if (normalized === "SECURITY") return 102;
+  if (normalized === "HR_USER") return 100;
+  if (normalized === "SAFETY_OFFICER") return 98;
+  if (normalized === "INVENTORY_MANAGER") return 96;
   if (normalized === "TEMPORARY_VISITOR") return 94;
   return 100;
 }
@@ -111,17 +123,17 @@ function getPrimaryRole(roles: string[]): string {
 
 function allowedRoleTargetsForCreate(roleKey: string): string[] {
   const role = normalizeRole(roleKey);
-  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
-  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
-  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "USER", "VENDOR", "VISITOR", "TEMPORARY_VISITOR"];
+  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "MAINTENANCE_MANAGER", "MECHANICAL_INCHARGE", "TOOLCHANGE_INCHARGE", "CALIBRATION_INCHARGE", "ENGINEER", "TECHNICIAN", "MAINTENANCE_USER", "PRODUCTION_USER", "STORE_USER", "HR_USER", "SAFETY_OFFICER", "INVENTORY_MANAGER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
+  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "MECHANICAL_INCHARGE", "TOOLCHANGE_INCHARGE", "CALIBRATION_INCHARGE", "ENGINEER", "TECHNICIAN", "MAINTENANCE_USER", "PRODUCTION_USER", "STORE_USER", "HR_USER", "SAFETY_OFFICER", "INVENTORY_MANAGER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
+  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "MECHANICAL_INCHARGE", "TOOLCHANGE_INCHARGE", "CALIBRATION_INCHARGE", "ENGINEER", "TECHNICIAN", "MAINTENANCE_USER", "PRODUCTION_USER", "STORE_USER", "HR_USER", "SAFETY_OFFICER", "INVENTORY_MANAGER", "VIEWER", "SECURITY", "USER", "VENDOR", "VISITOR", "TEMPORARY_VISITOR"];
   return [];
 }
 
 function allowedRoleTargetsForEdit(roleKey: string): string[] {
   const role = normalizeRole(roleKey);
-  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
-  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
-  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "ENGINEER", "TECHNICIAN", "STORE_USER", "VIEWER", "SECURITY", "USER", "VENDOR", "VISITOR", "TEMPORARY_VISITOR"];
+  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "MAINTENANCE_MANAGER", "MECHANICAL_INCHARGE", "TOOLCHANGE_INCHARGE", "CALIBRATION_INCHARGE", "ENGINEER", "TECHNICIAN", "MAINTENANCE_USER", "PRODUCTION_USER", "STORE_USER", "HR_USER", "SAFETY_OFFICER", "INVENTORY_MANAGER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
+  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "MECHANICAL_INCHARGE", "TOOLCHANGE_INCHARGE", "CALIBRATION_INCHARGE", "ENGINEER", "TECHNICIAN", "MAINTENANCE_USER", "PRODUCTION_USER", "STORE_USER", "HR_USER", "SAFETY_OFFICER", "INVENTORY_MANAGER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
+  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "MECHANICAL_INCHARGE", "TOOLCHANGE_INCHARGE", "CALIBRATION_INCHARGE", "ENGINEER", "TECHNICIAN", "MAINTENANCE_USER", "PRODUCTION_USER", "STORE_USER", "HR_USER", "SAFETY_OFFICER", "INVENTORY_MANAGER", "VIEWER", "SECURITY", "USER", "VENDOR", "VISITOR", "TEMPORARY_VISITOR"];
   return [];
 }
 
@@ -621,7 +633,11 @@ export const usePermissionsStore = create<PermissionsStoreState>((set, get) => (
     const normalizedAction = normalizeAction(action);
     const permissionMap = get().permissionsMe?.permissions ?? {};
     const actions = [...(permissionMap[normalizedModule] ?? []), ...(permissionMap["*"] ?? [])].map((item) => item.toUpperCase());
-    return actions.includes(normalizedAction) || actions.includes("*");
+    if (actions.includes("*")) return true;
+    if (actions.includes(normalizedAction)) return true;
+    if (normalizedAction === "ASSIGN" && actions.includes("UPDATE")) return true;
+    if (normalizedAction === "REJECT" && actions.includes("APPROVE")) return true;
+    return false;
   },
 }));
 

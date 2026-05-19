@@ -1,32 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { getPermissionsMeMock, getRbacVersionMock } = vi.hoisted(() => ({
+  getPermissionsMeMock: vi.fn(),
+  getRbacVersionMock: vi.fn().mockResolvedValue({ success: true, data: { version: 7 } }),
+}));
+
+vi.mock("@/api/permissionsMe", () => ({
+  getPermissionsMe: getPermissionsMeMock,
+}));
+vi.mock("@/api/rbac", () => ({
+  getRbacVersion: getRbacVersionMock,
+  getOrganizationRbacVersion: vi.fn(),
+  getRbacPermissionsMe: vi.fn(),
+}));
+vi.mock("@/api/token", () => ({
+  getStoredAccessToken: () => "access-token",
+}));
+vi.mock("@/store/auth.store", () => ({
+  useAuthStore: {
+    getState: () => ({ user: { id: "user-1" }, isLoading: false }),
+  },
+}));
+
 describe("permissions store RBAC sync", () => {
   beforeEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
     vi.clearAllTimers();
     vi.useRealTimers();
-    vi.resetModules();
   });
 
   it("does not refetch permissions when RBAC version is unchanged", async () => {
-    const getPermissionsMeMock = vi.fn();
-    const getRbacVersionMock = vi.fn().mockResolvedValue({ success: true, data: { version: 7 } });
-
-    vi.doMock("@/api/permissionsMe", () => ({
-      getPermissionsMe: getPermissionsMeMock,
-    }));
-    vi.doMock("@/api/rbac", () => ({
-      getRbacVersion: getRbacVersionMock,
-    }));
-    vi.doMock("@/api/http", () => ({
-      getStoredAccessToken: () => "access-token",
-    }));
-    vi.doMock("@/store/auth.store", () => ({
-      useAuthStore: {
-        getState: () => ({ user: { id: "user-1" }, isLoading: false }),
-      },
-    }));
-
     const { usePermissionsStore } = await import("@/store/permissions.store");
 
     usePermissionsStore.setState({

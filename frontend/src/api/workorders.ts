@@ -1,6 +1,6 @@
 import { httpRequest } from '@/api/http';
 
-export type WorkOrder = Record<string, unknown>;
+export type WorkOrder = Record<string, any>;
 export interface WorkOrderListResponse {
   success: true;
   data: WorkOrder[];
@@ -14,6 +14,7 @@ export interface WorkOrderSummaryResponse {
       assigned: number;
       raised: number;
       incharge: number;
+      team: number;
       all: number;
       approvalRequired: number;
     };
@@ -24,7 +25,7 @@ export interface WorkOrderSummaryResponse {
       total: number;
       escalated?: number;
     };
-    defaultScope: "assigned" | "incharge" | "all";
+    defaultScope: "assigned" | "raised" | "incharge" | "team" | "all" | "approval_required";
   };
 }
 
@@ -84,14 +85,35 @@ export const approveWorkOrder = (id: string, payload: { comments?: string | null
     body: JSON.stringify(payload),
   });
 
+export const bulkUpdateWorkOrders = (ids: string[], payload: Record<string, unknown>) =>
+  httpRequest<{ success: true; data: { updated: number } }>('/work-orders/bulk-update', {
+    method: 'POST',
+    body: JSON.stringify({ ids, ...payload }),
+  });
+
+export async function exportWorkOrdersCSV(query: Record<string, string | number | undefined> = {}): Promise<void> {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([k, v]) => v !== undefined && params.set(k, String(v)));
+  const qs = params.toString();
+  const response = await fetch(`/api/work-orders/export${qs ? '?' + qs : ''}`, {
+    credentials: 'include',
+    headers: { 'Accept': 'text/csv' },
+  });
+  if (!response.ok) throw new Error('Export failed');
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `work-orders-${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+
 export const rejectWorkOrder = (id: string, payload: { comments: string }) =>
   httpRequest<{ success: true; data: WorkOrder }>(`/work-orders/${id}/reject`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
 
-export const cancelWorkOrder = (id: string, payload: { reason: string }) =>
-  httpRequest<{ success: true; data: WorkOrder }>(`/work-orders/${id}/cancel`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });

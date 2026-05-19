@@ -79,16 +79,25 @@ export class RbacEnhancements1700000000003 implements MigrationInterface {
       );
     }
 
-    const rolePermTable = await queryRunner.getTable('role_permissions');
-    if (rolePermTable && !rolePermTable.indices.some((index) => index.name === 'uq_role_permissions_role_module_key')) {
+    // More robust index checking for Postgres
+    const existingIndices = await queryRunner.query(
+      "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'role_permissions'"
+    );
+    const hasRolePermIndex = existingIndices.some((idx: any) => idx.indexname === 'uq_role_permissions_role_module_key');
+
+    if (!hasRolePermIndex) {
       await queryRunner.createIndex(
         'role_permissions',
         new TableIndex({ name: 'uq_role_permissions_role_module_key', columnNames: ['role_id', 'module_key'], isUnique: true }),
       );
     }
 
-    const userRolesTable = await queryRunner.getTable('user_roles');
-    if (userRolesTable && !userRolesTable.indices.some((index) => index.name === 'uq_user_roles_user_roleid_plant')) {
+    const existingUserRoleIndices = await queryRunner.query(
+      "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'user_roles'"
+    );
+    const hasUserRoleIndex = existingUserRoleIndices.some((idx: any) => idx.indexname === 'uq_user_roles_user_roleid_plant');
+
+    if (!hasUserRoleIndex) {
       await queryRunner.createIndex(
         'user_roles',
         new TableIndex({ name: 'uq_user_roles_user_roleid_plant', columnNames: ['user_id', 'role_id', 'plant_id'], isUnique: true }),

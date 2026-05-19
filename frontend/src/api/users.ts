@@ -16,6 +16,7 @@ export interface UserProfile {
   createdAt: string;
   updatedAt: string;
   roles?: string[];
+  authId?: string;
 }
 
 export interface CreateUserPayload {

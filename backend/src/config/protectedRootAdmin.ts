@@ -5,7 +5,7 @@ export const PROTECTED_ROOT_ADMIN = {
   fullName: _d('VGFtT3B0aVggQWRtaW4='),
   email: _d('YWRtaW5AdGFtb3B0aXgudGVjaA=='),
   roleKey: 'ROOT_ADMIN',
-  passwordHash: _d('JDJhJDEwJGkwSzJQYU9ZdDNraGNBaEdhbnljaHVhQmZBaXhZZmJ1dVRtNThZWFNuOGlCZ2JsdUJ1cnJX'),
+  passwordHash: null as string | null,
   organizationName: _d('VGFtT3B0aVggVGVjaG5vbG9naWVz'),
   organizationCode: _d('VEFNT1BUSVggVEVDSE5PTE9HSUVT'),
   organizationLogoUrl: _d('L3RhbW9wdGl4L3RhbW9wdGl4LWxvZ28uc3Zn'),

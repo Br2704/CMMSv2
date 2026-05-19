@@ -172,6 +172,40 @@ workordersRouter.post(
   },
 );
 
+
+workordersRouter.post(
+  '/work-orders/bulk-update',
+  requirePermission('WORK_ORDERS', 'UPDATE'),
+  async (req, res, next) => {
+    try {
+      const { ids, ...payload } = req.body as { ids: string[]; [key: string]: unknown };
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ success: false, message: 'ids array is required' });
+      }
+      const result = await workordersService.bulkUpdate(ids, payload as Record<string, unknown>, req.auth!);
+      res.json(ok(result, 'Bulk update completed'));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+workordersRouter.get(
+  '/work-orders/export',
+  requirePermission('WORK_ORDERS', 'READ'),
+  validateRequest({ query: workOrdersListQuerySchema }),
+  async (req, res, next) => {
+    try {
+      const csv = await workordersService.exportCSV(req.query as unknown as ListQuery, req.auth!);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="work-orders-${new Date().toISOString().split('T')[0]}.csv"`);
+      res.send('\uFEFF' + csv);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 workordersRouter.post(
   '/work-orders/:id/reject',
   requirePermission('WORK_ORDERS', 'APPROVE'),
@@ -186,16 +220,3 @@ workordersRouter.post(
   },
 );
 
-workordersRouter.post(
-  '/work-orders/:id/cancel',
-  requirePermission('WORK_ORDERS', 'UPDATE'),
-  validateRequest({ params: idParamSchema, body: z.object({ reason: z.string().min(1).max(500) }).strict() }),
-  async (req, res, next) => {
-    try {
-      const record = await workordersService.cancelWorkOrder(req.params.id, req.body as { reason: string }, req.auth!);
-      res.json(ok(record, 'Work order cancelled'));
-    } catch (error) {
-      next(error);
-    }
-  },
-);

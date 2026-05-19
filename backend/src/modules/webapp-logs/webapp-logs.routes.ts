@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middlewares/authMiddleware';
+import { webappLogsRateLimiter } from '../../middlewares/rateLimiter';
 import { ok, fail } from '../../utils/apiResponse';
 import { logger } from '../../config/logger';
 
@@ -17,7 +18,7 @@ const webappLogSchema = z.object({
 
 export const webappLogsRouter = Router();
 
-webappLogsRouter.post('/webapp-logs', async (req, res) => {
+webappLogsRouter.post('/webapp-logs', webappLogsRateLimiter, requireAuth, async (req, res) => {
   const parsed = webappLogSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(200).json(ok({ logged: false }, 'Invalid log payload - skipped'));

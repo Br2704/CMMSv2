@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { usePermissions } from "@/hooks/usePermissions";
+import { queueWebappLog } from "@/api/logs";
 
 interface ModuleGuardProps {
   moduleId: string;
@@ -11,9 +12,11 @@ interface ModuleGuardProps {
 
 export function ModuleGuard({ moduleId, action = "view", children }: ModuleGuardProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { hasModuleAccess, loading } = usePermissions();
   const wasAllowedRef = useRef<boolean | null>(null);
-  const hasResolvedRef = useRef(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [resolved, setResolved] = useState(false);
   const allowed = hasModuleAccess(moduleId, action);
 
   useEffect(() => {
@@ -28,8 +31,8 @@ export function ModuleGuard({ moduleId, action = "view", children }: ModuleGuard
   }, [moduleId]);
 
   useEffect(() => {
-    if (loading && !hasResolvedRef.current) return;
-    hasResolvedRef.current = true;
+    if (loading) return;
+    setResolved(true);
     if (import.meta.env.DEV) {
       console.log("[GUARD]", moduleId, { allowed, loading });
     }
@@ -37,22 +40,59 @@ export function ModuleGuard({ moduleId, action = "view", children }: ModuleGuard
       toast.info("Access updated, redirecting");
     }
     wasAllowedRef.current = allowed;
-  }, [allowed, loading]);
+  }, [allowed, loading, moduleId]);
 
-  if (loading && !hasResolvedRef.current) {
+  // Handle redirect in a top-level useEffect with cleanup to prevent memory leaks
+  useEffect(() => {
+    if (loading || !resolved || allowed) return;
+
+    // Log the security event
+    queueWebappLog({
+      level: "WARN",
+      action: "security.unauthorized_access",
+      message: `Unauthorized attempt to access module "${moduleId}" on route "${location.pathname}"`,
+      path: location.pathname,
+      metadata: {
+        moduleId,
+        action,
+      },
+    });
+
+    const redirectPath = wasAllowedRef.current === true ? "/" : "/403";
+    redirectTimerRef.current = setTimeout(() => {
+      navigate(redirectPath, { replace: true, state: { from: location.pathname } });
+    }, 300);
+
+    return () => {
+      if (redirectTimerRef.current !== null) {
+        clearTimeout(redirectTimerRef.current);
+        redirectTimerRef.current = null;
+      }
+    };
+  }, [loading, resolved, allowed, navigate, location.pathname, moduleId, action]);
+
+  // Show loading state while fetching permissions to prevent flashes
+  if (loading || !resolved) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 border-3 border-primary/30 border-t-primary rounded-full animate-spin" />
-          <p className="text-sm text-muted-foreground">Checking permissions...</p>
+          <div className="h-8 w-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
   }
 
+  // After resolving, if not allowed, show redirecting state
   if (!allowed) {
-    const redirectPath = wasAllowedRef.current === true ? "/" : "/403";
-    return <Navigate to={redirectPath} replace state={{ from: location.pathname }} />;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">Redirecting...</p>
+        </div>
+      </div>
+    );
   }
 
   return <>{children}</>;

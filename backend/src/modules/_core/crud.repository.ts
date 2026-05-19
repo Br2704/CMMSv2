@@ -4,14 +4,23 @@ import { badRequest } from '../../utils/httpError';
 import type { ListQuery } from '../../utils/pagination';
 import type { GenericRecord, ListResult, ModuleConfig } from './crud.types';
 
-function parseSort(sort: string | undefined, sortColumns: string[] | undefined, fallback: { column: string; direction: 'ASC' | 'DESC' }) {
+function parseSort(sort: string | undefined, sortColumns: string[] | undefined, fallback: { column: string; direction: 'ASC' | 'DESC' }, entityMetadata?: import('typeorm').EntityMetadata | null) {
   if (!sort) return fallback;
   const [rawColumn, rawDirection] = sort.split(':');
   const direction: 'ASC' | 'DESC' = rawDirection?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
-  if (!rawColumn || (sortColumns && !sortColumns.includes(rawColumn))) {
-    return fallback;
+  const column = rawColumn?.trim();
+  if (!column) return fallback;
+
+  if (sortColumns && sortColumns.length > 0) {
+    if (!sortColumns.includes(column)) return fallback;
+  } else if (entityMetadata) {
+    const hasColumn = entityMetadata.columns.some(
+      (col) => col.propertyName === column || col.databaseName === column,
+    );
+    if (!hasColumn) return fallback;
   }
-  return { column: rawColumn, direction };
+
+  return { column, direction };
 }
 
 export class CrudRepository {
@@ -79,7 +88,8 @@ export class CrudRepository {
 
   async list(query: ListQuery, scopedPlantIds: string[] | null): Promise<ListResult<GenericRecord>> {
     const idColumn = this.config.idColumn ?? 'id';
-    const sort = parseSort(query.sort, this.config.sortColumns, this.config.defaultSort ?? { column: idColumn, direction: 'DESC' });
+    const metadata = this.getEntityMetadata();
+    const sort = parseSort(query.sort, this.config.sortColumns, this.config.defaultSort ?? { column: idColumn, direction: 'DESC' }, metadata);
     const qb = AppDataSource.createQueryBuilder().select('t.*').from(this.config.tableName, 't');
 
     if (query.search && this.config.searchColumns?.length) {

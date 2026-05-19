@@ -4,6 +4,8 @@ import {
   clearStoredRefreshToken,
   clearSessionBootstrapHint,
   httpRequest,
+  resetUnauthorizedMode,
+  scheduleProactiveRefresh,
   setSessionBootstrapHint,
   setStoredCsrfToken,
   setStoredAccessToken,
@@ -65,6 +67,7 @@ export interface MeResponse {
 interface AuthResponse extends MeResponse {
   accessToken: string;
   csrfToken?: string;
+  refreshToken?: string;
 }
 
 export interface LoginInput {
@@ -73,6 +76,7 @@ export interface LoginInput {
   captchaToken?: string;
   captchaAnswer?: string;
   mfaCode?: string;
+  rememberMe?: boolean;
 }
 
 export interface MfaSetupResponse {
@@ -88,13 +92,20 @@ export async function login(input: LoginInput): Promise<MeResponse> {
     body: JSON.stringify(input),
   });
 
+  // Reset unauthorized mode to allow subsequent data requests
+  resetUnauthorizedMode();
+
   setStoredAccessToken(response.data.accessToken);
-  setSessionBootstrapHint();
+  scheduleProactiveRefresh();
+  setSessionBootstrapHint(input.rememberMe === true);
+  if (input.rememberMe) {
+    try { localStorage.setItem("cmms:remember_me", "true"); } catch { /* ignore */ }
+  }
   if (response.data.csrfToken) {
     setStoredCsrfToken(response.data.csrfToken);
   }
-  if ((response.data as any).refreshToken) {
-    setStoredRefreshToken((response.data as any).refreshToken);
+  if (response.data.refreshToken) {
+    setStoredRefreshToken(response.data.refreshToken);
   }
   const { accessToken: _ignored, csrfToken: _csrfIgnored, refreshToken: _rtIgnored, ...me } = response.data;
   return me;
@@ -155,4 +166,37 @@ export async function changePassword(data: { currentPassword: string; newPasswor
     method: "POST",
     body: JSON.stringify(data),
   });
+}
+
+export interface UserNotificationSettings {
+  id: string;
+  userId: string;
+  emailNotifications: boolean;
+  pushNotifications: boolean;
+  inAppNotifications: boolean;
+  dailyDigest: boolean;
+  newWoEmail: boolean;
+  woAssignedEmail: boolean;
+  woEscalationEmail: boolean;
+  woReminderEmail: boolean;
+  woCompletedEmail: boolean;
+  slaBreachEmail: boolean;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
+  emailDigestFrequency: string;
+}
+
+export async function getUserNotificationSettings(): Promise<UserNotificationSettings> {
+  const response = await httpRequest<{ success: true; data: UserNotificationSettings }>("/notifications/settings", {
+    method: "GET",
+  });
+  return response.data;
+}
+
+export async function updateUserNotificationSettings(data: Partial<UserNotificationSettings>): Promise<UserNotificationSettings> {
+  const response = await httpRequest<{ success: true; data: UserNotificationSettings }>("/notifications/settings", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return response.data;
 }

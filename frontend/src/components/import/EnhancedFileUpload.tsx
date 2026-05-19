@@ -125,7 +125,7 @@ export const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
 
                 <div className="flex flex-col items-center justify-center gap-3">
                     {isLoading ? (
-                        <Upload className="w-12 h-12 text-blue-500 animate-bounce" />
+                        <Upload className="w-12 h-12 text-blue-500 " />
                     ) : success ? (
                         <CheckCircle className="w-12 h-12 text-green-500" />
                     ) : error || validationError ? (

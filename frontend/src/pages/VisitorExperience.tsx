@@ -734,7 +734,7 @@ export default function VisitorExperience() {
                                     </div>
                                     <div>
                                         <p className="text-[9px] font-bold uppercase text-blue-300 tracking-widest mb-1">Host Dept</p>
-                                        <p className="text-sm font-bold">{passData?.host.department || "---"}</p>
+                                        <p className="text-sm font-bold">{passData?.location.department || "---"}</p>
                                     </div>
                                 </div>
                             </div>
@@ -771,10 +771,10 @@ export default function VisitorExperience() {
                                 <Badge variant="secondary" className="rounded-full">Real-time Tracking</Badge>
                             </div>
                             <div className="space-y-4">
-                                {trackingData?.items && trackingData.items.length > 0 ? (
-                                    trackingData.items.map((item, idx) => (
+                                {trackingData?.path && trackingData.path.length > 0 ? (
+                                    trackingData.path.map((item, idx) => (
                                         <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
-                                            {idx !== trackingData.items.length - 1 && (
+                                            {idx !== trackingData.path.length - 1 && (
                                                 <div className="absolute left-[7px] top-[24px] bottom-0 w-[2px] bg-muted" />
                                             )}
                                             <div className="absolute left-0 top-[6px] h-4 w-4 rounded-full border-4 border-background bg-primary shadow-sm" />
@@ -782,7 +782,7 @@ export default function VisitorExperience() {
                                                 <div className="flex items-start justify-between gap-4">
                                                     <div>
                                                         <p className="text-sm font-bold">{item.nodeLabel || "Zone Arrival"}</p>
-                                                        <p className="mt-1 text-xs text-muted-foreground">{item.payload || "Movement captured by security sensor"}</p>
+                                                        <p className="mt-1 text-xs text-muted-foreground">{item.alertType || "Movement captured by security sensor"}</p>
                                                     </div>
                                                     <div className="text-right shrink-0">
                                                         <p className="text-[10px] font-bold uppercase tracking-tighter text-muted-foreground">Timestamp</p>
@@ -905,7 +905,7 @@ export default function VisitorExperience() {
                                                         <p className="font-bold text-lg">{request.visitorName}</p>
                                                         <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
                                                             <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" /> {request.visitorCompany}</span>
-                                                            <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {formatDateTime(request.entryTime)}</span>
+                                                            <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {formatDateTime(request.createdAt)}</span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -916,7 +916,7 @@ export default function VisitorExperience() {
                                                             <Button size="sm" className="gradient-primary px-6" onClick={() => handleRequestReview(request.id, "APPROVE")}>Approve</Button>
                                                         </>
                                                     ) : (
-                                                        <Badge variant={request.approvalStatus === "APPROVED" ? "completed" : "error"} className="px-4">{request.approvalStatus}</Badge>
+                                                        <Badge variant={request.approvalStatus === "APPROVED" ? "secondary" : "destructive"} className="px-4">{request.approvalStatus}</Badge>
                                                     )}
                                                 </div>
                                             </div>
@@ -1015,7 +1015,7 @@ export default function VisitorExperience() {
                                                             <p className="font-bold text-lg">{request.visitorName}</p>
                                                             <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
                                                                 <span className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" /> {request.visitorCompany || "Unknown"}</span>
-                                                                <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> {formatDateTime(request.entryTime)}</span>
+                                                                <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> {formatDateTime(request.createdAt)}</span>
                                                             </div>
                                                         </div>
                                                     </div>

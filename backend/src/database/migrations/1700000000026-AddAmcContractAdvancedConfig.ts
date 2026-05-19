@@ -4,10 +4,12 @@ export class AddAmcContractAdvancedConfig1700000000026 implements MigrationInter
   name = 'AddAmcContractAdvancedConfig1700000000026';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.addColumns('amc_contracts', [
-      new TableColumn({ name: 'machine_groups', type: 'text', isNullable: true }),
-      new TableColumn({ name: 'notification_settings', type: 'text', isNullable: true }),
-    ]);
+    if (!(await queryRunner.hasColumn('amc_contracts', 'machine_groups'))) {
+      await queryRunner.addColumn('amc_contracts', new TableColumn({ name: 'machine_groups', type: 'text', isNullable: true }));
+    }
+    if (!(await queryRunner.hasColumn('amc_contracts', 'notification_settings'))) {
+      await queryRunner.addColumn('amc_contracts', new TableColumn({ name: 'notification_settings', type: 'text', isNullable: true }));
+    }
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

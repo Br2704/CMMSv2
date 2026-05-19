@@ -65,11 +65,13 @@ const bgSyncPlugin = new BackgroundSyncPlugin("cmms-background-updates", {
 
 registerRoute(
   ({ url, request }) =>
-    request.method === "POST" &&
+    ["POST", "PUT", "PATCH", "DELETE"].includes(request.method) &&
     (url.pathname.startsWith("/api/work-orders") ||
       url.pathname.startsWith("/api/pm-schedules") ||
       url.pathname.startsWith("/api/calibration") ||
-      url.pathname.startsWith("/api/amc")),
+      url.pathname.startsWith("/api/amc") ||
+      url.pathname.startsWith("/api/assets") ||
+      url.pathname.startsWith("/api/logs")),
   new NetworkOnly({ plugins: [bgSyncPlugin] })
 );
 
@@ -100,6 +102,8 @@ self.addEventListener("push", (event) => {
   try {
     const data = event.data.json();
     const tag = data.tag || data.id || `cmms-${Date.now()}`;
+    const groupId = data.groupId || 'default';
+    
     const options: NotificationOptions = {
       body: data.body || data.message || "",
       icon: data.icon || "/jkfenner/jkfenner-logo.png",
@@ -110,6 +114,7 @@ self.addEventListener("push", (event) => {
         action: data.action || "open",
         woId: data.woId || null,
         notificationId: data.notificationId || null,
+        groupId,
         timestamp: Date.now(),
       },
       vibrate: [200, 100, 200],
@@ -124,14 +129,21 @@ self.addEventListener("push", (event) => {
 
     event.waitUntil(
       (async () => {
+        // Grouping is handled by 'tag' for individual unread, 
+        // but 'groupId' can be used for platform-specific grouping if supported.
         await self.registration.showNotification(data.title || "CMMS", options);
+        
         try {
-          if ("setAppBadge" in navigator && "serviceWorker" in navigator) {
-            const badgeCount = await getUnreadNotificationCount();
-            await navigator.setAppBadge(badgeCount);
+          if ("setAppBadge" in navigator) {
+            const count = data.unreadCount || await getUnreadNotificationCount();
+            if (count > 0) {
+              await (navigator as any).setAppBadge(count);
+            } else {
+              await (navigator as any).clearAppBadge();
+            }
           }
-        } catch {
-          // Badge API not supported
+        } catch (err) {
+          console.warn("[SW] Badge API error:", err);
         }
       })()
     );
@@ -156,7 +168,22 @@ async function getUnreadNotificationCount(): Promise<number> {
   }
 }
 
+async function isSameOriginUrl(url: string): Promise<boolean> {
+  try {
+    const parsed = new URL(url, self.location.origin);
+    return parsed.origin === self.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 async function openOrFocusClient(url: string): Promise<void> {
+  if (!(await isSameOriginUrl(url))) {
+    const safeUrl = new URL("/", self.location.origin).toString();
+    console.warn("[SW] Blocked navigation to external URL:", url);
+    url = safeUrl;
+  }
+
   const clients = await self.clients.matchAll({
     type: "window",
     includeUncontrolled: true,

@@ -1212,33 +1212,50 @@ export default function MachinesMaster() {
     if (!qrImageDataUrl || !selectedMachine || !qrData) return;
     const printWindow = window.open("", "_blank", "width=900,height=700");
     if (!printWindow) return;
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>QR Label - ${selectedMachine.code}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 24px; }
-            .label { width: 280px; border: 1px solid #d4d4d8; padding: 12px; border-radius: 8px; }
-            .title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
-            .meta { font-size: 12px; color: #52525b; margin-bottom: 8px; }
-            img { width: 220px; height: 220px; }
-            .token { margin-top: 8px; font-size: 11px; color: #71717a; word-break: break-all; }
-          </style>
-        </head>
-        <body>
-          <div class="label">
-            <div class="title">${selectedMachine.code} - ${selectedMachine.name}</div>
-            <div class="meta">QR label for quick asset lookup</div>
-            <img src="${qrImageDataUrl}" alt="Asset QR" />
-            <div class="token">Machine ID: ${selectedMachine.id}</div>
-            <div class="token">Machine Name: ${selectedMachine.name}</div>
-            <div class="token">URL: ${qrData.publicResolverUrl}</div>
-          </div>
-          <script>window.print();</script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    const doc = printWindow.document;
+    const html = doc.createElement("html");
+    const head = doc.createElement("head");
+    const title = doc.createElement("title");
+    title.textContent = `QR Label - ${selectedMachine.code}`;
+    head.appendChild(title);
+    const style = doc.createElement("style");
+    style.textContent = "body{font-family:Arial,sans-serif;padding:24px}.label{width:280px;border:1px solid #d4d4d8;padding:12px;border-radius:8px}.title{font-size:14px;font-weight:700;margin-bottom:6px}.meta{font-size:12px;color:#52525b;margin-bottom:8px}img{width:220px;height:220px}.token{margin-top:8px;font-size:11px;color:#71717a;word-break:break-all}";
+    head.appendChild(style);
+    html.appendChild(head);
+    const body = doc.createElement("body");
+    const label = doc.createElement("div");
+    label.className = "label";
+    const titleDiv = doc.createElement("div");
+    titleDiv.className = "title";
+    titleDiv.textContent = `${selectedMachine.code} - ${selectedMachine.name}`;
+    label.appendChild(titleDiv);
+    const metaDiv = doc.createElement("div");
+    metaDiv.className = "meta";
+    metaDiv.textContent = "QR label for quick asset lookup";
+    label.appendChild(metaDiv);
+    const img = doc.createElement("img");
+    img.src = qrImageDataUrl;
+    img.alt = "Asset QR";
+    label.appendChild(img);
+    const idToken = doc.createElement("div");
+    idToken.className = "token";
+    idToken.textContent = `Machine ID: ${selectedMachine.id}`;
+    label.appendChild(idToken);
+    const nameToken = doc.createElement("div");
+    nameToken.className = "token";
+    nameToken.textContent = `Machine Name: ${selectedMachine.name}`;
+    label.appendChild(nameToken);
+    const urlToken = doc.createElement("div");
+    urlToken.className = "token";
+    urlToken.textContent = `URL: ${qrData.publicResolverUrl}`;
+    label.appendChild(urlToken);
+    body.appendChild(label);
+    const script = doc.createElement("script");
+    script.textContent = "window.print();";
+    body.appendChild(script);
+    html.appendChild(body);
+    doc.replaceChild(html, doc.documentElement);
+    doc.close();
   };
 
   const handleAdd = () => {

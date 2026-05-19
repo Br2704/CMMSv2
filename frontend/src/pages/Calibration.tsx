@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import { useSearchParams } from "react-router-dom";
 import { format, formatDistanceToNow } from "date-fns";
 import { AlertTriangle, CheckCircle2, Gauge, Loader2, Search, Wrench } from "lucide-react";
@@ -217,12 +216,12 @@ export default function Calibration() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight lg:text-3xl">Calibration Tasks</h1>
           <p className="text-sm text-muted-foreground">Execute due instrument calibrations and capture results against each machine-linked instrument.</p>
         </div>
-      </motion.div>
+      </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KPICard title="Total Tasks" value={stats.total} subtitle="scheduled instruments" icon={Gauge} variant="primary" />

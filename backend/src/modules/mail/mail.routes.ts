@@ -1,7 +1,5 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { AppDataSource } from '../../database/data-source';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { requireRole } from '../../middlewares/permissions';
@@ -21,20 +19,25 @@ import { EmailLogEntity } from '../../database/entities/email-log.entity';
 import { EscalationHistoryEntity } from '../../database/entities/escalation-history.entity';
 import { SlaConfigEntity } from '../../database/entities/sla-config.entity';
 import { WorkOrderEntity } from '../../database/entities/work-order.entity';
+import { SystemConfigEntity } from '../../database/entities/system-config.entity';
 
 export const mailRouter = Router();
 mailRouter.use(requireAuth);
 
 mailRouter.get('/mail/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
   try {
+    const repo = AppDataSource.getRepository(SystemConfigEntity);
+    const config = await repo.findOneBy({ configKey: 'SMTP_CONFIG' });
+    const val = config?.configValue || {};
+    
     res.json(ok({
-      configured: isMailConfigured(),
-      host: process.env.SMTP_HOST || '',
-      port: Number(process.env.SMTP_PORT) || 587,
-      from: process.env.SMTP_FROM || '',
-      fromName: process.env.SMTP_FROM_NAME || 'CMMS Notification',
-      user: process.env.SMTP_USER || '',
-      pass: process.env.SMTP_PASS ? '********' : '',
+      configured: await isMailConfigured(),
+      host: val.host || '',
+      port: val.port || 587,
+      from: val.from || '',
+      fromName: val.fromName || 'CMMS Notification',
+      user: val.user || '',
+      pass: val.pass ? '********' : '',
     }, 'Mail config fetched'));
   } catch (error) {
     next(error);
@@ -52,54 +55,20 @@ mailRouter.put('/mail/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']
       fromName: z.string().optional().default('CMMS Notification'),
     }).parse(req.body);
 
-    const envPath = resolve(process.cwd(), '.env');
-    const fallbackPaths = [
-      resolve(process.cwd(), 'backend/.env'),
-      resolve('/opt/cmmsv2/backend/.env'),
-    ];
-
-    let targetPath: string | null = null;
-    if (existsSync(envPath)) {
-      targetPath = envPath;
-    } else {
-      for (const fp of fallbackPaths) {
-        if (existsSync(fp)) { targetPath = fp; break; }
-      }
+    const repo = AppDataSource.getRepository(SystemConfigEntity);
+    let config = await repo.findOneBy({ configKey: 'SMTP_CONFIG' });
+    if (!config) {
+      config = repo.create({
+        configKey: 'SMTP_CONFIG',
+        isActive: true,
+      });
     }
 
-    if (targetPath) {
-      let content = readFileSync(targetPath, 'utf-8');
-
-      const vars: Array<{ key: string; val: string }> = [
-        { key: 'SMTP_HOST', val: body.host },
-        { key: 'SMTP_PORT', val: String(body.port) },
-        { key: 'SMTP_USER', val: body.user },
-        { key: 'SMTP_PASS', val: body.pass },
-        { key: 'SMTP_FROM', val: body.from },
-        { key: 'SMTP_FROM_NAME', val: body.fromName },
-      ];
-
-      for (const { key, val } of vars) {
-        const re = new RegExp(`^${key}=.*$`, 'm');
-        if (re.test(content)) {
-          content = content.replace(re, `${key}=${val}`);
-        } else {
-          content += `\n${key}=${val}`;
-        }
-      }
-
-      writeFileSync(targetPath, content, 'utf-8');
-    }
-
-    Object.assign(process.env, {
-      SMTP_HOST: body.host,
-      SMTP_PORT: String(body.port),
-      SMTP_USER: body.user,
-      SMTP_PASS: body.pass,
-      SMTP_FROM: body.from,
-      SMTP_FROM_NAME: body.fromName,
-    });
-
+    config.configValue = body;
+    config.lastModifiedAt = new Date();
+    config.lastModifiedBy = req.auth?.userId;
+    
+    await repo.save(config);
     resetTransporter();
 
     res.json(ok({
@@ -267,7 +236,7 @@ mailRouter.get('/escalation/history', requireRole(['ROOT_ADMIN', 'SUPERADMIN', '
   }
 });
 
-mailRouter.get('/sla/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.get('/sla/config', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const repo = AppDataSource.getRepository(SlaConfigEntity);
     const includeInactive = req.query.includeInactive === 'true';
@@ -279,7 +248,7 @@ mailRouter.get('/sla/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN'])
   }
 });
 
-mailRouter.get('/sla/stats', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
+mailRouter.get('/sla/stats', requireRole(['SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
   try {
     const woRepo = AppDataSource.getRepository(WorkOrderEntity);
     const configRepo = AppDataSource.getRepository(SlaConfigEntity);
@@ -321,7 +290,7 @@ mailRouter.get('/sla/stats', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']),
   }
 });
 
-mailRouter.post('/sla/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.post('/sla/config', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const body = z.object({
       scope: z.string().default('GLOBAL'),
@@ -351,7 +320,7 @@ mailRouter.post('/sla/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']
   }
 });
 
-mailRouter.put('/sla/config/:id', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.put('/sla/config/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = z.object({
@@ -383,6 +352,22 @@ mailRouter.put('/sla/config/:id', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMI
     Object.assign(existing, body);
     await repo.save(existing);
     res.json(ok(existing, 'SLA config updated'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+mailRouter.delete('/sla/config/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+  try {
+    const params = z.object({ id: z.string().uuid() }).parse(req.params);
+    const repo = AppDataSource.getRepository(SlaConfigEntity);
+    const existing = await repo.findOneBy({ id: params.id });
+    if (!existing) {
+      res.status(404).json(ok(null, 'SLA config not found'));
+      return;
+    }
+    await repo.remove(existing);
+    res.json(ok({ id: params.id, deleted: true }, 'SLA config deleted'));
   } catch (error) {
     next(error);
   }

@@ -43,22 +43,22 @@ export default function SLAConfigMaster() {
   const fetchConfigs = useCallback(async () => {
     try {
       const res = await httpRequest<{ success: true; data: Array<Record<string, unknown>> }>('/sla/config?includeInactive=true', { method: 'GET' });
-      setConfigs(res.data);
-    } catch { /* ignore */ }
+      if (Array.isArray(res.data)) setConfigs(res.data);
+    } catch (e) { console.error('fetchConfigs failed:', e); }
   }, []);
 
   const fetchHistory = useCallback(async () => {
     try {
       const res = await httpRequest<{ success: true; data: { items: Array<Record<string, unknown>> } }>('/escalation/history?page=1&limit=100', { method: 'GET' });
-      setHistory(res.data.items);
-    } catch { /* ignore */ }
+      if (res.data?.items) setHistory(res.data.items);
+    } catch (e) { console.error('fetchHistory failed:', e); }
   }, []);
 
   const fetchStats = useCallback(async () => {
     try {
       const res = await httpRequest<{ success: true; data: Record<string, unknown> }>('/sla/stats', { method: 'GET' });
-      setStats(res.data);
-    } catch { /* ignore */ }
+      if (res.data) setStats(res.data);
+    } catch (e) { console.error('fetchStats failed:', e); }
   }, []);
 
   useEffect(() => {

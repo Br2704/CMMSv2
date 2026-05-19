@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ModuleGuard } from "@/components/guards/ModuleGuard";
@@ -41,7 +41,7 @@ describe("ModuleGuard", () => {
     expect(screen.getByText("secured content")).toBeInTheDocument();
   });
 
-  it("redirects to /403 when access is denied", () => {
+  it("redirects to /403 when access is denied", async () => {
     mockPermissionState.allowed = false;
     render(
       <MemoryRouter initialEntries={["/secured"]}>
@@ -59,6 +59,6 @@ describe("ModuleGuard", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("forbidden page")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("forbidden page")).toBeInTheDocument(), { timeout: 1000 });
   });
 });

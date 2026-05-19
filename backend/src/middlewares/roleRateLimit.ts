@@ -11,10 +11,10 @@ type Bucket = {
 const WINDOW_MS = 60_000;
 
 const ROLE_RATE_LIMITS: Record<string, number> = {
-  ROOT_ADMIN: 5000,
-  SUPERADMIN: 5000,
-  ADMIN: 2000,
-  DEFAULT: 500,
+  ROOT_ADMIN: 10000,
+  SUPERADMIN: 10000,
+  ADMIN: 5000,
+  DEFAULT: 2500,
 };
 
 const buckets = new Map<string, Bucket>();

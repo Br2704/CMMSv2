@@ -170,6 +170,39 @@ export class WorkOrderEntity extends TimestampedUuidEntity {
   @Column({ name: 'follow_up_notes', type: 'text', nullable: true })
   followUpNotes!: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  shift!: string | null;
+
+  @Column({ name: 'breakdown_type', type: 'varchar', nullable: true })
+  breakdownType!: string | null;
+
+  @Column({ name: 'initial_assessment', type: 'text', nullable: true })
+  initialAssessment!: string | null;
+
+  @Column({ name: 'expected_completion_at', type: DATETIME_COLUMN_TYPE, nullable: true })
+  expectedCompletionAt!: Date | null;
+
+  @Column({ name: 'work_permit_required', type: 'boolean', default: false })
+  workPermitRequired!: boolean;
+
+  @Column({ name: 'loto_required', type: 'boolean', default: false })
+  lotoRequired!: boolean;
+
+  @Column({ name: 'actual_failure_category', type: 'varchar', nullable: true })
+  actualFailureCategory!: string | null;
+
+  @Column({ name: 'why_why_analysis', type: 'simple-json', nullable: true })
+  whyWhyAnalysis!: Record<string, string> | null;
+
+  @Column({ name: 'preventive_recommendation', type: 'text', nullable: true })
+  preventiveRecommendation!: string | null;
+
+  @Column({ name: 'manpower_used', type: 'text', nullable: true })
+  manpowerUsed!: string | null;
+
+  @Column({ name: 'parent_work_order_id', type: 'uuid', nullable: true })
+  parentWorkOrderId!: string | null;
+
   @VersionColumn({ type: 'int', default: 1 })
   version!: number;
 
@@ -212,4 +245,8 @@ export class WorkOrderEntity extends TimestampedUuidEntity {
   @ManyToOne(() => MaintenanceTeamEntity, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'follow_up_team_id' })
   followUpTeam!: MaintenanceTeamEntity | null;
+
+  @ManyToOne(() => WorkOrderEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'parent_work_order_id' })
+  parentWorkOrder!: WorkOrderEntity | null;
 }

@@ -9,8 +9,13 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
-  Trash2, Download,
+  Trash2,
+  Download,
   Copy,
+  Eye,
+  EyeOff,
+  BookTemplate,
+  History,
 } from "lucide-react";
 
 import { ApiError } from "@/api/http";
@@ -32,7 +37,7 @@ import {
   type AppPageDefinition,
   type AppPermissionAction,
 } from "@/config/app-page-catalog";
-import { invalidatePermissionsCache } from "@/hooks/usePermissions";
+import { invalidatePermissionsCache, usePermissions } from "@/hooks/usePermissions";
 import { cn } from "@/lib/utils";
 import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { FormDialog } from "@/components/shared/FormDialog";
@@ -53,6 +58,10 @@ const ACTION_META: Record<AppPermissionAction, { label: string; hint: string }> 
   DELETE: { label: "Delete", hint: "Remove records from this page." },
   APPROVE: { label: "Approve", hint: "Approve workflow actions." },
   EXPORT: { label: "Export", hint: "Download exports from this page." },
+  ASSIGN: { label: "Assign", hint: "Assign records to users or teams." },
+  REJECT: { label: "Reject", hint: "Reject workflow actions or records." },
+  CLOSE: { label: "Close", hint: "Close workflow items like work orders." },
+  IMPORT: { label: "Import", hint: "Bulk upload records via file import." },
 };
 
 const SYSTEM_USER_BLOCKED_MODULES = new Set(["PLANTS", "ORGANIZATIONS", "ROLE_ACCESS", "MODULES", "DEPARTMENTS", "USERS", "VENDORS", "SHIFTS"]);
@@ -203,6 +212,23 @@ function formatSyncTime(value: string | null) {
 }
 
 export default function RootRoleAccessMaster() {
+  const { isSimulating, roleKey: activeSimulatedRole, invalidateCache } = usePermissions();
+
+  const handleToggleSimulation = (roleKeyToSimulate: string) => {
+    if (isSimulating && activeSimulatedRole === roleKeyToSimulate) {
+      localStorage.removeItem("cmms:simulated_role");
+      toast.success("Simulation mode deactivated. Restored original admin privileges.");
+    } else {
+      localStorage.setItem("cmms:simulated_role", roleKeyToSimulate);
+      toast.success(`Simulation active: Now viewing the system as role "${roleKeyToSimulate}"!`);
+    }
+    invalidateCache();
+    // Brief timeout to refresh layout and enforce routes
+    setTimeout(() => {
+      window.dispatchEvent(new Event("storage"));
+    }, 100);
+  };
+
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [organizationLoading, setOrganizationLoading] = useState(true);
   const [selectedOrgId, setSelectedOrgId] = useState("");
@@ -227,6 +253,13 @@ export default function RootRoleAccessMaster() {
   const [isRoleSubmitting, setIsRoleSubmitting] = useState(false);
   const [isCloneRoleOpen, setIsCloneRoleOpen] = useState(false);
   const [roleToClone, setRoleToClone] = useState<OrgRole | null>(null);
+
+  interface AuditEntry {
+    page: string;
+    actions: string;
+    timestamp: string;
+  }
+  const [permissionAuditLog, setPermissionAuditLog] = useState<AuditEntry[]>([]);
 
   const autosaveRequestRef = useRef(0);
   const didLoadPermissionsRef = useRef(false);
@@ -421,6 +454,11 @@ export default function RootRoleAccessMaster() {
       else actions.delete(action);
       return writePageActions(current, page, Array.from(actions) as AppPermissionAction[]);
     });
+    const now = new Date();
+    setPermissionAuditLog((prev) => [
+      { page: page.title, actions: `${checked ? "+" : "-"}${action}`, timestamp: now.toLocaleTimeString() },
+      ...prev.slice(0, 49),
+    ]);
   };
 
   const handleCreateRole = async () => {
@@ -559,9 +597,51 @@ export default function RootRoleAccessMaster() {
     toast.success(`All access revoked for ${selectedPage.title}`);
   };
 
+  const PERMISSION_TEMPLATES: Record<string, {
+    label: string;
+    actions: readonly AppPermissionAction[];
+  }> = {
+    READ_ONLY: { label: "Read Only", actions: ["READ"] },
+    READ_WRITE: { label: "Read/Write", actions: ["READ", "CREATE", "UPDATE"] },
+    OPERATOR: { label: "Operator", actions: ["READ", "CREATE"] },
+    FULL_ACCESS: { label: "Full Access", actions: ["READ", "CREATE", "UPDATE", "DELETE", "EXPORT"] },
+    MANAGER: { label: "Manager", actions: ["READ", "CREATE", "UPDATE", "DELETE", "EXPORT", "APPROVE", "ASSIGN", "REJECT"] },
+    INSPECTOR: { label: "Inspector", actions: ["READ", "APPROVE", "REJECT"] },
+  };
+
+  const applyPermissionTemplate = (templateKey: string) => {
+    if (!selectedPage) return;
+    const template = PERMISSION_TEMPLATES[templateKey];
+    if (!template) return;
+    setPermissionMap((current) => writePageActions(current, selectedPage, [...template.actions]));
+    const now = new Date();
+    setPermissionAuditLog((prev) => [
+      { page: selectedPage.title, actions: template.actions.join(", "), timestamp: now.toLocaleTimeString() },
+      ...prev.slice(0, 49),
+    ]);
+    toast.success(`Applied "${template.label}" template to ${selectedPage.title}`);
+  };
+
   return (
     <PageShell className="overflow-hidden">
       <div className="space-y-4">
+        {isSimulating && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between text-amber-900 shadow-sm animate-pulse mb-2">
+            <div>
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-amber-700" />
+                Active Simulation Mode
+              </p>
+              <p className="text-xs text-amber-800">
+                You are currently viewing the system from the perspective of simulated role: <span className="font-mono bg-amber-100 px-1.5 py-0.5 rounded">"{activeSimulatedRole}"</span>. Exit to restore absolute root administration access.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" className="border-amber-400 hover:bg-amber-100 text-amber-900 h-7 px-3 text-[10px]" onClick={() => handleToggleSimulation(activeSimulatedRole)}>
+              Exit Preview Mode
+            </Button>
+          </div>
+        )}
+
         <PageHeader
           title="Organization Role & Access"
           subtitle="Select organization, role, and page in one screen. Permission changes sync to the backend automatically."
@@ -615,6 +695,7 @@ export default function RootRoleAccessMaster() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <InputField
+                  label=""
                   value={roleSearchQuery}
                   onChange={setRoleSearchQuery}
                   placeholder="Search roles..."
@@ -623,9 +704,33 @@ export default function RootRoleAccessMaster() {
               </div>
             </CardHeader>
             <CardContent className="flex min-h-0 flex-1 flex-col gap-3 pt-0">
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={openRenameRole} disabled={!selectedRole}>
-                  <Pencil className="mr-1 h-4 w-4" />
+              <div className="grid grid-cols-2 gap-2 w-full">
+                <Button
+                  size="sm"
+                  variant={isSimulating && activeSimulatedRole === selectedRole?.key ? "default" : "outline"}
+                  onClick={() => {
+                    if (!selectedRole) return;
+                    handleToggleSimulation(selectedRole.key);
+                  }}
+                  disabled={!selectedRole}
+                  title="Simulate this role globally"
+                  className="w-full justify-start text-[11px] h-8 px-2"
+                >
+                  {isSimulating && activeSimulatedRole === selectedRole?.key ? (
+                    <EyeOff className="mr-1.5 h-3.5 w-3.5" />
+                  ) : (
+                    <Eye className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  {isSimulating && activeSimulatedRole === selectedRole?.key ? "Stop Preview" : "Simulate UI"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={openRenameRole}
+                  disabled={!selectedRole}
+                  className="w-full justify-start text-[11px] h-8 px-2"
+                >
+                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
                   Rename
                 </Button>
                 <Button
@@ -638,9 +743,10 @@ export default function RootRoleAccessMaster() {
                     setIsCloneRoleOpen(true);
                   }}
                   disabled={!selectedRole}
+                  className="w-full justify-start text-[11px] h-8 px-2"
                 >
-                  <Copy className="mr-1 h-4 w-4" />
-                  Clone
+                  <Copy className="mr-1.5 h-3.5 w-3.5" />
+                  Clone Role
                 </Button>
                 <Button
                   size="sm"
@@ -656,19 +762,21 @@ export default function RootRoleAccessMaster() {
                     URL.revokeObjectURL(url);
                   }}
                   disabled={!selectedRole}
+                  className="w-full justify-start text-[11px] h-8 px-2"
                   title="Export Role Config as JSON"
                 >
-                  <Download className="mr-1 h-4 w-4" />
-                  Export
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  Export JSON
                 </Button>
                 <Button
                   size="sm"
                   variant="destructive"
                   onClick={() => setIsDeleteRoleOpen(true)}
                   disabled={!selectedRole || selectedRole.key === "SUPERADMIN"}
+                  className="w-full justify-start text-[11px] h-8 px-2 col-span-2"
                 >
-                  <Trash2 className="mr-1 h-4 w-4" />
-                  Delete
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Delete Role
                 </Button>
               </div>
 
@@ -790,10 +898,10 @@ export default function RootRoleAccessMaster() {
                 <div className="flex flex-wrap items-center gap-2">
                   {selectedPage && (
                     <div className="mr-2 flex gap-1">
-                      <Button size="xs" variant="outline" className="h-7 px-2 text-[10px]" onClick={handleGrantAll}>
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={handleGrantAll}>
                         Grant All
                       </Button>
-                      <Button size="xs" variant="outline" className="h-7 px-2 text-[10px]" onClick={handleRevokeAll}>
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={handleRevokeAll}>
                         Revoke All
                       </Button>
                     </div>
@@ -862,11 +970,34 @@ export default function RootRoleAccessMaster() {
                     </div>
                   ) : null}
 
-                  <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-3">
-                    <p className="text-sm font-medium">Autosave</p>
-                    <p className="text-xs text-muted-foreground">
-                      Permission changes are saved automatically to the backend without reloading the page.
-                    </p>
+                  <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+                    <p className="mb-2 text-sm font-semibold flex items-center gap-2"><BookTemplate className="h-4 w-4 text-primary" />Permission Templates</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("READ_ONLY"); } }} title="View only access to the selected page">Read Only</Button>
+                      <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("FULL_ACCESS"); } }} title="Full CRUD + approve access">Full Access</Button>
+                      <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("OPERATOR"); } }} title="Read + create, no edit or delete">Operator</Button>
+                      <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("READ_WRITE"); } }} title="Read + create + update, no delete">Read/Write</Button>
+                      <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("MANAGER"); } }} title="Full access + approve + assign">Manager</Button>
+                      <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("INSPECTOR"); } }} title="Read + approve/reject, no create">Inspector</Button>
+                    </div>
+                    <p className="mt-2 text-[10px] text-muted-foreground">Applies a predefined permission set to the selected page.</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+                    <p className="mb-2 text-sm font-semibold flex items-center gap-2"><History className="h-4 w-4 text-primary" />Permission Audit Trail</p>
+                    {permissionAuditLog.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No permission changes recorded yet in this session. Changes are tracked automatically.</p>
+                    ) : (
+                      <div className="max-h-24 space-y-1 overflow-y-auto">
+                        {permissionAuditLog.map((entry, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-[10px] text-muted-foreground">
+                            <span className="truncate font-mono">{entry.page} · {entry.actions}</span>
+                            <span>{entry.timestamp}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="mt-2 text-[10px] text-muted-foreground">Changes are autosaved to the backend. Tracked since page load.</p>
                   </div>
                 </div>
               )}

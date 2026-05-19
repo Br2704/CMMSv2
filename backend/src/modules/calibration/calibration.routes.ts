@@ -344,22 +344,22 @@ calibrationRouter.get(
         qb.andWhere(
           new Brackets((where) => {
             where
-              .where('instrument.instrument_name ILIKE :searchValue', { searchValue })
-              .orWhere('instrument.instrument_type ILIKE :searchValue', { searchValue })
-              .orWhere('instrument.serial_number ILIKE :searchValue', { searchValue })
+              .where('instrument.instrumentName ILIKE :searchValue', { searchValue })
+              .orWhere('instrument.instrumentType ILIKE :searchValue', { searchValue })
+              .orWhere('instrument.serialNumber ILIKE :searchValue', { searchValue })
               .orWhere('asset.code ILIKE :searchValue', { searchValue })
               .orWhere('asset.name ILIKE :searchValue', { searchValue });
           }),
         );
       }
 
-      if (plantIds) qb.andWhere('asset.plant_id IN (:...plantIds)', { plantIds });
+      if (plantIds) qb.andWhere('asset.plantId IN (:...plantIds)', { plantIds });
       if (!query.includeInactive) qb.andWhere('instrument.status != :inactiveStatus', { inactiveStatus: 'INACTIVE' });
       if (extended.assetId) qb.andWhere('instrument.asset_id = :assetId', { assetId: extended.assetId });
-      if (extended.departmentId) qb.andWhere('asset.department_id = :departmentId', { departmentId: extended.departmentId });
-      if (extended.moduleId) qb.andWhere('asset.module_id = :moduleId', { moduleId: extended.moduleId });
+      if (extended.departmentId) qb.andWhere('asset.departmentId = :departmentId', { departmentId: extended.departmentId });
+      if (extended.moduleId) qb.andWhere('asset.moduleId = :moduleId', { moduleId: extended.moduleId });
       if (extended.status) qb.andWhere('instrument.status = :status', { status: extended.status });
-      if (extended.instrumentType) qb.andWhere('instrument.instrument_type ILIKE :instrumentType', { instrumentType: `%${extended.instrumentType}%` });
+      if (extended.instrumentType) qb.andWhere('instrument.instrumentType ILIKE :instrumentType', { instrumentType: `%${extended.instrumentType}%` });
 
       qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('instrument.createdAt', 'DESC');
       const [rows, total] = await qb.getManyAndCount();
@@ -487,11 +487,11 @@ calibrationRouter.get(
         qb.andWhere(
           new Brackets((where) => {
             where
-              .where('template.template_name ILIKE :searchValue', { searchValue })
-              .orWhere('template.instrument_type ILIKE :searchValue', { searchValue })
-              .orWhere('template.calibration_method ILIKE :searchValue', { searchValue })
+              .where('template.templateName ILIKE :searchValue', { searchValue })
+              .orWhere('template.instrumentType ILIKE :searchValue', { searchValue })
+              .orWhere('template.calibrationMethod ILIKE :searchValue', { searchValue })
               .orWhere('template.tolerance ILIKE :searchValue', { searchValue })
-              .orWhere('responsibleTeam.team_name ILIKE :searchValue', { searchValue });
+              .orWhere('responsibleTeam.teamName ILIKE :searchValue', { searchValue });
           }),
         );
       }
@@ -650,9 +650,9 @@ calibrationRouter.get(
         qb.andWhere(
           new Brackets((where) => {
             where
-              .where('template.template_name ILIKE :searchValue', { searchValue })
-              .orWhere('instrument.instrument_name ILIKE :searchValue', { searchValue })
-              .orWhere('instrument.serial_number ILIKE :searchValue', { searchValue })
+              .where('template.templateName ILIKE :searchValue', { searchValue })
+              .orWhere('instrument.instrumentName ILIKE :searchValue', { searchValue })
+              .orWhere('instrument.serialNumber ILIKE :searchValue', { searchValue })
               .orWhere('asset.code ILIKE :searchValue', { searchValue })
               .orWhere('asset.name ILIKE :searchValue', { searchValue })
               .orWhere('assignedTeam.team_name ILIKE :searchValue', { searchValue });
@@ -865,11 +865,11 @@ calibrationRouter.get(
         qb.andWhere(
           new Brackets((where) => {
             where
-              .where('instrument.instrument_name ILIKE :searchValue', { searchValue })
-              .orWhere('instrument.serial_number ILIKE :searchValue', { searchValue })
+              .where('instrument.instrumentName ILIKE :searchValue', { searchValue })
+              .orWhere('instrument.serialNumber ILIKE :searchValue', { searchValue })
               .orWhere('asset.code ILIKE :searchValue', { searchValue })
               .orWhere('asset.name ILIKE :searchValue', { searchValue })
-              .orWhere('template.template_name ILIKE :searchValue', { searchValue })
+              .orWhere('template.templateName ILIKE :searchValue', { searchValue })
               .orWhere('task.status ILIKE :searchValue', { searchValue });
           }),
         );

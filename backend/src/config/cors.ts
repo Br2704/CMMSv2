@@ -20,11 +20,8 @@ function isLocalDevOrigin(origin: string): boolean {
 
 export const corsOptions: CorsOptions = {
   origin(origin, cb) {
-    if (env.NODE_ENV !== 'production') {
-      cb(null, true);
-      return;
-    }
-    if (!origin || allowed.has(origin) || (env.NODE_ENV !== 'production' && isLocalDevOrigin(origin))) {
+    const allowLocalDevOrigin = env.NODE_ENV !== 'production' && typeof origin === 'string' && isLocalDevOrigin(origin);
+    if (!origin || allowed.has(origin) || allowLocalDevOrigin) {
       cb(null, true);
       return;
     }

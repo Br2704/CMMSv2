@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import {
   AlertTriangle,
   Eye,
@@ -41,7 +40,6 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 
 import { usePermissions } from "@/hooks/usePermissions";
-import { cn } from "@/lib/utils";
 import { isSuperAdmin, useAuthStore } from "@/store/auth.store";
 
 const ALL_FILTER = "__all__";
@@ -488,7 +486,7 @@ export default function Inventory() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div className="space-y-2">
           <div>
             <h1 className="text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl">Spare Maintenance</h1>
@@ -512,7 +510,7 @@ export default function Inventory() {
             Add Spare
           </Button>
         ) : null}
-      </motion.div>
+      </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KPICard title="Total Spares" value={spareItems.length} subtitle="In this plant scope" icon={Package} variant="primary" />

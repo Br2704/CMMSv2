@@ -23,7 +23,7 @@ function mergePermissionActions(permissionMap: Record<string, string[]>, moduleK
   permissionMap[normalizedModuleKey] = Array.from(new Set([...existing, ...actions.map((action) => action.toUpperCase())]));
 }
 
-function buildFallbackPermissionsForRole(role: string): Record<string, string[]> {
+export function buildFallbackPermissionsForRole(role: string): Record<string, string[]> {
   const normalized = normalizeRole(role);
   const allActions = [...RBAC_ACTIONS];
 
@@ -40,7 +40,19 @@ function buildFallbackPermissionsForRole(role: string): Record<string, string[]>
     return map;
   }
   if (normalized === 'ROOT_ADMIN') {
-    return fromModules([...RBAC_MODULE_KEYS], allActions);
+    // Root Admin is governance-only. No operational module access.
+    return fromModules([
+      'ORGANIZATIONS',
+      'PLANTS',
+      'USERS',
+      'ROLE_ACCESS',
+      'MODULES',
+      'DASHBOARD',
+      'MASTERS',
+      'NOTIFICATIONS',
+      'SECURITY',
+      'REPORTS',
+    ], allActions);
   }
   if (normalized === 'ADMIN') {
     const map = Object.fromEntries(RBAC_MODULE_KEYS.map((moduleKey) => [moduleKey, allActions])) as Record<string, string[]>;
@@ -52,7 +64,7 @@ function buildFallbackPermissionsForRole(role: string): Record<string, string[]>
   }
   if (normalized === 'MAINTENANCE_MANAGER') {
     return {
-      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'LOGS', 'INVENTORY', 'REPORTS', 'NOTIFICATIONS'], readOnly),
+      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'LOGS', 'INVENTORY', 'REPORTS', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
       ASSETS: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
       WORK_ORDERS: ['READ', 'CREATE', 'UPDATE', 'DELETE', 'APPROVE'],
       PM: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
@@ -66,26 +78,26 @@ function buildFallbackPermissionsForRole(role: string): Record<string, string[]>
   }
   if (normalized === 'ENGINEER') {
     return {
-      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'LOGS', 'NOTIFICATIONS', 'REPORTS'], readOnly),
+      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'LOGS', 'NOTIFICATIONS', 'REPORTS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
       WORK_ORDERS: ['READ', 'CREATE', 'UPDATE'],
       LOGS: ['READ', 'CREATE', 'UPDATE'],
     };
   }
   if (normalized === 'TECHNICIAN') {
     return {
-      ...fromModules(['DASHBOARD', 'WORK_ORDERS', 'PM', 'LOGS', 'NOTIFICATIONS'], readOnly),
+      ...fromModules(['DASHBOARD', 'WORK_ORDERS', 'PM', 'LOGS', 'NOTIFICATIONS', 'ASSETS', 'CALIBRATION', 'AMC', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'GATES', 'MASTERS'], readOnly),
       WORK_ORDERS: ['READ', 'CREATE', 'UPDATE'],
       LOGS: ['READ', 'CREATE', 'UPDATE'],
     };
   }
   if (normalized === 'STORE_USER') {
     return {
-      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'NOTIFICATIONS', 'INVENTORY'], readOnly),
+      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'NOTIFICATIONS', 'INVENTORY', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'GATES', 'MASTERS'], readOnly),
       INVENTORY: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
     };
   }
   if (normalized === 'VIEWER') {
-    return fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'REPORTS', 'NOTIFICATIONS'], readOnly);
+    return fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'REPORTS', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly);
   }
   if (normalized === 'VENDOR') {
     return fromModules(['AMC'], readOnly);
@@ -95,8 +107,40 @@ function buildFallbackPermissionsForRole(role: string): Record<string, string[]>
   }
   if (normalized === 'SECURITY_USER' || normalized === 'SECURITY') {
     return {
-      ...fromModules(['GATES'], ['READ', 'CREATE', 'UPDATE', 'EXPORT']),
+      ...fromModules(['GATES', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'MASTERS', 'DASHBOARD', 'NOTIFICATIONS'], readOnly),
       GATES: ['READ', 'CREATE', 'UPDATE', 'EXPORT'],
+    };
+  }
+  if (normalized === 'MAINTENANCE_USER') {
+    return {
+      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'LOGS', 'INVENTORY', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'GATES'], readOnly),
+      WORK_ORDERS: ['READ', 'CREATE', 'UPDATE'],
+      CALIBRATION: ['READ', 'CREATE', 'UPDATE'],
+      INVENTORY: ['READ', 'CREATE', 'UPDATE'],
+    };
+  }
+  if (normalized === 'PRODUCTION_USER') {
+    return {
+      ...fromModules(['DASHBOARD', 'WORK_ORDERS', 'ASSETS', 'NOTIFICATIONS', 'MASTERS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'GATES'], readOnly),
+      WORK_ORDERS: ['READ', 'CREATE'],
+    };
+  }
+  if (normalized === 'SAFETY_OFFICER') {
+    return {
+      ...fromModules(['GATES', 'ESG', 'SAFETY', 'ALERTS', 'MASTERS', 'DASHBOARD', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS'], readOnly),
+      SAFETY: ['READ', 'CREATE', 'UPDATE'],
+    };
+  }
+  if (normalized === 'HR_USER') {
+    return {
+      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'INVENTORY', 'LOGS', 'DEPARTMENTS', 'SHIFTS', 'USERS', 'MASTERS', 'NOTIFICATIONS', 'PLANTS', 'REPORTS', 'GATES', 'VENDORS', 'ALERTS'], readOnly),
+      USERS: ['READ', 'CREATE', 'UPDATE'],
+    };
+  }
+  if (normalized === 'INVENTORY_MANAGER') {
+    return {
+      ...fromModules(['INVENTORY', 'VENDORS', 'MASTERS', 'REPORTS', 'DASHBOARD', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES'], readOnly),
+      INVENTORY: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
     };
   }
   if (normalized === 'USER') {
@@ -106,6 +150,40 @@ function buildFallbackPermissionsForRole(role: string): Record<string, string[]>
       WORK_ORDERS: ['READ', 'CREATE'],
       PM: ['READ'],
       NOTIFICATIONS: ['READ'],
+    };
+  }
+  if (normalized === 'MECHANICAL_INCHARGE' || normalized === 'ELECTRICAL_INCHARGE' || normalized === 'UTILITY_INCHARGE') {
+    return {
+      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'LOGS', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
+      WORK_ORDERS: ['READ', 'CREATE', 'UPDATE'],
+      LOGS: ['READ', 'CREATE', 'UPDATE'],
+    };
+  }
+  if (normalized === 'CALIBRATION_INCHARGE') {
+    return {
+      ...fromModules(['DASHBOARD', 'ASSETS', 'CALIBRATION', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
+      CALIBRATION: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
+    };
+  }
+  if (normalized === 'TOOLCHANGE_INCHARGE') {
+    return {
+      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'INVENTORY', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
+      WORK_ORDERS: ['READ', 'CREATE', 'UPDATE'],
+      INVENTORY: ['READ', 'CREATE', 'UPDATE'],
+    };
+  }
+  if (normalized === 'DEPARTMENT_INCHARGE') {
+    return {
+      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'LOGS', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
+      WORK_ORDERS: ['READ', 'CREATE', 'UPDATE', 'APPROVE'],
+      LOGS: ['READ', 'CREATE', 'UPDATE'],
+    };
+  }
+  if (normalized === 'OPERATOR') {
+    return {
+      ...fromModules(['DASHBOARD', 'WORK_ORDERS', 'ASSETS', 'LOGS', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
+      WORK_ORDERS: ['READ', 'CREATE'],
+      LOGS: ['READ', 'CREATE', 'UPDATE'],
     };
   }
   return {};
@@ -390,8 +468,21 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
 
     if (isRootAdmin) {
+      // Root Admin is governance-only. Restrict to governance module keys only.
+      const governanceModuleKeys = [
+        'ORGANIZATIONS',
+        'PLANTS',
+        'USERS',
+        'ROLE_ACCESS',
+        'MODULES',
+        'DASHBOARD',
+        'MASTERS',
+        'NOTIFICATIONS',
+        'SECURITY',
+        'REPORTS',
+      ];
       const rootScopedPermissions: Record<string, string[]> = {};
-      RBAC_MODULE_KEYS.forEach((moduleKey) => {
+      governanceModuleKeys.forEach((moduleKey) => {
         rootScopedPermissions[moduleKey] = [...RBAC_ACTIONS];
       });
       permissionMap = rootScopedPermissions;

@@ -146,3 +146,12 @@ export async function downloadAdvancedReliabilityReport(
   anchor.click();
   URL.revokeObjectURL(url);
 }
+
+export function getDashboardKPIs(params: { plantId?: string; startDate?: string; endDate?: string } = {}) {
+  const search = new URLSearchParams();
+  if (params.plantId) search.set("plantId", params.plantId);
+  if (params.startDate) search.set("startDate", params.startDate);
+  if (params.endDate) search.set("endDate", params.endDate);
+  const query = search.toString();
+  return httpRequest<ApiResponse<any>>(`/reports/advanced/dashboard-kpis${query ? `?${query}` : ""}`, { method: "GET" });
+}

@@ -25,6 +25,7 @@ import { createSimplePdf } from '../../utils/pdf';
 import { resolvePlantFilter } from '../../utils/plantScope';
 import { resolveScopedPlantId } from '../../utils/plantScope';
 import { applyPlantScope, applySearch } from '../../utils/query';
+import { AdvancedAnalyticsService } from './advanced-analytics.service';
 
 const reportScheduleSchema = z.object({
   reportName: z.string().min(1),
@@ -313,8 +314,8 @@ reportsRouter.get('/reports', requirePermission('REPORTS', 'READ'), async (req, 
     const repo = AppDataSource.getRepository(EmailReportScheduleEntity);
     const qb = repo.createQueryBuilder('schedule');
     applySearch(qb, 'schedule', query.search, ['report_name', 'frequency']);
-    applyPlantScope(qb, 'schedule', 'plant_id', req.auth!, query.plantId);
-    qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('schedule.created_at', 'DESC');
+    applyPlantScope(qb, 'schedule', 'plantId', req.auth!, query.plantId);
+    qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('schedule.createdAt', 'DESC');
     const [data, total] = await qb.getManyAndCount();
     res.json(ok(data, 'Report schedules fetched', buildPagination(query.page, query.limit, total)));
   } catch (error) {
@@ -328,8 +329,8 @@ reportsRouter.get('/reports/schedules', requirePermission('REPORTS', 'READ'), as
     const repo = AppDataSource.getRepository(EmailReportScheduleEntity);
     const qb = repo.createQueryBuilder('schedule');
     applySearch(qb, 'schedule', query.search, ['report_name', 'frequency']);
-    applyPlantScope(qb, 'schedule', 'plant_id', req.auth!, query.plantId);
-    qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('schedule.created_at', 'DESC');
+    applyPlantScope(qb, 'schedule', 'plantId', req.auth!, query.plantId);
+    qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('schedule.createdAt', 'DESC');
     const [data, total] = await qb.getManyAndCount();
     res.json(ok(data, 'Report schedules fetched', buildPagination(query.page, query.limit, total)));
   } catch (error) {
@@ -495,10 +496,10 @@ reportsRouter.get('/reports/history', requirePermission('REPORTS', 'READ'), asyn
       .innerJoin(EmailReportScheduleEntity, 'schedule', 'schedule.id = log.schedule_id');
     applySearch(qb, 'log', query.search, ['status', 'error_message']);
     if (scheduleId) {
-      qb.andWhere('log.schedule_id = :scheduleId', { scheduleId });
+      qb.andWhere('log.scheduleId = :scheduleId', { scheduleId });
     }
-    applyPlantScope(qb, 'schedule', 'plant_id', req.auth!, query.plantId);
-    qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('log.sent_at', 'DESC');
+    applyPlantScope(qb, 'schedule', 'plantId', req.auth!, query.plantId);
+    qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('log.sentAt', 'DESC');
     const [data, total] = await qb.getManyAndCount();
     res.json(ok(data, 'Report history fetched', buildPagination(query.page, query.limit, total)));
   } catch (error) {
@@ -747,6 +748,21 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="machine-reliability-${now.toISOString().slice(0, 10)}.pdf"`);
     res.status(200).send(pdf);
+  } catch (error) {
+    next(error);
+  }
+});
+
+reportsRouter.get('/reports/advanced/dashboard-kpis', requirePermission('REPORTS', 'READ'), async (req, res, next) => {
+  try {
+    const query = z.object({
+      plantId: z.string().uuid().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+    }).parse(req.query);
+
+    const kpis = await AdvancedAnalyticsService.getDashboardKPIs(query, req.auth!);
+    res.json(ok(kpis, 'Dashboard KPIs fetched'));
   } catch (error) {
     next(error);
   }

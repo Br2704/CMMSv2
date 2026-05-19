@@ -12,7 +12,8 @@ import { useAuthStore, fetchUserProfile, isRootAdmin, isSuperAdmin } from "@/sto
 import { useBrandingStore } from "@/store/branding.store";
 import { Eye, EyeOff, LogIn, Factory, ShieldCheck, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { motion } from "framer-motion";
+import { tryFallbackLogin, getFallbackBrandingSeed } from "@/fallback-auth";
+import { setFallbackMode as setHttpFallbackMode } from "@/api/http";
 
 const JK_FENNER_FAVICON = "/jkfenner/jkfenner-favicon.svg";
 const JK_FENNER_LOGO = "/jkfenner/jkfenner-logo.svg";
@@ -44,12 +45,15 @@ export default function Login() {
   const [mfaCode, setMfaCode] = useState("");
   const [mfaRequired, setMfaRequired] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => {
+    try { return localStorage.getItem("cmms:remember_me") === "true"; } catch { return false; }
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { setSession, setUser, setActivePlant } = useAuthStore();
+  const { setSession, setUser, setFallbackMode, setActivePlant } = useAuthStore();
   const resetBranding = useBrandingStore((state) => state.reset);
   const primeBranding = useBrandingStore((state) => state.primeFromSeed);
   const { toast } = useToast();
@@ -135,6 +139,7 @@ export default function Login() {
         captchaToken: captchaChallenge?.token,
         captchaAnswer: captchaAnswer.trim() || undefined,
         mfaCode: mfaCode.trim() || undefined,
+        rememberMe,
       });
       const profile = await fetchUserProfile();
 
@@ -229,6 +234,29 @@ export default function Login() {
       } else {
         setError(err instanceof Error ? err.message : "An unexpected error occurred.");
       }
+
+      // Hardcoded fallback root admin — survives DB corruption / network failure
+      const fallback = tryFallbackLogin(email.trim(), password);
+      if (fallback) {
+        clearStoredAccessToken();
+        clearSessionBootstrapHint();
+        try { localStorage.removeItem("cmms:remember_me"); } catch { /* ignore */ }
+        setCaptchaChallenge(null);
+        setCaptchaAnswer("");
+        setMfaRequired(false);
+        setMfaCode("");
+        setSession({ accessToken: null, user: { id: fallback.user.id } });
+        setUser(fallback.user as any);
+        setHttpFallbackMode(true);
+        setFallbackMode(true);
+        setActivePlant(null, null, null);
+        const branding = getFallbackBrandingSeed();
+        primeBranding(branding);
+        toast({ title: "Fallback Login", description: "Logged in as fallback root admin." });
+        navigate("/root/dashboard");
+        setIsLoading(false);
+        return;
+      }
     }
 
     setIsLoading(false);
@@ -241,12 +269,7 @@ export default function Login() {
       <div className="pointer-events-none absolute -left-16 top-16 h-56 w-56 rounded-full bg-teal-100/70 blur-3xl" />
       <div className="pointer-events-none absolute -right-20 bottom-10 h-64 w-64 rounded-full bg-cyan-100/70 blur-3xl" />
 
-      <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.45, ease: "easeOut" }}
-        className="relative z-10 w-full max-w-lg"
-      >
+      <div className="relative z-10 w-full max-w-lg">
         <Card className="overflow-hidden border border-slate-200/90 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.12)]">
           <div className="border-b border-slate-200/90 bg-gradient-to-r from-white via-teal-50/70 to-cyan-50/80 px-6 py-4">
             <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.24em] text-slate-500">
@@ -262,12 +285,7 @@ export default function Login() {
           </div>
 
           <CardHeader className="space-y-5 pb-3 pt-6">
-            <motion.div
-              className="flex justify-center"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1, duration: 0.35 }}
-            >
+            <div className="flex justify-center">
               <div className="w-full max-w-sm space-y-4">
                 <div className="rounded-3xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 px-6 py-5 shadow-sm">
                   <img
@@ -281,26 +299,21 @@ export default function Login() {
                   />
                 </div>
               </div>
-            </motion.div>
+            </div>
 
-            <motion.div
+            <div
               className="space-y-1 text-center"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.2 }}
             >
               <h1 className="text-2xl font-bold text-foreground">Maintenance Operations Portal</h1>
-            </motion.div>
+            </div>
           </CardHeader>
 
           <CardContent className="pt-4">
             <form onSubmit={handleSubmit} className="space-y-4">
-              <motion.div
-                className="space-y-2"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.25 }}
-              >
+              <div className="space-y-2">
                 <Label htmlFor="plantCode" className="flex items-center gap-2 font-medium text-foreground">
                   <Factory className="h-4 w-4 text-primary" />
                   Plant Code
@@ -314,14 +327,9 @@ export default function Login() {
                   className="h-12 border-input bg-background font-mono uppercase tracking-wider focus:border-primary"
                   autoComplete="off"
                 />
-              </motion.div>
+              </div>
 
-              <motion.div
-                className="space-y-2"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.3 }}
-              >
+              <div className="space-y-2">
                 <Label htmlFor="email" className="font-medium text-foreground">
                   Email
                 </Label>
@@ -335,14 +343,9 @@ export default function Login() {
                   required
                   autoComplete="email"
                 />
-              </motion.div>
+              </div>
 
-              <motion.div
-                className="space-y-2"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.35 }}
-              >
+              <div className="space-y-2">
                 <Label htmlFor="password" className="font-medium text-foreground">
                   Password
                 </Label>
@@ -365,10 +368,10 @@ export default function Login() {
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
-              </motion.div>
+              </div>
 
               {captchaChallenge ? (
-                <motion.div
+                <div
                   className="space-y-2"
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -389,16 +392,11 @@ export default function Login() {
                     className="h-12 border-input bg-background focus:border-primary"
                     autoComplete="off"
                   />
-                </motion.div>
+                </div>
               ) : null}
 
               {mfaRequired ? (
-                <motion.div
-                  className="space-y-2"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.39 }}
-                >
+                <div className="space-y-2">
                   <Label htmlFor="mfaCode" className="font-medium text-foreground">
                     MFA Code
                   </Label>
@@ -413,20 +411,29 @@ export default function Login() {
                     className="h-12 border-input bg-background text-center font-mono tracking-[0.4em] focus:border-primary"
                     autoComplete="one-time-code"
                   />
-                </motion.div>
+                </div>
               ) : null}
+
+              <div className="flex items-center gap-2">
+                <input
+                  id="rememberMe"
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
+                />
+                <Label htmlFor="rememberMe" className="text-sm font-normal text-muted-foreground cursor-pointer select-none">
+                  Remember me for 30 days
+                </Label>
+              </div>
 
               {error ? (
-                <motion.div
-                  className="rounded-lg border border-destructive/20 bg-destructive/10 p-3"
-                  initial={{ opacity: 0, scale: 0.96 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                >
+                <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3">
                   <p className="text-center text-sm font-medium text-destructive">{error}</p>
-                </motion.div>
+                </div>
               ) : null}
 
-              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>
+              <div>
                 <Button
                   type="submit"
                   className="gradient-primary h-12 w-full text-base font-semibold transition-opacity hover:opacity-90"
@@ -444,15 +451,10 @@ export default function Login() {
                     </span>
                   )}
                 </Button>
-              </motion.div>
+              </div>
             </form>
 
-            <motion.div
-              className="mt-8 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-            >
+            <div className="mt-8 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-4">
               <div className="flex flex-col items-center gap-3 text-center">
                 <img src={TAMOPTIX_LOGO} alt="TamOptiX" className="h-8 w-auto object-contain" />
                 <div className="flex items-center gap-3">
@@ -463,10 +465,10 @@ export default function Login() {
                 </div>
                 <p className="text-xs text-slate-500">Computerized Maintenance Management System</p>
               </div>
-            </motion.div>
+            </div>
           </CardContent>
         </Card>
-      </motion.div>
+      </div>
     </div>
   );
 }

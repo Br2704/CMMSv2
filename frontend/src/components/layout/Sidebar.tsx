@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { AnimatePresence, motion } from "framer-motion";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useIsMobilePwaMode } from "@/hooks/use-mobile-pwa";
-import { isRootAdmin, useAuthStore } from "@/store/auth.store";
+import { isRootAdmin, isSuperAdmin, hasRole, useAuthStore } from "@/store/auth.store";
 import { useBrandingStore } from "@/store/branding.store";
 import {
   BarChart3,
@@ -79,6 +78,7 @@ const navigation: NavItem[] = [
       { title: "Shifts", href: "/masters/shifts", moduleId: "masters.shifts" },
       { title: "Maintenance Teams", href: "/masters/maintenance-teams", moduleId: "masters.maintenance-teams" },
       { title: "Work Order Config", href: "/masters/work-order-config", moduleId: "masters.workorder-team-mapping" },
+      { title: "SLA & Escalation", href: "/masters/sla-config", moduleId: "masters.sla-config" },
     ],
   },
 ];
@@ -90,7 +90,6 @@ const rootNavigation: NavItem[] = [
   { title: "User Management", href: "/root/users", icon: Users, moduleId: "root.users" },
   { title: "Role & Access Master", href: "/root/role-access", icon: Settings, moduleId: "root.role_access" },
   { title: "Mail Config", href: "/root/mail-config", icon: Mail, moduleId: "root.mail-config" },
-  { title: "SLA & Escalation", href: "/root/sla-config", icon: AlertTriangle, moduleId: "root.sla-config" },
 ];
 
 interface SidebarProps {
@@ -123,6 +122,8 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
 
   const showNavSkeleton = !isRootUser && loading;
 
+  const isAdminOrSuper = (isSuperAdmin(user) || hasRole(user, ["ADMIN"])) && !isRootAdmin(user);
+
   const filteredNavigation = useMemo(
     () =>
       isRootUser
@@ -135,7 +136,12 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                   return hasModuleAccess(item.moduleId, "view") ? item : null;
                 }
 
-                const filteredChildren = item.children.filter((child) => hasModuleAccess(child.moduleId, "view"));
+                const filteredChildren = item.children.filter((child) => {
+                  if (child.href === "/masters/sla-config") {
+                    return isAdminOrSuper;
+                  }
+                  return hasModuleAccess(child.moduleId, "view");
+                });
                 const parentAllowed = hasModuleAccess(item.moduleId, "view");
 
                 if (isMobilePwaMode && item.href === "/masters") {
@@ -147,7 +153,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                 return { ...item, children: filteredChildren };
               })
               .filter(Boolean) as NavItem[]),
-    [hasModuleAccess, isMobilePwaMode, isRootUser, showNavSkeleton],
+    [hasModuleAccess, isMobilePwaMode, isRootUser, showNavSkeleton, isAdminOrSuper],
   );
 
   useEffect(() => {
@@ -174,21 +180,16 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
 
   return (
     <>
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onToggleMobile}
-            className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm lg:hidden"
-          />
-        )}
-      </AnimatePresence>
+      {isOpen && (
+        <div
+          onClick={onToggleMobile}
+          className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm lg:hidden"
+        />
+      )}
 
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-card shadow-lg transition-[width,transform] duration-300",
+          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-card shadow-lg ",
           "w-[min(88vw,320px)] sm:w-[300px] lg:w-[280px]",
           isOpen ? "translate-x-0" : "-translate-x-full",
           "lg:translate-x-0",
@@ -206,7 +207,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
           >
             <div
               className={cn(
-                "flex shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-2 transition-all duration-300",
+                "flex shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-2 ",
                 isCollapsed ? "h-12 w-12" : "h-12 w-32 shadow-sm border border-slate-100",
               )}
             >
@@ -262,7 +263,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                       onClick={handleNavItemClick}
                       title={item.title}
                       className={cn(
-                        "flex flex-1 items-center gap-3 rounded-l-lg px-3 py-3 text-sm font-medium transition-all duration-200",
+                        "flex flex-1 items-center gap-3 rounded-l-lg px-3 py-3 text-sm font-medium ",
                         itemIsActive
                           ? "bg-primary text-primary-foreground shadow-md"
                           : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
@@ -274,7 +275,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                     <button
                       onClick={() => toggleExpand(item.title)}
                       className={cn(
-                        "rounded-r-lg px-2 py-3 text-sm transition-all duration-200",
+                        "rounded-r-lg px-2 py-3 text-sm ",
                         expandedItems.includes(item.title)
                           ? "bg-accent text-accent-foreground"
                           : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
@@ -284,22 +285,15 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                     >
                       <ChevronDown
                         className={cn(
-                          "h-4 w-4 transition-transform duration-200",
+                          "h-4 w-4 ",
                           expandedItems.includes(item.title) && "rotate-180",
                         )}
                       />
                     </button>
                   </div>
 
-                  <AnimatePresence>
-                    {expandedItems.includes(item.title) && item.children && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="overflow-hidden"
-                      >
+                  {expandedItems.includes(item.title) && item.children && (
+                      <div>
                         <div className="ml-4 mt-1 space-y-1 border-l border-border pl-4">
                           {item.children.map((child) => (
                             <Link
@@ -317,9 +311,8 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                             </Link>
                           ))}
                         </div>
-                      </motion.div>
+                      </div>
                     )}
-                  </AnimatePresence>
                 </div>
               );
             }
@@ -336,7 +329,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                   onClick={handleNavItemClick}
                   title={item.title}
                   className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-all duration-200",
+                    "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium ",
                     itemIsActive
                       ? "bg-primary text-primary-foreground shadow-md"
                       : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",

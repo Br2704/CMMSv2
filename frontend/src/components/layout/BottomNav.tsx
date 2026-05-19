@@ -121,7 +121,7 @@ export function BottomNav({ isSidebarOpen = false }: BottomNavProps) {
   return (
     <nav
       className={cn(
-        "fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card transition-all duration-200 lg:hidden safe-area-inset",
+        "fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card  lg:hidden safe-area-inset",
         isSidebarOpen && "pointer-events-none translate-y-full opacity-0",
       )}
     >
@@ -182,7 +182,7 @@ export function BottomNav({ isSidebarOpen = false }: BottomNavProps) {
                           to={item.href}
                           onClick={() => setIsMoreOpen(false)}
                           className={cn(
-                            "flex min-h-[68px] items-center justify-center rounded-lg border px-3 py-3 text-center transition-all",
+                            "flex min-h-[68px] items-center justify-center rounded-lg border px-3 py-3 text-center ",
                             isActive(item.href)
                               ? "border-primary/30 bg-primary/10 text-primary"
                               : "border-transparent bg-muted/50 hover:bg-muted",
@@ -205,7 +205,7 @@ export function BottomNav({ isSidebarOpen = false }: BottomNavProps) {
                           to={item.href}
                           onClick={() => setIsMoreOpen(false)}
                           className={cn(
-                            "flex min-h-[68px] items-center justify-center rounded-lg border px-3 py-3 text-center transition-all",
+                            "flex min-h-[68px] items-center justify-center rounded-lg border px-3 py-3 text-center ",
                             isActive(item.href)
                               ? "border-primary/30 bg-primary/10 text-primary"
                               : "border-transparent bg-muted/50 hover:bg-muted",

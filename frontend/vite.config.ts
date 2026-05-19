@@ -37,25 +37,18 @@ export default defineConfig(({ mode }) => ({
         "jkfenner/jkfenner-favicon.ico",
         "jkfenner/jkfenner-favicon.svg",
         "jkfenner/jkfenner-logo.png",
-        "tamoptix/tamoptix-logo.png",
-        "tamoptix/tamoptix-logo.svg",
       ],
       manifest: {
         name: "JK Fenner CMMS",
         short_name: "JK Fenner CMMS",
         description: "JK Fenner CMMS Platform",
         start_url: "/",
+        scope: "/",
         display: "standalone",
         background_color: "#ffffff",
         theme_color: "#0f172a",
         orientation: "any",
         icons: [
-          {
-            src: "/jkfenner/jkfenner-favicon.svg",
-            sizes: "any",
-            type: "image/svg+xml",
-            purpose: "any"
-          },
           {
             src: "/jkfenner/jkfenner-logo.png",
             sizes: "192x192",
@@ -64,9 +57,21 @@ export default defineConfig(({ mode }) => ({
           },
           {
             src: "/jkfenner/jkfenner-logo.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "maskable"
+          },
+          {
+            src: "/jkfenner/jkfenner-logo.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "any"
+          },
+          {
+            src: "/jkfenner/jkfenner-logo.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable"
           }
         ],
         categories: ["business", "productivity", "utilities"],
@@ -75,13 +80,13 @@ export default defineConfig(({ mode }) => ({
             name: "Dashboard",
             short_name: "Dashboard",
             url: "/",
-            icons: [{ src: "/jkfenner/jkfenner-favicon.svg", sizes: "any" }]
+            icons: [{ src: "/jkfenner/jkfenner-logo.png", sizes: "192x192", type: "image/png" }]
           },
           {
             name: "Work Orders",
             short_name: "Work Orders",
             url: "/work-orders",
-            icons: [{ src: "/jkfenner/jkfenner-favicon.svg", sizes: "any" }]
+            icons: [{ src: "/jkfenner/jkfenner-logo.png", sizes: "192x192", type: "image/png" }]
           }
         ]
       },

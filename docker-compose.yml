@@ -2,10 +2,16 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -22,6 +28,12 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     command: >
       sh -c "npm run migration:run:prod &&
              npm run start"
@@ -32,13 +44,14 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD}
       DB_SSL: "false"
-      JWT_SECRET: ${JWT_SECRET:-cmms-docker-jwt-secret-2026-rotate-me-32-chars}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-cmms-docker-refresh-secret-2026-rotate-me-32-chars}
-      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-cmms-docker-encryption-key-2026-rotate-me-32}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      ROOT_ADMIN_PASSWORD: ${ROOT_ADMIN_PASSWORD}
       FRONTEND_URL: ${APP_BASE_URL:-http://localhost:8081}
-      CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:8081,http://localhost:8080,http://localhost,http://127.0.0.1:8081,http://127.0.0.1:8080,http://127.0.0.1}
+      CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:8081}
     ports:
       - "3002:3001"
     depends_on:
@@ -65,6 +78,12 @@ services:
       args:
         VITE_API_BASE_URL: /api
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     depends_on:
       backend:
         condition: service_healthy

@@ -105,6 +105,8 @@ import {
   AuditLogEntity,
   BrandingMetaEntity,
   RbacMetaEntity,
+  MaintenanceReportEntity,
+  SystemConfigEntity,
 } from './index';
 
 export const ALL_ENTITIES = [
@@ -214,4 +216,6 @@ export const ALL_ENTITIES = [
   EscalationHistoryEntity,
   SlaConfigEntity,
   NotificationSettingsEntity,
+  MaintenanceReportEntity,
+  SystemConfigEntity,
 ];

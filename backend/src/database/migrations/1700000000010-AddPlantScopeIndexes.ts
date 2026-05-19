@@ -33,7 +33,13 @@ export class AddPlantScopeIndexes1700000000010 implements MigrationInterface {
   private async ensureIndex(queryRunner: QueryRunner, tableName: string, index: TableIndex) {
     const table = await queryRunner.getTable(tableName);
     if (!table) return;
-    if (table.indices.some((item) => item.name === index.name)) return;
+
+    // More robust check for Postgres
+    const existingIndices = await queryRunner.query(
+      `SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND tablename = '${tableName}'`
+    );
+    if (existingIndices.some((idx: any) => idx.indexname === index.name)) return;
+
     await queryRunner.createIndex(tableName, index);
   }
 

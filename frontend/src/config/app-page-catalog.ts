@@ -1,4 +1,4 @@
-export type AppPermissionAction = "READ" | "CREATE" | "UPDATE" | "DELETE" | "EXPORT" | "APPROVE";
+export type AppPermissionAction = "READ" | "CREATE" | "UPDATE" | "DELETE" | "EXPORT" | "APPROVE" | "ASSIGN" | "REJECT" | "CLOSE" | "IMPORT";
 export type AppPageSection = "Operations" | "Masters";
 export type AppFeatureKey = "SAFETY" | "ESG" | "GATE_ENTRY" | "ADVANCED_ANALYTICS" | "HR";
 
@@ -21,6 +21,10 @@ export const APP_PERMISSION_ACTIONS: readonly AppPermissionAction[] = [
   "DELETE",
   "EXPORT",
   "APPROVE",
+  "ASSIGN",
+  "REJECT",
+  "CLOSE",
+  "IMPORT",
 ];
 
 export const NON_ROOT_APP_PAGES: readonly AppPageDefinition[] = [

@@ -108,17 +108,17 @@ async function listSchedulesHandler(req: Request, res: Response, next: NextFunct
           where
             .where('schedule.status ILIKE :searchValue', { searchValue })
             .orWhere('schedule.frequency ILIKE :searchValue', { searchValue })
-            .orWhere('schedule.maintenance_type ILIKE :searchValue', { searchValue })
+            .orWhere('schedule.maintenanceType ILIKE :searchValue', { searchValue })
             .orWhere('schedule.discipline ILIKE :searchValue', { searchValue })
             .orWhere('asset.code ILIKE :searchValue', { searchValue })
             .orWhere('asset.name ILIKE :searchValue', { searchValue })
-            .orWhere('template.template_name ILIKE :searchValue', { searchValue });
+            .orWhere('template.templateName ILIKE :searchValue', { searchValue });
         }),
       );
     }
-    applyPlantScope(qb, 'schedule', 'plant_id', req.auth!, query.plantId);
-    if (extendedQuery.assetId) qb.andWhere('schedule.asset_id = :assetId', { assetId: extendedQuery.assetId });
-    if (extendedQuery.templateId) qb.andWhere('schedule.template_id = :templateId', { templateId: extendedQuery.templateId });
+    applyPlantScope(qb, 'schedule', 'plantId', req.auth!, query.plantId);
+    if (extendedQuery.assetId) qb.andWhere('schedule.assetId = :assetId', { assetId: extendedQuery.assetId });
+    if (extendedQuery.templateId) qb.andWhere('schedule.templateId = :templateId', { templateId: extendedQuery.templateId });
     if (extendedQuery.status) qb.andWhere('schedule.status = :status', { status: extendedQuery.status });
     if (!query.includeInactive) qb.andWhere("schedule.status <> 'CANCELLED'");
     qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('schedule.nextDue', 'ASC');

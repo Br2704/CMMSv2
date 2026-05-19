@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { DoorOpen, Loader2, MapPinned, Plus, Search, Settings2, Trash2 } from "lucide-react";
 import BackButton from "@/components/masters/BackButton";
@@ -652,10 +651,10 @@ export default function GateMaster() {
   return (
     <div className="space-y-4 sm:space-y-6">
       <BackButton />
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+      <div>
         <h1 className="text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl">Gate Master</h1>
         <p className="text-sm text-muted-foreground">Create gates with location details and configure allowed entry types for each gate.</p>
-      </motion.div>
+      </div>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ActiveTab)} className="space-y-4">
         <TabsList className="grid h-auto w-full grid-cols-3">

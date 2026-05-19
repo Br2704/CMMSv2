@@ -8,12 +8,12 @@ const ADMIN_BLOCKED_MODULES = new Set([] as string[]);
 const VENDOR_ALLOWED_MODULES = new Set(['AMC']);
 const SECURITY_ALLOWED_MODULES = new Set(['GATES']);
 const VISITOR_ALLOWED_MODULES = new Set(['GATES']);
-const HR_ALLOWED_MODULES = new Set(['USERS', 'DEPARTMENTS', 'SHIFTS', 'LOGS']);
-const SAFETY_ALLOWED_MODULES = new Set(['GATES', 'ESG', 'SAFETY', 'ALERTS']);
-const INVENTORY_ALLOWED_MODULES = new Set(['INVENTORY', 'VENDORS', 'MASTERS', 'REPORTS']);
-const MAINTENANCE_USER_ALLOWED_MODULES = new Set(['ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'INVENTORY', 'DASHBOARD']);
-const MAINTENANCE_MANAGER_ALLOWED_MODULES = new Set(['ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'INVENTORY', 'DASHBOARD', 'REPORTS', 'MASTERS', 'DEPARTMENTS', 'VENDORS', 'ANALYTICS']);
-const PRODUCTION_USER_ALLOWED_MODULES = new Set(['DASHBOARD', 'WORK_ORDERS', 'ASSETS', 'NOTIFICATIONS']);
+const HR_ALLOWED_MODULES = new Set(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'INVENTORY', 'LOGS', 'DEPARTMENTS', 'SHIFTS', 'USERS', 'MASTERS', 'NOTIFICATIONS', 'PLANTS', 'REPORTS', 'GATES', 'VENDORS', 'ALERTS']);
+const SAFETY_ALLOWED_MODULES = new Set(['GATES', 'ESG', 'SAFETY', 'ALERTS', 'MASTERS', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS']);
+const INVENTORY_ALLOWED_MODULES = new Set(['INVENTORY', 'VENDORS', 'MASTERS', 'REPORTS', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES']);
+const MAINTENANCE_USER_ALLOWED_MODULES = new Set(['ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'INVENTORY', 'DASHBOARD', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'GATES']);
+const MAINTENANCE_MANAGER_ALLOWED_MODULES = new Set(['ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'INVENTORY', 'DASHBOARD', 'REPORTS', 'MASTERS', 'DEPARTMENTS', 'VENDORS', 'ANALYTICS', 'NOTIFICATIONS', 'PLANTS', 'USERS', 'GATES']);
+const PRODUCTION_USER_ALLOWED_MODULES = new Set(['DASHBOARD', 'WORK_ORDERS', 'ASSETS', 'NOTIFICATIONS', 'MASTERS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'GATES']);
 
 function normalizeSystemRoleKey(roleKey: string): string {
   const normalized = normalizeRoleName(roleKey);
@@ -100,7 +100,11 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
   if (normalizedRole === 'MAINTENANCE_MANAGER') {
     const map = pickAllowedModules(normalizedInput, MAINTENANCE_MANAGER_ALLOWED_MODULES);
     for (const mod of MAINTENANCE_MANAGER_ALLOWED_MODULES) {
-      map[mod] = [...RBAC_ACTIONS];
+      if (['PLANTS', 'USERS', 'GATES', 'MASTERS', 'NOTIFICATIONS', 'DASHBOARD'].includes(mod)) {
+        map[mod] = ['READ'];
+      } else {
+        map[mod] = [...RBAC_ACTIONS];
+      }
     }
     return map;
   }
@@ -108,7 +112,11 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
   if (normalizedRole === 'MAINTENANCE_USER') {
     const map = pickAllowedModules(normalizedInput, MAINTENANCE_USER_ALLOWED_MODULES);
     for (const mod of MAINTENANCE_USER_ALLOWED_MODULES) {
-      map[mod] = ['READ', 'CREATE', 'UPDATE', 'EXPORT'];
+      if (['PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'GATES', 'MASTERS', 'NOTIFICATIONS', 'DASHBOARD'].includes(mod)) {
+        map[mod] = ['READ'];
+      } else {
+        map[mod] = ['READ', 'CREATE', 'UPDATE', 'EXPORT'];
+      }
     }
     return map;
   }
@@ -116,7 +124,11 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
   if (normalizedRole === 'HR_USER') {
     const map = pickAllowedModules(normalizedInput, HR_ALLOWED_MODULES);
     for (const mod of HR_ALLOWED_MODULES) {
-      map[mod] = [...RBAC_ACTIONS];
+      if (['PLANTS', 'REPORTS', 'GATES', 'MASTERS', 'NOTIFICATIONS', 'DASHBOARD'].includes(mod)) {
+        map[mod] = ['READ'];
+      } else {
+        map[mod] = [...RBAC_ACTIONS];
+      }
     }
     return map;
   }
@@ -124,7 +136,11 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
   if (normalizedRole === 'SAFETY_OFFICER') {
     const map = pickAllowedModules(normalizedInput, SAFETY_ALLOWED_MODULES);
     for (const mod of SAFETY_ALLOWED_MODULES) {
-      map[mod] = ['READ', 'UPDATE', 'EXPORT'];
+      if (['PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'MASTERS', 'NOTIFICATIONS', 'DASHBOARD'].includes(mod)) {
+        map[mod] = ['READ'];
+      } else {
+        map[mod] = ['READ', 'UPDATE', 'EXPORT'];
+      }
     }
     return map;
   }
@@ -132,17 +148,24 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
   if (normalizedRole === 'INVENTORY_MANAGER') {
     const map = pickAllowedModules(normalizedInput, INVENTORY_ALLOWED_MODULES);
     for (const mod of INVENTORY_ALLOWED_MODULES) {
-      map[mod] = [...RBAC_ACTIONS];
+      if (['PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS', 'NOTIFICATIONS', 'DASHBOARD'].includes(mod)) {
+        map[mod] = ['READ'];
+      } else {
+        map[mod] = [...RBAC_ACTIONS];
+      }
     }
     return map;
   }
 
   if (normalizedRole === 'PRODUCTION_USER') {
     const map = pickAllowedModules(normalizedInput, PRODUCTION_USER_ALLOWED_MODULES);
-    map.DASHBOARD = ['READ'];
-    map.WORK_ORDERS = ['READ', 'CREATE'];
-    map.ASSETS = ['READ'];
-    map.NOTIFICATIONS = ['READ', 'UPDATE'];
+    for (const mod of PRODUCTION_USER_ALLOWED_MODULES) {
+      if (mod === 'WORK_ORDERS') {
+        map[mod] = ['READ', 'CREATE'];
+      } else {
+        map[mod] = ['READ'];
+      }
+    }
     return map;
   }
 

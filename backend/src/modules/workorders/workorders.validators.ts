@@ -60,11 +60,29 @@ const optionalIsoDateTimeOrNull = z.preprocess((value) => {
 
 const spareConsumptionEntrySchema = z
   .preprocess(normalizeObjectKeys, z.object({
-    spare_item_id: z.string().uuid(),
+    spare_item_id: z.string().min(1),
     quantity: z.coerce.number().int().positive(),
     spare_name: nullableTrimmedString.optional(),
     spare_code: nullableTrimmedString.optional(),
-  }));
+    is_manual: z.coerce.boolean().optional(),
+  }))
+  .superRefine((entry, ctx) => {
+    const isManual = Boolean(entry.is_manual) || entry.spare_item_id.startsWith('manual-');
+    if (!isManual && !z.string().uuid().safeParse(entry.spare_item_id).success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['spare_item_id'],
+        message: 'spare_item_id must be a valid UUID unless marked as manual',
+      });
+    }
+    if (isManual && !entry.spare_name) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['spare_name'],
+        message: 'spare_name is required for manual spare entries',
+      });
+    }
+  });
 
 const spareConsumptionSchema = z.array(spareConsumptionEntrySchema).optional();
 
@@ -113,7 +131,7 @@ const safetyChecklistSchema = z.preprocess(
 const workOrderBodyBaseSchema = z.object({
     wo_number: optionalTrimmedString,
     asset_id: z.string().uuid(),
-    category: z.string().trim().min(1),
+    category: optionalTrimmedString,
     priority: optionalTrimmedString.default('MEDIUM'),
     status: optionalTrimmedString.default('RAISED'),
     problem_description: z.string().trim().min(1),
@@ -186,14 +204,32 @@ const updateWorkOrderBodySchema = workOrderBodyBaseSchema.partial().superRefine(
 export const createWorkOrderSchema = z.preprocess(normalizeObjectKeys, createWorkOrderBodySchema);
 export const updateWorkOrderSchema = z.preprocess(normalizeObjectKeys, updateWorkOrderBodySchema);
 
+const whyWhyAnalysisSchema = z.preprocess(
+  normalizeObjectKeys,
+  z.object({
+    why_1: requiredTrimmedString,
+    why_2: requiredTrimmedString,
+    why_3: requiredTrimmedString,
+    why_4: requiredTrimmedString,
+    why_5: requiredTrimmedString,
+    root_reason: requiredTrimmedString,
+    corrective_prevention: requiredTrimmedString,
+    recurrence_prevention: requiredTrimmedString,
+  }),
+);
+
 const startWorkOrderBodySchema = z
   .object({
     verification_method: z.enum(['QR_SCAN', 'MANUAL_ENTRY']),
     scanned_asset_id: optionalUuidOrNull.optional(),
     manual_machine_code: nullableTrimmedString.optional(),
-    initial_assessment: nullableTrimmedString.optional(),
+    initial_assessment: requiredTrimmedString,
+    category: optionalTrimmedString,
+    assigned_to: optionalUuidOrNull.optional(),
     assigned_to_notes: nullableTrimmedString.optional(),
     estimated_time_minutes: z.coerce.number().int().min(0).optional(),
+    expected_downtime_minutes: z.coerce.number().int().min(0).optional(),
+    assessment_remarks: nullableTrimmedString.optional(),
     safety_checklist: safetyChecklistSchema,
   })
   .superRefine((body, ctx) => {
@@ -228,23 +264,53 @@ const triageWorkOrderBodySchema = z.object({
 
 const submitWorkOrderForApprovalBodySchema = z
   .object({
+    wo_type: optionalTrimmedString,
     work_performed_description: requiredTrimmedString,
     issue_details: requiredTrimmedString,
+    corrective_action: nullableTrimmedString.optional(),
+    root_cause: nullableTrimmedString.optional(),
     time_spent_minutes: z.coerce.number().int().min(0).optional(),
     downtime_minutes: z.coerce.number().int().min(0).optional(),
-    materials_used: requiredTrimmedString,
+    completion_at: optionalIsoDateTimeOrNull.optional(),
+    materials_used: nullableTrimmedString.optional(),
+    spare_used: z.coerce.boolean().optional(),
     attachments: z.array(mobileAttachmentSchema).optional(),
     remarks: requiredTrimmedString,
     failure_code: nullableTrimmedString.optional(),
+    actual_failure_category: nullableTrimmedString.optional(),
+    why_why_analysis: z.preprocess(normalizeObjectKeys, whyWhyAnalysisSchema).optional(),
+    preventive_recommendation: nullableTrimmedString.optional(),
+    manpower_used: nullableTrimmedString.optional(),
     actual_cost: z.coerce.number().min(0).optional(),
     spare_consumption: spareConsumptionSchema,
     operator_fault: z.coerce.boolean().optional(),
-    warranty_claim: z.coerce.boolean().optional(),
     follow_up_required: z.coerce.boolean().optional(),
     follow_up_team_id: optionalUuidOrNull.optional(),
     follow_up_notes: nullableTrimmedString.optional(),
+    follow_up_support_category: optionalTrimmedString,
+    follow_up_urgency: nullableTrimmedString.optional(),
   })
   .superRefine((body, ctx) => {
+    const spareUsed = Boolean(body.spare_used);
+    const spareRows = Array.isArray(body.spare_consumption) ? body.spare_consumption : [];
+    const materialsUsed = typeof body.materials_used === 'string' ? body.materials_used.trim() : '';
+
+    if (spareUsed && spareRows.length === 0 && !materialsUsed) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['spare_consumption'],
+        message: 'spare_consumption or materials_used is required when spare_used is true',
+      });
+    }
+
+    if (!spareUsed && !materialsUsed && spareRows.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['materials_used'],
+        message: 'Confirm no spares were used or provide spare/material details',
+      });
+    }
+
     if (body.follow_up_required && !body.follow_up_team_id) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -332,6 +398,24 @@ export const workOrdersListQuerySchema = listQuerySchema.extend({
   approvalRequired: optionalBooleanQuery,
   escalation_only: optionalBooleanQuery,
   escalationOnly: optionalBooleanQuery,
+  date_from: z.preprocess(
+    (value) => {
+      if (Array.isArray(value)) return value[0];
+      if (typeof value !== 'string') return undefined;
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    },
+    z.string().optional(),
+  ),
+  date_to: z.preprocess(
+    (value) => {
+      if (Array.isArray(value)) return value[0];
+      if (typeof value !== 'string') return undefined;
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    },
+    z.string().optional(),
+  ),
 });
 
 export const workOrdersSummaryQuerySchema = listQuerySchema.pick({ plantId: true });

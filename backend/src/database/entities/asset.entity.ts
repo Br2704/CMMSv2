@@ -29,6 +29,9 @@ export class AssetEntity extends TimestampedUuidEntity {
   @Column({ name: 'plant_id', type: 'uuid', nullable: true })
   plantId!: string | null;
 
+  @Column({ name: 'default_category', type: 'varchar', nullable: true })
+  defaultCategory!: string | null;
+
   @Column({ type: 'varchar', default: 'MEDIUM' })
   criticality!: string;
 

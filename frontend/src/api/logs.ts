@@ -1,4 +1,4 @@
-import { getStoredAccessToken, httpRequest } from "@/api/http";
+import { getStoredAccessToken, httpRequest, isCurrentlyRateLimited } from "@/api/http";
 import type { ApiListResponse, ApiResponse, DeleteResult, ListParams } from "@/api/types";
 import { toQueryString } from "@/api/types";
 
@@ -129,6 +129,9 @@ export function createWebappLog(payload: WebappLogPayload) {
 
 export function queueWebappLog(payload: WebappLogPayload) {
   if (!getStoredAccessToken()) {
+    return;
+  }
+  if (isCurrentlyRateLimited()) {
     return;
   }
 

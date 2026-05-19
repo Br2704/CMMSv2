@@ -1,5 +1,5 @@
 import { getMe, logout as apiLogout, type MeResponse } from "@/api/auth";
-import { ensureAccessToken } from "@/api/http";
+import { ensureAccessToken, isCurrentlyRateLimited, resetUnauthorizedMode } from "@/api/http";
 import { setUnauthorizedCallback } from "@/api/token";
 import { mastersOptionsStore } from "@/store/mastersOptions.store";
 import { create } from "zustand";
@@ -27,7 +27,12 @@ export type AppRole =
   | "CALIBRATION_INCHARGE"
   | "TECHNICIAN"
   | "OPERATOR"
-  | "SECURITY_USER";
+  | "SECURITY_USER"
+  | "MAINTENANCE_USER"
+  | "HR_USER"
+  | "SAFETY_OFFICER"
+  | "INVENTORY_MANAGER"
+  | "PRODUCTION_USER";
 
 interface SessionUser {
   id: string;
@@ -69,12 +74,15 @@ interface AuthState {
   session: AppSession | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isFallbackMode: boolean;
   activePlantId: string | null;
   activePlantCode: string | null;
   activePlantName: string | null;
+  lastActiveAt: number | null;
   setSession: (session: AppSession | null) => void;
   setUser: (user: AppUser | null) => void;
   setLoading: (loading: boolean) => void;
+  setFallbackMode: (mode: boolean) => void;
   setActivePlant: (id: string | null, code: string | null, name: string | null) => void;
   logout: () => Promise<void>;
 }
@@ -122,9 +130,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   session: null,
   isAuthenticated: false,
   isLoading: true,
+  isFallbackMode: false,
   activePlantId: null,
   activePlantCode: null,
   activePlantName: null,
+  lastActiveAt: (() => { try { return Number(sessionStorage.getItem("cmms:last_active")) || null; } catch { return null; } })(),
   setSession: (session) =>
     set((state) => {
       if (state.session === session) return state;
@@ -152,6 +162,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       debugAuth("setLoading", { isLoading });
       return { isLoading };
     }),
+  setFallbackMode: (isFallbackMode) =>
+    set((state) => {
+      if (state.isFallbackMode === isFallbackMode) return state;
+      debugAuth("setFallbackMode", { isFallbackMode });
+      return { isFallbackMode };
+    }),
   setActivePlant: (activePlantId, activePlantCode, activePlantName) =>
     set((state) => {
       if (
@@ -169,13 +185,16 @@ export const useAuthStore = create<AuthState>((set) => ({
       await apiLogout();
     } finally {
       mastersOptionsStore.invalidate();
+      try { localStorage.removeItem("cmms:remember_me"); } catch { /* ignore */ }
       set({
         user: null,
         session: null,
         isAuthenticated: false,
+        isFallbackMode: false,
         activePlantId: null,
         activePlantCode: null,
         activePlantName: null,
+        lastActiveAt: null,
       });
       debugAuth("logout:reset");
     }
@@ -195,11 +214,11 @@ let initializeAuthStateInFlight: Promise<void> | null = null;
 
 setUnauthorizedCallback(() => {
   const s = useAuthStore.getState();
-  if (s.user || s.session || s.isAuthenticated || s.activePlantId) {
-    s.setUser(null);
-    s.setSession(null);
-    s.setActivePlant(null, null, null);
-  }
+  // Always clear auth state to prevent stale data from causing blank screens
+  s.setUser(null);
+  s.setSession(null);
+  s.setActivePlant(null, null, null);
+  s.setLoading(false); // Stop loading spinner
 
   // Force redirect to login if not already there or on a public page
   if (typeof window !== "undefined") {
@@ -211,6 +230,18 @@ setUnauthorizedCallback(() => {
     }
   }
 });
+
+export function trackActivity(): void {
+  const store = useAuthStore.getState();
+  if (store.isAuthenticated) {
+    store.lastActiveAt = Date.now();
+    try { sessionStorage.setItem("cmms:last_active", String(Date.now())); } catch { /* ignore */ }
+  }
+}
+
+let initializeAuthRetryCount = 0;
+const MAX_INITIALIZE_RETRIES = 1;
+let lastInitializeError: string | null = null;
 
 export async function initializeAuthState(): Promise<void> {
   if (initializeAuthStateInFlight) {
@@ -225,14 +256,47 @@ export async function initializeAuthState(): Promise<void> {
 
     debugAuth("initialize:start");
     try {
+      // Reset any previous unauthorized mode to allow new API requests
+      resetUnauthorizedMode();
       const hasAccessToken = await ensureAccessToken();
       if (!hasAccessToken) {
-        store.setUser(null);
-        store.setSession(null);
-        store.setActivePlant(null, null, null);
-        debugAuth("initialize:no-access-token");
-        return;
+        const isRateLimited = isCurrentlyRateLimited();
+        const rememberMe = (() => { try { return localStorage.getItem("cmms:remember_me") === "true"; } catch { return false; } })();
+        if (rememberMe && initializeAuthRetryCount < MAX_INITIALIZE_RETRIES) {
+          initializeAuthRetryCount++;
+          debugAuth("initialize:retry-after-delay", { attempt: initializeAuthRetryCount });
+          await new Promise((r) => setTimeout(r, 1500));
+          const retryResult = await ensureAccessToken();
+          if (!retryResult) {
+            if (isRateLimited) {
+              debugAuth("initialize:rate-limited-skip-clear");
+              lastInitializeError = "rate-limited";
+              return;
+            }
+            store.setUser(null);
+            store.setSession(null);
+            store.setActivePlant(null, null, null);
+            debugAuth("initialize:no-access-token-after-retry");
+            lastInitializeError = "no-access-token-after-retry";
+            return;
+          }
+        } else {
+          if (isRateLimited) {
+            debugAuth("initialize:rate-limited-skip-clear");
+            lastInitializeError = "rate-limited";
+            return;
+          }
+          store.setUser(null);
+          store.setSession(null);
+          store.setActivePlant(null, null, null);
+          debugAuth("initialize:no-access-token");
+          lastInitializeError = "no-access-token";
+          return;
+        }
       }
+
+      initializeAuthRetryCount = 0; // Reset on success
+      lastInitializeError = null;
 
       const me = await getMe();
       const user = mapMeToUser(me);
@@ -252,12 +316,32 @@ export async function initializeAuthState(): Promise<void> {
         store.setSession(null);
         store.setActivePlant(null, null, null);
         debugAuth("initialize:no-user");
+        lastInitializeError = "no-user";
       }
-    } catch {
-      store.setUser(null);
-      store.setSession(null);
-      store.setActivePlant(null, null, null);
-      debugAuth("initialize:error");
+    } catch (error) {
+      debugAuth("initialize:error", error);
+      lastInitializeError = error instanceof Error ? error.message : "unknown";
+
+      const isAuthError = error && typeof error === "object" && "status" in error;
+      const status = isAuthError ? (error as any).status : 0;
+
+      if (status === 401) {
+        // 401 means token expired/revoked — clear auth and redirect
+        store.setUser(null);
+        store.setSession(null);
+        store.setActivePlant(null, null, null);
+        if (typeof window !== "undefined") {
+          const path = window.location.pathname;
+          const isPublic = path === "/login" || path.startsWith("/qr/") || path.startsWith("/assets/");
+          if (!isPublic) {
+            window.location.href = `/login?returnTo=${encodeURIComponent(window.location.pathname + window.location.search + window.location.hash)}`;
+          }
+        }
+      } else {
+        // Transient error (network, 5xx, etc.) — keep session alive, just mark not loading
+        // The app renders cached/empty state and will retry on next action
+        debugAuth("initialize:transient-error-keeping-session", { status });
+      }
     } finally {
       store.setLoading(false);
       initializeAuthStateInFlight = null;

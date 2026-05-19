@@ -2,10 +2,9 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { LucideIcon } from "lucide-react";
-import { motion } from "framer-motion";
 
 const kpiCardVariants = cva(
-  "relative overflow-hidden rounded-xl border bg-card p-3 sm:p-4 lg:p-6 shadow-card transition-all duration-300 hover:shadow-card-hover",
+  "relative overflow-hidden rounded-xl border bg-card p-3 sm:p-4 lg:p-6 shadow-card",
   {
     variants: {
       variant: {
@@ -64,14 +63,10 @@ export function KPICard({
   className,
 }: KPICardProps) {
   return (
-    <motion.div
-      whileHover={{ y: -5, scale: 1.02 }}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
+    <div
       className={cn(
-        "group relative overflow-hidden rounded-[2rem] border p-6 transition-all duration-500",
-        "bg-white/40 backdrop-blur-xl shadow-industrial-sm hover:shadow-industrial",
+        "group relative overflow-hidden rounded-[2rem] border p-6",
+        "bg-white/40 backdrop-blur-xl shadow-industrial-sm",
         variant === "primary" ? "border-primary/20 bg-gradient-to-br from-primary/[0.08] to-transparent" :
         variant === "success" ? "border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.08] to-transparent" :
         variant === "warning" ? "border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] to-transparent" :
@@ -84,7 +79,7 @@ export function KPICard({
       <div className="relative z-10 flex items-start justify-between">
         <div className="space-y-4">
           <div className="space-y-1">
-             <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 group-hover:text-slate-600 transition-colors">
+             <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 text-slate-600">
                {title}
              </p>
              <h3 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
@@ -102,7 +97,7 @@ export function KPICard({
                </div>
              )}
              {subtitle && (
-               <p className="text-[11px] font-bold text-slate-400 group-hover:text-slate-500 transition-colors">
+               <p className="text-[11px] font-bold text-slate-400 text-slate-500">
                  {subtitle}
                </p>
              )}
@@ -110,7 +105,7 @@ export function KPICard({
         </div>
 
         <div className={cn(
-          "flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-500 group-hover:scale-110",
+          "flex h-14 w-14 items-center justify-center rounded-2xl",
           variant === "primary" ? "bg-primary/10 text-primary shadow-lg shadow-primary/10" :
           variant === "success" ? "bg-emerald-500/10 text-emerald-600 shadow-lg shadow-emerald-500/10" :
           variant === "warning" ? "bg-amber-500/10 text-amber-600 shadow-lg shadow-amber-500/10" :
@@ -124,7 +119,7 @@ export function KPICard({
       
       {/* Dynamic Ambient Glow */}
       <div className={cn(
-        "absolute -right-6 -bottom-6 h-32 w-32 rounded-full blur-3xl opacity-20 transition-opacity group-hover:opacity-40",
+        "absolute -right-6 -bottom-6 h-32 w-32 rounded-full blur-3xl opacity-20 opacity-20",
         variant === "primary" ? "bg-primary" :
         variant === "success" ? "bg-emerald-500" :
         variant === "warning" ? "bg-amber-500" :
@@ -132,6 +127,6 @@ export function KPICard({
         variant === "info" ? "bg-sky-500" :
         "bg-slate-300"
       )} />
-    </motion.div>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 import { AppDataSource } from '../database/data-source';
 import { RbacMetaEntity } from '../database/entities';
+import { emitDashboardRefresh } from '../realtime/dashboard-socket';
 
 const RBAC_META_ID = 1;
 
@@ -23,6 +24,13 @@ export async function bumpRbacVersion(): Promise<number> {
   const row = await ensureMetaRow();
   row.version += 1;
   const saved = await repo.save(row);
+  
+  try {
+    emitDashboardRefresh('mutation');
+  } catch {
+    // Ignore failures if the WebSocket server is offline or restarting
+  }
+
   return saved.version;
 }
 

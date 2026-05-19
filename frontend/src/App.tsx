@@ -1,66 +1,74 @@
-import { useEffect, useRef } from "react";
+import { lazy, useEffect, useRef } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { initializeAuthState, isRootAdmin, useAuthStore } from "@/store/auth.store";
+import { initializeAuthState, isRootAdmin, isSuperAdmin, hasRole, useAuthStore } from "@/store/auth.store";
 import { ModuleGuard } from "@/components/guards/ModuleGuard";
 import { AppErrorBoundary } from "@/components/guards/AppErrorBoundary";
+import { RouteErrorBoundary } from "@/components/guards/RouteErrorBoundary";
+import { SafeRoute } from "@/components/guards/SafeRoute";
+import { SuspenseLoader } from "@/components/guards/SuspenseLoader";
+import { getStoredAccessToken } from "@/api/token";
 import { queueWebappLog } from "@/api/logs";
 
-// Main Pages
-import Login from "@/pages/Login";
-import Dashboard from "@/pages/Dashboard";
-import AMC from "@/pages/AMC";
-import WorkOrders from "@/pages/WorkOrders";
-import Assets from "@/pages/Assets";
-import PreventiveMaintenance from "@/pages/PreventiveMaintenance";
-import Calibration from "@/pages/Calibration";
-import ESG from "@/pages/ESG";
-import Inventory from "@/pages/Inventory";
-import Reports from "@/pages/Reports";
-import SecurityCenter from "@/pages/SecurityCenter";
-import SecurityGate from "@/pages/SecurityGate";
-import VisitorExperience from "@/pages/VisitorExperience";
-import Masters from "@/pages/Masters";
-import Logs from "@/pages/Logs";
-import NotFound from "@/pages/NotFound";
-import Forbidden from "@/pages/Forbidden";
+// Lazy-loaded page components for code splitting
+const Login = lazy(() => import("@/pages/Login"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const AMC = lazy(() => import("@/pages/AMC"));
+const WorkOrders = lazy(() => import("@/pages/WorkOrders"));
+const Assets = lazy(() => import("@/pages/Assets"));
+const PreventiveMaintenance = lazy(() => import("@/pages/PreventiveMaintenance"));
+const Calibration = lazy(() => import("@/pages/Calibration"));
+const ESG = lazy(() => import("@/pages/ESG"));
+const Inventory = lazy(() => import("@/pages/Inventory"));
+const Reports = lazy(() => import("@/pages/Reports"));
+const SecurityCenter = lazy(() => import("@/pages/SecurityCenter"));
+const SecurityGate = lazy(() => import("@/pages/SecurityGate"));
+const VisitorExperience = lazy(() => import("@/pages/VisitorExperience"));
+const Masters = lazy(() => import("@/pages/Masters"));
+const Logs = lazy(() => import("@/pages/Logs"));
+const NotFound = lazy(() => import("@/pages/NotFound"));
+const Forbidden = lazy(() => import("@/pages/Forbidden"));
 
-// Master Pages
-import PlantMaster from "@/pages/masters/PlantMaster";
-import DepartmentMaster from "@/pages/masters/DepartmentMaster";
-import ModulesMaster from "@/pages/masters/ModulesMaster";
-import MachinesMaster from "@/pages/masters/MachinesMaster";
-import CostCentersMaster from "@/pages/masters/CostCentersMaster";
-import VendorsMaster from "@/pages/masters/VendorsMaster";
-import UsersMaster from "@/pages/masters/UsersMaster";
-import PMConfigMaster from "@/pages/masters/PMConfigMaster";
-import CalibrationConfigMaster from "@/pages/masters/CalibrationConfigMaster";
-import AMCConfigMaster from "@/pages/masters/AMCConfigMaster";
-import ESGConfigMaster from "@/pages/masters/ESGConfigMaster";
-import MachineInstrumentsMaster from "@/pages/masters/MachineInstrumentsMaster";
-import ShiftMaster from "@/pages/masters/ShiftMaster";
-import MaintenanceTeamsMaster from "@/pages/masters/MaintenanceTeamsMaster";
-import WorkOrderConfigMaster from "@/pages/masters/WorkOrderConfigMaster";
-import GateMaster from "@/pages/masters/GateMaster";
-import SafetyConfigMaster from "@/pages/masters/SafetyConfigMaster";
-import EmailReportsMaster from "@/pages/masters/EmailReportsMaster";
-import LogTemplateMaster from "@/pages/masters/LogTemplateMaster";
-import MailConfigMaster from "@/pages/root/MailConfigMaster";
-import SLAConfigMaster from "@/pages/root/SLAConfigMaster";
-import RootDashboard from "@/pages/root/RootDashboard";
-import RootOrganizationMaster from "@/pages/root/RootOrganizationMaster";
-import RootPlantMaster from "@/pages/root/RootPlantMaster";
-import RootRoleAccessMaster from "@/pages/root/RootRoleAccessMaster";
-import RootUsersMaster from "@/pages/root/RootUsersMaster";
-import QrScanResolver from "@/pages/mobile/QrScanResolver";
-import MachineQuickCard from "@/pages/mobile/MachineQuickCard";
-import TechnicianDashboard from "@/pages/mobile/TechnicianDashboard";
-import LiveQrScan from "@/pages/mobile/LiveQrScan";
-import PublicQrAssetPage from "@/pages/public/PublicQrAssetPage";
+// Lazy-loaded Master Pages
+const PlantMaster = lazy(() => import("@/pages/masters/PlantMaster"));
+const DepartmentMaster = lazy(() => import("@/pages/masters/DepartmentMaster"));
+const ModulesMaster = lazy(() => import("@/pages/masters/ModulesMaster"));
+const MachinesMaster = lazy(() => import("@/pages/masters/MachinesMaster"));
+const CostCentersMaster = lazy(() => import("@/pages/masters/CostCentersMaster"));
+const VendorsMaster = lazy(() => import("@/pages/masters/VendorsMaster"));
+const UsersMaster = lazy(() => import("@/pages/masters/UsersMaster"));
+const PMConfigMaster = lazy(() => import("@/pages/masters/PMConfigMaster"));
+const CalibrationConfigMaster = lazy(() => import("@/pages/masters/CalibrationConfigMaster"));
+const AMCConfigMaster = lazy(() => import("@/pages/masters/AMCConfigMaster"));
+const ESGConfigMaster = lazy(() => import("@/pages/masters/ESGConfigMaster"));
+const MachineInstrumentsMaster = lazy(() => import("@/pages/masters/MachineInstrumentsMaster"));
+const ShiftMaster = lazy(() => import("@/pages/masters/ShiftMaster"));
+const MaintenanceTeamsMaster = lazy(() => import("@/pages/masters/MaintenanceTeamsMaster"));
+const WorkOrderConfigMaster = lazy(() => import("@/pages/masters/WorkOrderConfigMaster"));
+const GateMaster = lazy(() => import("@/pages/masters/GateMaster"));
+const SafetyConfigMaster = lazy(() => import("@/pages/masters/SafetyConfigMaster"));
+const EmailReportsMaster = lazy(() => import("@/pages/masters/EmailReportsMaster"));
+const LogTemplateMaster = lazy(() => import("@/pages/masters/LogTemplateMaster"));
+
+// Lazy-loaded Root Pages
+const MailConfigMaster = lazy(() => import("@/pages/root/MailConfigMaster"));
+const SLAConfigMaster = lazy(() => import("@/pages/root/SLAConfigMaster"));
+const RootDashboard = lazy(() => import("@/pages/root/RootDashboard"));
+const RootOrganizationMaster = lazy(() => import("@/pages/root/RootOrganizationMaster"));
+const RootPlantMaster = lazy(() => import("@/pages/root/RootPlantMaster"));
+const RootRoleAccessMaster = lazy(() => import("@/pages/root/RootRoleAccessMaster"));
+const RootUsersMaster = lazy(() => import("@/pages/root/RootUsersMaster"));
+
+// Lazy-loaded Mobile Pages
+const QrScanResolver = lazy(() => import("@/pages/mobile/QrScanResolver"));
+const MachineQuickCard = lazy(() => import("@/pages/mobile/MachineQuickCard"));
+const TechnicianDashboard = lazy(() => import("@/pages/mobile/TechnicianDashboard"));
+const LiveQrScan = lazy(() => import("@/pages/mobile/LiveQrScan"));
+const PublicQrAssetPage = lazy(() => import("@/pages/public/PublicQrAssetPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -181,8 +189,17 @@ function WebappErrorLogger() {
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuthStore();
+  const accessToken = getStoredAccessToken();
   const location = useLocation();
-  const rootAllowedPaths = ["/root/dashboard", "/root/organizations", "/root/plant", "/root/users", "/root/role-access", "/root/role-accesss", "/root/mail-config", "/root/sla-config"];
+  const rootAllowedPaths = [
+    "/root/dashboard",
+    "/root/organizations",
+    "/root/plant",
+    "/root/users",
+    "/root/role-access",
+    "/root/mail-config",
+    "/root/sla-config"
+  ];
   const isAllowedForRoot = rootAllowedPaths.some((path) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`)
   );
@@ -191,13 +208,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 border-3 border-primary/30 border-t-primary rounded-full animate-spin" />
+          <div className="h-8 w-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
           <p className="text-sm text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
   }
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !accessToken) {
     const returnTo = `${location.pathname}${location.search}${location.hash}`;
     return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
   }
@@ -221,7 +238,16 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuthStore();
-  if (isLoading) return null;
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
   if (isAuthenticated) return <Navigate to={isRootAdmin(user) ? "/root/dashboard" : "/"} replace />;
   return <>{children}</>;
 }
@@ -229,7 +255,13 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     debugLog("[AUTH] initializeAuthState:start");
+    const timeout = setTimeout(() => {
+      // Safety: if initialization hasn't completed in 10s, force set loading to false
+      useAuthStore.getState().setLoading(false);
+      debugLog("[AUTH] initializeAuthState:timeout-safety");
+    }, 10000);
     void initializeAuthState().finally(() => {
+      clearTimeout(timeout);
       debugLog("[AUTH] initializeAuthState:done");
     });
   }, []);
@@ -263,7 +295,7 @@ function HomeRoute() {
 
   return (
     <ModuleGuard moduleId="dashboard">
-      <Dashboard />
+      <SuspenseLoader><Dashboard /></SuspenseLoader>
     </ModuleGuard>
   );
 }
@@ -276,6 +308,14 @@ function RootOnlyRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function SLAConfigRoute() {
+  const { user } = useAuthStore();
+  if (isRootAdmin(user) || isSuperAdmin(user) || hasRole(user, ["ADMIN"])) {
+    return <SuspenseLoader><SLAConfigMaster /></SuspenseLoader>;
+  }
+  return <Navigate to="/403" replace />;
+}
+
 function PlantMasterRoute() {
   const { user } = useAuthStore();
   if (isRootAdmin(user)) {
@@ -283,7 +323,7 @@ function PlantMasterRoute() {
   }
   return (
     <ModuleGuard moduleId="PLANTS">
-      <PlantMaster />
+      <SuspenseLoader><PlantMaster /></SuspenseLoader>
     </ModuleGuard>
   );
 }
@@ -295,7 +335,7 @@ function UsersMasterRoute() {
   }
   return (
     <ModuleGuard moduleId="masters.users">
-      <UsersMaster />
+      <SuspenseLoader><UsersMaster /></SuspenseLoader>
     </ModuleGuard>
   );
 }
@@ -339,7 +379,7 @@ function SecurityGateRoute() {
 
   return (
     <ModuleGuard moduleId="security-gate">
-      <SecurityGate />
+      <SuspenseLoader><SecurityGate /></SuspenseLoader>
     </ModuleGuard>
   );
 }
@@ -355,7 +395,7 @@ function SecurityCenterRoute() {
 
   return (
     <ModuleGuard moduleId="security-center">
-      <SecurityCenter />
+      <SuspenseLoader><SecurityCenter /></SuspenseLoader>
     </ModuleGuard>
   );
 }
@@ -365,7 +405,7 @@ function CatchAllRoute() {
   if (isAuthenticated && isRootAdmin(user)) {
     return <Navigate to="/root/dashboard" replace />;
   }
-  return <NotFound />;
+  return <SuspenseLoader><NotFound /></SuspenseLoader>;
 }
 
 function App() {
@@ -388,68 +428,68 @@ function App() {
             <WebappErrorLogger />
             <AuthProvider>
               <Routes>
-                <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-                <Route path="/qr/:token" element={<PublicQrAssetPage />} />
-                <Route path="/assets/:machineCode" element={<PublicQrAssetPage />} />
-                <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
-                  <Route path="/" element={<HomeRoute />} />
-                  <Route path="/root/dashboard" element={<RootOnlyRoute><RootDashboard /></RootOnlyRoute>} />
-                  <Route path="/root/plant" element={<RootOnlyRoute><RootPlantMaster /></RootOnlyRoute>} />
-                  <Route path="/root/users" element={<RootOnlyRoute><RootUsersMaster /></RootOnlyRoute>} />
-                  <Route path="/root/role-access" element={<RootOnlyRoute><RootRoleAccessMaster /></RootOnlyRoute>} />
-                  <Route path="/root/role-accesss" element={<Navigate to="/root/role-access" replace />} />
-                  <Route path="/amc" element={<ModuleGuard moduleId="amc"><AMC /></ModuleGuard>} />
-                  <Route path="/work-orders" element={<ModuleGuard moduleId="workorders"><WorkOrders /></ModuleGuard>} />
-                  <Route path="/technician" element={<ModuleGuard moduleId="workorders"><TechnicianDashboard /></ModuleGuard>} />
-                  <Route path="/scan/live" element={<ModuleGuard moduleId="workorders"><LiveQrScan /></ModuleGuard>} />
-                  <Route path="/scan/:token" element={<ModuleGuard moduleId="workorders"><QrScanResolver /></ModuleGuard>} />
-                  <Route path="/machine/:machineId" element={<ModuleGuard moduleId="workorders"><MachineQuickCard /></ModuleGuard>} />
-                  <Route path="/assets" element={<ModuleGuard moduleId="assets"><Assets /></ModuleGuard>} />
-                  <Route path="/preventive-maintenance" element={<ModuleGuard moduleId="pmpd"><PreventiveMaintenance /></ModuleGuard>} />
-                  <Route path="/calibration" element={<ModuleGuard moduleId="calibration"><Calibration /></ModuleGuard>} />
-                  <Route path="/esg" element={<ModuleGuard moduleId="esg"><ESG /></ModuleGuard>} />
-                  <Route path="/inventory" element={<ModuleGuard moduleId="inventory"><Inventory /></ModuleGuard>} />
-                  <Route path="/reports" element={<ModuleGuard moduleId="reports"><Reports /></ModuleGuard>} />
-                  <Route path="/security-center" element={<SecurityCenterRoute />} />
-                  <Route path="/security-gate" element={<SecurityGateRoute />} />
-                  <Route path="/visitor-experience" element={<ModuleGuard moduleId="visitor-experience"><VisitorExperience /></ModuleGuard>} />
-                  <Route path="/logs" element={<ModuleGuard moduleId="logs"><Logs /></ModuleGuard>} />
-                  <Route path="/403" element={<Forbidden />} />
+                <Route path="/login" element={<SafeRoute><PublicRoute><SuspenseLoader><Login /></SuspenseLoader></PublicRoute></SafeRoute>} />
+                <Route path="/qr/:token" element={<SafeRoute><SuspenseLoader><PublicQrAssetPage /></SuspenseLoader></SafeRoute>} />
+                <Route path="/assets/:machineCode" element={<SafeRoute><SuspenseLoader><PublicQrAssetPage /></SuspenseLoader></SafeRoute>} />
+                <Route element={<SafeRoute><ProtectedRoute><MainLayout /></ProtectedRoute></SafeRoute>}>
+                  <Route path="/" element={<SafeRoute><HomeRoute /></SafeRoute>} />
+                  <Route path="/root/dashboard" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootDashboard /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                  <Route path="/root/plant" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootPlantMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                  <Route path="/root/users" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootUsersMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                  <Route path="/root/role-access" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootRoleAccessMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                  <Route path="/root/role-accesss" element={<SafeRoute><Navigate to="/root/role-access" replace /></SafeRoute>} />
+                  <Route path="/amc" element={<SafeRoute><ModuleGuard moduleId="amc"><SuspenseLoader><AMC /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/work-orders" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><WorkOrders /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/technician" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><TechnicianDashboard /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/scan/live" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><LiveQrScan /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/scan/:token" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><QrScanResolver /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/machine/:machineId" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><MachineQuickCard /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/assets" element={<SafeRoute><ModuleGuard moduleId="assets"><SuspenseLoader><Assets /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/preventive-maintenance" element={<SafeRoute><ModuleGuard moduleId="pmpd"><SuspenseLoader><PreventiveMaintenance /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/calibration" element={<SafeRoute><ModuleGuard moduleId="calibration"><SuspenseLoader><Calibration /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/esg" element={<SafeRoute><ModuleGuard moduleId="esg"><SuspenseLoader><ESG /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/inventory" element={<SafeRoute><ModuleGuard moduleId="inventory"><SuspenseLoader><Inventory /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/reports" element={<SafeRoute><ModuleGuard moduleId="reports"><SuspenseLoader><Reports /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/security-center" element={<SafeRoute><SecurityCenterRoute /></SafeRoute>} />
+                  <Route path="/security-gate" element={<SafeRoute><SecurityGateRoute /></SafeRoute>} />
+                  <Route path="/visitor-experience" element={<SafeRoute><ModuleGuard moduleId="visitor-experience"><SuspenseLoader><VisitorExperience /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/logs" element={<SafeRoute><ModuleGuard moduleId="logs"><SuspenseLoader><Logs /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/403" element={<SafeRoute><SuspenseLoader><Forbidden /></SuspenseLoader></SafeRoute>} />
 
-                  <Route path="/masters" element={<ModuleGuard moduleId="masters"><Masters /></ModuleGuard>} />
-                  <Route path="/root/organizations" element={<RootOnlyRoute><RootOrganizationMaster /></RootOnlyRoute>} />
-                  <Route path="/root/mail-config" element={<RootOnlyRoute><MailConfigMaster /></RootOnlyRoute>} />
-                  <Route path="/root/sla-config" element={<RootOnlyRoute><SLAConfigMaster /></RootOnlyRoute>} />
-                  <Route path="/masters/organizations" element={<Navigate to="/root/organizations" replace />} />
-                  <Route path="/masters/mail-config" element={<Navigate to="/root/mail-config" replace />} />
-                  <Route path="/masters/sla-config" element={<Navigate to="/root/sla-config" replace />} />
-                  <Route path="/masters/plant" element={<PlantMasterRoute />} />
-                  <Route path="/masters/departments" element={<ModuleGuard moduleId="masters.departments"><DepartmentMaster /></ModuleGuard>} />
-                  <Route path="/masters/modules" element={<ModuleGuard moduleId="masters.modules"><ModulesMaster /></ModuleGuard>} />
-                  <Route path="/masters/machines" element={<ModuleGuard moduleId="masters.machines"><MachinesMaster /></ModuleGuard>} />
-                  <Route path="/masters/cost-centers" element={<ModuleGuard moduleId="masters.cost-centers"><CostCentersMaster /></ModuleGuard>} />
-                  <Route path="/masters/vendors" element={<ModuleGuard moduleId="masters.vendors"><VendorsMaster /></ModuleGuard>} />
-                  <Route path="/masters/users" element={<UsersMasterRoute />} />
-                  <Route path="/masters/role-access" element={<RoleAccessRoute />} />
-                  <Route path="/masters/role-accesss" element={<RoleAccessRoute />} />
-                  <Route path="/masters/pm-config" element={<ModuleGuard moduleId="masters.pm-config"><PMConfigMaster /></ModuleGuard>} />
-                  <Route path="/masters/calibration-config" element={<ModuleGuard moduleId="masters.calibration-config"><CalibrationConfigMaster /></ModuleGuard>} />
-                  <Route path="/masters/amc-config" element={<ModuleGuard moduleId="masters.amc-config"><AMCConfigMaster /></ModuleGuard>} />
-                  <Route path="/masters/esg-config" element={<ModuleGuard moduleId="masters.esg-config"><ESGConfigMaster /></ModuleGuard>} />
-                  <Route path="/masters/gates" element={<ModuleGuard moduleId="masters.gates"><GateMaster /></ModuleGuard>} />
-                  <Route path="/masters/gate-templates" element={<Navigate to="/masters/gates" replace />} />
-                  <Route path="/masters/safety-config" element={<ModuleGuard moduleId="masters.safety-config"><SafetyConfigMaster /></ModuleGuard>} />
-                  <Route path="/masters/email-reports" element={<ModuleGuard moduleId="masters.email-reports"><EmailReportsMaster /></ModuleGuard>} />
-                  <Route path="/masters/log-templates" element={<ModuleGuard moduleId="masters.log-templates"><LogTemplateMaster /></ModuleGuard>} />
-                  <Route path="/masters/mail-config" element={<Navigate to="/root/mail-config" replace />} />
-                  <Route path="/masters/sla-config" element={<Navigate to="/root/sla-config" replace />} />
-                  <Route path="/masters/machine-instruments" element={<ModuleGuard moduleId="masters.machine-instruments"><MachineInstrumentsMaster /></ModuleGuard>} />
-                  <Route path="/masters/shifts" element={<ModuleGuard moduleId="masters.shifts"><ShiftMaster /></ModuleGuard>} />
-                  <Route path="/masters/maintenance-teams" element={<ModuleGuard moduleId="masters.maintenance-teams"><MaintenanceTeamsMaster /></ModuleGuard>} />
-                  <Route path="/masters/work-order-config" element={<ModuleGuard moduleId="masters.workorder-team-mapping"><WorkOrderConfigMaster /></ModuleGuard>} />
-                  <Route path="/masters/work-order-team-mapping" element={<Navigate to="/masters/work-order-config" replace />} />
+                  <Route path="/masters" element={<SafeRoute><ModuleGuard moduleId="masters"><SuspenseLoader><Masters /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/root/organizations" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootOrganizationMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                  <Route path="/root/mail-config" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><MailConfigMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                  <Route path="/root/sla-config" element={<SafeRoute><Navigate to="/masters/sla-config" replace /></SafeRoute>} />
+                  <Route path="/masters/organizations" element={<SafeRoute><Navigate to="/root/organizations" replace /></SafeRoute>} />
+                  <Route path="/masters/mail-config" element={<SafeRoute><Navigate to="/root/mail-config" replace /></SafeRoute>} />
+                  <Route path="/masters/sla-config" element={<SafeRoute><SLAConfigRoute /></SafeRoute>} />
+                  <Route path="/masters/plant" element={<SafeRoute><PlantMasterRoute /></SafeRoute>} />
+                  <Route path="/masters/departments" element={<SafeRoute><ModuleGuard moduleId="masters.departments"><SuspenseLoader><DepartmentMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/modules" element={<SafeRoute><ModuleGuard moduleId="masters.modules"><SuspenseLoader><ModulesMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/machines" element={<SafeRoute><ModuleGuard moduleId="masters.machines"><SuspenseLoader><MachinesMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/cost-centers" element={<SafeRoute><ModuleGuard moduleId="masters.cost-centers"><SuspenseLoader><CostCentersMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/vendors" element={<SafeRoute><ModuleGuard moduleId="masters.vendors"><SuspenseLoader><VendorsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/users" element={<SafeRoute><UsersMasterRoute /></SafeRoute>} />
+                  <Route path="/masters/role-access" element={<SafeRoute><RoleAccessRoute /></SafeRoute>} />
+                  <Route path="/masters/role-accesss" element={<SafeRoute><RoleAccessRoute /></SafeRoute>} />
+                  <Route path="/masters/pm-config" element={<SafeRoute><ModuleGuard moduleId="masters.pm-config"><SuspenseLoader><PMConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/calibration-config" element={<SafeRoute><ModuleGuard moduleId="masters.calibration-config"><SuspenseLoader><CalibrationConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/amc-config" element={<SafeRoute><ModuleGuard moduleId="masters.amc-config"><SuspenseLoader><AMCConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/esg-config" element={<SafeRoute><ModuleGuard moduleId="masters.esg-config"><SuspenseLoader><ESGConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/gates" element={<SafeRoute><ModuleGuard moduleId="masters.gates"><SuspenseLoader><GateMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/gate-templates" element={<SafeRoute><Navigate to="/masters/gates" replace /></SafeRoute>} />
+                  <Route path="/masters/safety-config" element={<SafeRoute><ModuleGuard moduleId="masters.safety-config"><SuspenseLoader><SafetyConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/email-reports" element={<SafeRoute><ModuleGuard moduleId="masters.email-reports"><SuspenseLoader><EmailReportsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/log-templates" element={<SafeRoute><ModuleGuard moduleId="masters.log-templates"><SuspenseLoader><LogTemplateMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/mail-config" element={<SafeRoute><Navigate to="/root/mail-config" replace /></SafeRoute>} />
+                  <Route path="/masters/sla-config" element={<SafeRoute><SLAConfigRoute /></SafeRoute>} />
+                  <Route path="/masters/machine-instruments" element={<SafeRoute><ModuleGuard moduleId="masters.machine-instruments"><SuspenseLoader><MachineInstrumentsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/shifts" element={<SafeRoute><ModuleGuard moduleId="masters.shifts"><SuspenseLoader><ShiftMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/maintenance-teams" element={<SafeRoute><ModuleGuard moduleId="masters.maintenance-teams"><SuspenseLoader><MaintenanceTeamsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/work-order-config" element={<SafeRoute><ModuleGuard moduleId="masters.workorder-team-mapping"><SuspenseLoader><WorkOrderConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                  <Route path="/masters/work-order-team-mapping" element={<SafeRoute><Navigate to="/masters/work-order-config" replace /></SafeRoute>} />
                 </Route>
-                <Route path="*" element={<CatchAllRoute />} />
+                <Route path="*" element={<SafeRoute><CatchAllRoute /></SafeRoute>} />
               </Routes>
             </AuthProvider>
           </AppErrorBoundary>

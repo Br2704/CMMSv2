@@ -1,5 +1,4 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +16,7 @@ import { dbClient } from "@/api/dbClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { downloadAdvancedReliabilityReport, getAdvancedReliabilityReport } from "@/api/reports";
 import { listWorkOrderMasters, type WorkOrderMaster } from "@/api/workOrderMasters";
+import { listMaintenanceReports } from "@/api/maintenance-reports";
 import { subscribeWorkOrderSync } from "@/lib/work-order-sync";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -24,6 +24,7 @@ import {
 } from "recharts";
 import { format, subDays, eachDayOfInterval, differenceInMinutes, parseISO } from "date-fns";
 import { KPICard } from "@/components/dashboard/KPICard";
+import { ParetoChart } from "@/components/dashboard/Charts";
 import { hoursToMinutes } from "@/lib/time";
 
 const COLORS = [
@@ -268,6 +269,14 @@ export default function Reports() {
     queryKey: ["report_work_order_masters"],
     queryFn: async () => {
       const response = await listWorkOrderMasters({ page: 1, limit: 2000, includeInactive: false });
+      return response.data || [];
+    },
+  });
+
+  const { data: mReports = [] } = useQuery({
+    queryKey: ["report_maintenance_list"],
+    queryFn: async () => {
+      const response = await listMaintenanceReports({ page: 1, limit: 1000 });
       return response.data || [];
     },
   });
@@ -621,7 +630,7 @@ export default function Reports() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight lg:text-3xl">Reports & Analytics</h1>
           <p className="text-sm text-muted-foreground">Comprehensive insights — MTTR, MTBF, safety, inventory & more</p>
@@ -630,7 +639,7 @@ export default function Reports() {
           { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" },
           { value: "90", label: "Last 90 days" }, { value: "365", label: "Last year" },
         ]} className="w-[150px]" />
-      </motion.div>
+      </div>
 
       {isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
@@ -649,6 +658,7 @@ export default function Reports() {
           <Tabs defaultValue="mttr_analysis" className="space-y-4">
             <TabsList className="flex-wrap h-auto gap-1">
               <TabsTrigger value="mttr_analysis">MTTR / MTBF</TabsTrigger>
+              <TabsTrigger value="maintenance_reports">Maintenance Reports</TabsTrigger>
               <TabsTrigger value="work_orders">Work Orders</TabsTrigger>
               <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
               <TabsTrigger value="safety">Safety</TabsTrigger>
@@ -682,6 +692,57 @@ export default function Reports() {
                         <KPICard title="MTBF" value={`${hoursToMinutes(advancedReliability.summary.mtbfHours)} min`} subtitle="between failures" icon={TrendingUp} variant="success" />
                         <KPICard title="Availability" value={`${advancedReliability.summary.availabilityPercent}%`} subtitle="operational" icon={Gauge} variant="primary" />
                       </div>
+                      
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <Card className="shadow-card">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm">Failure Distribution</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="h-[250px]">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie
+                                    data={Object.entries(mReports.reduce((acc: any, r: any) => {
+                                      const cat = r.actualFailureCategory || "OTHER";
+                                      acc[cat] = (acc[cat] || 0) + 1;
+                                      return acc;
+                                    }, {})).map(([name, value]) => ({ name, value: Number(value) }))}
+                                    cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={5} dataKey="value"
+                                  >
+                                    {COLORS.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                                  </Pie>
+                                  <Tooltip /><Legend />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        
+                        <Card className="shadow-card">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm">Root Cause Trends</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="h-[250px]">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={Object.entries(mReports.reduce((acc: any, r: any) => {
+                                  const rc = r.subRootCause || "OTHER";
+                                  acc[rc] = (acc[rc] || 0) + 1;
+                                  return acc;
+                                }, {})).map(([name, value]) => ({ name, value: Number(value) })).sort((a,b) => b.value - a.value).slice(0, 5)}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis dataKey="name" className="text-[10px]" />
+                                  <YAxis className="text-[10px]" />
+                                  <Tooltip />
+                                  <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+
                       <div className="flex gap-2 flex-wrap">
                         <Button
                           variant="outline"
@@ -777,6 +838,73 @@ export default function Reports() {
                     </CardContent>
                   </Card>
                 )}
+              </div>
+            </TabsContent>
+            
+            {/* Maintenance Reports Tab */}
+            <TabsContent value="maintenance_reports">
+              <div className="space-y-4">
+                <Card className="shadow-card overflow-hidden">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <div>
+                      <CardTitle className="text-base">Industrial Maintenance Reports</CardTitle>
+                      <p className="text-xs text-muted-foreground">High-fidelity closure records for every work order</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => downloadCSV("maintenance_reports.csv", 
+                      ["WO #", "Asset", "Date", "Failure Cat", "Root Cause", "Downtime", "Repair Time"],
+                      mReports.map(r => [r.woNumber, r.assetName, r.closureDate, r.actualFailureCategory || "", r.rootCause || "", r.totalDowntime, r.actualRepairTime].map(String))
+                    )}>
+                      <Download className="h-3.5 w-3.5 mr-2" /> Export Log
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm text-left">
+                        <thead className="bg-muted/50 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                          <tr>
+                            <th className="px-4 py-3">WO Number</th>
+                            <th className="px-4 py-3">Asset</th>
+                            <th className="px-4 py-3">Closure Date</th>
+                            <th className="px-4 py-3">Failure Category</th>
+                            <th className="px-4 py-3">Root Cause</th>
+                            <th className="px-4 py-3">Downtime (m)</th>
+                            <th className="px-4 py-3">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {mReports.map((report: any) => (
+                            <tr key={report.id} className="hover:bg-muted/30 transition-colors">
+                              <td className="px-4 py-4 font-bold text-primary">{report.woNumber}</td>
+                              <td className="px-4 py-4">{report.assetName}</td>
+                              <td className="px-4 py-4 text-xs text-muted-foreground">
+                                {report.closureDate ? format(parseISO(report.closureDate), "dd MMM yyyy HH:mm") : "-"}
+                              </td>
+                              <td className="px-4 py-4">
+                                <Badge variant="outline" className="font-bold border-primary/20 text-primary bg-primary/5">
+                                  {report.actualFailureCategory || "OTHER"}
+                                </Badge>
+                              </td>
+                              <td className="px-4 py-4 text-xs max-w-[200px] truncate">{report.rootCause || "-"}</td>
+                              <td className="px-4 py-4 font-medium">{report.totalDowntime}</td>
+                              <td className="px-4 py-4">
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="View Detail">
+                                  <FileText className="h-4 w-4" />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                          {mReports.length === 0 && (
+                            <tr>
+                              <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground italic">
+                                No maintenance reports generated yet. Reports are created automatically upon work order closure.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
 
@@ -1079,6 +1207,11 @@ export default function Reports() {
                   <KPICard title="Avg per WO" value={`${Math.round(dtFiltered.filter((w: any) => w.downtime_minutes > 0).reduce((s: number, w: any) => s + w.downtime_minutes, 0) / Math.max(dtFiltered.filter((w: any) => w.downtime_minutes > 0).length, 1))}m`} subtitle="downtime" icon={Timer} variant="warning" />
                   <KPICard title="Assets Affected" value={new Set(dtFiltered.filter((w: any) => w.downtime_minutes > 0).map((w: any) => w.asset_id)).size} subtitle="with downtime" icon={Gauge} variant="info" />
                 </div>
+                <ParetoChart 
+                  data={downtimeByAsset.map(d => ({ name: d.name, value: d.downtime }))} 
+                  title="Pareto Analysis: Downtime Distribution" 
+                  subtitle="Critical Few vs Trivial Many (80/20 Rule)"
+                />
                 <Card className="shadow-card">
                   <CardHeader><CardTitle className="text-base">Top 10 Assets by Downtime (minutes)</CardTitle></CardHeader>
                   <CardContent>

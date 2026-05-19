@@ -32,7 +32,7 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
   const brandingOrganizationName = useBrandingStore((state) => state.organizationName);
   const organizationName = user?.organizationName || brandingOrganizationName || null;
   const { hasModuleAccess } = usePermissions();
-  const canReadNotifications = isRootUser || hasModuleAccess("alerts", "view") || hasModuleAccess("notifications", "view");
+  const canReadNotifications = true;
   const { notifications, unreadCount, loading: notificationsLoading, markAsRead, markAllAsRead, removeNotification } = useNotifications({ enabled: canReadNotifications });
   const navigate = useNavigate();
   const showOrganizationBadge = isSuperAdmin(user) && !activePlantCode && Boolean(organizationName);

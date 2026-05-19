@@ -140,18 +140,18 @@ assetsRouter.get('/assets', requirePermission('ASSETS', 'READ'), async (req, res
     const query = parseListQuery(req.query as Record<string, unknown>);
     const repo = AppDataSource.getRepository(AssetEntity);
     const qb = repo.createQueryBuilder('asset');
-    applySearch(qb, 'asset', query.search, ['code', 'name', 'location', 'serial_number']);
-    applyPlantScope(qb, 'asset', 'plant_id', req.auth!, query.plantId);
+    applySearch(qb, 'asset', query.search, ['code', 'name', 'location', 'serialNumber']);
+    applyPlantScope(qb, 'asset', 'plantId', req.auth!, query.plantId);
     if (!query.includeInactive) {
       qb.andWhere('asset.is_active = :active', { active: true });
     }
     if (query.departmentId) {
-      qb.andWhere('asset.department_id = :departmentId', { departmentId: query.departmentId });
+      qb.andWhere('asset.departmentId = :departmentId', { departmentId: query.departmentId });
     }
     if (query.moduleId) {
-      qb.andWhere('asset.module_id = :moduleId', { moduleId: query.moduleId });
+      qb.andWhere('asset.moduleId = :moduleId', { moduleId: query.moduleId });
     }
-    qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('asset.created_at', 'DESC');
+    qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('asset.createdAt', 'DESC');
     const [data, total] = await qb.getManyAndCount();
     res.json(ok(data, 'Assets fetched', buildPagination(query.page, query.limit, total)));
   } catch (error) {
@@ -716,9 +716,9 @@ assetsRouter.get('/assets/:id/work-orders', requirePermission('WORK_ORDERS', 'RE
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const query = parseListQuery(req.query as Record<string, unknown>);
     const repo = AppDataSource.getRepository(WorkOrderEntity);
-    const qb = repo.createQueryBuilder('wo').where('wo.asset_id = :assetId', { assetId: params.id });
-    applyPlantScope(qb, 'wo', 'plant_id', req.auth!, query.plantId);
-    qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('wo.created_at', 'DESC');
+    const qb = repo.createQueryBuilder('wo').where('wo.assetId = :assetId', { assetId: params.id });
+    applyPlantScope(qb, 'wo', 'plantId', req.auth!, query.plantId);
+    qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('wo.createdAt', 'DESC');
     const [data, total] = await qb.getManyAndCount();
     res.json(ok(data, 'Asset work orders fetched', buildPagination(query.page, query.limit, total)));
   } catch (error) {

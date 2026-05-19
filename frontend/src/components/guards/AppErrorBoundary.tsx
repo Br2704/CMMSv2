@@ -1,6 +1,3 @@
-import { AlertTriangle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Link } from "react-router-dom";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 interface AppErrorBoundaryProps {
@@ -9,18 +6,18 @@ interface AppErrorBoundaryProps {
 
 interface AppErrorBoundaryState {
   hasError: boolean;
+  errorMessage: string;
 }
 
 export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
-  state: AppErrorBoundaryState = { hasError: false };
+  state: AppErrorBoundaryState = { hasError: false, errorMessage: "" };
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, errorMessage: error?.message || "" };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // eslint-disable-next-line no-console
-    console.error("[AppErrorBoundary] Unhandled UI error", error?.message || error, info?.componentStack ? info.componentStack.slice(0, 200) : "");
+    console.error("[AppErrorBoundary]", error?.message || error, info?.componentStack?.slice(0, 300) || "");
   }
 
   render() {
@@ -28,23 +25,55 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
       return this.props.children;
     }
 
+    const errorMsg = this.state.errorMessage;
+    const isAuthError = errorMsg.includes("useAuthStore") || errorMsg.includes("zustand");
+
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <div className="w-full max-w-md space-y-4 rounded-lg border border-border bg-card p-6 text-center shadow-card">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-destructive/10">
-            <AlertTriangle className="h-6 w-6 text-destructive" />
+      <div style={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "column",
+        gap: "16px",
+        padding: "24px",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        textAlign: "center",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      }}>
+        <div style={{
+          width: "100%",
+          maxWidth: "420px",
+          padding: "32px",
+          borderRadius: "12px",
+          border: "1px solid #1e293b",
+          background: "#1e293b",
+        }}>
+          <div style={{ marginBottom: "16px" }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto" }}>
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
           </div>
-          <div>
-            <h1 className="text-xl font-semibold">Something went wrong</h1>
-            <p className="text-sm text-muted-foreground">The page crashed unexpectedly. You can retry or return to dashboard.</p>
-          </div>
-          <div className="flex justify-center gap-2">
-            <Button variant="secondary" onClick={() => window.location.reload()}>
+          <h1 style={{ fontSize: "20px", fontWeight: 600, margin: "0 0 8px" }}>Something went wrong</h1>
+          <p style={{ color: "#94a3b8", margin: "0 0 24px", fontSize: "14px" }}>
+            {isAuthError ? "Authentication error. Please sign in again." : "The page crashed unexpectedly."}
+          </p>
+          <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+            <button onClick={() => window.location.reload()} style={{
+              padding: "8px 24px", borderRadius: "8px", border: "1px solid #334155",
+              background: "transparent", color: "#e2e8f0", cursor: "pointer", fontSize: "14px"
+            }}>
               Reload
-            </Button>
-            <Button asChild>
-              <Link to="/">Dashboard</Link>
-            </Button>
+            </button>
+            <button onClick={() => { window.location.href = "/"; }} style={{
+              padding: "8px 24px", borderRadius: "8px", border: "none",
+              background: "#3b82f6", color: "white", cursor: "pointer", fontSize: "14px", fontWeight: 500
+            }}>
+              Dashboard
+            </button>
           </div>
         </div>
       </div>

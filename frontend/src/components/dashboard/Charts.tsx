@@ -1,8 +1,7 @@
-import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
+  Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, Line
 } from "recharts";
 import { format } from "date-fns";
 
@@ -31,29 +30,26 @@ interface ChartCardProps {
   title: string;
   subtitle: string;
   children: React.ReactNode;
-  delay?: number;
 }
 
-function ChartCard({ title, subtitle, children, delay = 0 }: ChartCardProps) {
+function ChartCard({ title, subtitle, children }: ChartCardProps) {
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay }}>
-      <Card className="shadow-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg font-semibold">{title}</CardTitle>
-          <p className="text-sm text-muted-foreground">{subtitle}</p>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[320px] w-full">{children}</div>
-        </CardContent>
-      </Card>
-    </motion.div>
+    <Card className="shadow-card">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg font-semibold">{title}</CardTitle>
+        <p className="text-sm text-muted-foreground">{subtitle}</p>
+      </CardHeader>
+      <CardContent>
+        <div className="h-[320px] w-full">{children}</div>
+      </CardContent>
+    </Card>
   );
 }
 
 // WO Trend (Raised vs Closed - Area Chart)
 export function WOTrendChart({ data }: { data: { date: string; raised: number; closed: number }[] }) {
   return (
-    <ChartCard title="Work Order Trend" subtitle="Raised vs Closed (Last 7 Days)" delay={0.2}>
+    <ChartCard title="Work Order Trend" subtitle="Raised vs Closed (Last 7 Days)">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -72,7 +68,7 @@ export function WOTrendChart({ data }: { data: { date: string; raised: number; c
 // MTTR Trend (Area chart)
 export function MTTRTrendChart({ data }: { data: { date: string; value: number }[] }) {
   return (
-    <ChartCard title="MTTR Trend" subtitle="Mean Time To Repair (minutes, Last 7 Days)" delay={0.3}>
+    <ChartCard title="MTTR Trend" subtitle="Mean Time To Repair (minutes, Last 7 Days)">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -89,7 +85,7 @@ export function MTTRTrendChart({ data }: { data: { date: string; value: number }
 // WO by Category (Bar Chart)
 export function WOByCategoryChart({ data }: { data: { name: string; value: number }[] }) {
   return (
-    <ChartCard title="Work Orders by Category" subtitle="Distribution across categories" delay={0.4}>
+    <ChartCard title="Work Orders by Category" subtitle="Distribution across categories">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -110,7 +106,7 @@ export function WOByCategoryChart({ data }: { data: { name: string; value: numbe
 // WO by Status (Pie Chart)
 export function WOByStatusChart({ data }: { data: { name: string; value: number }[] }) {
   return (
-    <ChartCard title="Work Orders by Status" subtitle="Current status breakdown" delay={0.3}>
+    <ChartCard title="Work Orders by Status" subtitle="Current status breakdown">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
@@ -146,7 +142,7 @@ export function WOByPriorityChart({ data }: { data: { name: string; value: numbe
     LOW: "hsl(var(--chart-2))",
   };
   return (
-    <ChartCard title="Work Orders by Priority" subtitle="Priority distribution" delay={0.5}>
+    <ChartCard title="Work Orders by Priority" subtitle="Priority distribution">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} layout="vertical">
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -167,7 +163,7 @@ export function WOByPriorityChart({ data }: { data: { name: string; value: numbe
 // MTBF Trend (Area chart)
 export function MTBFTrendChart({ data }: { data: { date: string; value: number }[] }) {
   return (
-    <ChartCard title="MTBF Trend" subtitle="Mean Time Between Failures (minutes, Last 7 Days)" delay={0.35}>
+    <ChartCard title="MTBF Trend" subtitle="Mean Time Between Failures (minutes, Last 7 Days)">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -176,6 +172,36 @@ export function MTBFTrendChart({ data }: { data: { date: string; value: number }
           <Tooltip contentStyle={tooltipStyle} labelFormatter={formatDate} />
           <Area type="monotone" dataKey="value" name="MTBF (min)" stroke="hsl(var(--chart-2))" fill="hsl(var(--chart-2))" fillOpacity={0.15} strokeWidth={2} />
         </AreaChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+// Pareto Chart (80/20 Rule)
+export function ParetoChart({ data, title, subtitle }: { data: { name: string; value: number }[], title: string, subtitle: string }) {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  let cumulative = 0;
+  const paretoData = [...data].sort((a, b) => b.value - a.value).map(item => {
+    cumulative += item.value;
+    return {
+      ...item,
+      percentage: Math.round((cumulative / total) * 100)
+    };
+  });
+
+  return (
+    <ChartCard title={title} subtitle={subtitle}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={paretoData}>
+          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+          <XAxis dataKey="name" {...axisProps} />
+          <YAxis yAxisId="left" {...axisProps} label={{ value: 'Count', angle: -90, position: 'insideLeft' }} />
+          <YAxis yAxisId="right" orientation="right" {...axisProps} domain={[0, 100]} label={{ value: '%', angle: 90, position: 'insideRight' }} />
+          <Tooltip contentStyle={tooltipStyle} />
+          <Legend />
+          <Bar yAxisId="left" dataKey="value" name="Value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+          <Line yAxisId="right" type="monotone" dataKey="percentage" name="Cumulative %" stroke="hsl(var(--chart-2))" strokeWidth={3} dot={{ r: 4 }} />
+        </BarChart>
       </ResponsiveContainer>
     </ChartCard>
   );

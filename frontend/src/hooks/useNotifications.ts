@@ -9,6 +9,7 @@ import {
 } from "@/api/notifications";
 import { ensureAccessToken, getApiBaseUrl, getStoredAccessToken } from "@/api/http";
 import { useAuthStore } from "@/store/auth.store";
+import { toast } from "sonner";
 
 export interface Notification {
   id: string;
@@ -141,6 +142,13 @@ export function useNotifications(options?: { enabled?: boolean }) {
       }, delayMs);
     };
 
+    const abortCurrentStream = () => {
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort();
+        streamAbortRef.current = null;
+      }
+    };
+
     const connectStream = async () => {
       clearReconnect();
 
@@ -212,22 +220,34 @@ export function useNotifications(options?: { enabled?: boolean }) {
       }
     };
 
+    // Proactively close the stream when the page is hidden so the browser
+    // doesn't force-suspend it (which produces ERR_NETWORK_IO_SUSPENDED).
+    // Reconnect immediately when the page becomes visible again.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        abortCurrentStream();
+      } else if (document.visibilityState === "visible") {
+        clearReconnect();
+        void connectStream();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     void connectStream();
 
     return () => {
       cancelled = true;
       clearReconnect();
-      if (streamAbortRef.current) {
-        streamAbortRef.current.abort();
-        streamAbortRef.current = null;
-      }
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      abortCurrentStream();
     };
   }, [authLoading, enabled, fetchNotifications, isAuthenticated, user]);
 
   const unreadCount = notifications.filter((notification) => !notification.is_read).length;
+  const notificationAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (typeof window === "undefined") return;
 
     const firstLoad = seenNotificationIds.current.size === 0;
     const nextSeen = new Set(seenNotificationIds.current);
@@ -236,27 +256,54 @@ export function useNotifications(options?: { enabled?: boolean }) {
       const isNew = !nextSeen.has(notification.id);
       nextSeen.add(notification.id);
 
-      if (!firstLoad && isNew && Notification.permission === "granted") {
-        const browserNotification = new Notification(notification.title, {
-          body: notification.message,
-          tag: notification.id,
-          icon: "/jkfenner/jkfenner-logo.png",
-          badge: "/jkfenner/jkfenner-favicon.svg",
-          requireInteraction: true,
-          data: { url: notification.link, woId: notification.wo_id },
-          actions: [
-            { action: "open", title: "View" },
-            { action: "dismiss", title: "Dismiss" },
-          ],
-        });
-        browserNotification.onclick = (event) => {
-          event.preventDefault();
-          if (notification.link) {
-            window.focus();
-            window.location.assign(notification.link);
+      if (!firstLoad && isNew) {
+        // Play notification chime with reusable audio element
+        try {
+          if (!notificationAudioRef.current) {
+            notificationAudioRef.current = new Audio("/assets/notification.mp3");
+            notificationAudioRef.current.volume = 0.5;
+          } else {
+            notificationAudioRef.current.currentTime = 0;
           }
-          browserNotification.close();
-        };
+          notificationAudioRef.current.play().catch(() => {});
+        } catch (e) {
+          console.error("Failed to play notification chime", e);
+        }
+
+        // Show in-app Sonner Toast popup!
+        toast.info(notification.title, {
+          description: notification.message,
+          action: notification.link
+            ? {
+                label: "View",
+                onClick: () => {
+                  if (notification.link) {
+                    window.location.assign(notification.link);
+                  }
+                },
+              }
+            : undefined,
+        });
+
+        // Trigger native browser notification
+        if ("Notification" in window && Notification.permission === "granted") {
+          const browserNotification = new Notification(notification.title, {
+            body: notification.message,
+            tag: notification.id,
+            icon: "/jkfenner/jkfenner-logo.png",
+            badge: "/jkfenner/jkfenner-favicon.svg",
+            requireInteraction: true,
+            data: { url: notification.link, woId: notification.wo_id },
+          });
+          browserNotification.onclick = (event) => {
+            event.preventDefault();
+            if (notification.link) {
+              window.focus();
+              window.location.assign(notification.link);
+            }
+            browserNotification.close();
+          };
+        }
       }
     }
 
@@ -267,6 +314,19 @@ export function useNotifications(options?: { enabled?: boolean }) {
       navigator.setAppBadge(unread).catch(() => {});
     }
   }, [notifications]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleOnline = () => {
+      void fetchNotifications();
+    };
+
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [fetchNotifications]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

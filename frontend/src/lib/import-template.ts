@@ -1,9 +1,8 @@
-import * as XLSX from "xlsx-js-style";
 import ExcelJS from "exceljs";
 
 export interface CsvTemplateColumn {
   key: string;
-  label?: string;
+  label: string;
   required?: boolean;
   example?: string;
   description?: string;
@@ -258,7 +257,7 @@ export async function downloadEnterpriseExcelTemplate(config: ExcelTemplateConfi
   const headerRowCount = isUserTemplate ? 6 : 5; // User wants row 7 for users (6 header rows), row 6 for machines (5 header rows)
 
   const ws = workbook.addWorksheet(config.uploadSheetName, {
-    views: [{ state: "frozen", xSplit: 0, ySplit: headerRowCount, activePane: "bottomLeft" }]
+    views: [{ state: "frozen", xSplit: 0, ySplit: headerRowCount, activePane: "bottomLeft" }] as any
   });
 
   // Set column widths and keys
@@ -384,7 +383,7 @@ export async function downloadEnterpriseExcelTemplate(config: ExcelTemplateConfi
       const refColLetter = refSheet.getColumn(vIdx + 1).letter;
       const range = `${colLetter}${dataStartRow}:${colLetter}1000`;
       
-      ws.dataValidations.model[range] = {
+      (ws as any).dataValidations.model[range] = {
         type: "list",
         allowBlank: true,
         formulae: [`Reference!$${refColLetter}$2:$${refColLetter}$${uniqueValues.length + 1}`],
@@ -404,7 +403,7 @@ export async function downloadEnterpriseExcelTemplate(config: ExcelTemplateConfi
     if (col.type === "date") {
       const colLetter = ws.getColumn(col.key).letter;
       const range = `${colLetter}${dataStartRow}:${colLetter}1000`;
-      ws.dataValidations.model[range] = {
+      (ws as any).dataValidations.model[range] = {
         type: "date",
         operator: "between",
         allowBlank: true,

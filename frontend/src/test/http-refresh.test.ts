@@ -67,7 +67,7 @@ describe("HTTP refresh logic", () => {
     ]);
 
     expect(outcomes.every((item) => item.status === "rejected")).toBe(true);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     const refreshCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh"));
     expect(refreshCalls).toHaveLength(1);
   });

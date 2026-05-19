@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
-import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { AlertTriangle, Camera, Check, ChevronsUpDown, Download, DoorOpen, FileScan, Loader2, LogIn, LogOut, QrCode, ShieldAlert, Truck, UserCheck, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -107,7 +106,12 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+
 async function fileToDataUrl(file: File) {
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    throw new Error(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum is 10MB.`);
+  }
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));
@@ -886,12 +890,16 @@ export default function SecurityGate() {
   const renderField = (field: GateTemplateField) => {
     const value = fieldValues[field.fieldName];
     const label = `${field.fieldLabel}${field.unit ? ` (${field.unit})` : ""}`;
+    const fieldId = `field-${field.fieldName}`;
+    const fieldName = field.fieldName;
 
     if (field.fieldType === "TEXTAREA") {
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{label}{field.isRequired ? " *" : ""}</Label>
+          <Label htmlFor={fieldId}>{label}{field.isRequired ? " *" : ""}</Label>
           <Textarea
+            id={fieldId}
+            name={fieldName}
             value={typeof value === "string" ? value : ""}
             placeholder={field.placeholder || field.fieldLabel}
             rows={3}
@@ -904,9 +912,9 @@ export default function SecurityGate() {
     if (field.fieldType === "DROPDOWN") {
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{label}{field.isRequired ? " *" : ""}</Label>
+          <Label htmlFor={fieldId}>{label}{field.isRequired ? " *" : ""}</Label>
           <Select value={typeof value === "string" ? value : ""} onValueChange={(nextValue) => handleFieldValueChange(field.fieldName, nextValue)}>
-            <SelectTrigger>
+            <SelectTrigger id={fieldId} name={fieldName}>
               <SelectValue placeholder={field.placeholder || `Select ${field.fieldLabel}`} />
             </SelectTrigger>
             <SelectContent>
@@ -927,7 +935,7 @@ export default function SecurityGate() {
 
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{label}{field.isRequired ? " *" : ""}</Label>
+          <Label htmlFor={fieldId}>{label}{field.isRequired ? " *" : ""}</Label>
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
@@ -941,6 +949,8 @@ export default function SecurityGate() {
             </Button>
           </div>
           <Input
+            id={fieldId}
+            name={fieldName}
             type="file"
             accept={field.fieldType === "DOCUMENT" ? "*" : "image/*"}
             capture={field.fieldType === "DOCUMENT" ? undefined : "environment"}
@@ -960,9 +970,9 @@ export default function SecurityGate() {
     if (field.fieldType === "CHECKBOX") {
       return (
         <div key={field.id} className="flex items-center gap-2 rounded-2xl border border-border/70 px-3 py-4">
-          <Checkbox checked={Boolean(value)} onCheckedChange={(checked) => handleFieldValueChange(field.fieldName, Boolean(checked))} />
+          <Checkbox id={fieldId} name={fieldName} checked={Boolean(value)} onCheckedChange={(checked) => handleFieldValueChange(field.fieldName, Boolean(checked))} />
           <div>
-            <Label>{label}{field.isRequired ? " *" : ""}</Label>
+            <Label htmlFor={fieldId}>{label}{field.isRequired ? " *" : ""}</Label>
             {field.helpText ? <p className="text-xs text-muted-foreground">{field.helpText}</p> : null}
           </div>
         </div>
@@ -971,8 +981,10 @@ export default function SecurityGate() {
 
     return (
       <div key={field.id} className="space-y-2">
-        <Label>{label}{field.isRequired ? " *" : ""}</Label>
+        <Label htmlFor={fieldId}>{label}{field.isRequired ? " *" : ""}</Label>
         <Input
+          id={fieldId}
+          name={fieldName}
           type={field.fieldType === "NUMBER" ? "number" : field.fieldType === "DATE" ? "date" : field.fieldType === "TIME" ? "time" : "text"}
           placeholder={field.placeholder || field.fieldLabel}
           value={typeof value === "string" || typeof value === "number" ? String(value) : ""}
@@ -995,7 +1007,7 @@ export default function SecurityGate() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl">Digital Gate Entry</h1>
           <p className="text-sm text-muted-foreground">Fast gate recording for visitors, vendors, vehicles, and material movement.</p>
@@ -1009,7 +1021,7 @@ export default function SecurityGate() {
             Refresh
           </Button>
         </div>
-      </motion.div>
+      </div>
 
       <Tabs defaultValue="desk" className="space-y-4">
         <TabsList className="grid h-auto w-full grid-cols-3">
@@ -1030,9 +1042,9 @@ export default function SecurityGate() {
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label>Gate</Label>
+                    <Label htmlFor="selected-gate">Gate</Label>
                     <Select value={selectedGateId} onValueChange={setSelectedGateId}>
-                      <SelectTrigger>
+                      <SelectTrigger id="selected-gate" name="selected-gate">
                         <SelectValue placeholder="Select gate" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1045,9 +1057,9 @@ export default function SecurityGate() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Entry Type</Label>
+                    <Label htmlFor="selected-template">Entry Type</Label>
                     <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-                      <SelectTrigger>
+                      <SelectTrigger id="selected-template" name="selected-template">
                         <SelectValue placeholder="Select visitor type" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1128,8 +1140,8 @@ export default function SecurityGate() {
                 )}
 
                 <div className="space-y-2">
-                  <Label>Security Remarks</Label>
-                  <Textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} rows={3} placeholder="Optional remarks or approval note" />
+                  <Label htmlFor="security-remarks">Security Remarks</Label>
+                  <Textarea id="security-remarks" name="security-remarks" value={remarks} onChange={(event) => setRemarks(event.target.value)} rows={3} placeholder="Optional remarks or approval note" />
                 </div>
 
                 <div className="flex flex-col gap-2 sm:flex-row">
@@ -1164,9 +1176,9 @@ export default function SecurityGate() {
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label>Gate</Label>
+                      <Label htmlFor="smart-gate">Gate</Label>
                       <Select value={smartVisitorForm.gateId} onValueChange={(value) => setSmartVisitorForm((current) => ({ ...current, gateId: value }))}>
-                        <SelectTrigger>
+                        <SelectTrigger id="smart-gate" name="smart-gate">
                           <SelectValue placeholder="Select gate" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1178,10 +1190,11 @@ export default function SecurityGate() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Employee to Visit</Label>
+                      <Label htmlFor="smart-employee-trigger">Employee to Visit</Label>
                       <Popover open={employeePickerOpen} onOpenChange={setEmployeePickerOpen}>
                         <PopoverTrigger asChild>
                           <Button
+                            id="smart-employee-trigger"
                             type="button"
                             variant="outline"
                             role="combobox"
@@ -1227,16 +1240,16 @@ export default function SecurityGate() {
 
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <div className="space-y-2">
-                      <Label>Visitor Name</Label>
-                      <Input value={smartVisitorForm.visitorName} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorName: event.target.value }))} placeholder="Visitor full name" />
+                      <Label htmlFor="smart-visitor-name">Visitor Name</Label>
+                      <Input id="smart-visitor-name" name="smart-visitor-name" value={smartVisitorForm.visitorName} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorName: event.target.value }))} placeholder="Visitor full name" />
                     </div>
                     <div className="space-y-2">
-                      <Label>Visitor Phone</Label>
-                      <Input value={smartVisitorForm.visitorPhone} onChange={(event) => handleSmartVisitorPhoneChange(event.target.value)} placeholder="Phone number" />
+                      <Label htmlFor="smart-visitor-phone">Visitor Phone</Label>
+                      <Input id="smart-visitor-phone" name="smart-visitor-phone" value={smartVisitorForm.visitorPhone} onChange={(event) => handleSmartVisitorPhoneChange(event.target.value)} placeholder="Phone number" />
                     </div>
                     <div className="space-y-2">
-                      <Label>Visitor Company</Label>
-                      <Input value={smartVisitorForm.visitorCompany} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorCompany: event.target.value }))} placeholder="Company name (optional)" />
+                      <Label htmlFor="smart-visitor-company">Visitor Company</Label>
+                      <Input id="smart-visitor-company" name="smart-visitor-company" value={smartVisitorForm.visitorCompany} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, visitorCompany: event.target.value }))} placeholder="Company name (optional)" />
                     </div>
                   </div>
 
@@ -1265,14 +1278,14 @@ export default function SecurityGate() {
                   ) : null}
 
                   <div className="space-y-2">
-                    <Label>Purpose</Label>
-                    <Textarea value={smartVisitorForm.purpose} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, purpose: event.target.value }))} rows={2} placeholder="Why is this visitor coming?" />
+                    <Label htmlFor="smart-visitor-purpose">Purpose</Label>
+                    <Textarea id="smart-visitor-purpose" name="smart-visitor-purpose" value={smartVisitorForm.purpose} onChange={(event) => setSmartVisitorForm((current) => ({ ...current, purpose: event.target.value }))} rows={2} placeholder="Why is this visitor coming?" />
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Allowed Access Duration (Starts After Employee Approval)</Label>
+                    <Label htmlFor="smart-visitor-duration">Allowed Access Duration (Starts After Employee Approval)</Label>
                     <Select value={smartVisitorForm.durationHours} onValueChange={(value) => setSmartVisitorForm((current) => ({ ...current, durationHours: value }))}>
-                      <SelectTrigger>
+                      <SelectTrigger id="smart-visitor-duration" name="smart-visitor-duration">
                         <SelectValue placeholder="Select duration" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1313,47 +1326,59 @@ export default function SecurityGate() {
         <TabsContent value="activity" className="space-y-4">
           <Card className="shadow-card">
             <CardContent className="grid gap-3 py-4 md:grid-cols-5">
-              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search visitor, vehicle, or gate..." />
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="IN">Inside</SelectItem>
-                  <SelectItem value="OUT">Exited</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={activityGateId} onValueChange={(value) => {
-                setActivityGateId(value);
-                if (value !== "all" && activityTemplateId !== "all") {
-                  const stillValid = templates.some((template) => template.id === activityTemplateId && template.gateId === value);
-                  if (!stillValid) setActivityTemplateId("all");
-                }
-              }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Gates" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activityGateOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={activityTemplateId} onValueChange={setActivityTemplateId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Templates" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activityTemplateOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-1">
+                <Label htmlFor="activity-search" className="sr-only">Search visitor</Label>
+                <Input id="activity-search" name="activity-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search visitor, vehicle, or gate..." />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="activity-status" className="sr-only">Status Filter</Label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger id="activity-status" name="activity-status">
+                    <SelectValue placeholder="All status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="IN">Inside</SelectItem>
+                    <SelectItem value="OUT">Exited</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="activity-gate" className="sr-only">Gate Filter</Label>
+                <Select value={activityGateId} onValueChange={(value) => {
+                  setActivityGateId(value);
+                  if (value !== "all" && activityTemplateId !== "all") {
+                    const stillValid = templates.some((template) => template.id === activityTemplateId && template.gateId === value);
+                    if (!stillValid) setActivityTemplateId("all");
+                  }
+                }}>
+                  <SelectTrigger id="activity-gate" name="activity-gate">
+                    <SelectValue placeholder="All Gates" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activityGateOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="activity-template" className="sr-only">Template Filter</Label>
+                <Select value={activityTemplateId} onValueChange={setActivityTemplateId}>
+                  <SelectTrigger id="activity-template" name="activity-template">
+                    <SelectValue placeholder="All Templates" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activityTemplateOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Button variant="outline" onClick={() => void loadEntries()}>
                 Refresh Activity
               </Button>
@@ -1467,17 +1492,17 @@ export default function SecurityGate() {
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
-                  <Label>Date From</Label>
-                  <Input type="date" value={reportDateFrom} onChange={(event) => setReportDateFrom(event.target.value)} />
+                  <Label htmlFor="report-date-from">Date From</Label>
+                  <Input id="report-date-from" name="report-date-from" type="date" value={reportDateFrom} onChange={(event) => setReportDateFrom(event.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Date To</Label>
-                  <Input type="date" value={reportDateTo} onChange={(event) => setReportDateTo(event.target.value)} />
+                  <Label htmlFor="report-date-to">Date To</Label>
+                  <Input id="report-date-to" name="report-date-to" type="date" value={reportDateTo} onChange={(event) => setReportDateTo(event.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Status</Label>
+                  <Label htmlFor="report-status">Status</Label>
                   <Select value={reportStatus} onValueChange={setReportStatus}>
-                    <SelectTrigger>
+                    <SelectTrigger id="report-status" name="report-status">
                       <SelectValue placeholder="All status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1491,7 +1516,7 @@ export default function SecurityGate() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Gate</Label>
+                  <Label htmlFor="report-gate">Gate</Label>
                   <Select value={reportGateId} onValueChange={(value) => {
                     setReportGateId(value);
                     if (value !== "all" && reportTemplateId !== "all") {
@@ -1499,7 +1524,7 @@ export default function SecurityGate() {
                       if (!stillValid) setReportTemplateId("all");
                     }
                   }}>
-                    <SelectTrigger>
+                    <SelectTrigger id="report-gate" name="report-gate">
                       <SelectValue placeholder="All Gates" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1512,9 +1537,9 @@ export default function SecurityGate() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Template</Label>
+                  <Label htmlFor="report-template">Template</Label>
                   <Select value={reportTemplateId} onValueChange={setReportTemplateId}>
-                    <SelectTrigger>
+                    <SelectTrigger id="report-template" name="report-template">
                       <SelectValue placeholder="All Templates" />
                     </SelectTrigger>
                     <SelectContent>

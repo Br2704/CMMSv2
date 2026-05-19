@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -110,7 +109,7 @@ export default function SafetyConfigMaster() {
     <div className="space-y-6">
       <BackButton />
 
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">Safety Configuration</h1>
           <p className="text-muted-foreground">Configure safety metrics and workflows from backend data</p>
@@ -119,7 +118,7 @@ export default function SafetyConfigMaster() {
           <Save className="h-4 w-4" />
           Refresh
         </Button>
-      </motion.div>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="shadow-card">

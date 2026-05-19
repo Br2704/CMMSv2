@@ -1,5 +1,6 @@
 import rateLimit from 'express-rate-limit';
 import type { Request } from 'express';
+import { env } from '../config/env';
 
 function resolveRateLimitKey(req: Request) {
   return req.ip ?? req.socket.remoteAddress ?? 'unknown';
@@ -13,12 +14,16 @@ function resolveAuthLoginKey(req: Request) {
   return `${resolveRateLimitKey(req)}:${email}`;
 }
 
+const skipE2E = (req: Request) =>
+  env.NODE_ENV !== 'production' && req.headers['x-test-suite'] === 'CMMS-E2E';
+
 export const generalApiRateLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 240,
+  limit: 2000,
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipE2E,
   message: { success: false, message: 'Too many API requests' },
 });
 
@@ -28,7 +33,7 @@ export const mutatingApiRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase()),
+  skip: (req) => skipE2E(req) || ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase()),
   message: { success: false, message: 'Too many write requests' },
 });
 
@@ -38,15 +43,17 @@ export const authLoginRateLimiter = rateLimit({
   keyGenerator: resolveAuthLoginKey,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipE2E,
   message: { success: false, message: 'Too many login attempts. Please retry later.' },
 });
 
 export const authRefreshRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 30,
+  windowMs: 60 * 1000, // 1 minute window
+  limit: 150, // 150 refresh requests per minute
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipE2E,
   message: { success: false, message: 'Too many token refresh requests' },
 });
 
@@ -56,6 +63,7 @@ export const authLogoutRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipE2E,
   message: { success: false, message: 'Too many logout requests' },
 });
 
@@ -65,6 +73,7 @@ export const reportsRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipE2E,
   message: { success: false, message: 'Too many report requests' },
 });
 
@@ -74,7 +83,28 @@ export const exportsRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipE2E,
   message: { success: false, message: 'Too many export requests' },
+});
+
+export const webappLogsRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  keyGenerator: resolveRateLimitKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipE2E,
+  message: { success: false, message: 'Too many log requests' },
+});
+
+export const heavyApiRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  keyGenerator: resolveRateLimitKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipE2E,
+  message: { success: false, message: 'Too many data-intensive requests' },
 });
 
 // Backward compatibility

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -257,7 +256,7 @@ export default function EmailReportsMaster() {
   return (
     <div className="space-y-6">
       <BackButton />
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">Email Report Configuration</h1>
           <p className="text-muted-foreground">Configure automated email reports with schedule history</p>
@@ -266,7 +265,7 @@ export default function EmailReportsMaster() {
           <Plus className="h-4 w-4" />
           Add Report Schedule
         </Button>
-      </motion.div>
+      </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <Card className="shadow-card"><CardContent className="p-4"><div className="text-2xl font-bold text-primary">{stats.total}</div><p className="text-sm text-muted-foreground">Total Schedules</p></CardContent></Card>

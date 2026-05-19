@@ -39,6 +39,10 @@ export function stringifyJsonObject(input: Record<string, unknown>): string {
   return JSON.stringify(input);
 }
 
+function isManualSpareId(spareItemId: string): boolean {
+  return spareItemId.startsWith('manual-');
+}
+
 export function normalizeSpareUsage(input: unknown): SpareUsageEntry[] {
   const source = typeof input === 'string' ? parseJsonValue(input) : input;
   if (!Array.isArray(source)) return [];
@@ -51,12 +55,24 @@ export function normalizeSpareUsage(input: unknown): SpareUsageEntry[] {
     const quantityRaw = entry.quantity;
     const spareNameRaw = entry.spareName ?? entry.spare_name;
     const spareCodeRaw = entry.spareCode ?? entry.spare_code;
+    const isManual = Boolean(entry.isManual ?? entry.is_manual);
 
-    if (typeof spareItemIdRaw !== 'string' || spareItemIdRaw.trim().length === 0) continue;
     const quantity = Number(quantityRaw);
     if (!Number.isFinite(quantity) || quantity <= 0) continue;
 
-    const spareItemId = spareItemIdRaw.trim();
+    let spareItemId =
+      typeof spareItemIdRaw === 'string' && spareItemIdRaw.trim().length > 0
+        ? spareItemIdRaw.trim()
+        : '';
+
+    if (!spareItemId && isManual) {
+      const spareName = typeof spareNameRaw === 'string' ? spareNameRaw.trim() : '';
+      if (!spareName) continue;
+      spareItemId = `manual-${spareName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Math.floor(quantity)}`;
+    }
+
+    if (!spareItemId) continue;
+
     const existing = merged.get(spareItemId);
     const normalized: SpareUsageEntry = {
       spareItemId,
@@ -88,7 +104,7 @@ export async function applySpareUsageDelta(
   scope: SpareUsageScope = {},
 ) {
   const delta = usageDelta(previousUsage, nextUsage);
-  const ids = Array.from(delta.keys());
+  const ids = Array.from(delta.keys()).filter((id) => !id.startsWith('manual-'));
   if (ids.length === 0) {
     return new Map<string, SpareItemEntity>();
   }

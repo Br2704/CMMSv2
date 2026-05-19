@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Activity,
@@ -9,10 +8,14 @@ import {
   CalendarCheck,
   CheckCircle2,
   CircleGauge,
+  Clock,
   Factory,
+  FileText,
   Loader2,
+  Package,
   ShieldAlert,
   Timer,
+  TrendingUp,
   Users,
   Workflow,
   Wrench,
@@ -81,6 +84,17 @@ export default function Dashboard() {
 
   const showingOverview = userIsSuperAdmin && !selectedPlantId;
 
+  const getRoleGreeting = () => {
+    if (userIsSuperAdmin) return "System Overlord";
+    if (userIsAdmin) return "Plant Administrator";
+    if (userIsIncharge) return "Section In-charge";
+    if (userIsMaintenance) return "Maintenance Commander";
+    if (userIsProduction) return "Production Head";
+    if (userIsSafety) return "Safety Warden";
+    if (userIsHR) return "People Operations";
+    return "Operations Officer";
+  };
+
   const subtitle = userIsSuperAdmin
     ? showingOverview
       ? "Global operations overview for JK Fenner."
@@ -134,34 +148,17 @@ export default function Dashboard() {
 
   const dashboardCards = getRoleSpecificCards();
 
-  if (isLoading) {
-    return (
-      <div className="flex h-[60vh] items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          <p className="text-sm font-medium text-muted-foreground animate-pulse">Synchronizing Command Center...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const getRoleGreeting = () => {
-    if (userIsHR) return "Strategic Workforce Management";
-    if (userIsSafety) return "Occupational Health & Safety";
-    if (userIsProduction) return "Production Line Efficiency";
-    if (userIsMaintenance) return "Reliability Centered Maintenance";
-    return "Operations Command Center";
-  };
+  // Phase 3: Advanced KPIs mapping
+  const woKpis = kpis.workOrderKPIs || {};
+  const breakdownKpis = kpis.breakdownKPIs || {};
+  const timeKpis = kpis.timeKPIs || {};
+  const costKpis = kpis.costKPIs || {};
 
   return (
-    <PageShell className="space-y-8 animate-fade-in pb-16">
+    <PageShell className="space-y-12 animate-fade-in pb-16">
       {/* Dynamic Header Section */}
       <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="space-y-2"
-        >
+        <div className="space-y-2">
           <div className="flex items-center gap-3">
              <div className="h-10 w-1 rounded-full bg-primary" />
              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary/70">{getRoleGreeting()}</p>
@@ -175,14 +172,10 @@ export default function Dashboard() {
                <p className="text-xs font-bold text-slate-500">{subtitle}</p>
             </div>
           </div>
-        </motion.div>
+        </div>
 
         {userIsSuperAdmin && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="w-full lg:w-[350px]"
-          >
+          <div className="w-full lg:w-[350px]">
              <Select value={selectedPlantId || "overview"} onValueChange={(val) => val === "overview" ? setSelectedPlantId(null) : setSelectedPlantId(val)}>
                 <SelectTrigger className="h-16 rounded-[1.5rem] border-none bg-white shadow-industrial hover:shadow-industrial-lg transition-all px-8 text-base font-bold">
                   <SelectValue placeholder="Organization Overview" />
@@ -194,37 +187,67 @@ export default function Dashboard() {
                   ))}
                 </SelectContent>
               </Select>
-          </motion.div>
+          </div>
         )}
       </div>
 
-      {/* Primary KPI Bento Grid */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-        {dashboardCards.map((card, idx) => (
-          <KPICard
-            key={card.title}
-            {...card}
-            className="h-full"
-          />
-        ))}
+      {/* Primary KPI Grid */}
+      <div className="space-y-6">
+        <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+          <Activity className="h-4 w-4" /> Real-time Operations
+        </h2>
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
+          {dashboardCards.map((card, idx) => (
+            <KPICard key={card.title} {...card} className="h-full" />
+          ))}
+        </div>
       </div>
 
-      {/* Advanced Data Modules: Accurate 2-Column Grid */}
+      {/* Phase 3: Detailed Industrial Analytics Grid */}
       {!userIsHR && !userIsSafety && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-           <MTTRTrendChart data={charts.mttrTrendData} />
-           <MTBFTrendChart data={charts.mtbfTrendData} />
-           
-           <div className="lg:col-span-2">
-              <WOTrendChart data={charts.woTrendData} />
-           </div>
+        <div className="space-y-12">
+          
+          {/* Work Order Lifecycle */}
+          <div className="space-y-6">
+            <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+              <Workflow className="h-4 w-4" /> Work Order Lifecycle
+            </h2>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+              <KPICard title="Total Raised" value={woKpis.totalWO || 0} icon={FileText} variant="default" className="p-4" />
+              <KPICard title="In Progress" value={woKpis.inProgressWO || 0} icon={Activity} variant="primary" className="p-4" />
+              <KPICard title="Pending Appr" value={woKpis.pendingApprovalWO || 0} icon={ShieldAlert} variant="warning" className="p-4" />
+              <KPICard title="Rejected" value={woKpis.rejectedWO || 0} icon={AlertTriangle} variant="destructive" className="p-4" />
+              <KPICard title="Successfully Closed" value={woKpis.closedWO || 0} icon={CheckCircle2} variant="success" className="p-4" />
+            </div>
+          </div>
 
-           <WOByStatusChart data={charts.woByStatusData} />
-           <WOByCategoryChart data={charts.woByCategoryData} />
+          {/* Breakdown & Reliability */}
+          <div className="space-y-6">
+            <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+              <Timer className="h-4 w-4" /> Breakdown & Reliability
+            </h2>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+              <KPICard title="Total Breakdowns" value={breakdownKpis.totalBreakdowns || 0} icon={AlertTriangle} variant="destructive" />
+              <KPICard title="Operator Fault" value={breakdownKpis.operatorFaultCases || 0} icon={Users} variant="warning" />
+              <KPICard title="MTTR" value={`${timeKpis.mttr || 0}m`} subtitle="Avg Repair Time" icon={Timer} variant="info" />
+              <KPICard title="MTBF" value={`${timeKpis.mtbf || 0}h`} subtitle="Between Failures" icon={Activity} variant="success" />
+            </div>
+          </div>
 
-           <div className="lg:col-span-2 mt-4">
-              <RecentWorkOrdersTable workOrders={recentWOs} isLoading={isLoading} />
-           </div>
+
+          {/* Trends & Distribution */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+             <MTTRTrendChart data={charts.mttrTrendData} />
+             <MTBFTrendChart data={charts.mtbfTrendData} />
+             <div className="lg:col-span-2">
+                <WOTrendChart data={charts.woTrendData} />
+             </div>
+             <WOByStatusChart data={charts.woByStatusData} />
+             <WOByCategoryChart data={charts.woByCategoryData} />
+             <div className="lg:col-span-2 mt-4">
+                <RecentWorkOrdersTable workOrders={recentWOs} isLoading={isLoading} />
+             </div>
+          </div>
         </div>
       )}
 

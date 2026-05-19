@@ -4,17 +4,53 @@ import { AppDataSource } from '../database/data-source';
 import { logger } from '../config/logger';
 import { MailQueueEntity, type MailQueueStatus } from '../database/entities/mail-queue.entity';
 import { EmailLogEntity, type EmailStatus } from '../database/entities/email-log.entity';
+import { SystemConfigEntity } from '../database/entities/system-config.entity';
 
 let transporter: nodemailer.Transporter | null = null;
+let cachedConfig: Record<string, any> | null = null;
+let lastConfigFetch = 0;
+const CONFIG_CACHE_TTL = 60_000; // 1 minute
 
-function getTransporter(): nodemailer.Transporter {
-  if (transporter) return transporter;
+async function getSmtpConfig(): Promise<Record<string, any>> {
+  const now = Date.now();
+  if (cachedConfig && now - lastConfigFetch < CONFIG_CACHE_TTL) {
+    return cachedConfig;
+  }
 
-  transporter = nodemailer.createTransport({
+  try {
+    const repo = AppDataSource.getRepository(SystemConfigEntity);
+    const config = await repo.findOneBy({ configKey: 'SMTP_CONFIG', isActive: true });
+    
+    if (config?.configValue) {
+      cachedConfig = config.configValue;
+      lastConfigFetch = now;
+      return cachedConfig as Record<string, any>;
+    }
+  } catch (error) {
+    logger.error({ error }, 'Failed to fetch SMTP config from database');
+  }
+
+  // Fallback to env
+  return {
     host: env.SMTP_HOST,
     port: env.SMTP_PORT,
-    secure: env.SMTP_PORT === 465,
-    auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASS } : undefined,
+    user: env.SMTP_USER,
+    pass: env.SMTP_PASS,
+    from: env.SMTP_FROM,
+    fromName: env.SMTP_FROM_NAME,
+  };
+}
+
+async function getTransporter(): Promise<nodemailer.Transporter> {
+  if (transporter) return transporter;
+
+  const config = await getSmtpConfig();
+  
+  transporter = nodemailer.createTransport({
+    host: config.host || env.SMTP_HOST,
+    port: config.port || env.SMTP_PORT,
+    secure: (config.port || env.SMTP_PORT) === 465,
+    auth: config.user ? { user: config.user, pass: config.pass } : undefined,
     pool: true,
     maxConnections: 5,
     maxMessages: 100,
@@ -25,16 +61,17 @@ function getTransporter(): nodemailer.Transporter {
   return transporter;
 }
 
-export function isMailConfigured(): boolean {
-  return Boolean(env.SMTP_HOST && env.SMTP_FROM && env.SMTP_USER && env.SMTP_PASS);
+export async function isMailConfigured(): Promise<boolean> {
+  const config = await getSmtpConfig();
+  return Boolean(config.host && config.from && config.user && config.pass);
 }
 
 export async function verifyMailConnection(): Promise<{ ok: boolean; error?: string }> {
-  if (!isMailConfigured()) {
+  if (!(await isMailConfigured())) {
     return { ok: false, error: 'SMTP is not configured' };
   }
   try {
-    const t = getTransporter();
+    const t = await getTransporter();
     await t.verify();
     return { ok: true };
   } catch (error) {
@@ -43,13 +80,14 @@ export async function verifyMailConnection(): Promise<{ ok: boolean; error?: str
 }
 
 export async function sendTestEmail(to: string): Promise<{ ok: boolean; error?: string }> {
-  if (!isMailConfigured()) {
+  if (!(await isMailConfigured())) {
     return { ok: false, error: 'SMTP is not configured' };
   }
   try {
-    const t = getTransporter();
+    const config = await getSmtpConfig();
+    const t = await getTransporter();
     await t.sendMail({
-      from: env.SMTP_FROM,
+      from: `"${config.fromName || env.SMTP_FROM_NAME}" <${config.from || env.SMTP_FROM}>`,
       to,
       subject: '[CMMS] SMTP Test Email',
       text: 'This is a test email from your CMMS system. If you received this, SMTP is configured correctly.',
@@ -75,7 +113,7 @@ export async function enqueueMail(input: {
   woNumber?: string;
   eventType?: string;
 }): Promise<MailQueueEntity | null> {
-  if (!isMailConfigured()) return null;
+  if (!(await isMailConfigured())) return null;
 
   const repo = AppDataSource.getRepository(MailQueueEntity);
   const entity = repo.create({
@@ -114,7 +152,7 @@ export async function enqueueBulkMail(
     eventType?: string;
   }>,
 ): Promise<number> {
-  if (!isMailConfigured() || inputs.length === 0) return 0;
+  if (!(await isMailConfigured()) || inputs.length === 0) return 0;
 
   const repo = AppDataSource.getRepository(MailQueueEntity);
   const entities = inputs.map((input) =>
@@ -141,10 +179,11 @@ export async function enqueueBulkMail(
 }
 
 export async function processMailQueue(batchSize = 10): Promise<{ sent: number; failed: number }> {
-  if (!isMailConfigured()) return { sent: 0, failed: 0 };
+  if (!(await isMailConfigured())) return { sent: 0, failed: 0 };
 
   const queueRepo = AppDataSource.getRepository(MailQueueEntity);
   const logRepo = AppDataSource.getRepository(EmailLogEntity);
+  const config = await getSmtpConfig();
 
   const pending = await queueRepo
     .createQueryBuilder('q')
@@ -165,9 +204,9 @@ export async function processMailQueue(batchSize = 10): Promise<{ sent: number; 
       item.status = 'PROCESSING';
       await queueRepo.save(item);
 
-      const t = getTransporter();
+      const t = await getTransporter();
       await t.sendMail({
-        from: env.SMTP_FROM,
+        from: `"${config.fromName || env.SMTP_FROM_NAME}" <${config.from || env.SMTP_FROM}>`,
         to: item.recipient,
         cc: item.cc ?? undefined,
         bcc: item.bcc ?? undefined,
@@ -295,4 +334,6 @@ export function resetTransporter(): void {
     transporter.close();
     transporter = null;
   }
+  cachedConfig = null;
+  lastConfigFetch = 0;
 }

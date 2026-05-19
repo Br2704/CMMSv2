@@ -51,7 +51,7 @@ export function NotificationPermission() {
   if (!visible) return null;
 
   return (
-    <div className="fixed bottom-36 left-4 right-4 z-50 mx-auto max-w-md animate-in slide-in-from-bottom-4 fade-in">
+    <div className="fixed bottom-36 left-4 right-4 z-50 mx-auto max-w-md ">
       <div className="flex items-center gap-3 rounded-xl border bg-card/95 p-3 shadow-lg backdrop-blur-sm">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
           <Bell className="h-5 w-5 text-primary" />

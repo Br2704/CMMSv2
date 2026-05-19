@@ -61,31 +61,29 @@ export default function MailConfigMaster() {
   const fetchConfig = useCallback(async () => {
     try {
       const res = await httpRequest<{ success: true; data: MailConfig }>('/mail/config', { method: 'GET' });
-      setConfig(res.data);
-    } catch { /* ignore */ }
+      if (res.data) setConfig(res.data);
+    } catch (e) { console.error('fetchConfig failed:', e); }
   }, []);
 
   const fetchStats = useCallback(async () => {
     try {
       const res = await httpRequest<{ success: true; data: typeof stats }>('/mail/stats', { method: 'GET' });
-      setStats(res.data);
-    } catch { /* ignore */ }
+      if (res.data) setStats(res.data);
+    } catch (e) { console.error('fetchStats failed:', e); }
   }, []);
 
   const fetchLogs = useCallback(async (page: number) => {
     try {
       const res = await httpRequest<{ success: true; data: { logs: typeof logs; total: number } }>(`/mail/logs?page=${page}&limit=20`, { method: 'GET' });
-      setLogs(res.data.logs);
-      setLogTotal(res.data.total);
-    } catch { /* ignore */ }
+      if (res.data) { setLogs(res.data.logs); setLogTotal(res.data.total); }
+    } catch (e) { console.error('fetchLogs failed:', e); }
   }, []);
 
   const fetchQueue = useCallback(async (page: number) => {
     try {
       const res = await httpRequest<{ success: true; data: { items: typeof queueItems; total: number } }>(`/mail/queue?page=${page}&limit=20`, { method: 'GET' });
-      setQueueItems(res.data.items);
-      setQueueTotal(res.data.total);
-    } catch { /* ignore */ }
+      if (res.data) { setQueueItems(res.data.items); setQueueTotal(res.data.total); }
+    } catch (e) { console.error('fetchQueue failed:', e); }
   }, []);
 
   useEffect(() => {
@@ -193,6 +191,9 @@ export default function MailConfigMaster() {
     return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
   }
 
+  const safeConfig = config ?? {} as MailConfig;
+  const safeStats = stats ?? { pending: 0, sent: 0, failed: 0, deadLetter: 0, processing: 0 };
+
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -201,7 +202,7 @@ export default function MailConfigMaster() {
           <p className="text-sm text-muted-foreground">Configure SMTP, test delivery, monitor queue and logs</p>
         </div>
         <div className="flex items-center gap-3">
-          {config.configured
+          {safeConfig.configured
             ? <Badge className="bg-green-100 text-green-800 border-green-200 text-xs px-3 py-1.5"><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />Configured</Badge>
             : <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 text-xs px-3 py-1.5"><AlertTriangle className="h-3.5 w-3.5 mr-1.5" />Not Configured</Badge>
           }
@@ -210,11 +211,11 @@ export default function MailConfigMaster() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         {[
-          { label: 'Pending', value: stats.pending, color: 'text-blue-600' },
-          { label: 'Sent', value: stats.sent, color: 'text-green-600' },
-          { label: 'Failed', value: stats.failed, color: 'text-red-600' },
-          { label: 'Dead Letter', value: stats.deadLetter, color: 'text-gray-600' },
-          { label: 'Processing', value: stats.processing, color: 'text-yellow-600' },
+          { label: 'Pending', value: safeStats.pending, color: 'text-blue-600' },
+          { label: 'Sent', value: safeStats.sent, color: 'text-green-600' },
+          { label: 'Failed', value: safeStats.failed, color: 'text-red-600' },
+          { label: 'Dead Letter', value: safeStats.deadLetter, color: 'text-gray-600' },
+          { label: 'Processing', value: safeStats.processing, color: 'text-yellow-600' },
         ].map((s) => (
           <Card key={s.label}>
             <CardHeader className="pb-1.5"><CardTitle className="text-xs font-medium text-muted-foreground">{s.label}</CardTitle></CardHeader>
@@ -239,7 +240,7 @@ export default function MailConfigMaster() {
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="space-y-2">
-                <Label>Quick-select provider</Label>
+                <Label htmlFor="smtp-provider">Quick-select provider</Label>
                 <Select value={selectedProvider} onValueChange={handleProviderSelect}>
                   <SelectTrigger><SelectValue placeholder="Choose a mail provider..." /></SelectTrigger>
                   <SelectContent>
@@ -257,32 +258,32 @@ export default function MailConfigMaster() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>SMTP Host <span className="text-red-500">*</span></Label>
-                  <Input value={config.host} onChange={(e) => setConfig({ ...config, host: e.target.value })} placeholder="smtp.zoho.com" />
+                  <Input value={safeConfig.host} onChange={(e) => setConfig({ ...safeConfig, host: e.target.value })} placeholder="smtp.zoho.com" />
                 </div>
                 <div className="space-y-2">
                   <Label>SMTP Port <span className="text-red-500">*</span></Label>
-                  <Input type="number" value={config.port} onChange={(e) => setConfig({ ...config, port: Number(e.target.value) })} placeholder="587" />
+                  <Input type="number" value={safeConfig.port} onChange={(e) => setConfig({ ...safeConfig, port: Number(e.target.value) })} placeholder="587" />
                 </div>
                 <div className="space-y-2">
                   <Label>Username <span className="text-red-500">*</span></Label>
-                  <Input value={config.user} onChange={(e) => setConfig({ ...config, user: e.target.value })} placeholder="noreply@tamoptix.tech" />
+                  <Input value={safeConfig.user} onChange={(e) => setConfig({ ...safeConfig, user: e.target.value })} placeholder="noreply@tamoptix.tech" />
                 </div>
                 <div className="space-y-2">
                   <Label>Password <span className="text-red-500">*</span></Label>
-                  <Input type="password" value={config.pass} onChange={(e) => setConfig({ ...config, pass: e.target.value })} placeholder="App password or SMTP password" />
+                  <Input type="password" value={safeConfig.pass} onChange={(e) => setConfig({ ...safeConfig, pass: e.target.value })} placeholder="App password or SMTP password" />
                 </div>
                 <div className="space-y-2">
                   <Label>From Email <span className="text-red-500">*</span></Label>
-                  <Input value={config.from} onChange={(e) => setConfig({ ...config, from: e.target.value })} placeholder="noreply@tamoptix.tech" />
+                  <Input value={safeConfig.from} onChange={(e) => setConfig({ ...safeConfig, from: e.target.value })} placeholder="noreply@tamoptix.tech" />
                 </div>
                 <div className="space-y-2">
                   <Label>From Name</Label>
-                  <Input value={config.fromName} onChange={(e) => setConfig({ ...config, fromName: e.target.value })} placeholder="CMMS Notification" />
+                  <Input value={safeConfig.fromName} onChange={(e) => setConfig({ ...safeConfig, fromName: e.target.value })} placeholder="CMMS Notification" />
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-3 pt-2">
-                <Button onClick={handleSave} disabled={saving || !config.host || !config.user || !config.pass || !config.from}>
+                <Button onClick={handleSave} disabled={saving || !safeConfig.host || !safeConfig.user || !safeConfig.pass || !safeConfig.from}>
                   {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                   {saving ? 'Saving...' : 'Save Configuration'}
                 </Button>
@@ -335,7 +336,7 @@ export default function MailConfigMaster() {
                 {testLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
                 Send Test Email
               </Button>
-              {!config.configured && (
+              {!safeConfig.configured && (
                 <div className="p-3 bg-yellow-50 text-yellow-800 rounded-lg text-sm flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                   <p>SMTP is not configured. Save the configuration in the <button className="underline font-medium" onClick={() => setActiveTab('config')}>Configuration tab</button> first.</p>

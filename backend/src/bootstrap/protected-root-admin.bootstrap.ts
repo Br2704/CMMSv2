@@ -1,6 +1,8 @@
 import { EntityManager } from 'typeorm';
 import { logger } from '../config/logger';
+import { env } from '../config/env';
 import { PROTECTED_ROOT_ADMIN } from '../config/protectedRootAdmin';
+import { hashPassword } from '../utils/password';
 import { AppDataSource } from '../database/data-source';
 import { OrganizationEntity, PlantEntity, ProfileEntity, RoleEntity, UserEntity, UserRoleEntity } from '../database/entities';
 
@@ -184,9 +186,15 @@ async function ensureProtectedRootUser(manager: EntityManager, organizationId: s
     .getOne();
 
   if (!user) {
+    const rootAdminPassword = env.ROOT_ADMIN_PASSWORD;
+    if (!rootAdminPassword) {
+      logger.error('ROOT_ADMIN_PASSWORD environment variable is not set. Protected root admin user cannot be created. Set ROOT_ADMIN_PASSWORD in the environment and restart.');
+      return null;
+    }
+    const passwordHash = await hashPassword(rootAdminPassword);
     user = userRepo.create({
       email: PROTECTED_EMAIL,
-      passwordHash: PROTECTED_ROOT_ADMIN.passwordHash,
+      passwordHash,
       fullName: PROTECTED_ROOT_ADMIN.fullName,
       phone: null,
       isActive: true,
@@ -197,13 +205,14 @@ async function ensureProtectedRootUser(manager: EntityManager, organizationId: s
     });
   } else {
     user.email = PROTECTED_EMAIL;
-    user.passwordHash = PROTECTED_ROOT_ADMIN.passwordHash;
     user.fullName = PROTECTED_ROOT_ADMIN.fullName;
     user.isActive = true;
     user.organizationId = organizationId;
     user.orgRoleId = null;
-    user.failedLoginCount = 0;
-    user.lockedUntil = null;
+    const rootAdminPassword = env.ROOT_ADMIN_PASSWORD;
+    if (rootAdminPassword) {
+      user.passwordHash = await hashPassword(rootAdminPassword);
+    }
   }
   user = await userRepo.save(user);
 
@@ -262,11 +271,20 @@ export async function ensureProtectedRootAdminBootstrap() {
     const role = await ensureProtectedRootRole(manager);
     const user = await ensureProtectedRootUser(manager, organization.id, role.id);
 
+    if (!user) {
+      return null;
+    }
+
     return {
       organizationId: organization.id,
       userId: user.id,
     };
   });
+
+  if (!result) {
+    logger.error('Protected root admin bootstrap failed: ROOT_ADMIN_PASSWORD not set');
+    return;
+  }
 
   logger.info(
     {

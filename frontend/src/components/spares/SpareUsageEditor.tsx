@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 export type SpareUsageDraft = {
   spareItemId: string;
   quantity: string;
+  spareName?: string;
+  isManual?: boolean;
 };
 
 type SpareOption = {
@@ -23,9 +25,11 @@ interface SpareUsageEditorProps {
   options: SpareOption[];
   disabled?: boolean;
   emptyMessage?: string;
+  allowManualEntry?: boolean;
 }
 
-const EMPTY_ROW: SpareUsageDraft = { spareItemId: "", quantity: "1" };
+const EMPTY_ROW: SpareUsageDraft = { spareItemId: "", quantity: "1", isManual: false };
+const EMPTY_MANUAL_ROW: SpareUsageDraft = { spareItemId: "", quantity: "1", spareName: "", isManual: true };
 
 export function SpareUsageEditor({
   title = "Spares Used",
@@ -35,6 +39,7 @@ export function SpareUsageEditor({
   options,
   disabled = false,
   emptyMessage = "No spare items are available for this machine or plant scope.",
+  allowManualEntry = true,
 }: SpareUsageEditorProps) {
   const updateRow = (index: number, next: Partial<SpareUsageDraft>) => {
     onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...next } : row)));
@@ -45,7 +50,11 @@ export function SpareUsageEditor({
   };
 
   const addRow = () => {
-    onChange([...rows, EMPTY_ROW]);
+    onChange([...rows, options.length > 0 ? EMPTY_ROW : EMPTY_MANUAL_ROW]);
+  };
+
+  const addManualRow = () => {
+    onChange([...rows, EMPTY_MANUAL_ROW]);
   };
 
   return (
@@ -55,7 +64,7 @@ export function SpareUsageEditor({
         <p className="text-xs text-muted-foreground">{description}</p>
       </div>
 
-      {options.length === 0 ? (
+      {options.length === 0 && rows.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border/70 bg-background/70 px-4 py-5 text-sm text-muted-foreground">
           {emptyMessage}
         </div>
@@ -68,20 +77,35 @@ export function SpareUsageEditor({
           ) : (
             rows.map((row, index) => (
               <div key={`spare-usage-${index}`} className="grid gap-3 rounded-xl border border-border/70 bg-background/80 p-3 md:grid-cols-[minmax(0,1fr)_140px_48px]">
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium">Spare Item</Label>
-                  <Select value={row.spareItemId || undefined} onValueChange={(value) => updateRow(index, { spareItemId: value })} disabled={disabled}>
-                    <SelectTrigger className="h-10">
-                      <SelectValue placeholder="Select spare item" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {options.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="space-y-2 md:col-span-1">
+                  {row.isManual ? (
+                    <>
+                      <Label className="text-xs font-medium">Manual Spare Name</Label>
+                      <Input
+                        value={row.spareName || ""}
+                        onChange={(event) => updateRow(index, { spareName: event.target.value, spareItemId: "" })}
+                        placeholder="Enter spare name when not in master"
+                        disabled={disabled}
+                        className="h-10"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <Label className="text-xs font-medium">Spare Item</Label>
+                      <Select value={row.spareItemId || undefined} onValueChange={(value) => updateRow(index, { spareItemId: value, isManual: false })} disabled={disabled}>
+                        <SelectTrigger className="h-10">
+                          <SelectValue placeholder="Select spare item" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {options.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -106,10 +130,18 @@ export function SpareUsageEditor({
             ))
           )}
 
-          <Button type="button" variant="outline" onClick={addRow} disabled={disabled} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Add Spare Usage
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={addRow} disabled={disabled || options.length === 0} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Add Spare Usage
+            </Button>
+            {allowManualEntry ? (
+              <Button type="button" variant="outline" onClick={addManualRow} disabled={disabled} className="gap-2">
+                <Plus className="h-4 w-4" />
+                Add Manual Spare
+              </Button>
+            ) : null}
+          </div>
         </div>
       )}
     </div>

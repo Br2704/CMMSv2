@@ -1,4 +1,4 @@
-export const RBAC_ACTIONS = ['READ', 'CREATE', 'UPDATE', 'DELETE', 'EXPORT', 'APPROVE'] as const;
+export const RBAC_ACTIONS = ['READ', 'CREATE', 'UPDATE', 'DELETE', 'EXPORT', 'APPROVE', 'ASSIGN', 'REJECT', 'CLOSE', 'IMPORT'] as const;
 
 export const RBAC_MODULE_KEYS = [
   'ORGANIZATIONS',

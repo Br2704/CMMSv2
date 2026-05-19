@@ -54,15 +54,19 @@ export function useDashboardRealtime(options: { enabled: boolean; onRefresh: () 
       }
 
       const url = new URL(getDashboardSocketUrl(), window.location.origin);
-      url.searchParams.set("token", token);
-
-      socket = new WebSocket(url.toString());
+      // Pass token as subprotocol for security
+      socket = new WebSocket(url.toString(), [token]);
 
       socket.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data) as DashboardSocketPayload;
           if (payload.type === "dashboard.refresh") {
             onRefreshRef.current();
+            
+            // Instantly invalidate and refetch permissions in real-time
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new Event("cmms:permissions-invalidated"));
+            }
           }
         } catch {
           // Ignore malformed websocket payloads and keep the socket alive.

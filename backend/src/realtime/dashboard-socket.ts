@@ -37,11 +37,20 @@ function broadcast(payload: DashboardSocketEvent) {
 function extractToken(request: IncomingMessage): string | null {
   const rawUrl = request.url ?? '';
   const queryStart = rawUrl.indexOf('?');
-  if (queryStart === -1) return null;
+  if (queryStart !== -1) {
+    const searchParams = new URLSearchParams(rawUrl.slice(queryStart));
+    const token = searchParams.get('token');
+    if (token?.trim()) return token.trim();
+  }
 
-  const searchParams = new URLSearchParams(rawUrl.slice(queryStart));
-  const token = searchParams.get('token');
-  return token?.trim() || null;
+  // Support protocol header (Sec-WebSocket-Protocol)
+  const protocol = request.headers['sec-websocket-protocol'];
+  if (typeof protocol === 'string' && protocol.trim()) {
+    // If multiple protocols are provided, the first one is the token
+    return protocol.split(',')[0].trim();
+  }
+
+  return null;
 }
 
 export function startDashboardSocketServer(server: HttpServer) {
@@ -57,6 +66,12 @@ export function startDashboardSocketServer(server: HttpServer) {
     const pathname = request.url ? request.url.split('?')[0] : '';
     
     if (pathname === DASHBOARD_SOCKET_PATH) {
+      const token = extractToken(request);
+      if (!token) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
       dashboardSocketServer?.handleUpgrade(request, socket, head, (ws) => {
         dashboardSocketServer?.emit('connection', ws, request);
       });
@@ -64,20 +79,20 @@ export function startDashboardSocketServer(server: HttpServer) {
   });
 
   dashboardSocketServer.on('connection', (socket: WebSocket, request: IncomingMessage) => {
-    logger.info({ path: request.url, ip: request.socket.remoteAddress }, 'Dashboard WebSocket connected');
+    const safeUrl = request.url ? request.url.replace(/[?&]token=[^&]+/, '?token=[REDACTED]') : '(unknown)';
+    logger.info({ path: safeUrl, ip: request.socket.remoteAddress }, 'Dashboard WebSocket connected');
 
     const token = extractToken(request);
     if (!token) {
-      logger.warn({ url: request.url }, 'Dashboard WebSocket rejected: missing token');
+      logger.warn({ path: safeUrl }, 'Dashboard WebSocket rejected: missing token');
       socket.close(4001, 'Unauthorized');
       return;
     }
 
     try {
       verifyAccessToken(token);
-      logger.info('Dashboard WebSocket auth succeeded');
     } catch (err) {
-      logger.warn({ err }, 'Dashboard WebSocket rejected: invalid or expired token');
+      logger.warn({ path: safeUrl }, 'Dashboard WebSocket rejected: invalid or expired token');
       socket.close(4001, 'Unauthorized');
       return;
     }

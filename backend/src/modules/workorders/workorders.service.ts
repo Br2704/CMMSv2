@@ -22,6 +22,7 @@ import { applySpareUsageDelta, formatSpareUsageSummary, normalizeSpareUsage } fr
 import { ensureDefaultWorkOrderMasters } from '../workOrderMasters/work-order-master.helpers';
 import { normalizeWorkOrderMasterCode, type WorkOrderMasterOptionType } from '../workOrderMasters/work-order-master.defaults';
 import { workordersRepository } from './workorders.repository';
+import { AnalyticsService } from './analytics.service';
 import { IsNull } from 'typeorm';
 import type { ListQuery } from '../../utils/pagination';
 
@@ -87,10 +88,44 @@ const WORKFLOW_STATUSES = {
   COMPLETED: 'COMPLETED',
   USER_VERIFICATION: 'USER_VERIFICATION',
   APPROVAL_PENDING: 'APPROVAL_PENDING',
+  REASSIGNED: 'REASSIGNED',
   REJECTED: 'REJECTED',
   CLOSED: 'CLOSED',
   CANCELLED: 'CANCELLED',
 } as const;
+
+const PENDING_APPROVAL_STATUSES = [
+  WORKFLOW_STATUSES.USER_VERIFICATION,
+  WORKFLOW_STATUSES.APPROVAL_PENDING,
+] as const;
+
+function isPendingApprovalStatus(status: string): boolean {
+  return PENDING_APPROVAL_STATUSES.includes(status as (typeof PENDING_APPROVAL_STATUSES)[number]);
+}
+
+function validateWhyWhyAnalysis(value: unknown): Record<string, string> | null {
+  const parsed = parseJsonObject(value);
+  if (!parsed) return null;
+  const requiredKeys = [
+    'why_1',
+    'why_2',
+    'why_3',
+    'why_4',
+    'why_5',
+    'root_reason',
+    'corrective_prevention',
+    'recurrence_prevention',
+  ];
+  const result: Record<string, string> = {};
+  for (const key of requiredKeys) {
+    const normalized = normalizeText(parsed[key]);
+    if (!normalized) {
+      badRequest(`why_why_analysis.${key} is required when downtime exceeds 120 minutes`);
+    }
+    result[key] = normalized;
+  }
+  return result;
+}
 
 const WORKFLOW_MANAGED_FIELDS = new Set([
   'status',
@@ -231,7 +266,14 @@ function toNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-type WorkOrderScope = 'assigned' | 'raised' | 'incharge' | 'all' | 'approval_required';
+function escapeCsvField(value: string): string {
+  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+type WorkOrderScope = 'assigned' | 'raised' | 'incharge' | 'team' | 'all' | 'approval_required';
 
 function normalizeScope(value: unknown): WorkOrderScope | null {
   const raw = readOptionalString(value);
@@ -241,6 +283,9 @@ function normalizeScope(value: unknown): WorkOrderScope | null {
   if (normalized === 'raised') return 'raised';
   if (normalized === 'incharge') return 'incharge';
   if (normalized === 'all') return 'all';
+  if (normalized === 'team' || normalized === 'my_team') {
+    return 'team';
+  }
   if (normalized === 'approval_required' || normalized === 'approval-required' || normalized === 'approval') {
     return 'approval_required';
   }
@@ -295,6 +340,9 @@ class WorkOrdersService extends CrudService {
     const escalationOnly =
       readOptionalBoolean(extended.escalation_only) ?? readOptionalBoolean(extended.escalationOnly) ?? false;
 
+    const dateFrom = readOptionalString(extended.date_from);
+    const dateTo = readOptionalString(extended.date_to);
+
     const sortRaw = readOptionalString(query.sort);
     const [requestedSortColumn, requestedSortDirection] = sortRaw ? sortRaw.split(':') : [];
     const allowedSortColumns = new Set([
@@ -321,6 +369,8 @@ class WorkOrdersService extends CrudService {
       escalationOnly,
       sortColumn,
       sortDirection,
+      dateFrom,
+      dateTo,
     };
   }
 
@@ -338,6 +388,8 @@ class WorkOrdersService extends CrudService {
       escalationOnly,
       sortColumn,
       sortDirection,
+      dateFrom,
+      dateTo,
     } = this.normalizeListQuery(query);
 
     const effectiveScope: WorkOrderScope | null = approvalRequired ? 'approval_required' : scope;
@@ -360,7 +412,17 @@ class WorkOrdersService extends CrudService {
     }
 
     if (effectiveScope === 'assigned') {
-      qb.andWhere('t.assigned_to = :actorUserId', { actorUserId: auth.userId });
+      const teamIds = auth.teamIds ?? [];
+      if (teamIds.length > 0) {
+        qb.andWhere(
+          `(t.assigned_to = :actorUserId OR (t.category IN (
+            SELECT DISTINCT wm.category FROM work_order_team_mappings wm WHERE wm.team_id IN (:...teamIds)
+          ) AND (t.raised_by IS NULL OR t.raised_by <> :actorUserId)))`,
+          { actorUserId: auth.userId, teamIds }
+        );
+      } else {
+        qb.andWhere('t.assigned_to = :actorUserId', { actorUserId: auth.userId });
+      }
     }
 
     if (effectiveScope === 'raised') {
@@ -375,8 +437,27 @@ class WorkOrdersService extends CrudService {
       qb.andWhere('(t.raised_by IS NULL OR t.raised_by <> :actorUserId)', { actorUserId: auth.userId });
     }
 
+    if (effectiveScope === 'team') {
+      const teamIds = auth.teamIds ?? [];
+      if (teamIds.length === 0) {
+        return { items: [], total: 0 };
+      }
+      // Subquery: find categories that are mapped to the user's maintenance teams
+      const teamCategoriesSubQuery = qb
+        .subQuery()
+        .select('DISTINCT wm.category')
+        .from('work_order_team_mappings', 'wm')
+        .where('wm.team_id IN (:...teamIds)', { teamIds })
+        .getQuery();
+      qb.andWhere(`t.category IN (${teamCategoriesSubQuery})`, { teamIds });
+      // Exclude work orders the user raised themselves (already visible in 'raised' tab)
+      qb.andWhere('(t.raised_by IS NULL OR t.raised_by <> :actorUserId)', { actorUserId: auth.userId });
+    }
+
     if (effectiveScope === 'approval_required') {
-      qb.andWhere('t.status = :pendingStatus', { pendingStatus: WORKFLOW_STATUSES.USER_VERIFICATION });
+      qb.andWhere('t.status IN (:...pendingStatuses)', {
+        pendingStatuses: [...PENDING_APPROVAL_STATUSES],
+      });
       if (!canApproveAny) {
         qb.andWhere('t.raised_by = :actorUserId', { actorUserId: auth.userId });
       }
@@ -410,6 +491,14 @@ class WorkOrdersService extends CrudService {
         )`,
         { search: `%${search}%` },
       );
+    }
+
+    if (dateFrom) {
+      qb.andWhere('t.created_at >= :dateFrom', { dateFrom });
+    }
+    if (dateTo) {
+      const dateToEnd = dateTo.includes('T') ? dateTo : `${dateTo}T23:59:59.999Z`;
+      qb.andWhere('t.created_at <= :dateTo', { dateTo: dateToEnd });
     }
 
     const totalQb = qb.clone().select('COUNT(1)', 'count');
@@ -447,6 +536,7 @@ class WorkOrdersService extends CrudService {
     const canApproveAny = this.isAdminActor(auth);
     const inchargeCategories = this.getInchargeCategories(auth);
     const recentThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const teamIds = auth.teamIds ?? [];
 
     const qb = AppDataSource.createQueryBuilder().from('work_orders', 't');
     if (scopedPlantIds) {
@@ -473,7 +563,12 @@ class WorkOrdersService extends CrudService {
 
     qb
       .select('COUNT(1)', 'total_count')
-      .addSelect('SUM(CASE WHEN t.assigned_to = :actorUserId THEN 1 ELSE 0 END)', 'assigned_count')
+      .addSelect(
+        teamIds.length > 0
+          ? `SUM(CASE WHEN t.assigned_to = :actorUserId OR (t.category IN (SELECT DISTINCT wm.category FROM work_order_team_mappings wm WHERE wm.team_id IN (:...teamIds)) AND (t.raised_by IS NULL OR t.raised_by <> :actorUserId)) THEN 1 ELSE 0 END)`
+          : `SUM(CASE WHEN t.assigned_to = :actorUserId THEN 1 ELSE 0 END)`,
+        'assigned_count'
+      )
       .addSelect('SUM(CASE WHEN t.raised_by = :actorUserId THEN 1 ELSE 0 END)', 'raised_count')
       .addSelect(
         inchargeCategories.length > 0
@@ -483,8 +578,8 @@ class WorkOrdersService extends CrudService {
       )
       .addSelect(
         canApproveAny
-          ? 'SUM(CASE WHEN t.status = :approvalPendingStatus THEN 1 ELSE 0 END)'
-          : 'SUM(CASE WHEN t.status = :approvalPendingStatus AND t.raised_by = :actorUserId THEN 1 ELSE 0 END)',
+          ? 'SUM(CASE WHEN t.status IN (:...pendingApprovalStatuses) THEN 1 ELSE 0 END)'
+          : 'SUM(CASE WHEN t.status IN (:...pendingApprovalStatuses) AND t.raised_by = :actorUserId THEN 1 ELSE 0 END)',
         'approval_queue_count',
       )
       .addSelect('SUM(CASE WHEN t.status <> :closedStatus THEN 1 ELSE 0 END)', 'open_count')
@@ -492,22 +587,50 @@ class WorkOrdersService extends CrudService {
         'SUM(CASE WHEN t.status = :closedStatus AND t.closed_at IS NOT NULL AND t.closed_at >= :recentThreshold THEN 1 ELSE 0 END)',
         'closed_last_24h_count',
       )
-      .addSelect('SUM(CASE WHEN t.status = :approvalPendingStatus THEN 1 ELSE 0 END)', 'pending_approval_count')
+      .addSelect('SUM(CASE WHEN t.status IN (:...pendingApprovalStatuses) THEN 1 ELSE 0 END)', 'pending_approval_count')
       .addSelect('SUM(CASE WHEN t.escalation_level IS NOT NULL THEN 1 ELSE 0 END)', 'escalated_count')
       .setParameters({
         actorUserId: auth.userId,
         inchargeCategories,
         closedStatus: WORKFLOW_STATUSES.CLOSED,
-        approvalPendingStatus: WORKFLOW_STATUSES.USER_VERIFICATION,
+        pendingApprovalStatuses: [...PENDING_APPROVAL_STATUSES],
         recentThreshold,
+        teamIds,
       });
 
+    // Add team count if user belongs to any teams
+    const teamCountQb =
+      teamIds.length > 0
+        ? AppDataSource.createQueryBuilder()
+            .select('COUNT(1)', 'team_count')
+            .from('work_orders', 't')
+            .where(
+              `t.category IN (SELECT DISTINCT wm.category FROM work_order_team_mappings wm WHERE wm.team_id IN (:...teamIds))`,
+              { teamIds },
+            )
+            .andWhere('(t.raised_by IS NULL OR t.raised_by <> :actorUserId)', { actorUserId: auth.userId })
+        : null;
+
+    if (scopedPlantIds && teamCountQb) {
+      if (scopedPlantIds.length === 0) {
+        teamCountQb.andWhere('1 = 0');
+      } else {
+        teamCountQb.andWhere('t.plant_id IN (:...plantIds)', { plantIds: scopedPlantIds });
+      }
+    }
+
+    const teamCountRaw = teamCountQb ? await teamCountQb.getRawOne<{ team_count: string | number }>() : null;
+
     const raw = await qb.getRawOne<Record<string, unknown>>();
+
+    const hasTeamScope = teamIds.length > 0 && !canApproveAny && inchargeCategories.length === 0;
+
     return {
       tabs: {
         assigned: toNumber(raw?.assigned_count),
         raised: toNumber(raw?.raised_count),
         incharge: toNumber(raw?.incharge_count),
+        team: toNumber(teamCountRaw?.team_count ?? 0),
         all: toNumber(raw?.total_count),
         approvalRequired: toNumber(raw?.approval_queue_count),
       },
@@ -518,7 +641,7 @@ class WorkOrdersService extends CrudService {
         total: toNumber(raw?.total_count),
         escalated: toNumber(raw?.escalated_count),
       },
-      defaultScope: canApproveAny ? 'all' : inchargeCategories.length > 0 ? 'incharge' : 'assigned',
+      defaultScope: canApproveAny ? 'all' : inchargeCategories.length > 0 ? 'incharge' : hasTeamScope ? 'team' : 'assigned',
     };
   }
 
@@ -549,15 +672,63 @@ class WorkOrdersService extends CrudService {
     return roles.some((role) => ['ROOT_ADMIN', 'SUPERADMIN', 'SUPER_ADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER'].includes(role));
   }
 
-  private canExecuteWorkOrder(existing: GenericRecord, auth: AuthContext): boolean {
-    return canAccessWorkOrder(auth, existing);
+  private async isUserInAssignedTeam(workOrder: GenericRecord, userId: string, manager = AppDataSource.manager): Promise<boolean> {
+    const plantId = workOrder.plant_id as string | null;
+    const category = workOrder.category as string | null;
+    const assetId = workOrder.asset_id as string | null;
+
+    if (!plantId || !category || !assetId) {
+      return false;
+    }
+
+    const asset = await manager.getRepository(AssetEntity).findOne({
+      where: { id: assetId },
+      select: ['departmentId'],
+    });
+
+    let categoryMapping = null;
+    if (asset?.departmentId) {
+      categoryMapping = await manager.getRepository(WorkOrderTeamMappingEntity).findOne({
+        where: { plantId, departmentId: asset.departmentId, category },
+        select: ['teamId'],
+      });
+    }
+    if (!categoryMapping) {
+      categoryMapping = await manager.getRepository(WorkOrderTeamMappingEntity).findOne({
+        where: { plantId, departmentId: IsNull(), category },
+        select: ['teamId'],
+      });
+    }
+
+    if (!categoryMapping) {
+      return false;
+    }
+
+    const team = await manager.getRepository(MaintenanceTeamEntity).findOne({
+      where: { id: categoryMapping.teamId, isActive: true },
+      select: ['teamLeaderId', 'teamMemberIds'],
+    });
+
+    if (!team) {
+      return false;
+    }
+
+    const teamMemberIds = team.teamMemberIds ?? [];
+    return team.teamLeaderId === userId || teamMemberIds.includes(userId);
   }
 
-  private ensureExecutionAccess(existing: GenericRecord, auth: AuthContext) {
-    if (this.canExecuteWorkOrder(existing, auth)) {
+  private async canExecuteWorkOrder(existing: GenericRecord, auth: AuthContext, manager = AppDataSource.manager): Promise<boolean> {
+    if (canAccessWorkOrder(auth, existing)) {
+      return true;
+    }
+    return this.isUserInAssignedTeam(existing, auth.userId, manager);
+  }
+
+  private async ensureExecutionAccess(existing: GenericRecord, auth: AuthContext, manager = AppDataSource.manager) {
+    if (await this.canExecuteWorkOrder(existing, auth, manager)) {
       return;
     }
-    forbidden('Only the assigned technician can perform this work order action');
+    forbidden('Only the assigned technician or team members can perform this work order action');
   }
 
   private ensureApprovalAccess(existing: GenericRecord, auth: AuthContext): { isAdminOverride: boolean } {
@@ -679,10 +850,9 @@ class WorkOrdersService extends CrudService {
     const normalized = normalizeKeys(input);
 
     const assetId = normalized.asset_id as string | undefined;
-    const category = normalized.category as string | undefined;
     const problemDescription = normalized.problem_description as string | undefined;
-    if (!assetId || !category || !problemDescription) {
-      badRequest('asset_id, category and problem_description are required');
+    if (!assetId || !problemDescription) {
+      badRequest('asset_id and problem_description are required');
     }
 
     const asset = await this.assetsRepo.findOneBy({ id: assetId, isActive: true });
@@ -698,17 +868,19 @@ class WorkOrdersService extends CrudService {
     }
     enforcePlantScope(auth, plantId);
 
-    const normalizedCategory = await this.validateMasterOption(plantId, 'CATEGORY', category);
+    // AUTO-MAPPING CATEGORY BASED ON ASSET
+    const categoryFromAsset = asset.defaultCategory;
+    const providedCategory = normalized.category as string | undefined;
+    const finalCategory = providedCategory || categoryFromAsset || 'MECHANICAL';
+
+    const normalizedCategory = await this.validateMasterOption(plantId, 'CATEGORY', finalCategory);
+    
     const normalizedWorkOrderType = await this.validateMasterOption(
       plantId,
       'WO_TYPE',
-      String(normalized.wo_type ?? 'BREAKDOWN'),
+      'BREAKDOWN',
     );
-    const normalizedFailureCode = await this.validateMasterOption(
-      plantId,
-      'FAILURE_CODE',
-      (normalized.failure_code as string | null | undefined) ?? null,
-    );
+    
     let categoryMapping = null;
     if (plantId && asset.departmentId) {
       categoryMapping = await this.teamMappingsRepo.findOne({
@@ -731,17 +903,28 @@ class WorkOrdersService extends CrudService {
 
     const woNumber = typeof normalized.wo_number === 'string' ? normalized.wo_number.trim() : '';
     const initialStatus = assignedTeam?.teamLeaderId ? WORKFLOW_STATUSES.ASSIGNED : WORKFLOW_STATUSES.RAISED;
+    
+    // SLA Management: Set initial SLA due (e.g., 2 hours for breakdown)
+    const slaMinutes = 120; // Default 2 hours
+    const slaDueAt = new Date(Date.now() + slaMinutes * 60 * 1000);
+
     const payload: GenericRecord = {
       ...normalized,
       wo_number: woNumber || generateWorkOrderNumber(),
       category: normalizedCategory,
       wo_type: normalizedWorkOrderType,
-      failure_code: normalizedFailureCode,
+      failure_code: null,
+      sub_category: null,
       status: initialStatus,
+      downtime_start_at: new Date().toISOString(),
       raised_by: normalized.raised_by ?? auth.userId,
       assigned_to: normalized.assigned_to ?? assignedTeam?.teamLeaderId ?? null,
       plant_id: plantId,
       plantId,
+      sla_due_at: slaDueAt.toISOString(),
+      escalation_level: 0,
+      shift: normalized.shift || null,
+      breakdown_type: normalized.breakdown_type || null,
     };
 
     const createdWorkOrder = await super.create(payload, auth);
@@ -776,10 +959,11 @@ class WorkOrdersService extends CrudService {
 
     await notifyBreakdownWorkOrderRaised(String(createdWorkOrder.id));
 
-    if (isMailConfigured()) {
+    if (await isMailConfigured()) {
       const woData = {
         woId: String(createdWorkOrder.id),
         woNumber: String(createdWorkOrder.wo_number ?? payload.wo_number),
+        category: String(payload.category ?? createdWorkOrder.category ?? 'MECHANICAL'),
         assetId: typeof payload.asset_id === 'string' ? payload.asset_id : (typeof createdWorkOrder.asset_id === 'string' ? createdWorkOrder.asset_id : undefined),
         plantId: typeof payload.plant_id === 'string' ? payload.plant_id : undefined,
         priority: String(payload.priority ?? 'MEDIUM'),
@@ -891,7 +1075,7 @@ class WorkOrdersService extends CrudService {
         conflict('Only raised, triaged, or assigned work orders can be accepted');
       }
 
-      this.ensureExecutionAccess(existing, auth);
+      await this.ensureExecutionAccess(existing, auth, manager);
 
       const normalized = normalizeKeys(input);
       const now = new Date().toISOString();
@@ -939,56 +1123,6 @@ class WorkOrdersService extends CrudService {
     });
   }
 
-  async addActivity(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
-    return AppDataSource.transaction(async (manager) => {
-      const existing = await this.loadExistingWorkOrder(id, auth, manager);
-      this.ensureExecutionAccess(existing, auth);
-
-      const normalized = normalizeKeys(input);
-      const type = String(normalized.type ?? 'COMMENT').toUpperCase();
-      const notes = normalizeText(normalized.notes);
-      if (!notes) {
-        badRequest('notes are required');
-      }
-
-      const attachments = parseJsonArray(normalized.attachments);
-      const occurredAt = normalizeText(normalized.occurred_at) ?? new Date().toISOString();
-      const eventType = type === 'INTERNAL_NOTE' ? 'INTERNAL_NOTE' : 'COMMENT';
-
-      await this.writeActivityLog(
-        existing,
-        auth,
-        {
-          eventType,
-          notes,
-          attachments,
-          occurredAt,
-        },
-        manager,
-      );
-
-      if (eventType === 'COMMENT') {
-        const recipientIds = uniqueIds([
-          normalizeText(existing.assigned_to),
-          normalizeText(existing.raised_by),
-        ]).filter((userId) => userId !== auth.userId);
-        await this.createNotifications(
-          recipientIds.map((userId) => ({
-            userId,
-            title: 'Work Order Update',
-            message: `${String(existing.wo_number)} has a new comment.`,
-            type: 'info',
-            link: '/work-orders',
-            woId: String(existing.id),
-          })),
-          manager,
-        );
-      }
-
-      return existing;
-    });
-  }
-
   async startWorkOrder(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
@@ -999,12 +1133,13 @@ class WorkOrdersService extends CrudService {
         WORKFLOW_STATUSES.ASSIGNED,
         WORKFLOW_STATUSES.ACCEPTED,
         WORKFLOW_STATUSES.OPENED,
+        WORKFLOW_STATUSES.REASSIGNED,
       ];
       if (!allowedStartStatuses.includes(status)) {
         conflict('Work order can only be started from Raised, Triaged, Assigned, or Opened status');
       }
 
-      this.ensureExecutionAccess(existing, auth);
+      await this.ensureExecutionAccess(existing, auth, manager);
 
       const normalized = normalizeKeys(input);
       const verificationMethod = toUpperText(normalized.verification_method);
@@ -1036,21 +1171,43 @@ class WorkOrdersService extends CrudService {
         }
       }
 
+      // CATEGORY REASSIGNMENT LOGIC
+      const newCategory = normalizeText(normalized.category);
+      if (newCategory && newCategory !== existing.category) {
+        return this.reassignWorkOrderInternal(manager, id, newCategory, normalized, auth);
+      }
+
       const safetyChecklist = normalizeKeys((normalized.safety_checklist as GenericRecord | undefined) ?? {});
       if (!safetyChecklist.ppe_worn || !safetyChecklist.machine_isolated || !safetyChecklist.safety_lock_applied) {
         badRequest('All safety checklist items must be confirmed before work starts');
       }
 
-      const now = new Date().toISOString();
+      const nowDate = new Date();
+      const now = nowDate.toISOString();
+      const estimatedMinutes = Number.isFinite(Number(normalized.estimated_time_minutes))
+        ? Math.max(0, Math.round(Number(normalized.estimated_time_minutes)))
+        : null;
+      const expectedDowntimeMinutes = Number.isFinite(Number(normalized.expected_downtime_minutes))
+        ? Math.max(0, Math.round(Number(normalized.expected_downtime_minutes)))
+        : estimatedMinutes;
+      const expectedCompletionAt =
+        expectedDowntimeMinutes && expectedDowntimeMinutes > 0
+          ? new Date(nowDate.getTime() + expectedDowntimeMinutes * 60 * 1000).toISOString()
+          : parseDateTime(normalized.expected_completion_at);
+      const assignedTechnician = normalizeText(normalized.assigned_to) ?? auth.userId;
+
       const technicianVerification = {
         ...(parseJsonObject(existing.technician_verification) ?? {}),
         verified_at: now,
         verification_method: verificationMethod,
         initial_assessment: normalizeText(normalized.initial_assessment),
         assigned_to_notes: normalizeText(normalized.assigned_to_notes),
-        estimated_time_minutes: Number.isFinite(Number(normalized.estimated_time_minutes))
-          ? Math.max(0, Math.round(Number(normalized.estimated_time_minutes)))
-          : null,
+        assessment_remarks: normalizeText(normalized.assessment_remarks),
+        estimated_time_minutes: estimatedMinutes,
+        expected_downtime_minutes: expectedDowntimeMinutes,
+        expected_completion_at: expectedCompletionAt,
+        work_permit_required: Boolean(normalized.work_permit_required),
+        loto_required: Boolean(normalized.loto_required),
         ...(verificationMethod === 'QR_SCAN' ? { scanned_asset_id: scannedAssetId } : {}),
         ...(verificationMethod === 'MANUAL_ENTRY' ? { manual_machine_code: manualMachineCode } : {}),
       };
@@ -1060,9 +1217,16 @@ class WorkOrdersService extends CrudService {
         {
           status: WORKFLOW_STATUSES.IN_PROGRESS,
           opened_at: existing.opened_at ?? now,
-          started_at: now,
+          started_at: existing.started_at ?? now,
+          downtime_start_at: existing.downtime_start_at ?? now,
           accepted_at: existing.accepted_at ?? now,
+          assigned_to: assignedTechnician,
           technician_verification: technicianVerification,
+          initial_assessment: normalizeText(normalized.initial_assessment),
+          expected_completion_at: expectedCompletionAt ? new Date(expectedCompletionAt) : null,
+          work_permit_required: Boolean(normalized.work_permit_required),
+          loto_required: Boolean(normalized.loto_required),
+          remarks: normalizeText(normalized.assessment_remarks) ?? existing.remarks ?? null,
           safety_checklist: {
             ...safetyChecklist,
             confirmed_at: now,
@@ -1083,6 +1247,8 @@ class WorkOrdersService extends CrudService {
             verificationMethod,
             assignedToNotes: normalizeText(normalized.assigned_to_notes),
             estimatedTimeMinutes: technicianVerification.estimated_time_minutes,
+            workPermitRequired: technicianVerification.work_permit_required,
+            lotoRequired: technicianVerification.loto_required,
           },
           occurredAt: now,
         },
@@ -1124,7 +1290,7 @@ class WorkOrdersService extends CrudService {
         conflict('Only raised or assigned work orders can be triaged');
       }
 
-      this.ensureExecutionAccess(existing, auth);
+      await this.ensureExecutionAccess(existing, auth, manager);
 
       const normalized = normalizeKeys(input);
       const now = new Date().toISOString();
@@ -1187,6 +1353,142 @@ class WorkOrdersService extends CrudService {
     });
   }
 
+  private async reassignWorkOrderInternal(
+    manager: any,
+    id: string,
+    newCategory: string,
+    input: GenericRecord,
+    auth: AuthContext,
+  ): Promise<GenericRecord> {
+    const existing = await this.loadExistingWorkOrder(id, auth, manager);
+    const plantId = String(existing.plant_id);
+    const asset = await manager.getRepository(AssetEntity).findOneBy({ id: existing.asset_id });
+    
+    const normalizedCategory = await this.validateMasterOption(plantId, 'CATEGORY', newCategory);
+    
+    let categoryMapping = null;
+    if (plantId && asset?.departmentId) {
+      categoryMapping = await this.teamMappingsRepo.findOne({
+        where: { plantId, departmentId: asset.departmentId, category: normalizedCategory as string },
+        select: ['teamId'],
+      });
+    }
+    if (!categoryMapping && plantId) {
+      categoryMapping = await this.teamMappingsRepo.findOne({
+        where: { plantId, departmentId: IsNull(), category: normalizedCategory as string },
+        select: ['teamId'],
+      });
+    }
+    const assignedTeam = categoryMapping && plantId
+      ? await this.teamsRepo.findOne({
+        where: { id: categoryMapping.teamId, plantId, isActive: true },
+        select: ['id', 'teamLeaderId', 'teamMemberIds', 'teamName'],
+      })
+      : null;
+
+    const now = new Date().toISOString();
+    const updated = await this.persistWorkOrderUpdate(
+      id,
+      {
+        category: normalizedCategory,
+        status: WORKFLOW_STATUSES.REASSIGNED,
+        assigned_to: assignedTeam?.teamLeaderId ?? null,
+        initial_assessment: normalizeText(input.initial_assessment),
+        started_at: null,
+        opened_at: null,
+        accepted_at: null,
+        technician_verification: null,
+        safety_checklist: null,
+        remarks: `Reassigned from ${existing.category} to ${normalizedCategory}. Reason: ${normalizeText(input.assessment_remarks ?? input.remarks) || 'Category mismatch during assessment'}`,
+      },
+      auth,
+      { manager, allowWorkflowMutation: true, existing },
+    );
+
+    await this.writeActivityLog(
+      updated,
+      auth,
+      {
+        eventType: 'REASSIGNED',
+        notes: `Reassigned to ${normalizedCategory}. Initial assessment: ${normalizeText(input.initial_assessment)}`,
+        eventMeta: {
+          previousCategory: existing.category,
+          newCategory: normalizedCategory,
+          newTeamId: assignedTeam?.id || null,
+        },
+        occurredAt: now,
+      },
+      manager,
+    );
+
+    if (assignedTeam) {
+       const recipientIds = uniqueIds([assignedTeam.teamLeaderId, ...(assignedTeam.teamMemberIds ?? [])]);
+       await this.createNotifications(
+         recipientIds.map(userId => ({
+           userId,
+           title: 'Work Order Reassigned to Your Team',
+           message: `${String(existing.wo_number)} has been reassigned to ${assignedTeam.teamName}.`,
+           type: 'warning',
+           link: '/work-orders',
+           woId: String(existing.id),
+         })),
+         manager
+       );
+    }
+
+    return updated;
+  }
+
+  async addActivity(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+    return AppDataSource.transaction(async (manager) => {
+      const existing = await this.loadExistingWorkOrder(id, auth, manager);
+      await this.ensureExecutionAccess(existing, auth, manager);
+
+      const normalized = normalizeKeys(input);
+      const type = String(normalized.type ?? 'COMMENT').toUpperCase();
+      const notes = normalizeText(normalized.notes);
+      if (!notes) {
+        badRequest('notes are required');
+      }
+
+      const attachments = parseJsonArray(normalized.attachments);
+      const occurredAt = normalizeText(normalized.occurred_at) ?? new Date().toISOString();
+      const eventType = type === 'INTERNAL_NOTE' ? 'INTERNAL_NOTE' : 'COMMENT';
+
+      await this.writeActivityLog(
+        existing,
+        auth,
+        {
+          eventType,
+          notes,
+          attachments,
+          occurredAt,
+        },
+        manager,
+      );
+
+      if (eventType === 'COMMENT') {
+        const recipientIds = uniqueIds([
+          normalizeText(existing.assigned_to),
+          normalizeText(existing.raised_by),
+        ]).filter((userId) => userId !== auth.userId);
+        await this.createNotifications(
+          recipientIds.map((userId) => ({
+            userId,
+            title: 'Work Order Update',
+            message: `${String(existing.wo_number)} has a new comment.`,
+            type: 'info',
+            link: '/work-orders',
+            woId: String(existing.id),
+          })),
+          manager,
+        );
+      }
+
+      return existing;
+    });
+  }
+
   async submitForApproval(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
@@ -1195,141 +1497,127 @@ class WorkOrdersService extends CrudService {
         conflict('Only in-progress or reopened work orders can be completed for user verification');
       }
 
-      this.ensureExecutionAccess(existing, auth);
+      await this.ensureExecutionAccess(existing, auth, manager);
 
       const normalized = normalizeKeys(input);
       const issueDetails = normalizeText(normalized.issue_details) ?? normalizeText(normalized.root_cause);
       const workPerformed = normalizeText(normalized.work_performed_description) ?? normalizeText(normalized.action_taken);
+      const correctiveAction = normalizeText(normalized.corrective_action) ?? workPerformed;
       const remarks = normalizeText(normalized.remarks);
       const partsReplaced = normalizeText(normalized.parts_replaced) ?? normalizeText(normalized.materials_used);
-      const nowDate = new Date();
+      const completionAt = parseDateTime(normalized.completion_at) ?? new Date();
+      const nowDate = completionAt;
       const now = nowDate.toISOString();
-      const parsedLaborMinutes = Number(normalized.time_spent_minutes ?? normalized.labor_minutes);
-      const hasProvidedLaborMinutes = Number.isFinite(parsedLaborMinutes);
-      const laborMinutes = hasProvidedLaborMinutes
-        ? Math.max(0, Math.round(parsedLaborMinutes))
+      
+      const laborMinutes = Number.isFinite(Number(normalized.time_spent_minutes ?? normalized.labor_minutes))
+        ? Math.max(0, Math.round(Number(normalized.time_spent_minutes ?? normalized.labor_minutes)))
         : elapsedMinutes(existing.started_at, nowDate);
-      const parsedDowntimeMinutes = Number(normalized.downtime_minutes);
-      const hasProvidedDowntimeMinutes = Number.isFinite(parsedDowntimeMinutes);
-      const downtimeMinutes = hasProvidedDowntimeMinutes
-        ? Math.max(0, Math.round(parsedDowntimeMinutes))
+      
+      const downtimeMinutes = Number.isFinite(Number(normalized.downtime_minutes))
+        ? Math.max(0, Math.round(Number(normalized.downtime_minutes)))
         : elapsedMinutes(existing.downtime_start_at ?? existing.started_at, nowDate);
+
+      const whyWhyAnalysis =
+        downtimeMinutes > 120 ? validateWhyWhyAnalysis(normalized.why_why_analysis) : parseJsonObject(normalized.why_why_analysis);
+
       const actualCost = Number.isFinite(Number(normalized.actual_cost)) ? Math.max(0, Number(normalized.actual_cost)) : 0;
       const attachments = parseJsonArray(normalized.attachments);
       const spareConsumption = normalized.spare_consumption !== undefined ? normalizeSpareUsage(normalized.spare_consumption) : [];
-      const hasMaterials = Boolean(partsReplaced) || spareConsumption.length > 0;
+      const spareUsed = Boolean(normalized.spare_used);
+      const hasMaterials = Boolean(partsReplaced) || spareConsumption.length > 0 || spareUsed === false;
       const operatorFault = Boolean(normalized.operator_fault);
       const followUpRequired = Boolean(normalized.follow_up_required);
-      const followUpTeamId = normalizeText(normalized.follow_up_team_id);
-      const existingPlantId = normalizeText(existing.plant_id);
-
-      let followUpTeam: Pick<MaintenanceTeamEntity, 'id' | 'teamLeaderId' | 'teamMemberIds' | 'teamName'> | null = null;
-      if (followUpRequired) {
-        if (!followUpTeamId) {
-          badRequest('follow_up_team_id is required when follow_up_required is true');
-        }
-        if (!existingPlantId) {
-          badRequest('Follow-up team routing requires a plant-scoped work order');
-        }
-        followUpTeam = await manager.getRepository(MaintenanceTeamEntity).findOne({
-          where: {
-            id: followUpTeamId,
-            plantId: existingPlantId,
-            isActive: true,
-          },
-          select: ['id', 'teamLeaderId', 'teamMemberIds', 'teamName'],
-        });
-
-        if (!followUpTeam) {
-          badRequest('Invalid follow_up_team_id for this work order plant');
-        }
+      
+      if (!issueDetails || !workPerformed || !remarks || !correctiveAction) {
+        badRequest('issue_details, work_performed_description, corrective_action, and remarks are required');
       }
 
-      const followUpAssignee = followUpTeam
-        ? followUpTeam.teamLeaderId ?? (followUpTeam.teamMemberIds ?? [])[0] ?? null
-        : null;
-      if (followUpRequired && !followUpAssignee) {
-        badRequest('Selected follow-up team must have at least one active member');
+      if (spareUsed && spareConsumption.length === 0 && !partsReplaced) {
+        badRequest('Provide structured spare usage or materials used when spares were consumed');
       }
 
-      const workOrderType = normalizeWorkOrderMasterCode(String(existing.wo_type ?? 'BREAKDOWN'));
+      const requestedWoType = normalizeText(normalized.wo_type) ?? String(existing.wo_type ?? 'BREAKDOWN');
+      const plantId = String(existing.plant_id ?? '');
+      const normalizedWorkOrderType = await this.validateMasterOption(plantId, 'WO_TYPE', requestedWoType);
+      const normalizedFailureCode = await this.validateMasterOption(
+        plantId,
+        'FAILURE_CODE',
+        (normalized.failure_code as string | null | undefined) ?? null,
+      );
+      const normalizedActualFailureCategory = await this.validateMasterOption(
+        plantId,
+        'CATEGORY',
+        (normalized.actual_failure_category as string | null | undefined) ?? null,
+      );
+
+      const workOrderType = normalizeWorkOrderMasterCode(String(normalizedWorkOrderType ?? existing.wo_type ?? 'BREAKDOWN'));
       const isFailureEvent = workOrderType === 'BREAKDOWN' && !operatorFault;
 
-      if (!issueDetails || !workPerformed || !remarks || !hasMaterials) {
-        badRequest('issue_details, work_performed_description, materials_used, and remarks are required');
-      }
       const mergedAttachments = [
         ...parseJsonArray(existing.attachments),
         ...attachments,
       ];
 
-      const lifecycleUpdate = followUpRequired
-        ? {
-          status: WORKFLOW_STATUSES.ASSIGNED,
-          opened_at: existing.opened_at ?? now,
-          started_at: null,
-          resolved_at: null,
-          closed_at: null,
-          assigned_to: followUpAssignee,
-          submitted_for_approval_at: null,
-          submitted_for_approval_by: null,
-          approved_by: null,
-          approved_at: null,
-          rejected_by: null,
-          rejected_at: null,
-          approval_comments: null,
-          admin_override_by: null,
-          admin_override_at: null,
-          admin_override_reason: null,
-        }
-        : {
-          status: WORKFLOW_STATUSES.USER_VERIFICATION,
-          resolved_at: now,
-          closed_at: null,
-          submitted_for_approval_at: now,
-          submitted_for_approval_by: auth.userId,
-          approved_by: null,
-          approved_at: null,
-          rejected_by: null,
-          rejected_at: null,
-          approval_comments: null,
-          admin_override_by: null,
-          admin_override_at: null,
-          admin_override_reason: null,
-        };
-
       const updated = await this.persistWorkOrderUpdate(
         id,
         {
-          ...lifecycleUpdate,
+          status: followUpRequired ? WORKFLOW_STATUSES.IN_PROGRESS : WORKFLOW_STATUSES.APPROVAL_PENDING,
+          wo_type: workOrderType,
+          resolved_at: now,
+          downtime_end_at: now,
+          submitted_for_approval_at: followUpRequired ? null : now,
+          submitted_for_approval_by: followUpRequired ? null : auth.userId,
           root_cause: issueDetails,
-          action_taken: workPerformed,
+          action_taken: correctiveAction,
           downtime_minutes: downtimeMinutes,
           is_failure_event: isFailureEvent,
-          failure_code: normalizeText(normalized.failure_code),
+          failure_code: normalizedFailureCode,
+          actual_failure_category: normalizedActualFailureCategory,
+          why_why_analysis: whyWhyAnalysis,
+          preventive_recommendation: normalizeText(normalized.preventive_recommendation),
+          manpower_used: normalizeText(normalized.manpower_used),
           labor_hours: minutesToLaborHours(laborMinutes),
           actual_cost: actualCost,
-          parts_replaced: partsReplaced,
+          parts_replaced: partsReplaced ?? formatSpareUsageSummary(spareConsumption),
           spare_consumption: spareConsumption,
           operator_fault: operatorFault,
-          warranty_claim: Boolean(normalized.warranty_claim),
+          warranty_claim: false,
           follow_up_required: followUpRequired,
-          follow_up_team_id: followUpRequired ? followUpTeam?.id ?? followUpTeamId : null,
-          follow_up_notes: normalizeText(normalized.follow_up_notes),
           remarks,
           attachments: mergedAttachments,
-          escalation_level: followUpRequired ? null : existing.escalation_level ?? null,
-          sla_due_at: followUpRequired ? null : existing.sla_due_at ?? null,
         },
         auth,
         { manager, allowWorkflowMutation: true, existing },
       );
 
+      // SPAWN LINKED FOLLOW-UP WORK ORDER IF REQUIRED
+      if (followUpRequired) {
+        const followUpTeamId = normalizeText(normalized.follow_up_team_id);
+        const followUpTeam = followUpTeamId ? await manager.getRepository(MaintenanceTeamEntity).findOne({
+          where: { id: followUpTeamId, isActive: true },
+          select: ['id', 'teamLeaderId', 'teamName']
+        }) : null;
+
+        if (followUpTeam) {
+          const followUpPayload = {
+            asset_id: existing.asset_id,
+            category: normalizeText(normalized.follow_up_support_category) || 'MECHANICAL',
+            priority: existing.priority,
+            problem_description: `FOLLOW-UP SUPPORT for ${existing.wo_number}: ${normalizeText(normalized.follow_up_notes) || 'Additional work required'}`,
+            wo_type: 'SUPPORT',
+            parent_work_order_id: id,
+            plant_id: existing.plant_id,
+            assigned_to: followUpTeam.teamLeaderId || null,
+          };
+          await this.create(followUpPayload, auth);
+        }
+      }
+
       await this.writeActivityLog(
         updated,
         auth,
         {
-          eventType: followUpRequired ? 'FOLLOW_UP_ROUTED' : 'USER_VERIFICATION_REQUESTED',
+          eventType: 'USER_VERIFICATION_REQUESTED',
           notes: remarks,
           attachments,
           eventMeta: {
@@ -1337,12 +1625,7 @@ class WorkOrdersService extends CrudService {
             workPerformed,
             laborMinutes,
             downtimeMinutes,
-            actualCost,
-            hasStructuredSpareUsage: spareConsumption.length > 0,
-            followUpRequired,
-            followUpTeamId: followUpTeam?.id ?? null,
-            timeSpentAutoCalculated: !hasProvidedLaborMinutes,
-            downtimeAutoCalculated: !hasProvidedDowntimeMinutes,
+            followUpSpawned: followUpRequired,
             isFailureEvent,
           },
           occurredAt: now,
@@ -1351,44 +1634,13 @@ class WorkOrdersService extends CrudService {
       );
 
       const raisedBy = normalizeText(existing.raised_by);
-      if (followUpRequired && followUpTeam) {
-        const recipientIds = uniqueIds([followUpTeam.teamLeaderId, ...(followUpTeam.teamMemberIds ?? [])]).filter(
-          (userId) => userId !== auth.userId,
-        );
-        await this.createNotifications(
-          recipientIds.map((userId) => ({
-            userId,
-            title: 'Follow-up Work Order Assigned',
-            message: `${String(existing.wo_number)} requires follow-up by ${followUpTeam.teamName}.`,
-            type: 'warning',
-            link: '/work-orders',
-            woId: String(existing.id),
-          })),
-          manager,
-        );
-
-        if (raisedBy && raisedBy !== auth.userId) {
-          await this.createNotifications(
-            [
-              {
-                userId: raisedBy,
-                title: 'Work Order Follow-up Assigned',
-                message: `${String(existing.wo_number)} was routed to ${followUpTeam.teamName} for follow-up closure.`,
-                type: 'info',
-                link: '/work-orders',
-                woId: String(existing.id),
-              },
-            ],
-            manager,
-          );
-        }
-      } else if (raisedBy) {
+      if (raisedBy) {
         await this.createNotifications(
           [
             {
               userId: raisedBy,
-              title: 'Work Order Completed',
-              message: `${String(existing.wo_number)} is waiting for your confirmation.`,
+              title: 'Work Order Pending Approval',
+              message: `${String(existing.wo_number)} is waiting for your approval to close.`,
               type: 'warning',
               link: '/work-orders',
               woId: String(existing.id),
@@ -1398,11 +1650,12 @@ class WorkOrdersService extends CrudService {
         );
       }
 
-      if (isMailConfigured() && !followUpRequired) {
+      if ((await isMailConfigured()) && !followUpRequired) {
         sendWorkOrderCompletedEmails(
           {
             woId: String(existing.id),
             woNumber: String(existing.wo_number),
+            category: String(existing.category ?? 'MECHANICAL'),
             assetId: String(existing.asset_id ?? ''),
             plantId: String(existing.plant_id ?? ''),
             priority: String(existing.priority ?? 'MEDIUM'),
@@ -1422,8 +1675,8 @@ class WorkOrdersService extends CrudService {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
       const status = String(existing.status ?? '').toUpperCase();
-      if (status !== WORKFLOW_STATUSES.USER_VERIFICATION && status !== WORKFLOW_STATUSES.APPROVAL_PENDING) {
-        conflict('Only work orders waiting for user verification can be closed');
+      if (!isPendingApprovalStatus(status)) {
+        conflict('Only work orders pending requester approval can be closed');
       }
 
       const { isAdminOverride } = this.ensureApprovalAccess(existing, auth);
@@ -1482,11 +1735,12 @@ class WorkOrdersService extends CrudService {
         manager,
       );
 
-      if (isMailConfigured()) {
+      if (await isMailConfigured()) {
         sendWorkOrderClosedEmails(
           {
             woId: String(existing.id),
             woNumber: String(existing.wo_number),
+            category: String(existing.category ?? 'MECHANICAL'),
             assetId: String(existing.asset_id ?? ''),
             plantId: String(existing.plant_id ?? ''),
             priority: String(existing.priority ?? 'MEDIUM'),
@@ -1498,6 +1752,13 @@ class WorkOrdersService extends CrudService {
         ).catch(() => {});
       }
 
+      // PHASE 1 & 2: AUTOMATIC MAINTENANCE REPORT GENERATION
+      try {
+        await AnalyticsService.generateMaintenanceReport(updated.id as string, manager);
+      } catch (reportError) {
+        console.error('Failed to generate automatic maintenance report:', reportError);
+      }
+
       return updated;
     });
   }
@@ -1506,8 +1767,8 @@ class WorkOrdersService extends CrudService {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
       const status = String(existing.status ?? '').toUpperCase();
-      if (status !== WORKFLOW_STATUSES.USER_VERIFICATION && status !== WORKFLOW_STATUSES.APPROVAL_PENDING) {
-        conflict('Only work orders waiting for user verification can be reopened');
+      if (!isPendingApprovalStatus(status)) {
+        conflict('Only work orders pending requester approval can be reopened');
       }
 
       const { isAdminOverride } = this.ensureApprovalAccess(existing, auth);
@@ -1567,11 +1828,12 @@ class WorkOrdersService extends CrudService {
         manager,
       );
 
-      if (isMailConfigured()) {
+      if (await isMailConfigured()) {
         sendWorkOrderRejectedEmails(
           {
             woId: String(existing.id),
             woNumber: String(existing.wo_number),
+            category: String(existing.category ?? 'MECHANICAL'),
             assetId: String(existing.asset_id ?? ''),
             plantId: String(existing.plant_id ?? ''),
             priority: String(existing.priority ?? 'MEDIUM'),
@@ -1586,77 +1848,149 @@ class WorkOrdersService extends CrudService {
     });
   }
 
-  async cancelWorkOrder(id: string, input: { reason: string }, auth: AuthContext): Promise<GenericRecord> {
-    return AppDataSource.transaction(async (manager) => {
-      const existing = await this.loadExistingWorkOrder(id, auth, manager);
-      const status = String(existing.status ?? '').toUpperCase();
-      const cancellableStatuses: readonly string[] = [WORKFLOW_STATUSES.RAISED, WORKFLOW_STATUSES.ASSIGNED, WORKFLOW_STATUSES.OPENED, WORKFLOW_STATUSES.TRIAGED];
-      if (!cancellableStatuses.includes(status)) {
-        conflict('Only raised, assigned, opened, or triaged work orders can be cancelled');
-      }
-
-      const now = new Date().toISOString();
-      const updated = await this.persistWorkOrderUpdate(
-        id,
-        {
-          status: WORKFLOW_STATUSES.CANCELLED,
-          cancelled_at: now,
-          cancelled_by: auth.userId,
-          cancellation_reason: input.reason,
-          closed_at: now,
-        },
-        auth,
-        { manager, allowWorkflowMutation: true, existing },
-      );
-
-      await this.writeActivityLog(
-        updated,
-        auth,
-        {
-          eventType: 'CANCELLED',
-          notes: `Work order cancelled. Reason: ${input.reason}`,
-          occurredAt: now,
-        },
-        manager,
-      );
-
-      const recipients = uniqueIds([normalizeText(existing.raised_by), normalizeText(existing.assigned_to)]).filter(
-        (userId) => userId !== auth.userId,
-      );
-      await this.createNotifications(
-        recipients.map((userId) => ({
-          userId,
-          title: 'Work Order Cancelled',
-          message: `${String(existing.wo_number)} was cancelled. Reason: ${input.reason}`,
-          type: 'info',
-          link: '/work-orders',
-          woId: String(existing.id),
-        })),
-        manager,
-      );
-
-      if (isMailConfigured()) {
-        sendWorkOrderCancelledEmails(
-          {
-            woId: String(existing.id),
-            woNumber: String(existing.wo_number),
-            assetId: String(existing.asset_id ?? ''),
-            plantId: String(existing.plant_id ?? ''),
-            priority: String(existing.priority ?? 'MEDIUM'),
-            problemDescription: String(existing.problem_description ?? ''),
-            location: String(existing.reported_location ?? ''),
-          },
-          recipients,
-        ).catch(() => {});
-      }
-
-      return updated;
-    });
+  async cancelWorkOrder(_id: string, _input: { reason: string }, _auth: AuthContext): Promise<GenericRecord> {
+    forbidden('Work order cancellation has been removed from the maintenance workflow');
   }
 
   async update(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
     return AppDataSource.transaction(async (manager) => this.persistWorkOrderUpdate(id, input, auth, { manager }));
   }
+
+  async bulkUpdate(ids: string[], input: GenericRecord, auth: AuthContext): Promise<{ updated: number }> {
+    const normalized = normalizeKeys(input);
+    // Only allow updating certain fields in bulk
+    const allowedBulkFields = new Set([
+      'assigned_to',
+      'priority',
+      'status',
+      'category',
+      'wo_type',
+      'plant_id',
+      'remarks',
+    ]);
+    
+    const payload: GenericRecord = {};
+    for (const [key, value] of Object.entries(normalized)) {
+      if (allowedBulkFields.has(key) && value !== undefined) {
+        payload[key] = value;
+      }
+    }
+
+    if (Object.keys(payload).length === 0) {
+      badRequest('No valid fields provided for bulk update. Allowed: assigned_to, priority, status, category, wo_type, plant_id, remarks');
+    }
+
+    // Validate each work order exists and user has access
+    const validIds: string[] = [];
+    for (const id of ids) {
+      try {
+        await this.loadExistingWorkOrder(id, auth);
+        validIds.push(id);
+      } catch {
+        // Skip IDs that fail access check
+        continue;
+      }
+    }
+
+    if (validIds.length === 0) {
+      badRequest('None of the selected work orders are accessible');
+    }
+
+    if (payload.status) {
+      const newStatus = String(payload.status).toUpperCase();
+      const bulkSafeStatuses = new Set(['ASSIGNED', 'OPENED', 'IN_PROGRESS', 'CLOSED', 'CANCELLED']);
+      if (!bulkSafeStatuses.has(newStatus)) {
+        badRequest('Status not allowed for bulk update. Allowed: ASSIGNED, OPENED, IN_PROGRESS, CLOSED, CANCELLED');
+      }
+      payload.status = newStatus;
+      if (newStatus === 'CLOSED') {
+        payload.closed_at = new Date().toISOString();
+      }
+    }
+
+    const sanitizedPayload = toEntityPayload(sanitizePayload(payload));
+    if (Object.keys(sanitizedPayload).length === 0) {
+      return { updated: 0 };
+    }
+
+    await AppDataSource.createQueryBuilder()
+      .update('work_orders')
+      .set(sanitizedPayload as never)
+      .where('id IN (:...ids)', { ids: validIds })
+      .execute();
+
+    // Log activity for each
+    for (const id of validIds) {
+      await this.writeActivityLog(
+        { id, plant_id: payload.plant_id || null, asset_id: null },
+        auth,
+        {
+          eventType: 'BULK_UPDATE',
+          notes: `Bulk updated: ${Object.keys(payload).join(', ')}`,
+          eventMeta: { ...payload, bulkAction: true },
+          occurredAt: new Date().toISOString(),
+        },
+      );
+    }
+
+    return { updated: validIds.length };
+  }
+
+  async exportCSV(query: ListQuery, auth: AuthContext): Promise<string> {
+    // Get all matching records (up to 10000 for export)
+    const exportQuery = { ...query, page: 1, limit: 10000 };
+    const result = await this.list(exportQuery, auth);
+    
+    const headers = [
+      'WO Number', 'Status', 'Priority', 'Category', 'Type',
+      'Asset Code', 'Asset Name',
+      'Problem Description', 'Root Cause', 'Action Taken',
+      'Raised By', 'Assigned To',
+      'Created At', 'Started At', 'Resolved At', 'Closed At',
+      'Downtime (mins)', 'Labor Hours', 'Actual Cost',
+      'Location', 'Failure Code', 'Shift',
+      'Safety Related', 'Operator Fault', 'Follow Up Required',
+      'Remarks',
+    ];
+
+    const csvRows = [headers.join(',')];
+
+    for (const item of result.items) {
+      const assets = item.assets as { code?: string; name?: string } | null;
+      const row = [
+        String(item.wo_number || ''),
+        String(item.status || ''),
+        String(item.priority || ''),
+        String(item.category || ''),
+        String(item.wo_type || ''),
+        assets?.code || '',
+        assets?.name || '',
+        escapeCsvField(String(item.problem_description || '')),
+        escapeCsvField(String(item.root_cause || '')),
+        escapeCsvField(String(item.action_taken || '')),
+        String(item.raised_by || ''),
+        String(item.assigned_to || ''),
+        item.created_at ? new Date(String(item.created_at)).toISOString().split('T')[0] : '',
+        item.started_at ? new Date(String(item.started_at)).toISOString().split('T')[0] : '',
+        item.resolved_at ? new Date(String(item.resolved_at)).toISOString().split('T')[0] : '',
+        item.closed_at ? new Date(String(item.closed_at)).toISOString().split('T')[0] : '',
+        String(item.downtime_minutes || ''),
+        String(item.labor_hours || ''),
+        String(item.actual_cost || ''),
+        escapeCsvField(String(item.reported_location || '')),
+        String(item.failure_code || ''),
+        String(item.shift || ''),
+        item.safety_related ? 'Yes' : 'No',
+        item.operator_fault ? 'Yes' : 'No',
+        item.follow_up_required ? 'Yes' : 'No',
+        escapeCsvField(String(item.remarks || '')),
+      ];
+      csvRows.push(row.join(','));
+    }
+
+    return csvRows.join('\n');
+  }
+
 }
 
 export const workordersService = new WorkOrdersService();

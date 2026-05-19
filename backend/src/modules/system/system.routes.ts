@@ -1,14 +1,28 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
-import { AuditLogEntity, RefreshTokenEntity, SecurityEventEntity } from '../../database/entities';
+import { AuditLogEntity, RefreshTokenEntity, SecurityEventEntity, SystemConfigEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { requireRole } from '../../middlewares/permissions';
-import { ok } from '../../utils/apiResponse';
+import { validateRequest } from '../../middlewares/validate';
+import { ok, fail } from '../../utils/apiResponse';
 import { getHierarchyConsistencyBreakdown } from '../../utils/hierarchy';
+import { resetTransporter, verifyMailConnection } from '../../services/mail.service';
 
 export const systemRouter = Router();
 
+const smtpConfigSchema = z.object({
+  host: z.string().min(1),
+  port: z.number().int().positive(),
+  user: z.string().min(1),
+  pass: z.string().min(1),
+  from: z.string().email(),
+  fromName: z.string().optional(),
+  appUrl: z.string().url().optional(),
+});
+
 systemRouter.get('/system/health', async (_req, res) => {
+// ... existing health code ...
   const startedAt = Date.now();
   let database = {
     status: 'down' as 'up' | 'down',

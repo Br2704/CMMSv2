@@ -10,6 +10,7 @@ const DASHBOARD_URL = env.FRONTEND_URL || 'http://localhost:5173';
 
 interface WoTemplateData {
   woNumber: string;
+  category?: string;
   assetName?: string;
   problemDescription?: string;
   priority: string;
@@ -80,6 +81,7 @@ function shell(content: string, title: string): string {
 function woSummaryTable(data: WoTemplateData): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:1.6">
 <tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500;width:40%">Work Order</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${data.woNumber}</td></tr>
+${data.category ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Category</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${data.category}</td></tr>` : ''}
 ${data.assetName ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Asset/Machine</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.assetName}</td></tr>` : ''}
 ${data.problemDescription ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Issue Details</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.problemDescription}</td></tr>` : ''}
 <tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Priority</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${priorityBadge(data.priority)}</td></tr>

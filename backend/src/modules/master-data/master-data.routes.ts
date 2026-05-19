@@ -5,6 +5,7 @@ import { AppDataSource } from '../../database/data-source';
 import { AssetEntity, DepartmentEntity, MachineModuleEntity, OrganizationEntity, PlantEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { ensurePlantAccess } from '../../middlewares/permissions';
+import { logger } from '../../config/logger';
 import { ok } from '../../utils/apiResponse';
 
 const masterDataQuerySchema = z.object({
@@ -61,9 +62,9 @@ function buildHierarchy(input: {
 }
 
 export const masterDataRouter = Router();
-masterDataRouter.use('/master-data', requireAuth);
+masterDataRouter.use(requireAuth);
 
-masterDataRouter.get('/master-data/graph', async (req, res, next) => {
+masterDataRouter.get('/graph', async (req, res, next) => {
   try {
     const query = masterDataQuerySchema.parse(req.query);
     if (query.plantId) {
@@ -100,26 +101,28 @@ masterDataRouter.get('/master-data/graph', async (req, res, next) => {
             where: query.includeInactive ? { id: In(organizationIds) } : { id: In(organizationIds), isActive: true },
             order: { name: 'ASC' },
           })
-        : [],
+        : Promise.resolve([]),
       plantIds.length
         ? departmentRepo.find({
             where: query.includeInactive ? { plantId: In(plantIds) } : { plantId: In(plantIds), isActive: true },
             order: { name: 'ASC' },
           })
-        : [],
+        : Promise.resolve([]),
       plantIds.length
         ? moduleRepo.find({
             where: query.includeInactive ? { plantId: In(plantIds) } : { plantId: In(plantIds), isActive: true },
             order: { name: 'ASC' },
           })
-        : [],
+        : Promise.resolve([]),
       plantIds.length
         ? assetRepo.find({
             where: query.includeInactive ? { plantId: In(plantIds) } : { plantId: In(plantIds), isActive: true },
             order: { name: 'ASC' },
           })
-        : [],
+        : Promise.resolve([]),
     ]);
+
+    const hierarchy = buildHierarchy({ organizations, plants, departments, modules, assets });
 
     res.json(
       ok(
@@ -129,12 +132,23 @@ masterDataRouter.get('/master-data/graph', async (req, res, next) => {
           departments,
           modules,
           assets,
-          hierarchy: buildHierarchy({ organizations, plants, departments, modules, assets }),
+          hierarchy,
         },
         'Master data graph fetched',
       ),
     );
-  } catch (error) {
+  } catch (error: any) {
+    logger.error({
+      msg: 'MasterDataGraph error',
+      error: error.message,
+      stack: error.stack,
+      query: req.query,
+      auth: req.auth ? {
+        userId: req.auth.userId,
+        scopeType: req.auth.scopeType,
+        plantIds: req.auth.plantIds,
+      } : 'missing'
+    });
     next(error);
   }
 });

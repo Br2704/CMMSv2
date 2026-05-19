@@ -1,8 +1,7 @@
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePermissions } from "@/hooks/usePermissions";
-import { isRootAdmin, useAuthStore } from "@/store/auth.store";
+import { isRootAdmin, isSuperAdmin, hasRole, useAuthStore } from "@/store/auth.store";
 import {
   Factory,
   Building2,
@@ -176,6 +175,14 @@ const masterPages = [
     color: "bg-sky-600",
     moduleId: "masters.workorder-team-mapping",
   },
+  {
+    name: "SLA & Escalation",
+    description: "Configure SLAs, escalation matrix, and reminder intervals",
+    href: "/masters/sla-config",
+    icon: Landmark,
+    color: "bg-red-600",
+    moduleId: "masters.sla-config",
+  },
 ];
 
 const rootMasterPages = [
@@ -211,6 +218,14 @@ const rootMasterPages = [
     color: "bg-slate-600",
     moduleId: "root.role-access",
   },
+  {
+    name: "SLA & Escalation",
+    description: "Configure SLAs, escalation matrix, and reminder intervals",
+    href: "/masters/sla-config",
+    icon: Landmark,
+    color: "bg-red-600",
+    moduleId: "root.sla-config",
+  },
 ];
 
 export default function Masters() {
@@ -220,16 +235,25 @@ export default function Masters() {
   const effectivePages = isRootUser ? rootMasterPages : masterPages;
   const showSkeleton = !isRootUser && loading;
 
-  const visibleItems = effectivePages.filter((item) => isRootUser || (!showSkeleton && hasModuleAccess(item.moduleId, "view")));
+  const isAdminOrSuper = (isSuperAdmin(user) || hasRole(user, ["ADMIN"])) && !isRootAdmin(user);
+
+  const visibleItems = effectivePages.filter((item) => {
+    if (isRootUser) return true;
+    if (showSkeleton) return false;
+    if (item.href === "/masters/sla-config") {
+      return isAdminOrSuper;
+    }
+    return hasModuleAccess(item.moduleId, "view");
+  });
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+      <div>
         <h1 className="text-xl sm:text-2xl font-bold tracking-tight lg:text-3xl">Masters</h1>
         <p className="text-sm text-muted-foreground">
           {isRootUser ? "Governance masters for organizations, plants, and role access" : "Configure and manage all system master data"}
         </p>
-      </motion.div>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {showSkeleton
@@ -247,12 +271,7 @@ export default function Masters() {
               </Card>
             ))
           : visibleItems.map((item, index) => (
-          <motion.div
-            key={item.name}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: index * 0.04 }}
-          >
+          <div key={item.href}>
             <Link to={item.href}>
               <Card className="shadow-card hover:shadow-lg transition-all duration-300 hover:-translate-y-1 cursor-pointer group">
                 <CardHeader className="pb-3">
@@ -270,7 +289,7 @@ export default function Masters() {
                 </CardContent>
               </Card>
             </Link>
-          </motion.div>
+          </div>
         ))}
       </div>
     </div>

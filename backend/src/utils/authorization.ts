@@ -6,29 +6,19 @@ export type AuthorizationDecision =
   | { allowed: false; moduleKey: string; action: string; permissionKey: string; reason: string };
 
 const ROOT_ADMIN_MODULE_ALLOWLIST = new Set([
+  // Governance-only modules for Root Admin.
+  // Operational modules (WORK_ORDERS, ASSETS, PM, CALIBRATION, AMC, GATES, ESG, etc.)
+  // are not accessible by Root Admin.
   'DASHBOARD',
-  'MASTERS',
   'ORGANIZATIONS',
   'PLANTS',
   'USERS',
   'ROLE_ACCESS',
   'MODULES',
+  'MASTERS',
   'NOTIFICATIONS',
-  'LOGS',
   'SECURITY',
-  'VISITOR',
-  'WORKORDERS',
-  'ASSETS',
-  'PM',
-  'CALIBRATION',
-  'AMC',
   'REPORTS',
-  'ANALYTICS',
-  'GATES',
-  'SHIFTS',
-  'BENCHMARKING',
-  'SAFETY',
-  'ESG',
 ]);
 
 const MODULE_ALIASES: Record<string, string[]> = {
@@ -57,6 +47,86 @@ function permissionActions(auth: AuthContext, moduleKey: string): string[] {
   return [...(auth.permissions[moduleKey] ?? []), ...(auth.permissions['*'] ?? [])].map((item) => normalizeAction(item));
 }
 
+function allowedMastersForRole(role: string): string[] {
+  const normalized = role.trim().toUpperCase();
+  if (normalized === 'ROOT_ADMIN' || normalized === 'SUPERADMIN' || normalized === 'ADMIN') {
+    return ['*'];
+  }
+  if (normalized === 'MAINTENANCE_MANAGER') {
+    return [
+      'PLANTS',
+      'DEPARTMENTS',
+      'MODULES',
+      'ASSETS',
+      'PM',
+      'CALIBRATION',
+      'AMC',
+      'ESG',
+      'SAFETY',
+      'LOGS',
+      'SHIFTS',
+      'WORK_ORDER_MASTERS',
+      'WORK_ORDER_TEAM_MAPPINGS',
+      'MAINTENANCE_TEAMS',
+    ];
+  }
+  if (normalized === 'HR_USER') {
+    return ['USERS', 'GATES'];
+  }
+  if (normalized === 'CALIBRATION_USER' || normalized === 'CALIBRATION_INCHARGE') {
+    return ['CALIBRATION'];
+  }
+  if (normalized === 'STORE_USER' || normalized === 'INVENTORY_MANAGER') {
+    return ['DEPARTMENTS', 'VENDORS', 'AMC'];
+  }
+  if (normalized === 'SAFETY_OFFICER') {
+    return ['SAFETY'];
+  }
+  return [];
+}
+
+function masterMutationDenied(auth: AuthContext, moduleKey: string, action: string): boolean {
+  if (action === 'READ') return false;
+
+  const masterModuleKeys = new Set([
+    'PLANTS',
+    'DEPARTMENTS',
+    'USERS',
+    'GATES',
+    'SHIFTS',
+    'VENDORS',
+    'ROLE_ACCESS',
+    'MODULES',
+    'CALIBRATION',
+    'AMC',
+    'ESG',
+    'SAFETY',
+    'WORK_ORDER_MASTERS',
+    'WORK_ORDER_TEAM_MAPPINGS',
+    'MAINTENANCE_TEAMS',
+  ]);
+
+  if (!masterModuleKeys.has(moduleKey)) {
+    return false;
+  }
+
+  const roles = normalizedRoles(auth);
+  if (roles.includes('ROOT_ADMIN') || roles.includes('SUPERADMIN') || roles.includes('ADMIN')) {
+    if (roles.includes('SUPERADMIN') && moduleKey === 'PLANTS') {
+      return true;
+    }
+    if (roles.includes('ADMIN') && moduleKey === 'PLANTS') {
+      return true;
+    }
+    return false;
+  }
+
+  const allowed = roles.flatMap(allowedMastersForRole);
+  if (allowed.includes('*')) return false;
+
+  return !allowed.includes(moduleKey);
+}
+
 function governanceMutationDenied(auth: AuthContext, moduleKey: string, action: string): boolean {
   const roles = normalizedRoles(auth);
   const isRootAdmin = roles.includes('ROOT_ADMIN');
@@ -80,8 +150,45 @@ export function authorizePermission(auth: AuthContext, moduleId: string, action:
   for (const moduleKey of moduleKeys) {
     const permissionKey = toPermissionKey(moduleKey, requestedAction);
 
+    // Permit all authenticated users to view, update, and delete their own notifications
+    if (moduleKey === 'NOTIFICATIONS' && ['READ', 'UPDATE', 'DELETE'].includes(requestedAction)) {
+      return { allowed: true, moduleKey, action: requestedAction, permissionKey };
+    }
+
+    // Permit all authenticated users to read basic operational directories (e.g. dropdown lookups)
+    // Data-level isolation is still strictly enforced per-user via plantScope middleware.
+    if (
+      requestedAction === 'READ' &&
+      [
+        'PLANTS',
+        'DEPARTMENTS',
+        'MASTERS',
+        'WORK_ORDER_MASTERS',
+        'WORK_ORDER_TEAM_MAPPINGS',
+        'MAINTENANCE_TEAMS',
+        'USERS',
+        'REPORTS',
+        'VENDORS',
+        'ASSETS',
+        'MODULES',
+        'CALIBRATION',
+        'CALIBRATION_TEMPLATES',
+        'CALIBRATION_SCHEDULES',
+        'CALIBRATION_INSTRUMENTS',
+        'SHIFTS',
+        'ROLE_ACCESS',
+        'LOGS',
+      ].includes(moduleKey)
+    ) {
+      return { allowed: true, moduleKey, action: requestedAction, permissionKey };
+    }
+
     if (isRootAdmin && ROOT_ADMIN_MODULE_ALLOWLIST.has(moduleKey)) {
       return { allowed: true, moduleKey, action: requestedAction, permissionKey };
+    }
+
+    if (masterMutationDenied(auth, moduleKey, requestedAction)) {
+      return { allowed: false, moduleKey, action: requestedAction, permissionKey, reason: 'MASTER_MUTATION_DENIED' };
     }
 
     if (governanceMutationDenied(auth, moduleKey, requestedAction)) {

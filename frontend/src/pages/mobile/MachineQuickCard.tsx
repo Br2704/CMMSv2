@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Wrench, History, CalendarDays, Building2, Loader2, ArrowRight, Gauge, Activity, ShieldCheck, Zap } from "lucide-react";
+import { Wrench, History, CalendarDays, Building2, Loader2, ArrowRight, Gauge, Activity, ShieldCheck, Zap, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";

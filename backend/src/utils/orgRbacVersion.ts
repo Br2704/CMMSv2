@@ -1,5 +1,6 @@
 import { AppDataSource } from '../database/data-source';
 import { OrgRbacMetaEntity } from '../database/entities';
+import { emitDashboardRefresh } from '../realtime/dashboard-socket';
 
 async function ensureOrgMetaRow(organizationId: string) {
   const repo = AppDataSource.getRepository(OrgRbacMetaEntity);
@@ -21,6 +22,13 @@ export async function bumpOrgRbacVersion(organizationId: string): Promise<number
   const row = await ensureOrgMetaRow(organizationId);
   row.version += 1;
   const saved = await repo.save(row);
+  
+  try {
+    emitDashboardRefresh('mutation');
+  } catch {
+    // Ignore failures if the WebSocket server is offline or restarting
+  }
+
   return saved.version;
 }
 

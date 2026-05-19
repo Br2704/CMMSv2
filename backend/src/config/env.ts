@@ -58,8 +58,8 @@ const envSchema = z.object({
   DB_FILE: optionalStringFromEnv,
   DB_SSL: booleanFromEnv.default(false),
 
-  JWT_SECRET: z.string().min(8),
-  JWT_REFRESH_SECRET: z.string().min(8),
+  JWT_SECRET: z.string().min(32),
+  JWT_REFRESH_SECRET: z.string().min(32),
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN_DAYS: z.coerce.number().int().positive().default(7),
   JWT_ISSUER: z.string().default('cmms-backend'),
@@ -70,6 +70,7 @@ const envSchema = z.object({
   LOGIN_LOCKOUT_THRESHOLD: z.coerce.number().int().positive().default(8),
   LOGIN_LOCKOUT_MINUTES: z.coerce.number().int().positive().default(10),
   MFA_ISSUER: z.string().default('TamOptiX CMMS'),
+  CAPTCHA_SECRET: z.string().min(16).optional(),
   DATA_ENCRYPTION_KEY: z.string().min(32),
   SECURITY_ALERT_EMAILS: z.string().default(''),
   SECURITY_TEAM_USER_IDS: z.string().default(''),
