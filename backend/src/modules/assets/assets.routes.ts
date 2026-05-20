@@ -16,17 +16,24 @@ import {
   MachineModuleEntity,
   PmScheduleEntity,
   WorkOrderEntity,
+  OrganizationEntity,
+  PlantEntity,
+  UserEntity,
+  MaintenanceTeamEntity,
 } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { ensurePlantAccess, requirePermission } from '../../middlewares/permissions';
 import { fail, ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { validateMasterHierarchy } from '../../utils/hierarchy';
+import { isRootAdminRole, isSuperAdminRole, isAdminRole } from '../../utils/rbac';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { resolveScopedPlantId } from '../../utils/plantScope';
 import { applyPlantScope, applySearch } from '../../utils/query';
 import { generateQrCodeId } from '../../utils/qr';
 import { isSafeImageValue } from '../../utils/fileValidation';
+import { createSimpleExcelWorkbook } from '../../utils/excel';
+import { generateAssetLogbook } from '../../services/asset-logbook.service';
 
 const ASSET_TYPE_OPTIONS = [
   'BOILER',
@@ -695,6 +702,24 @@ assetsRouter.delete('/assets/:id', requirePermission('ASSETS', 'DELETE'), async 
       return;
     }
     ensurePlantAccess(req, entity.plantId);
+
+    const isAdminDeleter = req.auth!.roles.some((role) => isRootAdminRole(role) || isSuperAdminRole(role) || isAdminRole(role));
+    if (isAdminDeleter) {
+      await repo.remove(entity);
+      await audit('assets.delete', {
+        module: 'ASSETS',
+        actorUserId: req.auth?.userId ?? null,
+        entityName: 'assets',
+        entityId: entity.id,
+        plantId: entity.plantId,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'] ?? null,
+        statusCode: 200,
+      });
+      res.json(ok({ id: entity.id, deleted: true }, 'Asset deleted permanently'));
+      return;
+    }
+
     entity.isActive = false;
     await repo.save(entity);
     await audit('assets.delete', {
@@ -703,6 +728,8 @@ assetsRouter.delete('/assets/:id', requirePermission('ASSETS', 'DELETE'), async 
       entityName: 'assets',
       entityId: entity.id,
       plantId: entity.plantId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'] ?? null,
       statusCode: 200,
     });
     res.json(ok({ id: entity.id, deleted: true }, 'Asset deactivated'));
@@ -721,6 +748,29 @@ assetsRouter.get('/assets/:id/work-orders', requirePermission('WORK_ORDERS', 'RE
     qb.skip((query.page - 1) * query.limit).take(query.limit).orderBy('wo.createdAt', 'DESC');
     const [data, total] = await qb.getManyAndCount();
     res.json(ok(data, 'Asset work orders fetched', buildPagination(query.page, query.limit, total)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+assetsRouter.get('/assets/:id/logbook', requirePermission('ASSETS', 'READ'), async (req, res, next) => {
+  try {
+    const params = z.object({ id: z.string().uuid() }).parse(req.params);
+    const assetRepo = AppDataSource.getRepository(AssetEntity);
+    const asset = await assetRepo.findOne({ where: { id: params.id }, relations: { plant: true } });
+    if (!asset) {
+      res.status(404).json(fail('Asset not found'));
+      return;
+    }
+    ensurePlantAccess(req, asset.plantId);
+
+    const buffer = await generateAssetLogbook(params.id);
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    const filename = `logbook_${asset.code}_${timestamp}.xls`;
+    res.setHeader('Content-Type', 'application/vnd.ms-excel');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   } catch (error) {
     next(error);
   }

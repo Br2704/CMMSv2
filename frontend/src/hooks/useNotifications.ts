@@ -290,8 +290,8 @@ export function useNotifications(options?: { enabled?: boolean }) {
           const browserNotification = new Notification(notification.title, {
             body: notification.message,
             tag: notification.id,
-            icon: "/jkfenner/jkfenner-logo.png",
-            badge: "/jkfenner/jkfenner-favicon.svg",
+            icon: "/tamoptix/tamoptix-logo.png",
+            badge: "/tamoptix/tamoptix-favicon.svg",
             requireInteraction: true,
             data: { url: notification.link, woId: notification.wo_id },
           });

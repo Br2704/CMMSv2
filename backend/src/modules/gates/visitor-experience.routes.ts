@@ -97,7 +97,7 @@ const experienceMetaSchema = z.object({
 
 const contentSchema = z.object({
   plantId: optionalUuid,
-  pageTitle: z.string().min(1).max(200).default('Welcome to JK Fenner'),
+  pageTitle: z.string().min(1).max(200).default('Welcome to TamOptiX CMMS'),
   companyOverview: optionalString,
   contactName: optionalString,
   contactEmail: optionalString,
@@ -642,10 +642,10 @@ visitorExperienceRouter.get('/visitor-experience/content', requirePermission('GA
         {
           id: content?.id ?? null,
           plantId: resolvedPlantId,
-          pageTitle: content?.pageTitle ?? (plant?.plantName ? `Welcome to ${plant.plantName}` : 'Welcome to JK Fenner'),
+          pageTitle: content?.pageTitle ?? (plant?.plantName ? `Welcome to ${plant.plantName}` : 'Welcome to TamOptiX CMMS'),
           companyOverview:
             content?.companyOverview ??
-            'JK Fenner combines legacy industrial excellence with modern digital operations for safer, faster, and smarter maintenance.',
+            'TamOptiX combines industrial excellence with modern digital operations for safer, faster, and smarter maintenance.',
           contactName: content?.contactName ?? null,
           contactEmail: content?.contactEmail ?? null,
           contactPhone: content?.contactPhone ?? null,

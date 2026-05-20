@@ -241,7 +241,7 @@ export default function PublicQrAssetPage() {
                     <span className="text-xs font-black uppercase tracking-widest text-slate-200">Asset Identity</span>
                   </div>
                   <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                    This encrypted QR signature uniquely identifies asset <span className="font-bold text-slate-300">{data.asset.code}</span> within the JK Fenner ecosystem.
+                    This encrypted QR signature uniquely identifies asset <span className="font-bold text-slate-300">{data.asset.code}</span> within the TamOptiX ecosystem.
                   </p>
                   <div className="rounded-xl bg-slate-950/60 p-3 font-mono text-[9px] text-teal-500/70 break-all border border-white/5">
                     {data?.links?.publicResolverUrl || window.location.href}
@@ -272,7 +272,7 @@ export default function PublicQrAssetPage() {
           {/* Footer Info */}
           <div className="flex flex-col items-center gap-4 pt-12 opacity-40 grayscale hover:grayscale-0 transition-all duration-500">
              <div className="h-px w-24 bg-gradient-to-r from-transparent via-slate-500 to-transparent" />
-             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">JK Fenner CMMS • Powered by Antigravity</p>
+             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">TamOptiX Technologies • Intelligent CMMS Platform</p>
           </div>
         </div>
       </div>

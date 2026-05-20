@@ -15,10 +15,9 @@ import { useToast } from "@/hooks/use-toast";
 import { tryFallbackLogin, getFallbackBrandingSeed } from "@/fallback-auth";
 import { setFallbackMode as setHttpFallbackMode } from "@/api/http";
 
-const JK_FENNER_FAVICON = "/jkfenner/jkfenner-favicon.svg";
-const JK_FENNER_LOGO = "/jkfenner/jkfenner-logo.svg";
-const JK_FENNER_LOGO_FALLBACK = "/jkfenner/jkfenner-logo.png";
+const TAMOPTIX_FAVICON = "/tamoptix/tamoptix-favicon.svg";
 const TAMOPTIX_LOGO = "/tamoptix/tamoptix-logo.svg";
+const TAMOPTIX_LOGO_FALLBACK = "/tamoptix/tamoptix-logo.png";
 
 type LoginBrand = {
   name: string;
@@ -29,9 +28,9 @@ type LoginBrand = {
 
 function resolveLoginBrand(): LoginBrand {
   return {
-    name: "JK Fenner",
-    code: "JKF",
-    title: "JK Fenner CMMS",
+    name: "TamOptiX",
+    code: null,
+    title: "TamOptiX CMMS",
     themeColor: "#0f766e",
   };
 }
@@ -117,13 +116,13 @@ export default function Login() {
         if (id) element.id = id;
         document.head.appendChild(element);
       }
-      element.href = JK_FENNER_FAVICON;
+      element.href = TAMOPTIX_FAVICON;
       return element;
     };
 
     ensureLink("icon");
     ensureLink("shortcut icon");
-    ensureLink("apple-touch-icon", "dynamic-apple-touch-icon").href = JK_FENNER_FAVICON;
+    ensureLink("apple-touch-icon", "dynamic-apple-touch-icon").href = TAMOPTIX_FAVICON;
     ensureLink("manifest", "dynamic-manifest-link").href = buildBrandingManifestUrl(null, null);
   }, [loginBrand]);
 
@@ -289,12 +288,12 @@ export default function Login() {
               <div className="w-full max-w-sm space-y-4">
                 <div className="rounded-3xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 px-6 py-5 shadow-sm">
                   <img
-                    src={JK_FENNER_LOGO}
+                    src={TAMOPTIX_LOGO}
                     alt={`${loginBrand.name} Logo`}
                     className="mx-auto h-16 w-auto object-contain"
                     onError={(event) => {
                       event.currentTarget.onerror = null;
-                      event.currentTarget.src = JK_FENNER_LOGO_FALLBACK;
+                      event.currentTarget.src = TAMOPTIX_LOGO_FALLBACK;
                     }}
                   />
                 </div>

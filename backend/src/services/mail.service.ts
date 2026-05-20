@@ -5,6 +5,7 @@ import { logger } from '../config/logger';
 import { MailQueueEntity, type MailQueueStatus } from '../database/entities/mail-queue.entity';
 import { EmailLogEntity, type EmailStatus } from '../database/entities/email-log.entity';
 import { SystemConfigEntity } from '../database/entities/system-config.entity';
+import { decryptSensitiveValue } from '../utils/crypto';
 
 let transporter: nodemailer.Transporter | null = null;
 let cachedConfig: Record<string, any> | null = null;
@@ -22,9 +23,19 @@ async function getSmtpConfig(): Promise<Record<string, any>> {
     const config = await repo.findOneBy({ configKey: 'SMTP_CONFIG', isActive: true });
     
     if (config?.configValue) {
-      cachedConfig = config.configValue;
+      const value = { ...config.configValue } as Record<string, any>;
+      // Decrypt password at rest if encrypted
+      if (value.passEncrypted && typeof value.pass === 'string') {
+        try {
+          value.pass = decryptSensitiveValue(value.pass);
+        } catch {
+          logger.error({}, 'Failed to decrypt SMTP password; falling back to env');
+          value.pass = env.SMTP_PASS;
+        }
+      }
+      cachedConfig = value;
       lastConfigFetch = now;
-      return cachedConfig as Record<string, any>;
+      return cachedConfig;
     }
   } catch (error) {
     logger.error({ error }, 'Failed to fetch SMTP config from database');

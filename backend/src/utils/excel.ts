@@ -64,7 +64,7 @@ function worksheetXmlForSheet(title: string, sheet: Sheet, branding: WorkbookBra
   const mergeAcross = Math.max(0, columnCount - 1);
   const generatedAt = branding.generatedAt ?? new Date().toISOString();
   const organizationName = branding.organizationName?.trim() || "CMMS Organization";
-  const footerBranding = branding.footerBranding?.trim() || "Powered by TamOptix Technologies";
+  const footerBranding = branding.footerBranding?.trim() || "Powered by TamOptiX Technologies";
 
   const headerRows: string[] = [];
   if (isFirstSheet) {

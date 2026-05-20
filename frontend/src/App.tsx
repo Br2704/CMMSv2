@@ -62,6 +62,7 @@ const RootOrganizationMaster = lazy(() => import("@/pages/root/RootOrganizationM
 const RootPlantMaster = lazy(() => import("@/pages/root/RootPlantMaster"));
 const RootRoleAccessMaster = lazy(() => import("@/pages/root/RootRoleAccessMaster"));
 const RootUsersMaster = lazy(() => import("@/pages/root/RootUsersMaster"));
+const SecretRotationStatus = lazy(() => import("@/pages/root/SecretRotationStatus"));
 
 // Lazy-loaded Mobile Pages
 const QrScanResolver = lazy(() => import("@/pages/mobile/QrScanResolver"));
@@ -198,7 +199,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     "/root/users",
     "/root/role-access",
     "/root/mail-config",
-    "/root/sla-config"
+    "/root/sla-config",
+    "/root/secret-rotation"
   ];
   const isAllowedForRoot = rootAllowedPaths.some((path) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`)
@@ -459,6 +461,7 @@ function App() {
                   <Route path="/masters" element={<SafeRoute><ModuleGuard moduleId="masters"><SuspenseLoader><Masters /></SuspenseLoader></ModuleGuard></SafeRoute>} />
                   <Route path="/root/organizations" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootOrganizationMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
                   <Route path="/root/mail-config" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><MailConfigMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                  <Route path="/root/secret-rotation" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><SecretRotationStatus /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
                   <Route path="/root/sla-config" element={<SafeRoute><Navigate to="/masters/sla-config" replace /></SafeRoute>} />
                   <Route path="/masters/organizations" element={<SafeRoute><Navigate to="/root/organizations" replace /></SafeRoute>} />
                   <Route path="/masters/mail-config" element={<SafeRoute><Navigate to="/root/mail-config" replace /></SafeRoute>} />

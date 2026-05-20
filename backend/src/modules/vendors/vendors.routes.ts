@@ -5,6 +5,7 @@ import { VendorEntity, VendorNotificationSettingEntity } from '../../database/en
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
 import { ok } from '../../utils/apiResponse';
+import { audit } from '../../utils/audit';
 import { sendMail } from '../../utils/mailer';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { applyPlantScope, applySearch } from '../../utils/query';
@@ -96,9 +97,17 @@ vendorsRouter.delete('/vendors/:id', requireRole(['SUPERADMIN', 'ADMIN']), requi
       res.status(404).json({ success: false, message: 'Vendor not found' });
       return;
     }
-    entity.isActive = false;
-    await repo.save(entity);
-    res.json(ok({ id: entity.id, deleted: true }, 'Vendor deactivated'));
+    await repo.delete(params.id);
+    await audit('vendors.delete', {
+      module: 'VENDORS',
+      actorUserId: req.auth?.userId ?? null,
+      entityName: 'vendors',
+      entityId: params.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'] ?? null,
+      statusCode: 200,
+    });
+    res.json(ok({ id: entity.id, deleted: true }, 'Vendor deleted permanently'));
   } catch (error) {
     next(error);
   }

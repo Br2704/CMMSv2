@@ -44,14 +44,14 @@ function getDefaultSnapshot(): BrandingSnapshot {
   return {
     organizationId: null,
     organizationName: null,
-    sidebarTitle: "JK Fenner",
+    sidebarTitle: "TamOptiX",
     logoUrl: null,
-    logoAssetUrl: "/jkfenner/jkfenner-logo.svg",
-    faviconUrl: "/jkfenner/jkfenner-favicon.svg",
-    fallbackLogoUrl: "/jkfenner/jkfenner-logo.svg",
-    fallbackFaviconUrl: "/jkfenner/jkfenner-favicon.svg",
-    browserTitle: "JK Fenner CMMS",
-    brandColor: "#0f172a",
+    logoAssetUrl: "/tamoptix/tamoptix-logo.svg",
+    faviconUrl: "/tamoptix/tamoptix-favicon.svg",
+    fallbackLogoUrl: "/tamoptix/tamoptix-logo.svg",
+    fallbackFaviconUrl: "/tamoptix/tamoptix-favicon.svg",
+    browserTitle: "TamOptiX CMMS",
+    brandColor: "#0f766e",
     updatedAt: null,
   };
 }
@@ -153,7 +153,7 @@ export const useBrandingStore = create<BrandingState>((set, get) => ({
           : (payload.organizationLogoAssetUrl || buildBrandingLogoUrl(payload.organizationId || null, current.version, 192)),
         faviconUrl: preserveSeededOrganization ? current.faviconUrl : (payload.organizationFaviconUrl || null),
         fallbackLogoUrl: payload.fallbackLogoUrl || null,
-        fallbackFaviconUrl: payload.fallbackFaviconUrl || payload.fallbackLogoUrl || "/jkfenner/jkfenner-favicon.svg",
+        fallbackFaviconUrl: payload.fallbackFaviconUrl || payload.fallbackLogoUrl || "/tamoptix/tamoptix-favicon.svg",
         browserTitle: preserveSeededOrganization
           ? (current.browserTitle || (current.organizationName ? `${current.organizationName} CMMS` : null))
           : (payload.browserTitle || null),

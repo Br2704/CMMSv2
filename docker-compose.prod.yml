@@ -34,7 +34,7 @@ services:
       resources:
         limits:
           memory: 512M
-    command: npm run start
+    command: sh -c "npx typeorm -d dist/database/data-source.js migration:run && npm run start"
     environment:
       NODE_ENV: production
       PORT: 3001

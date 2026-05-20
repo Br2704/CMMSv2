@@ -342,3 +342,114 @@ export async function sendWorkOrderCancelledEmails(
     });
   });
 }
+
+export async function sendPasswordResetEmail(
+  email: string,
+  userName: string,
+  resetLink: string,
+): Promise<void> {
+  if (!(await isMailConfigured()) || !email) return;
+
+  const { subject, html } = buildMail({
+    template: 'passwordReset',
+    data: {
+      userName,
+      email,
+      link: resetLink,
+      expiresIn: '1 hour',
+    } as any,
+  });
+
+  await enqueueMail({
+    recipient: email,
+    subject,
+    htmlBody: html,
+    templateName: 'passwordReset',
+    templateData: { userName, email, expiresIn: '1 hour' },
+    eventType: 'PASSWORD_RESET',
+  });
+}
+
+export async function sendUserInvitationEmail(
+  email: string,
+  userName: string,
+  inviteLink: string,
+): Promise<void> {
+  if (!(await isMailConfigured()) || !email) return;
+
+  const { subject, html } = buildMail({
+    template: 'userInvitation',
+    data: {
+      userName,
+      email,
+      link: inviteLink,
+    } as any,
+  });
+
+  await enqueueMail({
+    recipient: email,
+    subject,
+    htmlBody: html,
+    templateName: 'userInvitation',
+    templateData: { userName, email },
+    eventType: 'USER_INVITED',
+  });
+}
+
+export async function sendPmDueEmails(
+  recipients: string[],
+  data: {
+    templateName: string;
+    assetName: string;
+    dueDate: string;
+    maintenanceType?: string;
+    discipline?: string;
+    estimatedDuration?: string;
+  },
+): Promise<void> {
+  if (!(await isMailConfigured()) || recipients.length === 0) return;
+
+  const { subject, html } = buildMail({
+    template: 'pmDue',
+    data: { ...data, link: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/preventive-maintenance` } as any,
+  });
+
+  recipients.forEach((recipient) => {
+    enqueueMail({
+      recipient,
+      subject,
+      htmlBody: html,
+      templateName: 'pmDue',
+      templateData: data as Record<string, unknown>,
+      eventType: 'PM_DUE',
+    });
+  });
+}
+
+export async function sendCalibrationDueEmails(
+  recipients: string[],
+  data: {
+    templateName: string;
+    assetName: string;
+    dueDate: string;
+    maintenanceType?: string;
+  },
+): Promise<void> {
+  if (!(await isMailConfigured()) || recipients.length === 0) return;
+
+  const { subject, html } = buildMail({
+    template: 'calibrationDue',
+    data: { ...data, link: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/calibration` } as any,
+  });
+
+  recipients.forEach((recipient) => {
+    enqueueMail({
+      recipient,
+      subject,
+      htmlBody: html,
+      templateName: 'calibrationDue',
+      templateData: data as Record<string, unknown>,
+      eventType: 'CALIBRATION_DUE',
+    });
+  });
+}

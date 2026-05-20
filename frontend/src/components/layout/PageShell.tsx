@@ -11,7 +11,7 @@ export function PageShell({ children, className, compact = false }: PageShellPro
   return (
     <section
       className={cn(
-        "mx-auto w-full min-w-0 max-w-[1680px]",
+        "mx-auto w-full min-w-0 max-w-[1680px] overflow-x-hidden",
         compact ? "space-y-4" : "space-y-4 sm:space-y-6",
         className,
       )}

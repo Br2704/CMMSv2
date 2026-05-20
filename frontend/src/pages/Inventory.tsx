@@ -38,6 +38,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
+import { PageShell } from "@/components/layout/PageShell";
 
 import { usePermissions } from "@/hooks/usePermissions";
 import { isSuperAdmin, useAuthStore } from "@/store/auth.store";
@@ -485,7 +486,7 @@ export default function Inventory() {
   const showPlantPrompt = isGlobalUser && !resolvedPlantId && !plantsQuery.isLoading;
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <PageShell>
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div className="space-y-2">
           <div>
@@ -837,6 +838,6 @@ export default function Inventory() {
         }}
         isLoading={deleteMutation.isPending}
       />
-    </div>
+    </PageShell>
   );
 }

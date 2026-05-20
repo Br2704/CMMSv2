@@ -14,12 +14,12 @@ const DEFAULT_BRANDING = {
   organizationName: null as string | null,
   organizationLogoUrl: null as string | null,
   organizationLogoAssetUrl: '/api/branding/logo',
-  organizationFaviconUrl: '/jkfenner/jkfenner-favicon.svg' as string | null,
-  sidebarTitle: 'JK Fenner',
-  browserTitle: 'JK Fenner CMMS',
-  brandColor: DEFAULT_THEME_COLOR,
-  fallbackLogoUrl: '/jkfenner/jkfenner-logo.svg',
-  fallbackFaviconUrl: '/jkfenner/jkfenner-favicon.svg',
+  organizationFaviconUrl: '/tamoptix/tamoptix-favicon.svg' as string | null,
+  sidebarTitle: 'TamOptiX',
+  browserTitle: 'TamOptiX CMMS',
+  brandColor: '#0f766e',
+  fallbackLogoUrl: '/tamoptix/tamoptix-logo.svg',
+  fallbackFaviconUrl: '/tamoptix/tamoptix-favicon.svg',
   updatedAt: null as string | null,
 };
 
@@ -48,9 +48,9 @@ function normalizeThemeColor(value: string | null | undefined) {
 
 function getDefaultBrandingAsset(kind: 'logo' | 'favicon', size: number) {
   if (kind === 'favicon') {
-    return '/jkfenner/jkfenner-favicon.svg';
+    return '/tamoptix/tamoptix-favicon.svg';
   }
-  return size >= 512 ? '/jkfenner/jkfenner-logo.png' : '/jkfenner/jkfenner-logo.svg';
+  return size >= 512 ? '/tamoptix/tamoptix-logo.png' : '/tamoptix/tamoptix-logo.svg';
 }
 
 async function sendDefaultAsset(res: Response, kind: 'logo' | 'favicon', size: number) {
@@ -81,7 +81,7 @@ function getAppleTouchIconUrl(organizationId: string | null, version: number) {
 }
 
 function getManifestIconUrl() {
-  return '/jkfenner/jkfenner-favicon.svg';
+  return '/tamoptix/tamoptix-favicon.svg';
 }
 
 async function resolveOrganizationIdForUser(userId: string, authPlantIds: string[] = []): Promise<string | null> {
@@ -297,9 +297,9 @@ brandingRouter.get('/branding/manifest', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.json({
       id: '/', name: 'CMMS', short_name: 'CMMS', description: 'Maintenance Platform',
-      start_url: '/', display: 'standalone', background_color: '#ffffff', theme_color: '#0f172a',
+      start_url: '/', display: 'standalone', background_color: '#ffffff', theme_color: '#0f766e',
       icons: [
-        { src: '/jkfenner/jkfenner-logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/tamoptix/tamoptix-logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       ],
     });
   };
@@ -321,16 +321,16 @@ brandingRouter.get('/branding/manifest', async (req, res) => {
     res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
     res.json({
       id: '/',
-      name: 'JK Fenner CMMS',
-      short_name: 'JK Fenner CMMS',
+      name: 'TamOptiX CMMS',
+      short_name: 'TamOptiX CMMS',
       description: 'Industrial CMMS Platform',
       start_url: '/',
       display: 'standalone',
       background_color: DEFAULT_BG_COLOR,
       theme_color: themeColor,
       icons: [
-        { src: '/jkfenner/jkfenner-logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-        { src: '/jkfenner/jkfenner-logo.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/tamoptix/tamoptix-logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/tamoptix/tamoptix-logo.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       ],
     });
   } catch {

@@ -619,7 +619,7 @@ export default function VisitorExperience() {
             ) : null}
 
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as VisitorTab)} className="space-y-4">
-                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 md:grid-cols-6">
+                <TabsList className="flex w-full flex-nowrap overflow-x-auto sm:grid sm:grid-cols-6 sm:overflow-visible gap-1">
                     <TabsTrigger value="profile" className="gap-2"><UserCheck className="h-4 w-4" /> Profile</TabsTrigger>
                     <TabsTrigger value="navigation" className="gap-2"><MapPinned className="h-4 w-4" /> Navigation</TabsTrigger>
                     <TabsTrigger value="pass" className="gap-2"><QrCode className="h-4 w-4" /> Digital Pass</TabsTrigger>

@@ -13,6 +13,7 @@ import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { InputField, TextareaField } from "@/components/shared/FormField";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
+import { PageShell } from "@/components/layout/PageShell";
 import { createVendor, deleteVendor, listVendors, type Vendor, updateVendor } from "@/api/vendors";
 
 interface VendorFormState {
@@ -176,8 +177,7 @@ export default function VendorsMaster() {
     },
   ];
 
-  return (
-    <div className="space-y-4 sm:space-y-6">
+  return (    <PageShell>
       <BackButton />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -262,6 +262,6 @@ export default function VendorsMaster() {
         )}
       </ViewDialog>
       <DeleteConfirmDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} title="Delete Vendor" itemName={selectedVendor?.name} onConfirm={confirmDelete} isLoading={saving} />
-    </div>
+    </PageShell>
   );
 }

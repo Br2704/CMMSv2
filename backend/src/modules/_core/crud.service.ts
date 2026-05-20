@@ -2,6 +2,7 @@ import type { AuthContext } from '../../types/auth';
 import { enforcePlantScope, resolvePlantFilter, resolveScopedPlantId } from '../../utils/plantScope';
 import type { ListQuery } from '../../utils/pagination';
 import { conflict, notFound } from '../../utils/httpError';
+import { isRootAdminRole, isSuperAdminRole, isAdminRole } from '../../utils/rbac';
 import { CrudRepository } from './crud.repository';
 import type { GenericRecord, ListResult, ModuleConfig } from './crud.types';
 
@@ -77,9 +78,13 @@ export class CrudService {
     return updated;
   }
 
+  private isAdminLevel(roles: string[]): boolean {
+    return roles.some((role) => isRootAdminRole(role) || isSuperAdminRole(role) || isAdminRole(role));
+  }
+
   async remove(id: string, auth: AuthContext): Promise<void> {
     await this.getById(id, auth);
-    if (auth.scopeType === 'ROOT_ADMIN') {
+    if (this.isAdminLevel(auth.roles)) {
       try {
         await this.repository.hardDelete(id);
       } catch (error) {

@@ -6,8 +6,10 @@ import {
   InstrumentCalibrationTaskEntity,
   MachineInstrumentEntity,
   MaintenanceTeamEntity,
+  UserEntity,
 } from '../../database/entities';
 import { addFrequency } from '../pmSchedules/pm-scheduling.utils';
+import { sendCalibrationDueEmails } from '../../services/notification-helper';
 
 export interface CalibrationChecklistTask {
   id: string;
@@ -213,6 +215,37 @@ export async function generateDueCalibrationTasks(now = new Date()) {
           remarks: null,
         });
         await taskRepo.save(entity);
+
+        // Send calibration due notification asynchronously
+        const teamId = schedule.assignedTeamId ?? schedule.template.responsibleTeamId;
+        if (teamId) {
+          try {
+            const team = await AppDataSource.getRepository(MaintenanceTeamEntity).findOne({
+              where: { id: teamId, isActive: true },
+              select: ['teamLeaderId', 'teamMemberIds'],
+            });
+            if (team) {
+              const calUserIds = [team.teamLeaderId, ...(team.teamMemberIds ?? [])].filter(Boolean) as string[];
+              if (calUserIds.length > 0) {
+                const calUsers = await AppDataSource.getRepository(UserEntity).find({
+                  where: calUserIds.map((id) => ({ id, isActive: true })),
+                  select: ['email'],
+                });
+                const calEmails = calUsers.map((u) => u.email).filter((e): e is string => Boolean(e));
+                if (calEmails.length > 0) {
+                  sendCalibrationDueEmails(calEmails, {
+                    templateName: schedule.calibrationType || schedule.template.templateName,
+                    assetName: schedule.instrument?.asset?.name || schedule.instrument?.instrumentName || 'Unknown Instrument',
+                    dueDate: cursor.toISOString(),
+                    maintenanceType: schedule.calibrationType ?? undefined,
+                  }).catch(() => {});
+                }
+              }
+            }
+          } catch {
+            // Notification failures are non-blocking
+          }
+        }
       }
 
       generated = true;

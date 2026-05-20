@@ -8,7 +8,7 @@ export class VisitorExperienceContentEntity extends TimestampedUuidEntity {
   @Column({ name: 'plant_id', type: 'uuid', nullable: true })
   plantId!: string | null;
 
-  @Column({ name: 'page_title', type: 'varchar', default: 'Welcome to JK Fenner' })
+  @Column({ name: 'page_title', type: 'varchar', default: 'Welcome to TamOptiX CMMS' })
   pageTitle!: string;
 
   @Column({ name: 'company_overview', type: LARGE_TEXT_COLUMN_TYPE, nullable: true })

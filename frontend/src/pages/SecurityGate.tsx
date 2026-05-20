@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { PageShell } from "@/components/layout/PageShell";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { subscribeGateSync } from "@/lib/gate-sync";
 import { useAuthStore } from "@/store/auth.store";
@@ -1006,7 +1007,7 @@ export default function SecurityGate() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <PageShell>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl">Digital Gate Entry</h1>
@@ -1024,10 +1025,10 @@ export default function SecurityGate() {
       </div>
 
       <Tabs defaultValue="desk" className="space-y-4">
-        <TabsList className="grid h-auto w-full grid-cols-3">
-          <TabsTrigger value="desk">Entry Desk</TabsTrigger>
-          <TabsTrigger value="activity">Active Log</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
+        <TabsList className="flex w-full flex-nowrap overflow-x-auto sm:grid sm:grid-cols-3">
+          <TabsTrigger value="desk" className="whitespace-nowrap sm:whitespace-normal">Entry Desk</TabsTrigger>
+          <TabsTrigger value="activity" className="whitespace-nowrap sm:whitespace-normal">Active Log</TabsTrigger>
+          <TabsTrigger value="reports" className="whitespace-nowrap sm:whitespace-normal">Reports</TabsTrigger>
         </TabsList>
 
         <TabsContent value="desk" className="space-y-4">
@@ -1682,6 +1683,6 @@ export default function SecurityGate() {
           ) : null}
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

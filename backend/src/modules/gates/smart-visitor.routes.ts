@@ -308,7 +308,7 @@ async function createTemporaryVisitorIdentity(input: {
   const phoneDigits = normalizePhone(input.visitorPhone);
   const timestamp = Date.now();
   const shortToken = randomUUID().replace(/-/g, '').slice(0, 10);
-  const email = `visitor.${phoneDigits ?? 'guest'}.${timestamp}@jkfenner.visitor.local`;
+  const email = `visitor.${phoneDigits ?? 'guest'}.${timestamp}@tamoptix.visitor.local`;
   const tempPassword = `Visit#${shortToken}`;
 
   const existingEmail = await userRepo.findOneBy({ email });

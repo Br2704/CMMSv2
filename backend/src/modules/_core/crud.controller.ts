@@ -49,10 +49,13 @@ export function createCrudController(service: CrudLikeService, moduleName = 'res
       await audit(`${moduleName}.create`, {
         module: moduleName.toUpperCase(),
         actorUserId: req.auth?.userId ?? null,
+        actorRoles: req.auth?.roles ?? null,
         method: req.method,
         path: req.originalUrl,
         entityId: typeof data.id === 'string' ? data.id : null,
         plantId: typeof (data.plant_id ?? data.plantId) === 'string' ? String(data.plant_id ?? data.plantId) : null,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'] ?? null,
         statusCode: 201,
       });
       res.status(201).json(ok(toCamelCase(data), 'Created successfully'));
@@ -63,10 +66,13 @@ export function createCrudController(service: CrudLikeService, moduleName = 'res
       await audit(`${moduleName}.update`, {
         module: moduleName.toUpperCase(),
         actorUserId: req.auth?.userId ?? null,
+        actorRoles: req.auth?.roles ?? null,
         method: req.method,
         path: req.originalUrl,
         entityId: req.params.id,
         plantId: typeof (data.plant_id ?? data.plantId) === 'string' ? String(data.plant_id ?? data.plantId) : null,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'] ?? null,
         statusCode: 200,
       });
       res.status(200).json(ok(toCamelCase(data), 'Updated successfully'));
@@ -77,9 +83,13 @@ export function createCrudController(service: CrudLikeService, moduleName = 'res
       await audit(`${moduleName}.delete`, {
         module: moduleName.toUpperCase(),
         actorUserId: req.auth?.userId ?? null,
+        actorRoles: req.auth?.roles ?? null,
         method: req.method,
         path: req.originalUrl,
         entityId: req.params.id,
+        plantId: null,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'] ?? null,
         statusCode: 200,
       });
       res.status(200).json(ok({ id: req.params.id, deleted: true }, 'Deleted successfully'));

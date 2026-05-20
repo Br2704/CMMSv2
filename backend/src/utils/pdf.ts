@@ -19,7 +19,7 @@ export function createSimplePdf(lines: string[], options: SimplePdfOptions = {})
   const title = options.title?.trim() || 'CMMS Report';
   const subtitle = options.subtitle?.trim() || '';
   const generatedAt = options.generatedAt?.trim() || new Date().toISOString();
-  const footerBranding = options.footerBranding?.trim() || 'Powered by TamOptix Technologies';
+  const footerBranding = options.footerBranding?.trim() || 'Powered by TamOptiX Technologies';
 
   const commands: string[] = [];
 

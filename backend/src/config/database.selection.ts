@@ -20,6 +20,6 @@ export type DatabaseSelectionConfig = {
 // Central place to choose database engine + default application database name.
 export const databaseSelection: DatabaseSelectionConfig = {
   engine: 'postgres',
-  databaseName: 'JK Fenner CMMS',
+  databaseName: 'TamOptiX CMMS',
   autoCreateDatabase: true,
 };

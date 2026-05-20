@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Table,
@@ -68,29 +69,31 @@ export function ResponsiveTable<T>({
   const visibleColumns = columns.filter((col) => !col.hideOnMobile || !isMobile);
 
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            {visibleColumns.map((col) => (
-              <TableHead key={col.key} className={col.className}>
-                {col.header}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.map((item) => (
-            <TableRow key={keyExtractor(item)} className="h-12">
+    <div className="overflow-x-auto -mx-4 sm:-mx-0">
+      <div className="inline-block min-w-full align-middle px-4 sm:px-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
               {visibleColumns.map((col) => (
-                <TableCell key={col.key} className={col.className}>
-                  {col.render(item)}
-                </TableCell>
+                <TableHead key={col.key} className={cn(col.className, "whitespace-nowrap")}>
+                  {col.header}
+                </TableHead>
               ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {data.map((item) => (
+              <TableRow key={keyExtractor(item)} className="h-12">
+                {visibleColumns.map((col) => (
+                  <TableCell key={col.key} className={cn(col.className, "whitespace-nowrap")}>
+                    {col.render(item)}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

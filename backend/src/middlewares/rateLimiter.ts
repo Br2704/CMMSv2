@@ -107,5 +107,35 @@ export const heavyApiRateLimiter = rateLimit({
   message: { success: false, message: 'Too many data-intensive requests' },
 });
 
+export const mailConfigRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  limit: 10, // 10 config changes per minute
+  keyGenerator: resolveRateLimitKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipE2E,
+  message: { success: false, message: 'Too many mail config requests. Slow down.' },
+});
+
+export const mailTestRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  limit: 5, // 5 test sends per minute
+  keyGenerator: resolveRateLimitKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipE2E,
+  message: { success: false, message: 'Too many test emails. Please wait.' },
+});
+
+export const authPasswordResetRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 3, // 3 password reset requests per 15 min per IP
+  keyGenerator: resolveRateLimitKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipE2E,
+  message: { success: false, message: 'Too many password reset requests. Please retry later.' },
+});
+
 // Backward compatibility
 export const authRateLimiter = authLoginRateLimiter;

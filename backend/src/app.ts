@@ -129,7 +129,26 @@ app.use((req, res, next) => {
   res.setHeader('X-Request-Id', requestId);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
+  res.setHeader('Permissions-Policy', [
+    'camera=()',
+    'microphone=()',
+    'geolocation=()',
+    'payment=()',
+    'display-capture=()',
+    'clipboard-read=()',
+    'clipboard-write=(self)',
+    'fullscreen=(self)',
+    'accelerometer=()',
+    'gyroscope=()',
+    'magnetometer=()',
+    'ambient-light-sensor=()',
+    'usb=()',
+    'serial=()',
+    'midi=()',
+    'sync-xhr=(self)',
+    'picture-in-picture=()',
+    'screen-wake-lock=()',
+  ].join(', '));
 
   if (req.path.startsWith(env.API_PREFIX)) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');

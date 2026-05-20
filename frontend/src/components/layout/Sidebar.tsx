@@ -168,7 +168,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
     });
   }, [filteredNavigation, location.pathname]);
 
-  const resolvedLogo = user?.organizationLogoUrl || brandingLogoUrl || brandingLogoAssetUrl || "/jkfenner/jkfenner-logo.svg";
+  const resolvedLogo = user?.organizationLogoUrl || brandingLogoUrl || brandingLogoAssetUrl || "/tamoptix/tamoptix-logo.svg";
   const resolvedTitle = organizationName || "Organization";
   const homeHref = isRootUser ? "/root/dashboard" : "/";
   const collapseNavItems = isCollapsed && typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches;
@@ -217,7 +217,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                 className="h-full w-full object-contain"
                 onError={(event) => {
                   event.currentTarget.onerror = null;
-                  event.currentTarget.src = "/jkfenner/jkfenner-logo.svg";
+                  event.currentTarget.src = "/tamoptix/tamoptix-logo.svg";
                 }}
               />
             </div>

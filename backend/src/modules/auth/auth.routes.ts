@@ -18,7 +18,7 @@ import {
   OrgRolePermissionEntity,
 } from '../../database/entities';
 import { requireAuth, buildFallbackPermissionsForRole } from '../../middlewares/authMiddleware';
-import { authLoginRateLimiter, authLogoutRateLimiter, authRefreshRateLimiter } from '../../middlewares/rateLimiter';
+import { authLoginRateLimiter, authLogoutRateLimiter, authRefreshRateLimiter, authPasswordResetRateLimiter } from '../../middlewares/rateLimiter';
 import { validateRequest } from '../../middlewares/validate';
 import { fail, ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
@@ -43,6 +43,7 @@ import {
   normalizeRoleName,
   permissionKeysFromMap,
 } from '../../utils/rbac';
+import { sendPasswordResetEmail } from '../../services/notification-helper';
 import { recordSecurityEvent } from '../../utils/securityEvents';
 import { buildTotpOtpauthUri, generateTotpSecret, verifyTotpCode } from '../../utils/totp';
 import { resolveUserOrganizationScope } from '../../utils/userOrganization';
@@ -86,6 +87,19 @@ const updateProfileSchema = z.object({
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
+  newPassword: z
+    .string()
+    .min(PASSWORD_MIN_LENGTH)
+    .max(PASSWORD_MAX_LENGTH)
+    .refine((value) => isStrongPassword(value), PASSWORD_POLICY_MESSAGE),
+});
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(16),
   newPassword: z
     .string()
     .min(PASSWORD_MIN_LENGTH)
@@ -1405,6 +1419,107 @@ authRouter.post('/auth/change-password', requireAuth, validateRequest({ body: ch
 
     await audit('auth.password.change', { userId: user.id, module: 'AUTH', statusCode: 200 });
     res.json(ok(null, 'Password changed successfully'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+authRouter.post('/auth/forgot-password', authPasswordResetRateLimiter, async (req, res, next) => {
+  try {
+    const body = forgotPasswordSchema.parse(req.body);
+    const normalizedEmail = body.email.toLowerCase();
+    const userRepo = AppDataSource.getRepository(UserEntity);
+
+    const user = await userRepo.findOne({ where: { email: normalizedEmail } });
+    // Always return success to prevent email enumeration
+    if (!user || !user.isActive) {
+      res.json(ok({ sent: true }, 'If the email exists, a password reset link has been sent.'));
+      return;
+    }
+
+    const resetToken = signChallengeToken(
+      {
+        sub: user.id,
+        type: 'password_reset',
+        email: normalizedEmail,
+      },
+      '1h',
+    );
+
+    const resetLink = `${env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+
+    await sendPasswordResetEmail(user.email, user.fullName, resetLink);
+
+    await audit('auth.password.forgot', { userId: user.id, module: 'AUTH', statusCode: 200 });
+    await recordSecurityEvent({
+      userId: user.id,
+      organizationId: user.organizationId,
+      eventType: 'AUTH_PASSWORD_RESET_REQUESTED',
+      severity: 'MEDIUM',
+      module: 'AUTH',
+      action: 'PASSWORD_RESET',
+      message: `Password reset requested for ${normalizedEmail}`,
+      path: req.originalUrl,
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    });
+
+    res.json(ok({ sent: true }, 'If the email exists, a password reset link has been sent.'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+authRouter.post('/auth/reset-password', authPasswordResetRateLimiter, async (req, res, next) => {
+  try {
+    const body = resetPasswordSchema.parse(req.body);
+
+    let payload: { sub: string; type: string; email: string };
+    try {
+      payload = verifyChallengeToken(body.token) as any;
+    } catch {
+      res.status(400).json(fail('Invalid or expired reset token'));
+      return;
+    }
+
+    if (payload.type !== 'password_reset') {
+      res.status(400).json(fail('Invalid reset token type'));
+      return;
+    }
+
+    const userRepo = AppDataSource.getRepository(UserEntity);
+    const user = await userRepo.findOneBy({ id: payload.sub });
+    if (!user || !user.isActive) {
+      res.status(400).json(fail('Invalid or expired reset token'));
+      return;
+    }
+
+    user.passwordHash = await hashPassword(body.newPassword);
+    await userRepo.save(user);
+
+    // Revoke all existing refresh tokens for this user
+    const refreshRepo = AppDataSource.getRepository(RefreshTokenEntity);
+    await refreshRepo.update(
+      { userId: user.id, revokedAt: null as any },
+      { revokedAt: new Date() },
+    );
+
+    await audit('auth.password.reset', { userId: user.id, module: 'AUTH', statusCode: 200 });
+    await recordSecurityEvent({
+      userId: user.id,
+      organizationId: user.organizationId,
+      eventType: 'AUTH_PASSWORD_RESET_COMPLETED',
+      severity: 'HIGH',
+      module: 'AUTH',
+      action: 'PASSWORD_RESET',
+      message: `Password reset completed for ${user.email}`,
+      path: req.originalUrl,
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+      notify: true,
+    });
+
+    res.json(ok({ reset: true }, 'Password has been reset successfully. Please log in with your new password.'));
   } catch (error) {
     next(error);
   }

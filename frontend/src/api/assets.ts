@@ -279,3 +279,20 @@ export function updateAssetEnergyMeterConfig(id: string, configId: string, paylo
 export function deleteAssetEnergyMeterConfig(id: string, configId: string) {
   return httpRequest<ApiResponse<DeleteResult>>(`/assets/${id}/energy-meter-configs/${configId}`, { method: "DELETE" });
 }
+
+export async function downloadAssetLogbook(id: string, assetCode: string): Promise<void> {
+  const token = localStorage.getItem("auth_token");
+  const response = await fetch(`/api/assets/${id}/logbook`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) throw new Error("Failed to download logbook");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `logbook_${assetCode}_${new Date().toISOString().slice(0, 10)}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

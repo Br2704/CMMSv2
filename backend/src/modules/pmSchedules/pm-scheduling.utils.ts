@@ -1,6 +1,7 @@
 import { AppDataSource } from '../../database/data-source';
 import { AssetEntity, MaintenanceTeamEntity, PmScheduleEntity, PmTemplateEntity, PmTemplateLinkEntity, UserEntity } from '../../database/entities';
 import { stringifyJsonObject } from '../inventory/spare-consumption';
+import { sendPmDueEmails } from '../../services/notification-helper';
 
 export interface TemplateChecklistTask {
   id: string;
@@ -162,6 +163,26 @@ export async function generateDuePmTasks(now = new Date()) {
           completedAt: null,
         });
         await scheduleRepo.save(entity);
+
+        // Send PM due notification asynchronously
+        const pmUserIds = [link.responsibleUserId, ...(link.assignedTeam ? [link.assignedTeam.teamLeaderId, ...(link.assignedTeam.teamMemberIds ?? [])] : [])].filter(Boolean) as string[];
+        if (pmUserIds.length > 0) {
+          const pmUsers = await AppDataSource.getRepository(UserEntity).find({
+            where: pmUserIds.map((id) => ({ id, isActive: true })),
+            select: ['email'],
+          });
+          const pmEmails = pmUsers.map((u) => u.email).filter((e): e is string => Boolean(e));
+          if (pmEmails.length > 0) {
+            sendPmDueEmails(pmEmails, {
+              templateName: link.template.templateName,
+              assetName: link.asset?.name || 'Unknown Asset',
+              dueDate: cursor.toISOString(),
+              maintenanceType: link.template.maintenanceType ?? undefined,
+              discipline: link.template.discipline ?? undefined,
+              estimatedDuration: link.template.estimatedDuration ? `${link.template.estimatedDuration} min` : undefined,
+            }).catch(() => {});
+          }
+        }
       }
 
       generated = true;

@@ -12,6 +12,7 @@ import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared
 import { KPICard } from "@/components/dashboard/KPICard";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { FilterToolbar } from "@/components/layout/FilterToolbar";
+import { PageShell } from "@/components/layout/PageShell";
 import { listPlants, type Plant } from "@/api/plants";
 import {
   listCalibrationTasks,
@@ -215,7 +216,7 @@ export default function Calibration() {
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <PageShell>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight lg:text-3xl">Calibration Tasks</h1>
@@ -233,11 +234,11 @@ export default function Calibration() {
       <Card className="shadow-card">
         <CardContent className="p-4">
           <FilterToolbar
-            search={<><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" placeholder="Search task, machine, instrument..." /></>}
+            search={<div className="relative w-full"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" placeholder="Search task, machine, instrument..." /></div>}
             filters={
-              <div className="grid w-full gap-3 sm:grid-cols-2">
-                {canSelectPlant ? <SelectField label="" value={selectedPlantId} onChange={setSelectedPlantId} options={plantOptions} placeholder="Select plant" /> : null}
-                <SelectField label="" value={statusFilter} onChange={setStatusFilter} options={[{ value: "all", label: "All status" }, { value: "SCHEDULED", label: "Scheduled" }, { value: "IN_PROGRESS", label: "In Progress" }, { value: "OVERDUE", label: "Overdue" }, { value: "COMPLETED", label: "Completed" }]} placeholder="Select status" />
+              <div className="flex w-full flex-wrap gap-3">
+                {canSelectPlant ? <SelectField label="" value={selectedPlantId} onChange={setSelectedPlantId} options={plantOptions} placeholder="Select plant" className="min-w-[180px]" /> : null}
+                <SelectField label="" value={statusFilter} onChange={setStatusFilter} options={[{ value: "all", label: "All status" }, { value: "SCHEDULED", label: "Scheduled" }, { value: "IN_PROGRESS", label: "In Progress" }, { value: "OVERDUE", label: "Overdue" }, { value: "COMPLETED", label: "Completed" }]} placeholder="Select status" className="min-w-[160px]" />
               </div>
             }
           />
@@ -325,6 +326,6 @@ export default function Calibration() {
           <TextareaField label="Overall Remarks" value={formData.remarks} onChange={(value) => setFormData((current) => ({ ...current, remarks: value }))} placeholder="Final calibration summary, seal number, or handover note" />
         </div>
       </FormDialog>
-    </div>
+    </PageShell>
   );
 }

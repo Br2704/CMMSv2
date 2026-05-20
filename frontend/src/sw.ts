@@ -24,7 +24,6 @@ registerRoute(
 registerRoute(
   ({ request, url }) =>
     request.destination === "image" ||
-    url.pathname.startsWith("/jkfenner/") ||
     url.pathname.startsWith("/tamoptix/"),
   new StaleWhileRevalidate({
     cacheName: "app-branding-images",
@@ -106,8 +105,8 @@ self.addEventListener("push", (event) => {
     
     const options: NotificationOptions = {
       body: data.body || data.message || "",
-      icon: data.icon || "/jkfenner/jkfenner-logo.png",
-      badge: data.badge || "/jkfenner/jkfenner-favicon.svg",
+      icon: data.icon || "/tamoptix/tamoptix-logo.png",
+      badge: data.badge || "/tamoptix/tamoptix-favicon.svg",
       tag,
       data: {
         url: data.url || data.link || "/",
@@ -152,8 +151,8 @@ self.addEventListener("push", (event) => {
     event.waitUntil(
       self.registration.showNotification("CMMS", {
         body: text,
-        badge: "/jkfenner/jkfenner-favicon.svg",
-        icon: "/jkfenner/jkfenner-logo.png",
+        badge: "/tamoptix/tamoptix-favicon.svg",
+        icon: "/tamoptix/tamoptix-logo.png",
       })
     );
   }

@@ -8,9 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { AppSwitch } from "@/components/ui/app-switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Mail, Save, Plus, Trash2, Eye, Send, Clock, CheckCircle, XCircle, Loader2, History, CalendarClock } from "lucide-react";
+import { Mail, Save, Plus, Trash2, Eye, Send, Clock, CheckCircle, XCircle, Loader2, History, CalendarClock, Settings, Server, AlertTriangle, Activity } from "lucide-react";
 import BackButton from "@/components/masters/BackButton";
 import { toast } from "sonner";
+import { httpRequest } from "@/api/http";
+import { useNavigate } from "react-router-dom";
 import { format, formatDistanceToNow } from "date-fns";
 import { createReportSchedule, deleteReportSchedule, listReportHistory, listReportSchedules, sendReportNow, updateReportSchedule, type ReportSchedule } from "@/api/reports";
 import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
@@ -53,6 +55,28 @@ export default function EmailReportsMaster() {
   const canSelectPlant = isSuperAdmin(user);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants } = useMastersOptions();
+  const navigate = useNavigate();
+
+  const [mailConfigured, setMailConfigured] = useState<boolean | null>(null);
+  const [mailStats, setMailStats] = useState<{ pending: number; failed: number; deadLetter: number; sent: number; processing: number } | null>(null);
+  const [mailLoading, setMailLoading] = useState(true);
+
+  const fetchMailStatus = useCallback(async () => {
+    try {
+      const [configRes, statsRes] = await Promise.all([
+        httpRequest<{ success: true; data: { configured: boolean } }>('/mail/config', { method: 'GET' }).catch(() => null),
+        httpRequest<{ success: true; data: { pending: number; failed: number; deadLetter: number; sent: number; processing: number } }>('/mail/stats', { method: 'GET' }).catch(() => null),
+      ]);
+      if (configRes?.data) setMailConfigured(configRes.data.configured);
+      if (statsRes?.data) setMailStats(statsRes.data);
+    } catch { /* ignore */ } finally {
+      setMailLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMailStatus();
+  }, [fetchMailStatus]);
 
   const [schedules, setSchedules] = useState<ReportSchedule[]>([]);
   const [logs, setLogs] = useState<Array<Record<string, any>>>([]);
@@ -253,9 +277,68 @@ export default function EmailReportsMaster() {
     };
   }, [schedules]);
 
+  const mailHealthColor = mailConfigured === true ? 'bg-green-50 border-green-200 text-green-800' : mailConfigured === false ? 'bg-red-50 border-red-200 text-red-800' : 'bg-gray-50 border-gray-200 text-gray-600';
+
   return (
     <div className="space-y-6">
       <BackButton />
+
+      {/* SMTP / Mail Health Status */}
+      <div className={`rounded-lg border p-4 ${mailHealthColor} flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3`}>
+        <div className="flex items-start gap-3">
+          {mailLoading ? (
+            <Loader2 className="h-5 w-5 mt-0.5 animate-spin shrink-0" />
+          ) : mailConfigured === true ? (
+            <CheckCircle className="h-5 w-5 mt-0.5 shrink-0 text-green-600" />
+          ) : (
+            <Server className="h-5 w-5 mt-0.5 shrink-0 text-red-500" />
+          )}
+          <div>
+            <p className="font-semibold text-sm">
+              {mailLoading ? 'Checking mail configuration...'
+                : mailConfigured === true ? 'SMTP Connected — Mail delivery is active'
+                : mailConfigured === false ? 'SMTP Not Configured — Email reports cannot be sent'
+                : 'Mail status unknown'}
+            </p>
+            <p className="text-xs mt-0.5 opacity-80">
+              {mailConfigured
+                ? 'System emails and scheduled reports are being sent via configured SMTP'
+                : 'Configure SMTP in Mail Settings to enable email report delivery'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {mailStats && (
+            <div className="flex items-center gap-1.5 text-xs bg-background/80 rounded-md px-3 py-1.5 border">
+              <Activity className="h-3.5 w-3.5" />
+              <span className="font-medium">{mailStats.pending + mailStats.processing} pending</span>
+              <span className="text-muted-foreground">|</span>
+              <span className="text-red-600 font-medium">{mailStats.failed + mailStats.deadLetter} failed</span>
+            </div>
+          )}
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => navigate('/root/mail-config')}>
+            <Settings className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Mail Settings</span>
+          </Button>
+        </div>
+      </div>
+
+      {mailConfigured === false && (
+        <div className="flex items-start gap-3 p-3 rounded-lg border bg-amber-50 border-amber-200 text-amber-800 text-sm">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium">SMTP is not configured</p>
+            <p className="text-xs mt-0.5">
+              Go to{' '}
+              <button className="underline font-medium" onClick={() => navigate('/root/mail-config')}>
+                Mail Settings
+              </button>{' '}
+              to configure SMTP before creating or sending email reports. Without SMTP, all email functions including scheduled reports will not be delivered.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">Email Report Configuration</h1>

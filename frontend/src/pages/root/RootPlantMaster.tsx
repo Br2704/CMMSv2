@@ -70,9 +70,9 @@ export default function RootPlantMaster() {
   const isRootUser = isRootAdmin(user);
   const isScopedSuperAdmin = isSuperAdmin(user) && !isRootUser;
   const { can } = usePermissions();
-  const canEditPlant = can("PLANTS", "update");
-  const canAddPlant = isRootUser && can("PLANTS", "create");
-  const canDeletePlant = isRootUser && can("PLANTS", "delete");
+  const canEditPlant = isRootUser || isScopedSuperAdmin || can("PLANTS", "update");
+  const canAddPlant = isRootUser || can("PLANTS", "create");
+  const canDeletePlant = isRootUser || can("PLANTS", "delete");
   const { invalidateOptions } = useMastersOptions();
 
   const [plants, setPlants] = useState<Plant[]>([]);
@@ -511,7 +511,7 @@ export default function RootPlantMaster() {
       >
         <FormGrid>
           <InputField label="Plant Code" value={formData.plantCode} onChange={(value) => setFormData({ ...formData, plantCode: value })} placeholder="PLT-001" required />
-          <InputField label="Plant Name" value={formData.plantName} onChange={(value) => setFormData({ ...formData, plantName: value })} placeholder="JK Fenner - Chennai" required />
+          <InputField label="Plant Name" value={formData.plantName} onChange={(value) => setFormData({ ...formData, plantName: value })} placeholder="Plant Name - City" required />
           <SelectField
             label="Organization"
             value={formData.organizationId}

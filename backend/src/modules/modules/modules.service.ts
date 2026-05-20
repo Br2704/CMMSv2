@@ -170,7 +170,8 @@ export class ModulesService {
       conflict('Module cannot be deleted because active machines exist. Disable machines or reassign first.');
     }
 
-    if (auth.scopeType === 'ROOT_ADMIN') {
+    const isAdminDeleter = auth.roles.some((role) => role === 'ROOT_ADMIN' || role === 'SUPERADMIN' || role === 'ADMIN');
+    if (isAdminDeleter) {
       await this.modulesRepo.delete({ id: row.id });
       return ok({ id: row.id, deleted: true }, 'Module deleted permanently');
     }

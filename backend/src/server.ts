@@ -23,6 +23,7 @@ import { startWorkOrdersScheduler } from './modules/workorders/workorders.schedu
 import { startMailScheduler } from './modules/mail/mail-scheduler';
 import { startDashboardSocketServer, stopDashboardSocketServer } from './realtime/dashboard-socket';
 import { initializeSecretRotation } from './utils/secretRotation';
+import { startSecretRotationScheduler } from './utils/secret-rotation.scheduler';
 
 let logSchedulerStarted = false;
 
@@ -218,6 +219,7 @@ async function bootstrap() {
   startOrganizationSubscriptionScheduler();
   startWorkOrdersScheduler();
   startMailScheduler();
+  startSecretRotationScheduler();
 
   const server = createServer(app);
   startDashboardSocketServer(server);

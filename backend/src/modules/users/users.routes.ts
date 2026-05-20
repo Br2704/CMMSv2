@@ -9,6 +9,7 @@ import { ensurePlantAccess, requirePermission } from '../../middlewares/permissi
 import { fail, ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { isProtectedRootAdminEmail } from '../../config/protectedRootAdmin';
+import { isRootAdminRole, isSuperAdminRole, isAdminRole } from '../../utils/rbac';
 import {
   canAssignRole,
   canCreateUser,
@@ -27,6 +28,7 @@ import { ensureRoleCatalogEntry } from '../../utils/roleCatalog';
 import { normalizeRoleName } from '../../utils/rbac';
 import { conflict } from '../../utils/httpError';
 import { isSafeImageValue } from '../../utils/fileValidation';
+import { sendUserInvitationEmail } from '../../services/notification-helper';
 
 const profileImageSchema = z
   .string()
@@ -389,6 +391,11 @@ usersRouter.post('/users', requirePermission('USERS', 'CREATE'), async (req, res
     });
 
     await audit('user.create', { actorUserId: req.auth!.userId, userId: created.user.id, roles: requestedRoles });
+
+    // Send invitation email asynchronously
+    const inviteLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login?invited=${created.user.id}`;
+    sendUserInvitationEmail(created.user.email, created.user.fullName, inviteLink).catch(() => {});
+
     res.status(201).json(ok(created, 'User created'));
   } catch (error) {
     next(error);
@@ -728,7 +735,8 @@ usersRouter.delete('/users/:id', requirePermission('USERS', 'DELETE'), async (re
       ensurePlantAccess(req, profile.plantId);
     }
 
-    if (req.auth?.scopeType === 'ROOT_ADMIN') {
+    const isAdminDeleter = req.auth!.roles.some((role) => isRootAdminRole(role) || isSuperAdminRole(role) || isAdminRole(role));
+    if (isAdminDeleter) {
       await AppDataSource.transaction(async (manager) => {
         await manager.delete(RefreshTokenEntity, { userId: user.id });
         await manager.delete(UserRoleEntity, { userId: user.id });
@@ -736,7 +744,15 @@ usersRouter.delete('/users/:id', requirePermission('USERS', 'DELETE'), async (re
         await manager.delete(UserEntity, { id: user.id });
       });
 
-      await audit('user.delete', { actorUserId: req.auth!.userId, userId: user.id });
+      await audit('user.delete', {
+        module: 'USERS',
+        actorUserId: req.auth!.userId,
+        entityName: 'users',
+        entityId: user.id,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'] ?? null,
+        statusCode: 200,
+      });
       res.json(ok({ userId: user.id, deleted: true }, 'User deleted permanently'));
       return;
     }
@@ -749,8 +765,16 @@ usersRouter.delete('/users/:id', requirePermission('USERS', 'DELETE'), async (re
     user.isActive = false;
     await userRepo.save(user);
 
-    await audit('user.delete', { actorUserId: req.auth!.userId, userId: user.id });
-    res.json(ok({ userId: user.id }, 'User deactivated'));
+    await audit('user.delete', {
+      module: 'USERS',
+      actorUserId: req.auth!.userId,
+      entityName: 'users',
+      entityId: user.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'] ?? null,
+      statusCode: 200,
+    });
+    res.json(ok({ userId: user.id }, 'User deactivated (soft delete)'));
   } catch (error) {
     next(error);
   }

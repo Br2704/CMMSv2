@@ -7,6 +7,7 @@ import { requireRole } from '../../middlewares/permissions';
 import { validateRequest } from '../../middlewares/validate';
 import { ok, fail } from '../../utils/apiResponse';
 import { getHierarchyConsistencyBreakdown } from '../../utils/hierarchy';
+import { secretRotationManager } from '../../utils/secretRotation';
 import { resetTransporter, verifyMailConnection } from '../../services/mail.service';
 
 export const systemRouter = Router();
@@ -120,6 +121,15 @@ systemRouter.get('/system/performance', async (_req, res, next) => {
         recentSecurityEvents,
       }, 'System performance fetched'),
     );
+  } catch (error) {
+    next(error);
+  }
+});
+
+systemRouter.get('/system/secret-rotation/status', async (_req, res, next) => {
+  try {
+    const statuses = secretRotationManager.getAllSecretStatuses();
+    res.json(ok({ keys: statuses }, 'Secret rotation status fetched'));
   } catch (error) {
     next(error);
   }

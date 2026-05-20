@@ -4,11 +4,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* JK Fenner CMMS Design System */
+/* TamOptiX Technologies CMMS Design System */
 
 @layer base {
   :root {
-    /* JK Fenner Brand Colors - Teal Gradient */
+    /* TamOptiX Brand Colors - Teal Gradient */
     --fenner-teal: 173 100% 31%;
     --fenner-teal-dark: 175 80% 25%;
     --fenner-teal-light: 173 70% 45%;
@@ -186,6 +186,35 @@
 }
 
 @layer utilities {
+  /* Tap target size for touch devices */
+  .touch-target {
+    @apply min-h-[48px] min-w-[48px];
+  }
+
+  .touch-target-sm {
+    @apply min-h-[40px] min-w-[40px];
+  }
+
+  /* Card hover effects */
+  .card-hover {
+    @apply transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5;
+  }
+
+  /* Focus styles */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2;
+  }
+
+  /* Truncate text */
+  .text-truncate {
+    @apply overflow-hidden text-ellipsis whitespace-nowrap;
+  }
+
+  /* Industrial badge */
+  .badge-industrial {
+    @apply inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-500;
+  }
+
   .gradient-primary {
     background: var(--gradient-primary);
   }
@@ -243,5 +272,46 @@
 
   .status-pulse-dot {
     @apply absolute inline-flex h-full w-full animate-ping rounded-full opacity-75;
+  }
+
+  /* Responsive grid shortcuts */
+  .grid-auto-fit {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+
+  .grid-auto-fit-sm {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .grid-auto-fit-lg {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  }
+
+  /* Safe container for tables on mobile */
+  .table-container {
+    @apply -mx-4 overflow-x-auto sm:mx-0;
+  }
+
+  .table-container-inner {
+    @apply inline-block min-w-full align-middle px-4 sm:px-0;
+  }
+
+  /* Responsive tab scroll container */
+  .tabs-scroll {
+    @apply flex flex-nowrap items-center overflow-x-auto scrollbar-thin -mx-3 px-3 sm:mx-0 sm:px-0;
+  }
+
+  .tabs-scroll-inner {
+    @apply inline-flex min-w-0 gap-1 whitespace-nowrap;
+  }
+
+  /* Divider that shows only on mobile */
+  .divider-mobile {
+    @apply border-t border-border/60 sm:border-0;
+  }
+
+  /* Stack elements on mobile, row on desktop */
+  .stack-mobile {
+    @apply flex flex-col gap-2 sm:flex-row sm:items-center;
   }
 }

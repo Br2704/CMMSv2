@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Eye, Factory, Gauge, History, Image as ImageIcon, Loader2, QrCode, RotateCcw, ScanLine, Search, ShieldCheck, Wrench } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { getAsset, getAssetOverview, type Asset, type AssetOverview } from "@/api/assets";
+import { getAsset, getAssetOverview, downloadAssetLogbook, type Asset, type AssetOverview } from "@/api/assets";
 import { getMasterDataGraph } from "@/api/master-data";
 import { listWorkOrders } from "@/api/workorders";
 import { getAssetQr, resolveQrMachineCode, resolveQrToken, type AssetQrData } from "@/api/qr";
@@ -158,7 +158,14 @@ function AssetOverviewPanel({
                     <Wrench className="h-4 w-4" />
                     <span className="text-[10px] font-black uppercase">Raise Incident</span>
                   </Button>
-                  <Button variant="outline" className="h-14 rounded-2xl flex-row gap-2 border-slate-100" onClick={() => toast.info("History download initiated")}>
+                  <Button variant="outline" className="h-14 rounded-2xl flex-row gap-2 border-slate-100" onClick={() => {
+                    if (!overview?.asset?.id) return;
+                    toast.promise(downloadAssetLogbook(overview.asset.id, overview.asset.code), {
+                      loading: "Generating logbook...",
+                      success: "Logbook downloaded",
+                      error: "Failed to download logbook",
+                    });
+                  }}>
                     <History className="h-4 w-4" />
                     <span className="text-[10px] font-black uppercase">Logbook</span>
                   </Button>
@@ -647,7 +654,7 @@ export default function Assets() {
                   <div className="h-8 w-8 rounded-xl bg-sky-50 flex items-center justify-center text-sky-600"><Factory className="h-4 w-4" /></div>
                 </div>
                 <p className="text-sm font-black text-slate-900 tracking-tight truncate">
-                  {userIsSuperAdmin && !selectedPlantId ? "GLOBAL JK FENNER" : selectedPlant?.plantCode || "PRIMARY UNIT"}
+                  {userIsSuperAdmin && !selectedPlantId ? "GLOBAL NETWORK" : selectedPlant?.plantCode || "PRIMARY UNIT"}
                 </p>
                 <p className="mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{selectedDepartment?.code || "ALL DEPARTMENTS"}</p>
              </CardContent>
@@ -671,7 +678,7 @@ export default function Assets() {
                 </div>
               </div>
 
-              <div className="w-[200px] space-y-2">
+              <div className="w-full sm:w-[200px] space-y-2">
                 <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Plant Context</label>
                 {userIsSuperAdmin ? (
                   <select
@@ -693,7 +700,7 @@ export default function Assets() {
                 )}
               </div>
 
-              <div className="w-[200px] space-y-2">
+              <div className="w-full sm:w-[200px] space-y-2">
                 <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Workcenter</label>
                 <select
                   className="h-12 w-full rounded-2xl border-slate-100 bg-slate-50/50 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20"
@@ -708,7 +715,7 @@ export default function Assets() {
                 </select>
               </div>
 
-              <div className="w-[180px] space-y-2">
+              <div className="w-full sm:w-[180px] space-y-2">
                 <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Health Filter</label>
                 <select
                   className="h-12 w-full rounded-2xl border-slate-100 bg-slate-50/50 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20"

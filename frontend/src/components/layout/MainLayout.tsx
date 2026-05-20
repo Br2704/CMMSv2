@@ -13,7 +13,7 @@ import { UnifiedOnboardingBanner } from "@/components/UnifiedOnboardingBanner";
 import { cn } from "@/lib/utils";
 import { AlertTriangle } from "lucide-react";
 
-const JK_FENNER_FAVICON = "/jkfenner/jkfenner-favicon.svg";
+const TAMOPTIX_FAVICON = "/tamoptix/tamoptix-favicon.svg";
 const TAMOPTIX_LOGO = "/tamoptix/tamoptix-logo.svg";
 
 export function MainLayout() {
@@ -124,7 +124,7 @@ export function MainLayout() {
         ? `${organizationName} CMMS`
         : sidebarTitle
           ? `${sidebarTitle} CMMS`
-          : "JK Fenner CMMS");
+          : "TamOptiX CMMS");
     document.title = resolvedTitle;
 
     const updateMetaContent = (selector: string, value: string) => {
@@ -140,7 +140,7 @@ export function MainLayout() {
     updateMetaContent('meta[name="theme-color"]', brandColor || "#0f172a");
     updateMetaContent('meta[name="msapplication-TileColor"]', brandColor || "#0f172a");
 
-    const resolvedFavicon = JK_FENNER_FAVICON;
+    const resolvedFavicon = TAMOPTIX_FAVICON;
     const ensureLink = (rel: string, id?: string) => {
       let element = id
         ? document.querySelector<HTMLLinkElement>(`#${id}`)
@@ -177,32 +177,30 @@ export function MainLayout() {
         isOpen={sidebarOpen}
         isCollapsed={sidebarCollapsed}
         onToggleMobile={() => setSidebarOpen((prev) => !prev)}
-      />
-      
-      <div
-        className={cn(
-          "flex min-h-screen min-w-0 flex-col ",
-          sidebarCollapsed ? "lg:pl-24" : "lg:pl-[280px]",
-        )}
-      >
-        <Topbar onMenuClick={handleSidebarToggle} sidebarCollapsed={sidebarCollapsed} />
-        
-        <main className={cn(
-          "min-w-0 flex-1 px-3 py-4 pb-24 sm:px-6 sm:py-5 sm:pb-24 lg:px-8 lg:py-6 lg:pb-8",
-          isFallbackMode && "pt-14 sm:pt-16",
-        )}>
-          <div className="mx-auto w-full min-w-0 max-w-[1720px]">
-            <Outlet />
-          </div>
-        </main>
+      />        <div
+          className={cn(
+            "flex min-h-screen min-w-0 flex-col overflow-x-hidden",
+            sidebarCollapsed ? "lg:pl-24" : "lg:pl-[280px]",
+          )}
+        >
+          <Topbar onMenuClick={handleSidebarToggle} sidebarCollapsed={sidebarCollapsed} />
+          
+          <main className={cn(
+            "min-w-0 flex-1 overflow-x-hidden px-3 py-4 pb-28 sm:px-6 sm:py-5 sm:pb-28 lg:px-8 lg:py-6 lg:pb-8",
+            isFallbackMode && "pt-14 sm:pt-16",
+          )}>
+            <div className="mx-auto w-full min-w-0 max-w-[1720px]">
+              <Outlet />
+            </div>
+          </main>
 
-        <footer className="border-t border-border/70 bg-card/80 px-4 py-3 backdrop-blur-sm sm:px-6 lg:px-8">
-          <div className="mx-auto flex w-full max-w-[1720px] items-center justify-center gap-2 text-center">
-            <img src={TAMOPTIX_LOGO} alt="TamOptiX" className="h-5 w-auto object-contain" />
-            <span className="text-xs font-medium tracking-wide text-muted-foreground">TamOptiX Technologies</span>
-          </div>
-        </footer>
-      </div>
+          <footer className="hidden border-t border-border/70 bg-card/80 px-4 py-3 backdrop-blur-sm sm:px-6 lg:px-8 sm:block">
+            <div className="mx-auto flex w-full max-w-[1720px] items-center justify-center gap-2 text-center">
+              <img src={TAMOPTIX_LOGO} alt="TamOptiX" className="h-5 w-auto object-contain" />
+              <span className="text-xs font-medium tracking-wide text-muted-foreground">TamOptiX Technologies</span>
+            </div>
+          </footer>
+        </div>
 
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav isSidebarOpen={sidebarOpen} />

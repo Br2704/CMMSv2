@@ -19,11 +19,11 @@ export function PageHeader({ title, subtitle, description, actions, className, s
         sticky && "sticky top-14 sm:top-16 z-20 -mx-1 rounded-lg border border-border/60 bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80",
         className,
       )}>
-      <div className="min-w-0 space-y-1">
+      <div className="min-w-0 space-y-1 max-w-full">
         <h1 className="break-words text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl">{title}</h1>
         {resolvedSubtitle ? <p className="break-words text-sm leading-relaxed text-muted-foreground">{resolvedSubtitle}</p> : null}
       </div>
-      {actions ? <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-stretch sm:justify-end">{actions}</div> : null}
+      {actions ? <div className="flex w-full min-w-0 shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-stretch sm:justify-end">{actions}</div> : null}
     </div>
   );
 }

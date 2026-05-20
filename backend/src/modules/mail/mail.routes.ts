@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { requireRole } from '../../middlewares/permissions';
-import { ok } from '../../utils/apiResponse';
+import { ok, fail } from '../../utils/apiResponse';
 import { logger } from '../../config/logger';
 import {
   verifyMailConnection,
@@ -20,6 +20,9 @@ import { EscalationHistoryEntity } from '../../database/entities/escalation-hist
 import { SlaConfigEntity } from '../../database/entities/sla-config.entity';
 import { WorkOrderEntity } from '../../database/entities/work-order.entity';
 import { SystemConfigEntity } from '../../database/entities/system-config.entity';
+import { encryptSensitiveValue } from '../../utils/crypto';
+import { mailConfigRateLimiter, mailTestRateLimiter } from '../../middlewares/rateLimiter';
+import { audit } from '../../utils/audit';
 
 export const mailRouter = Router();
 mailRouter.use(requireAuth);
@@ -44,7 +47,7 @@ mailRouter.get('/mail/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']
   }
 });
 
-mailRouter.put('/mail/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.put('/mail/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), mailConfigRateLimiter, async (req, res, next) => {
   try {
     const body = z.object({
       host: z.string().min(1),
@@ -55,6 +58,9 @@ mailRouter.put('/mail/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']
       fromName: z.string().optional().default('CMMS Notification'),
     }).parse(req.body);
 
+    // Encrypt SMTP password at rest using AES-256-GCM
+    const encryptedPass = encryptSensitiveValue(body.pass);
+
     const repo = AppDataSource.getRepository(SystemConfigEntity);
     let config = await repo.findOneBy({ configKey: 'SMTP_CONFIG' });
     if (!config) {
@@ -64,12 +70,27 @@ mailRouter.put('/mail/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']
       });
     }
 
-    config.configValue = body;
+    config.configValue = {
+      host: body.host,
+      port: body.port,
+      user: body.user,
+      pass: encryptedPass,
+      passEncrypted: true,
+      from: body.from,
+      fromName: body.fromName,
+    };
     config.lastModifiedAt = new Date();
     config.lastModifiedBy = req.auth?.userId;
     
     await repo.save(config);
     resetTransporter();
+
+    await audit('mail.config.update', {
+      actorUserId: req.auth!.userId,
+      host: body.host,
+      port: body.port,
+      from: body.from,
+    });
 
     res.json(ok({
       configured: true,
@@ -82,14 +103,21 @@ mailRouter.put('/mail/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']
   }
 });
 
-mailRouter.post('/mail/test', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+mailRouter.post('/mail/test', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), mailTestRateLimiter, async (req, res, next) => {
   try {
     const body = z.object({ to: z.string().email() }).parse(req.body);
     const result = await sendTestEmail(body.to);
+
+    await audit('mail.test.send', {
+      actorUserId: req.auth!.userId,
+      recipient: body.to,
+      success: result.ok,
+    });
+
     if (result.ok) {
       res.json(ok({ sent: true }, 'Test email sent'));
     } else {
-      res.status(500).json(ok({ sent: false, error: result.error }, 'Test email failed'));
+      res.status(200).json(fail(result.error || 'Test email failed', { sent: false }));
     }
   } catch (error) {
     next(error);
@@ -102,7 +130,7 @@ mailRouter.get('/mail/verify', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']
     if (result.ok) {
       res.json(ok({ connected: true }, 'SMTP connection verified'));
     } else {
-      res.status(500).json(ok({ connected: false, error: result.error }, 'SMTP verification failed'));
+      res.status(200).json(fail(result.error || 'SMTP verification failed', { connected: false }));
     }
   } catch (error) {
     next(error);
@@ -156,7 +184,9 @@ mailRouter.get('/mail/queue', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN'])
     const items = await qb.skip((query.page - 1) * query.limit).take(query.limit).getMany();
     res.json(ok({ items, total }, 'Mail queue fetched'));
   } catch (error) {
-    next(error);
+    // If the mail_queue table doesn't exist yet (any DB engine), return empty rather than 500
+    logger.warn({ error }, 'Mail queue endpoint failed — returning empty');
+    res.json(ok({ items: [], total: 0 }, 'Mail queue unavailable'));
   }
 });
 

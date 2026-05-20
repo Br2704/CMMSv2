@@ -34,14 +34,14 @@ export default defineConfig(({ mode }) => ({
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: [
-        "jkfenner/jkfenner-favicon.ico",
-        "jkfenner/jkfenner-favicon.svg",
-        "jkfenner/jkfenner-logo.png",
+        "tamoptix/tamoptix-favicon.png",
+        "tamoptix/tamoptix-favicon.svg",
+        "tamoptix/tamoptix-logo.png",
       ],
       manifest: {
-        name: "JK Fenner CMMS",
-        short_name: "JK Fenner CMMS",
-        description: "JK Fenner CMMS Platform",
+        name: "TamOptiX CMMS",
+        short_name: "TamOptiX CMMS",
+        description: "TamOptiX CMMS Platform",
         start_url: "/",
         scope: "/",
         display: "standalone",
@@ -50,25 +50,25 @@ export default defineConfig(({ mode }) => ({
         orientation: "any",
         icons: [
           {
-            src: "/jkfenner/jkfenner-logo.png",
+            src: "/tamoptix/tamoptix-logo.png",
             sizes: "192x192",
             type: "image/png",
             purpose: "any"
           },
           {
-            src: "/jkfenner/jkfenner-logo.png",
+            src: "/tamoptix/tamoptix-logo.png",
             sizes: "192x192",
             type: "image/png",
             purpose: "maskable"
           },
           {
-            src: "/jkfenner/jkfenner-logo.png",
+            src: "/tamoptix/tamoptix-logo.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "any"
           },
           {
-            src: "/jkfenner/jkfenner-logo.png",
+            src: "/tamoptix/tamoptix-logo.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable"
@@ -80,13 +80,13 @@ export default defineConfig(({ mode }) => ({
             name: "Dashboard",
             short_name: "Dashboard",
             url: "/",
-            icons: [{ src: "/jkfenner/jkfenner-logo.png", sizes: "192x192", type: "image/png" }]
+            icons: [{ src: "/tamoptix/tamoptix-logo.png", sizes: "192x192", type: "image/png" }]
           },
           {
             name: "Work Orders",
             short_name: "Work Orders",
             url: "/work-orders",
-            icons: [{ src: "/jkfenner/jkfenner-logo.png", sizes: "192x192", type: "image/png" }]
+            icons: [{ src: "/tamoptix/tamoptix-logo.png", sizes: "192x192", type: "image/png" }]
           }
         ]
       },
@@ -108,7 +108,7 @@ export default defineConfig(({ mode }) => ({
           },
           {
             urlPattern: ({ request, url }) =>
-              request.destination === "image" || url.pathname.startsWith("/jkfenner/") || url.pathname.startsWith("/tamoptix/"),
+              request.destination === "image" || url.pathname.startsWith("/tamoptix/"),
             handler: "StaleWhileRevalidate",
             options: {
               cacheName: "app-branding-images",

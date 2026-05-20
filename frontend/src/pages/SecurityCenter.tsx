@@ -34,6 +34,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { PageShell } from "@/components/layout/PageShell";
 import { isSuperAdmin, useAuthStore } from "@/store/auth.store";
 
 function severityVariant(severity: string): "default" | "secondary" | "destructive" | "outline" {
@@ -485,10 +486,10 @@ export default function SecurityCenter() {
   };
 
   return (
-    <div className="space-y-6">
+    <PageShell>
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Security Center</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Security Center</h1>
           <p className="text-sm text-muted-foreground">
             Security events, audit logs, and ISO 27001 control intelligence for your authorized scope.
           </p>
@@ -554,10 +555,10 @@ export default function SecurityCenter() {
       </div>
 
       <Tabs defaultValue="events" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="events">Security Events</TabsTrigger>
-          <TabsTrigger value="audit">Audit Logs</TabsTrigger>
-          {canViewCompliance ? <TabsTrigger value="compliance">Compliance</TabsTrigger> : null}
+        <TabsList className="flex w-full flex-nowrap overflow-x-auto">
+          <TabsTrigger value="events" className="whitespace-nowrap">Security Events</TabsTrigger>
+          <TabsTrigger value="audit" className="whitespace-nowrap">Audit Logs</TabsTrigger>
+          {canViewCompliance ? <TabsTrigger value="compliance" className="whitespace-nowrap">Compliance</TabsTrigger> : null}
         </TabsList>
 
         <TabsContent value="events">
@@ -1140,6 +1141,6 @@ export default function SecurityCenter() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

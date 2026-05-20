@@ -1,4 +1,3 @@
-import { toast } from "sonner";
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,9 +7,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { httpRequest } from '@/api/http';
+import { httpRequest, ApiError } from '@/api/http';
 import { useToast } from '@/hooks/use-toast';
-import { Settings, Send, RefreshCw, MailCheck, MailWarning, Loader2, Inbox, Save, CheckCircle2, XCircle, AlertTriangle, HelpCircle } from 'lucide-react';
+import { Settings, Send, RefreshCw, MailCheck, MailWarning, Loader2, Inbox, Save, CheckCircle2, XCircle, AlertTriangle, HelpCircle, BarChart3, ExternalLink, Eye, EyeOff, Mail } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface MailConfig {
   configured: boolean;
@@ -23,7 +23,8 @@ interface MailConfig {
 }
 
 const PROVIDERS: Record<string, { host: string; port: number; doc: string }> = {
-  ZOHO: { host: 'smtp.zoho.com', port: 587, doc: 'Zoho Mail - smtp.zoho.com:587 (STARTTLS)' },
+  ZOHO_IN: { host: 'smtp.zoho.in', port: 587, doc: 'Zoho Mail India - smtp.zoho.in:587 (STARTTLS) — Recommended for tamoptix.tech' },
+  ZOHO: { host: 'smtp.zoho.com', port: 587, doc: 'Zoho Mail Global - smtp.zoho.com:587 (STARTTLS)' },
   GMAIL: { host: 'smtp.gmail.com', port: 587, doc: 'Google Workspace / Gmail - smtp.gmail.com:587' },
   OUTLOOK: { host: 'smtp.office365.com', port: 587, doc: 'Microsoft 365 / Outlook - smtp.office365.com:587' },
   AWS_SES: { host: 'email-smtp.us-east-1.amazonaws.com', port: 587, doc: 'AWS SES - Use SMTP credentials from IAM' },
@@ -57,11 +58,20 @@ export default function MailConfigMaster() {
   const [activeTab, setActiveTab] = useState('config');
   const [retrying, setRetrying] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [useTestEmailAutoFill, setUseTestEmailAutoFill] = useState('');
+  const navigate = useNavigate();
 
   const fetchConfig = useCallback(async () => {
     try {
       const res = await httpRequest<{ success: true; data: MailConfig }>('/mail/config', { method: 'GET' });
-      if (res.data) setConfig(res.data);
+      if (res.data) {
+        setConfig(res.data);
+        // Auto-fill test email from saved from address
+        if (res.data.from && !useTestEmailAutoFill) {
+          setUseTestEmailAutoFill(res.data.from);
+        }
+      }
     } catch (e) { console.error('fetchConfig failed:', e); }
   }, []);
 
@@ -134,7 +144,9 @@ export default function MailConfigMaster() {
         toast({ variant: 'destructive', title: 'Failed', description: res.data.error });
       }
     } catch (error) {
-      toast({ variant: 'destructive', title: 'Error', description: String(error) });
+      const apiError = error instanceof ApiError ? error : null;
+      const smtpError = (apiError?.payload as { message?: string })?.message;
+      toast({ variant: 'destructive', title: 'Failed', description: smtpError || 'Could not send test email. Check SMTP configuration.' });
     } finally {
       setTestLoading(false);
     }
@@ -193,6 +205,10 @@ export default function MailConfigMaster() {
 
   const safeConfig = config ?? {} as MailConfig;
   const safeStats = stats ?? { pending: 0, sent: 0, failed: 0, deadLetter: 0, processing: 0 };
+  const totalDeliveries = safeStats.sent + safeStats.failed;
+  const deliveryRate = totalDeliveries > 0 ? Math.round((safeStats.sent / totalDeliveries) * 100) : 100;
+  const rateBgColor = deliveryRate >= 95 ? 'bg-green-100' : deliveryRate >= 80 ? 'bg-yellow-100' : 'bg-red-100';
+  const rateTextColor = deliveryRate >= 95 ? 'text-green-600' : deliveryRate >= 80 ? 'text-yellow-600' : 'text-red-600';
 
   return (
     <div className="space-y-6 p-6">
@@ -208,6 +224,40 @@ export default function MailConfigMaster() {
           }
         </div>
       </div>
+
+      {/* Delivery Health Score */}
+      {totalDeliveries > 0 && (
+        <Card>
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="shrink-0">
+              <div className={`h-14 w-14 rounded-full flex items-center justify-center ${rateBgColor}`}>
+                <BarChart3 className={`h-6 w-6 ${rateTextColor}`} />
+              </div>
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-muted-foreground">Delivery Success Rate</p>
+              <p className="text-2xl font-bold">{deliveryRate}%</p>
+              <p className="text-xs text-muted-foreground">
+                {safeStats.sent} sent / {totalDeliveries} total deliveries
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Email Reports Link */}
+      <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => navigate('/masters/email-reports')}>
+        <CardContent className="p-4 flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+            <MailCheck className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <p className="font-medium text-sm">Email Report Schedules</p>
+            <p className="text-xs text-muted-foreground">Configure automated report delivery schedules</p>
+          </div>
+          <ExternalLink className="h-4 w-4 text-muted-foreground shrink-0" />
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         {[
@@ -225,11 +275,12 @@ export default function MailConfigMaster() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); if (v === 'logs') fetchLogs(logPage); if (v === 'queue') fetchQueue(queuePage); }}>
-        <TabsList className="flex-wrap">
+        <TabsList className="flex w-full flex-nowrap overflow-x-auto gap-1 sm:flex-wrap sm:overflow-visible">
           <TabsTrigger value="config"><Settings className="h-4 w-4 mr-2" />Configuration</TabsTrigger>
           <TabsTrigger value="test"><Send className="h-4 w-4 mr-2" />Test Email</TabsTrigger>
           <TabsTrigger value="queue"><Inbox className="h-4 w-4 mr-2" />Mail Queue ({stats.pending + stats.deadLetter})</TabsTrigger>
           <TabsTrigger value="logs"><MailWarning className="h-4 w-4 mr-2" />Email Logs</TabsTrigger>
+          <TabsTrigger value="audit"><HelpCircle className="h-4 w-4 mr-2" />Audit Trail</TabsTrigger>
         </TabsList>
 
         <TabsContent value="config" className="space-y-4">
@@ -244,7 +295,8 @@ export default function MailConfigMaster() {
                 <Select value={selectedProvider} onValueChange={handleProviderSelect}>
                   <SelectTrigger><SelectValue placeholder="Choose a mail provider..." /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ZOHO">Zoho Mail</SelectItem>
+                    <SelectItem value="ZOHO_IN">Zoho Mail (India) ★</SelectItem>
+                    <SelectItem value="ZOHO">Zoho Mail (Global)</SelectItem>
                     <SelectItem value="GMAIL">Google Workspace / Gmail</SelectItem>
                     <SelectItem value="OUTLOOK">Microsoft 365 / Outlook</SelectItem>
                     <SelectItem value="AWS_SES">AWS SES</SelectItem>
@@ -270,7 +322,13 @@ export default function MailConfigMaster() {
                 </div>
                 <div className="space-y-2">
                   <Label>Password <span className="text-red-500">*</span></Label>
-                  <Input type="password" value={safeConfig.pass} onChange={(e) => setConfig({ ...safeConfig, pass: e.target.value })} placeholder="App password or SMTP password" />
+                  <div className="relative">
+                    <Input type={showPassword ? 'text' : 'password'} value={safeConfig.pass} onChange={(e) => setConfig({ ...safeConfig, pass: e.target.value })} placeholder="App password or SMTP password" className="pr-10" />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors" tabIndex={-1}>
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Stored encrypted at rest using AES-256-GCM</p>
                 </div>
                 <div className="space-y-2">
                   <Label>From Email <span className="text-red-500">*</span></Label>
@@ -330,7 +388,18 @@ export default function MailConfigMaster() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Recipient Email</Label>
-                <Input type="email" value={testEmail} onChange={(e) => setTestEmail(e.target.value)} placeholder="recipient@example.com" />
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <Input type="email" value={testEmail || useTestEmailAutoFill} onChange={(e) => setTestEmail(e.target.value)} placeholder="recipient@example.com" />
+                  </div>
+                  {safeConfig.from && (
+                    <Button variant="outline" size="sm" onClick={() => setTestEmail(safeConfig.from)} className="shrink-0 whitespace-nowrap gap-1">
+                      <Mail className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Use sender</span>
+                    </Button>
+                  )}
+                </div>
+                {testEmail && <p className="text-xs text-muted-foreground">Test email will be sent to <strong>{testEmail}</strong></p>}
               </div>
               <Button onClick={handleTest} disabled={testLoading || !testEmail}>
                 {testLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
@@ -438,6 +507,26 @@ export default function MailConfigMaster() {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="audit">
+          <Card>
+            <CardHeader><CardTitle>Mail Audit Trail</CardTitle><CardDescription>Security events recorded for mail configuration changes and test sends</CardDescription></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="p-4 bg-muted/50 rounded-lg border text-sm space-y-2">
+                <p className="font-medium flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-green-600" /> Audit logging is active</p>
+                <p className="text-muted-foreground">All mail configuration changes and test email sends are automatically logged to the system audit trail with actor identity, timestamp, and action details.</p>
+                <ul className="list-disc list-inside text-muted-foreground text-xs space-y-1 mt-2">
+                  <li><strong>mail.config.update</strong> — SMTP configuration save/update events</li>
+                  <li><strong>mail.test.send</strong> — Test email send attempts with success/failure status</li>
+                  <li><strong>user.invited</strong> — User invitation email triggers</li>
+                  <li><strong>password.reset</strong> — Password reset email triggers</li>
+                  <li><strong>pm.due</strong>, <strong>calibration.due</strong> — Scheduled maintenance notifications</li>
+                </ul>
+              </div>
+              <p className="text-xs text-muted-foreground">Audit logs are retained per system retention policy. Use the Security Center for advanced audit log search and export.</p>
             </CardContent>
           </Card>
         </TabsContent>

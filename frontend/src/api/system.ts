@@ -33,6 +33,29 @@ export function getSystemPerformance() {
   return httpRequest<ApiResponse<SystemPerformance>>("/system/performance", { method: "GET" });
 }
 
+export interface SecretKeyStatus {
+  keyName: string;
+  currentVersionId: string;
+  versions: Array<{
+    id: string;
+    secret: string;
+    createdAt: string;
+    expiresAt: string | null;
+    isActive: boolean;
+  }>;
+  rotationIntervalDays: number;
+  lastRotatedAt: string | null;
+  nextRotationAt: string | null;
+}
+
+export interface SecretRotationStatus {
+  keys: SecretKeyStatus[];
+}
+
 export function getSystemErrors() {
   return httpRequest<ApiResponse<SystemErrors>>("/system/errors", { method: "GET" });
+}
+
+export function getSecretRotationStatus() {
+  return httpRequest<ApiResponse<SecretRotationStatus>>("/system/secret-rotation/status", { method: "GET" });
 }

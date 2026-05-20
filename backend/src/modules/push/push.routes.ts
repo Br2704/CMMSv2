@@ -17,9 +17,6 @@ function resolveVapidConfiguration(): { publicKey: string; privateKey: string } 
   if (publicKey && privateKey) {
     return { publicKey, privateKey };
   }
-  if (env.NODE_ENV === 'production') {
-    return null;
-  }
   if (!devVapidConfig) {
     const webPush = require('web-push');
     devVapidConfig = webPush.generateVAPIDKeys();

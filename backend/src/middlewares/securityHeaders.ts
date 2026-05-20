@@ -95,7 +95,26 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  res.setHeader('Permissions-Policy', [
+    'camera=()',
+    'microphone=()',
+    'geolocation=()',
+    'payment=()',
+    'display-capture=()',
+    'clipboard-read=()',
+    'clipboard-write=(self)',
+    'fullscreen=(self)',
+    'accelerometer=()',
+    'gyroscope=()',
+    'magnetometer=()',
+    'ambient-light-sensor=()',
+    'usb=()',
+    'serial=()',
+    'midi=()',
+    'sync-xhr=(self)',
+    'picture-in-picture=()',
+    'screen-wake-lock=()',
+  ].join(', '));
 
   if (req.headers['x-requested-with'] !== 'XMLHttpRequest') {
     res.setHeader('X-Requested-With', 'XMLHttpRequest');
@@ -171,13 +190,28 @@ export function requestValidationMiddleware(req: Request, res: Response, next: N
   }
 
   const validMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
-  if (!validMethods.includes(req.method.toUpperCase())) {
+  const method = req.method.toUpperCase();
+  if (!validMethods.includes(method)) {
     res.status(405).json({
       success: false,
       message: 'Method not allowed',
       code: 'METHOD_NOT_ALLOWED',
     });
     return;
+  }
+
+  // Content-Type validation for mutation requests — prevent MIME confusion attacks
+  const mutatingMethods = ['POST', 'PUT', 'PATCH'];
+  if (mutatingMethods.includes(method)) {
+    const contentType = req.headers['content-type'];
+    if (!contentType || !contentType.startsWith('application/json')) {
+      res.status(415).json({
+        success: false,
+        message: 'Unsupported media type. Content-Type must be application/json',
+        code: 'UNSUPPORTED_MEDIA_TYPE',
+      });
+      return;
+    }
   }
 
   next();

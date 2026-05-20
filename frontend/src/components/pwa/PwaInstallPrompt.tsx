@@ -60,7 +60,7 @@ export function PwaInstallPrompt() {
             <div>
               <p className="text-sm font-semibold">Install App</p>
               <p className="text-xs text-muted-foreground leading-tight mt-0.5">
-                Install JK Fenner CMMS for a better mobile experience and offline access.
+                Install TamOptiX CMMS for a better mobile experience and offline access.
               </p>
             </div>
           </div>

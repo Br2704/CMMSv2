@@ -97,8 +97,8 @@ export default function Dashboard() {
 
   const subtitle = userIsSuperAdmin
     ? showingOverview
-      ? "Global operations overview for JK Fenner."
-      : `Plant performance analytics for ${selectedPlant?.plant_code || selectedPlant?.plant_name || "JKF MDU"}.`
+      ? "Global operations overview for TamOptiX."
+      : `Plant performance analytics for ${selectedPlant?.plant_code || selectedPlant?.plant_name || "Primary Unit"}.`
     : `Command Center • ${user?.fullName}`;
 
   // Role-specific card definitions
@@ -212,7 +212,7 @@ export default function Dashboard() {
             <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
               <Workflow className="h-4 w-4" /> Work Order Lifecycle
             </h2>
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
               <KPICard title="Total Raised" value={woKpis.totalWO || 0} icon={FileText} variant="default" className="p-4" />
               <KPICard title="In Progress" value={woKpis.inProgressWO || 0} icon={Activity} variant="primary" className="p-4" />
               <KPICard title="Pending Appr" value={woKpis.pendingApprovalWO || 0} icon={ShieldAlert} variant="warning" className="p-4" />
@@ -226,7 +226,7 @@ export default function Dashboard() {
             <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
               <Timer className="h-4 w-4" /> Breakdown & Reliability
             </h2>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6">
               <KPICard title="Total Breakdowns" value={breakdownKpis.totalBreakdowns || 0} icon={AlertTriangle} variant="destructive" />
               <KPICard title="Operator Fault" value={breakdownKpis.operatorFaultCases || 0} icon={Users} variant="warning" />
               <KPICard title="MTTR" value={`${timeKpis.mttr || 0}m`} subtitle="Avg Repair Time" icon={Timer} variant="info" />

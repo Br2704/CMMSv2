@@ -25,6 +25,8 @@ import {
   validateInstrumentScope,
 } from './calibration.utils';
 import { isSafeDocumentUpload } from '../../utils/fileValidation';
+import { audit } from '../../utils/audit';
+import { isRootAdminRole, isSuperAdminRole, isAdminRole } from '../../utils/rbac';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -614,8 +616,36 @@ calibrationRouter.delete(
         return;
       }
       ensurePlantAccess(req, entity.plantId);
+
+      const isAdminDeleter = req.auth!.roles.some((role) => isRootAdminRole(role) || isSuperAdminRole(role) || isAdminRole(role));
+      if (isAdminDeleter) {
+        await repo.delete(entity.id);
+        await audit('calibration.templates.delete', {
+          module: 'CALIBRATION',
+          actorUserId: req.auth?.userId ?? null,
+          entityName: 'calibration_templates',
+          entityId: entity.id,
+          plantId: entity.plantId,
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'] ?? null,
+          statusCode: 200,
+        });
+        res.json(ok({ id: entity.id, deleted: true }, 'Calibration template deleted permanently'));
+        return;
+      }
+
       entity.isActive = false;
       await repo.save(entity);
+      await audit('calibration.templates.delete', {
+        module: 'CALIBRATION',
+        actorUserId: req.auth?.userId ?? null,
+        entityName: 'calibration_templates',
+        entityId: entity.id,
+        plantId: entity.plantId,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'] ?? null,
+        statusCode: 200,
+      });
       res.json(ok({ id: entity.id, deleted: true }, 'Calibration template deactivated'));
     } catch (error) {
       next(error);
@@ -829,8 +859,36 @@ calibrationRouter.delete(
         return;
       }
       ensurePlantAccess(req, entity.plantId);
+
+      const isAdminDeleter = req.auth!.roles.some((role) => isRootAdminRole(role) || isSuperAdminRole(role) || isAdminRole(role));
+      if (isAdminDeleter) {
+        await repo.delete(entity.id);
+        await audit('calibration.schedules.delete', {
+          module: 'CALIBRATION',
+          actorUserId: req.auth?.userId ?? null,
+          entityName: 'calibration_schedules',
+          entityId: entity.id,
+          plantId: entity.plantId,
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'] ?? null,
+          statusCode: 200,
+        });
+        res.json(ok({ id: entity.id, deleted: true }, 'Calibration schedule deleted permanently'));
+        return;
+      }
+
       entity.isActive = false;
       await repo.save(entity);
+      await audit('calibration.schedules.delete', {
+        module: 'CALIBRATION',
+        actorUserId: req.auth?.userId ?? null,
+        entityName: 'calibration_schedules',
+        entityId: entity.id,
+        plantId: entity.plantId,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'] ?? null,
+        statusCode: 200,
+      });
       res.json(ok({ id: entity.id, deleted: true }, 'Calibration schedule deactivated'));
     } catch (error) {
       next(error);

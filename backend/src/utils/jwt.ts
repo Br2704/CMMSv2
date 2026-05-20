@@ -52,7 +52,7 @@ export function verifyRefreshToken(token: string): RefreshTokenPayload {
 
 export type ChallengeTokenPayload = {
   sub: string;
-  type: 'captcha' | 'mfa_setup';
+  type: 'captcha' | 'mfa_setup' | 'password_reset';
   email?: string;
   captchaNonce?: string;
   captchaMac?: string;

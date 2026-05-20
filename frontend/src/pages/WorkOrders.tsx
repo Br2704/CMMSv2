@@ -1734,6 +1734,7 @@ export default function WorkOrders() {
     if (!user) return false;
     if (isSuperAdmin(user) || isMaintenanceManager(user)) return true;
     if (isOwnedByCurrentUser(wo.assigned_to)) return true;
+    if (userTeamCategories.size > 0 && userTeamCategories.has(wo.category) && !isOwnedByCurrentUser(wo.raised_by)) return true;
     return isMaintenanceUser(user) && (!wo.assigned_to || isOwnedByCurrentUser(wo.assigned_to));
   };
 
@@ -1841,7 +1842,7 @@ export default function WorkOrders() {
       </div>
 
       {(userIsAdmin || userIsIncharge || Boolean(user)) && !isAssetHistoryMode && (
-        <div className="flex flex-wrap items-center gap-2 rounded-3xl border border-white/40 bg-white/40 p-1.5 shadow-sm backdrop-blur-md">
+        <div className="flex flex-nowrap items-center gap-1 overflow-x-auto rounded-3xl border border-white/40 bg-white/40 p-1.5 shadow-sm backdrop-blur-md scrollbar-thin">
           {[
             { id: 'assigned', label: 'Assigned to Me', count: assignedWorkOrders.length },
             { id: 'raised', label: 'Raised by Me', count: raisedWorkOrders.length },
@@ -1856,7 +1857,7 @@ export default function WorkOrders() {
               size="sm"
               onClick={() => setActiveTab(tab.id as any)}
               className={cn(
-                "rounded-2xl px-4 font-semibold transition-all h-9",
+                "whitespace-nowrap rounded-2xl px-3 sm:px-4 font-semibold transition-all h-9 text-xs sm:text-sm",
                 activeTab === tab.id ? "shadow-lg shadow-primary/20" : "text-muted-foreground hover:bg-white/50"
               )}
             >
@@ -1870,7 +1871,7 @@ export default function WorkOrders() {
             </Button>
           ))}
           
-          <div className="ml-auto hidden items-center gap-3 pr-2 text-xs text-muted-foreground lg:flex">
+          <div className="ml-auto hidden shrink-0 items-center gap-3 pr-2 text-xs text-muted-foreground lg:flex">
             <div className="flex flex-col items-end">
               <span className="font-medium text-foreground">{isFetching ? "Synchronizing..." : "Operational Data"}</span>
               <span className="text-[10px] opacity-70">Synced {lastSyncedLabel}</span>
@@ -1910,13 +1911,13 @@ export default function WorkOrders() {
       )}
 
       <Card className="border-none shadow-card bg-card/40 backdrop-blur-sm">
-        <CardContent className="p-4">
+        <CardContent className="p-3 sm:p-4">
           <FilterToolbar
             search={
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground opacity-50" />
                 <Input 
-                  placeholder="Quick search by WO#, asset, or description..." 
+                  placeholder="Search WO#, asset..." 
                   value={searchQuery} 
                   onChange={(e) => setSearchQuery(e.target.value)} 
                   className="h-11 pl-10 bg-white/50 border-none shadow-inner focus-visible:ring-primary/20" 
@@ -1924,50 +1925,54 @@ export default function WorkOrders() {
               </div>
             }
             filters={
-              <div className="flex flex-wrap gap-2">
-                <SelectField label="" value={statusFilter} onChange={setStatusFilter} options={[
-                  { value: "all", label: "All Status" },
-                  { value: "RAISED", label: "Raised" }, { value: "TRIAGED", label: "Triaged" }, { value: "ASSIGNED", label: "Assigned" }, { value: "OPENED", label: "Opened" },
-                  { value: "IN_PROGRESS", label: "In Progress" }, { value: "REASSIGNED", label: "Reassigned" },
-                  { value: "APPROVAL_PENDING", label: "Pending Approval" }, { value: "USER_VERIFICATION", label: "Pending Approval" },
-                  { value: "REJECTED", label: "Rejected" }, { value: "CLOSED", label: "Completed" },
-                ]} className="w-full sm:w-[160px] h-11" />
-                <SelectField label="" value={categoryFilter} onChange={setCategoryFilter} options={[
-                  { value: "all", label: "All Categories" }, ...filterCategoryOptions
-                ]} className="w-full sm:w-[160px] h-11" />
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="date"
-                    value={dateFrom}
-                    onChange={function(e) { setDateFrom(e.target.value); }}
-                    className="h-11 w-[150px] bg-white/50 border-none shadow-inner"
-                    title="From date"
-                  />
-                  <span className="text-xs text-muted-foreground">to</span>
-                  <Input
-                    type="date"
-                    value={dateTo}
-                    onChange={function(e) { setDateTo(e.target.value); }}
-                    className="h-11 w-[150px] bg-white/50 border-none shadow-inner"
-                    title="To date"
-                  />
+              <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="flex flex-wrap items-center gap-2">
+                  <SelectField label="" value={statusFilter} onChange={setStatusFilter} options={[
+                    { value: "all", label: "All Status" },
+                    { value: "RAISED", label: "Raised" }, { value: "TRIAGED", label: "Triaged" }, { value: "ASSIGNED", label: "Assigned" }, { value: "OPENED", label: "Opened" },
+                    { value: "IN_PROGRESS", label: "In Progress" }, { value: "REASSIGNED", label: "Reassigned" },
+                    { value: "APPROVAL_PENDING", label: "Pending Approval" }, { value: "USER_VERIFICATION", label: "Pending Approval" },
+                    { value: "REJECTED", label: "Rejected" }, { value: "CLOSED", label: "Completed" },
+                  ]} className="min-w-[130px] h-11" />
+                  <SelectField label="" value={categoryFilter} onChange={setCategoryFilter} options={[
+                    { value: "all", label: "All Categories" }, ...filterCategoryOptions
+                  ]} className="min-w-[130px] h-11" />
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-11 gap-2"
-                  onClick={function() { exportWorkOrdersCSV({
-                    status: statusFilter !== "all" ? statusFilter : undefined,
-                    category: categoryFilter !== "all" ? categoryFilter : undefined,
-                    date_from: dateFrom || undefined,
-                    date_to: dateTo || undefined,
-                    ...(activePlantIds.length === 1 ? { plantId: activePlantIds[0] } : {}),
-                  }).catch(function() { toast.error("Export failed"); }); }}
-                  title="Export to CSV"
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  Export CSV
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      type="date"
+                      value={dateFrom}
+                      onChange={function(e) { setDateFrom(e.target.value); }}
+                      className="h-11 w-[130px] sm:w-[140px] bg-white/50 border-none shadow-inner"
+                      title="From date"
+                    />
+                    <span className="text-xs text-muted-foreground">to</span>
+                    <Input
+                      type="date"
+                      value={dateTo}
+                      onChange={function(e) { setDateTo(e.target.value); }}
+                      className="h-11 w-[130px] sm:w-[140px] bg-white/50 border-none shadow-inner"
+                      title="To date"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-11 gap-2"
+                    onClick={function() { exportWorkOrdersCSV({
+                      status: statusFilter !== "all" ? statusFilter : undefined,
+                      category: categoryFilter !== "all" ? categoryFilter : undefined,
+                      date_from: dateFrom || undefined,
+                      date_to: dateTo || undefined,
+                      ...(activePlantIds.length === 1 ? { plantId: activePlantIds[0] } : {}),
+                    }).catch(function() { toast.error("Export failed"); }); }}
+                    title="Export to CSV"
+                  >
+                    <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    Export CSV
+                  </Button>
+                </div>
               </div>
             }
           />

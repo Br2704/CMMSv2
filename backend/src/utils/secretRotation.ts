@@ -16,6 +16,14 @@ interface SecretRotationConfig {
   rotationIntervalDays: number;
 }
 
+export interface SecretRotationState {
+  keys: Record<string, {
+    currentVersionId: string;
+    versions: SecretVersion[];
+    rotationIntervalDays: number;
+  }>;
+}
+
 class SecretRotationManager {
   private secrets: Map<string, SecretRotationConfig> = new Map();
   private initialized = false;
@@ -82,6 +90,70 @@ class SecretRotationManager {
       return [this.getSecretForKey(keyName)];
     }
     return config.versions.filter((v) => v.isActive).map((v) => v.secret);
+  }
+
+  getAllSecretStatuses(): Array<{
+    keyName: string;
+    currentVersionId: string;
+    versions: SecretVersion[];
+    rotationIntervalDays: number;
+    lastRotatedAt: Date | null;
+    nextRotationAt: Date | null;
+  }> {
+    const result: Array<{
+      keyName: string;
+      currentVersionId: string;
+      versions: SecretVersion[];
+      rotationIntervalDays: number;
+      lastRotatedAt: Date | null;
+      nextRotationAt: Date | null;
+    }> = [];
+
+    for (const [keyName, config] of this.secrets) {
+      const latestVersion = config.versions[config.versions.length - 1];
+      const lastRotatedAt = config.versions.length > 1 ? latestVersion.createdAt : null;
+      const nextRotationAt = new Date(latestVersion.createdAt.getTime() + config.rotationIntervalDays * 24 * 60 * 60 * 1000);
+      result.push({
+        keyName,
+        currentVersionId: config.currentVersionId,
+        versions: config.versions.map(v => ({ ...v, secret: v.secret.substring(0, 8) + '...' })), // mask secrets
+        rotationIntervalDays: config.rotationIntervalDays,
+        lastRotatedAt,
+        nextRotationAt,
+      });
+    }
+    return result;
+  }
+
+  exportState(): SecretRotationState {
+    const keys: SecretRotationState['keys'] = {};
+    for (const [keyName, config] of this.secrets) {
+      keys[keyName] = {
+        currentVersionId: config.currentVersionId,
+        versions: config.versions.map(v => ({
+          id: v.id,
+          secret: v.secret,
+          createdAt: v.createdAt,
+          expiresAt: v.expiresAt,
+          isActive: v.isActive,
+        })),
+        rotationIntervalDays: config.rotationIntervalDays,
+      };
+    }
+    return { keys };
+  }
+
+  importState(state: SecretRotationState): void {
+    if (!state?.keys) return;
+    for (const [keyName, keyState] of Object.entries(state.keys)) {
+      if (keyState.versions.length === 0) continue;
+      this.secrets.set(keyName, {
+        keyName,
+        currentVersionId: keyState.currentVersionId,
+        versions: keyState.versions,
+        rotationIntervalDays: keyState.rotationIntervalDays,
+      });
+    }
   }
 
   isKeyGracePeriodExpired(keyName: string): boolean {
