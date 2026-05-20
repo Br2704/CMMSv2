@@ -66,8 +66,14 @@ services:
         limits:
           memory: 512M
     command: >
-      sh -c "npm run migration:run:prod &&
-             npm run start"
+      sh -c "
+        echo '=== CMMS Backend Starting ===' &&
+        echo 'Running migrations...' &&
+        npm run migration:run:prod &&
+        echo 'Migrations complete. Starting server...' &&
+        npm run start
+      "
+    stop_grace_period: 30s
     environment:
       <<: *backend-env
     ports:

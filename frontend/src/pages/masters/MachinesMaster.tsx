@@ -605,7 +605,12 @@ export default function MachinesMaster() {
   const getDepartmentName = (departmentId: string | null) => departments.find((item) => item.id === departmentId)?.name || "-";
   const getModuleName = (moduleId: string | null) => modules.find((item) => item.id === moduleId)?.name || "-";
   const getCostCenterName = (costCenterId: string | null) => costCenters.find((item) => item.id === costCenterId)?.name || "-";
-  const getPlantName = (plantId: string | null) => plantsOptions.find((item) => item.value === plantId)?.label || "-";
+  const getPlantName = (plantId: string | null) => {
+    const label = plantsOptions.find((item) => item.value === plantId)?.label || "";
+    if (!label) return "-";
+    const codeToken = label.split(" - ")[0]?.trim();
+    return codeToken || "-";
+  };
   const formatTimestamp = (value: string | null | undefined) => {
     if (!value) return "-";
     const parsed = new Date(value);

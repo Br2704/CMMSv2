@@ -171,13 +171,13 @@ export default function Dashboard() {
              <div className="h-10 w-1 rounded-full bg-primary" />
              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary/70">{getRoleGreeting()}</p>
           </div>
-          <h1 className="text-xl font-black tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
+          <h1 className="text-xl font-black tracking-tight text-foreground sm:text-2xl lg:text-3xl">
             {userIsSuperAdmin && showingOverview ? "Global Governance" : "Command Center"}
           </h1>
           <div className="flex items-center gap-3 pt-2">
-            <div className="flex h-8 items-center gap-2 rounded-full bg-white/60 backdrop-blur-md px-4 border border-slate-100 shadow-sm">
+            <div className="flex h-8 items-center gap-2 rounded-full bg-card/70 backdrop-blur-md px-4 border border-border/60 shadow-sm dark:bg-card/60">
                <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-               <p className="text-xs font-bold text-slate-500">{subtitle}</p>
+               <p className="text-xs font-bold text-muted-foreground">{subtitle}</p>
             </div>
           </div>
         </div>
@@ -185,13 +185,15 @@ export default function Dashboard() {
         {userIsSuperAdmin && (
           <div className="w-full lg:w-[350px]">
              <Select value={selectedPlantId || "overview"} onValueChange={(val) => val === "overview" ? setSelectedPlantId(null) : setSelectedPlantId(val)}>
-                <SelectTrigger className="h-16 rounded-[1.5rem] border-none bg-white shadow-industrial hover:shadow-industrial-lg transition-all px-8 text-base font-bold">
+                <SelectTrigger className="h-16 rounded-[1.5rem] border border-border/60 bg-card/80 shadow-industrial hover:shadow-industrial-lg transition-all px-8 text-base font-bold text-foreground dark:bg-card/70">
                   <SelectValue placeholder="Organization Overview" />
                 </SelectTrigger>
-                <SelectContent className="rounded-2xl border-none shadow-2xl p-2">
-                  <SelectItem value="overview" className="rounded-xl py-3 focus:bg-primary/5">Organization Overview</SelectItem>
+                <SelectContent className="rounded-2xl border border-border/60 bg-popover text-foreground shadow-2xl p-2">
+                  <SelectItem value="overview" className="rounded-xl py-3 focus:bg-accent/50">Organization Overview</SelectItem>
                   {plants.map((p: any) => (
-                    <SelectItem key={p.id} value={p.id} className="rounded-xl py-3 focus:bg-primary/5">{p.plant_code || p.plant_name}</SelectItem>
+                    <SelectItem key={p.id} value={p.id} className="rounded-xl py-3 focus:bg-accent/50">
+                      {p.plant_code || p.plant_name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -206,7 +208,7 @@ export default function Dashboard() {
       >
       {/* Primary KPI Grid */}
       <div className="space-y-6">
-        <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+        <h2 className="text-sm font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
           <Activity className="h-4 w-4" /> Real-time Operations
         </h2>
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
@@ -227,7 +229,7 @@ export default function Dashboard() {
           
           {/* Work Order Lifecycle */}
           <div className="space-y-6">
-            <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+            <h2 className="text-sm font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
               <Workflow className="h-4 w-4" /> Work Order Lifecycle
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
@@ -241,7 +243,7 @@ export default function Dashboard() {
 
           {/* Breakdown & Reliability */}
           <div className="space-y-6">
-            <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+            <h2 className="text-sm font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
               <Timer className="h-4 w-4" /> Breakdown & Reliability
             </h2>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
@@ -346,8 +348,8 @@ export default function Dashboard() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.32, ease: [0.25, 0.1, 0.25, 1] }}
       >
-        <Card className="rounded-[2.5rem] border-none shadow-industrial overflow-hidden bg-white/40 backdrop-blur-xl">
-           <CardHeader className="p-4 sm:p-8 border-b border-white/20">
+        <Card className="rounded-[2.5rem] border border-border/60 shadow-industrial overflow-hidden bg-card/70 backdrop-blur-xl dark:bg-card/60">
+           <CardHeader className="p-4 sm:p-8 border-b border-border/60">
               <CardTitle className="text-lg sm:text-2xl font-black">Organization Plant Comparison</CardTitle>
               <p className="text-muted-foreground font-medium text-sm sm:text-base">Cross-plant operational benchmarks</p>
            </CardHeader>
@@ -355,31 +357,31 @@ export default function Dashboard() {
               {isMobile ? (
                 <div className="space-y-3 p-4">
                   {comparisonRows.map((row) => (
-                    <div key={row.plantId} className="rounded-2xl border border-slate-100 bg-white/60 p-4 space-y-3">
+                    <div key={row.plantId} className="rounded-2xl border border-border/60 bg-card/70 p-4 space-y-3 dark:bg-card/60">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-base font-bold text-slate-900">{row.plantCode}</p>
-                          <p className="text-xs font-medium text-slate-400">{row.plantName}</p>
+                          <p className="text-base font-bold text-foreground">{row.plantCode}</p>
+                          <p className="text-xs font-medium text-muted-foreground">{row.plantName}</p>
                         </div>
                         <StatusBadge variant={row.pmCompliance > 80 ? "success" : row.pmCompliance > 60 ? "warning" : "destructive"}>
                           {row.pmCompliance > 80 ? "Excellent" : row.pmCompliance > 60 ? "Stable" : "Critical"}
                         </StatusBadge>
                       </div>
                       <div className="grid grid-cols-3 gap-3 text-center">
-                        <div className="rounded-xl bg-slate-50 p-2">
+                        <div className="rounded-xl bg-muted/40 p-2">
                           <p className="text-xs text-muted-foreground">Assets</p>
-                          <p className="text-sm font-black text-slate-900">{row.totalAssets}</p>
+                          <p className="text-sm font-black text-foreground">{row.totalAssets}</p>
                         </div>
-                        <div className="rounded-xl bg-slate-50 p-2">
+                        <div className="rounded-xl bg-muted/40 p-2">
                           <p className="text-xs text-muted-foreground">PM</p>
-                          <p className="text-sm font-black text-emerald-600">{row.pmCompliance}%</p>
+                          <p className="text-sm font-black text-emerald-500">{row.pmCompliance}%</p>
                         </div>
-                        <div className="rounded-xl bg-slate-50 p-2">
+                        <div className="rounded-xl bg-muted/40 p-2">
                           <p className="text-xs text-muted-foreground">MTTR</p>
-                          <p className="text-sm font-black text-slate-900">{row.mttrAvg}m</p>
+                          <p className="text-sm font-black text-foreground">{row.mttrAvg}m</p>
                         </div>
                       </div>
-                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-2 bg-muted/40 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-emerald-500 rounded-full"
                           style={{ width: `${row.pmCompliance}%` }}
@@ -391,7 +393,7 @@ export default function Dashboard() {
               ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
-                   <thead className="bg-slate-50/50 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                   <thead className="bg-muted/40 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                       <tr>
                         <th className="px-8 py-6">Plant</th>
                         <th className="px-6 py-6">Operational Status</th>
@@ -401,37 +403,37 @@ export default function Dashboard() {
                         <th className="px-8 py-6 text-right">Health</th>
                       </tr>
                    </thead>
-                   <tbody className="divide-y divide-slate-100">
+                   <tbody className="divide-y divide-border/60">
                       {comparisonRows.map((row) => (
-                        <tr key={row.plantId} className="group hover:bg-white/60 transition-colors">
+                        <tr key={row.plantId} className="group hover:bg-muted/40 transition-colors">
                            <td className="px-8 py-6">
                               <div className="flex flex-col">
-                                <span className="text-base font-bold text-slate-900 group-hover:text-primary transition-colors">{row.plantCode}</span>
-                                <span className="text-xs font-medium text-slate-400">{row.plantName}</span>
+                                <span className="text-base font-bold text-foreground group-hover:text-primary transition-colors">{row.plantCode}</span>
+                                <span className="text-xs font-medium text-muted-foreground">{row.plantName}</span>
                               </div>
                            </td>
                            <td className="px-6 py-6">
                               <div className="flex items-center gap-2">
                                 <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-                                <span className="text-sm font-bold text-slate-700">Online</span>
+                                <span className="text-sm font-bold text-foreground">Online</span>
                               </div>
                            </td>
                            <td className="px-6 py-6">
-                              <span className="text-sm font-black text-slate-900">{row.totalAssets}</span>
-                              <span className="ml-1 text-[10px] font-bold text-slate-400 uppercase">Assets</span>
+                              <span className="text-sm font-black text-foreground">{row.totalAssets}</span>
+                              <span className="ml-1 text-[10px] font-bold text-muted-foreground uppercase">Assets</span>
                            </td>
                            <td className="px-6 py-6">
-                              <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
+                              <div className="w-24 h-2 bg-muted/40 rounded-full overflow-hidden">
                                  <div
                                     className="h-full bg-emerald-500 rounded-full"
                                     style={{ width: `${row.pmCompliance}%` }}
                                   />
                               </div>
-                              <span className="mt-1 block text-xs font-black text-emerald-600">{row.pmCompliance}%</span>
+                              <span className="mt-1 block text-xs font-black text-emerald-500">{row.pmCompliance}%</span>
                            </td>
                            <td className="px-6 py-6">
-                              <span className="text-sm font-bold text-slate-900">{row.mttrAvg}</span>
-                              <span className="ml-1 text-[10px] font-bold text-slate-400 uppercase">Min</span>
+                              <span className="text-sm font-bold text-foreground">{row.mttrAvg}</span>
+                              <span className="ml-1 text-[10px] font-bold text-muted-foreground uppercase">Min</span>
                            </td>
                            <td className="px-8 py-6 text-right">
                               <StatusBadge variant={row.pmCompliance > 80 ? "success" : row.pmCompliance > 60 ? "warning" : "destructive"}>

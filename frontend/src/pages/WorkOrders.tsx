@@ -1817,12 +1817,12 @@ export default function WorkOrders() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:gap-4">
         {kpiCards.map((kpi, idx) => (
           <div key={idx}>
-            <Card className="group relative overflow-hidden border-none bg-gradient-to-br from-card to-muted/30 shadow-card hover:shadow-xl transition-all duration-300">
-              <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-primary/5 blur-2xl group-hover:bg-primary/10 transition-colors" />
+            <Card className="group relative overflow-hidden border border-border/70 bg-gradient-to-br from-card/90 to-muted/20 shadow-card hover:shadow-xl transition-all duration-300 dark:from-card/80 dark:to-muted/10">
+              <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl group-hover:bg-primary/20 transition-colors" />
               <CardContent className="p-5">
                 <div className="flex items-center gap-4">
                   <div className={cn(
-                    "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-border/50 transition-transform group-hover:scale-110 duration-300",
+                    "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-card/80 shadow-sm ring-1 ring-border/60 transition-transform group-hover:scale-110 duration-300 dark:bg-card/60",
                     kpi.color.replace('text-', 'text-')
                   )}>
                     <kpi.icon className="h-6 w-6" />
@@ -1841,7 +1841,7 @@ export default function WorkOrders() {
       </div>
 
       {(userIsAdmin || userIsIncharge || Boolean(user)) && !isAssetHistoryMode && (
-        <div className="flex flex-wrap items-center gap-2 rounded-3xl border border-white/40 bg-white/40 p-1.5 shadow-sm backdrop-blur-md">
+        <div className="flex flex-wrap items-center gap-2 rounded-3xl border border-border/60 bg-card/70 p-1.5 shadow-sm backdrop-blur-md dark:bg-card/60">
           {[
             { id: 'assigned', label: 'Assigned to Me', count: assignedWorkOrders.length },
             { id: 'raised', label: 'Raised by Me', count: raisedWorkOrders.length },
@@ -1857,13 +1857,13 @@ export default function WorkOrders() {
               onClick={() => setActiveTab(tab.id as any)}
               className={cn(
                 "rounded-2xl px-4 font-semibold transition-all h-9",
-                activeTab === tab.id ? "shadow-lg shadow-primary/20" : "text-muted-foreground hover:bg-white/50"
+                activeTab === tab.id ? "shadow-lg shadow-primary/30" : "text-muted-foreground hover:bg-accent/40"
               )}
             >
               {tab.label}
               <Badge variant="outline" className={cn(
                 "ml-2 border-none px-1.5 text-[10px]",
-                activeTab === tab.id ? "bg-white/20 text-white" : "bg-muted/50"
+                activeTab === tab.id ? "bg-primary/20 text-foreground" : "bg-muted/60 text-muted-foreground"
               )}>
                 {tab.count}
               </Badge>
@@ -1878,7 +1878,7 @@ export default function WorkOrders() {
             <Button 
               variant="outline" 
               size="icon" 
-              className="h-8 w-8 rounded-full border-none bg-white shadow-sm hover:scale-110 transition-transform" 
+              className="h-8 w-8 rounded-full border border-border/60 bg-card/70 shadow-sm hover:scale-110 transition-transform dark:bg-card/60" 
               onClick={() => void refetch()} 
               disabled={isFetching || !authEnabled}
             >
@@ -1919,7 +1919,7 @@ export default function WorkOrders() {
                   placeholder="Quick search by WO#, asset, or description..." 
                   value={searchQuery} 
                   onChange={(e) => setSearchQuery(e.target.value)} 
-                  className="h-11 pl-10 bg-white/50 border-none shadow-inner focus-visible:ring-primary/20" 
+                  className="h-11 pl-10 bg-card/70 border border-border/60 text-foreground shadow-inner focus-visible:ring-primary/20 dark:bg-card/60" 
                 />
               </div>
             }
@@ -1952,7 +1952,7 @@ export default function WorkOrders() {
                     type="date"
                     value={dateFrom}
                     onChange={function(e) { setDateFrom(e.target.value); }}
-                    className="h-11 w-[150px] bg-white/50 border-none shadow-inner"
+                    className="h-11 w-[150px] bg-card/70 border border-border/60 text-foreground shadow-inner dark:bg-card/60"
                     title="From date"
                   />
                   <span className="text-xs text-muted-foreground">to</span>
@@ -1960,7 +1960,7 @@ export default function WorkOrders() {
                     type="date"
                     value={dateTo}
                     onChange={function(e) { setDateTo(e.target.value); }}
-                    className="h-11 w-[150px] bg-white/50 border-none shadow-inner"
+                    className="h-11 w-[150px] bg-card/70 border border-border/60 text-foreground shadow-inner dark:bg-card/60"
                     title="To date"
                   />
                 </div>

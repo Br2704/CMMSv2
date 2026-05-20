@@ -76,6 +76,7 @@ export function useNotifications(options?: { enabled?: boolean }) {
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const streamAbortRef = useRef<AbortController | null>(null);
   const streamReconnectRef = useRef<number | null>(null);
+  const streamRetryRef = useRef(0);
 
   const fetchNotifications = useCallback(async () => {
     if (!enabled || !user || authLoading || !isAuthenticated || !getStoredAccessToken()) {
@@ -136,10 +137,19 @@ export function useNotifications(options?: { enabled?: boolean }) {
 
     const scheduleReconnect = (delayMs = 3_000) => {
       if (cancelled || streamReconnectRef.current !== null) return;
+      const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+      const baseDelay = isOffline ? 10_000 : delayMs;
+      const attempt = streamRetryRef.current;
+      const delay = Math.min(60_000, baseDelay * Math.pow(2, attempt));
+      streamRetryRef.current = Math.min(attempt + 1, 6);
       streamReconnectRef.current = window.setTimeout(() => {
         streamReconnectRef.current = null;
         void connectStream();
-      }, delayMs);
+      }, delay);
+    };
+
+    const resetReconnect = () => {
+      streamRetryRef.current = 0;
     };
 
     const abortCurrentStream = () => {
@@ -191,6 +201,8 @@ export function useNotifications(options?: { enabled?: boolean }) {
           scheduleReconnect();
           return;
         }
+
+        resetReconnect();
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -287,11 +299,20 @@ export function useNotifications(options?: { enabled?: boolean }) {
 
         // Trigger native browser notification
         if ("Notification" in window && Notification.permission === "granted") {
+
+          const handleOnline = () => {
+            if (cancelled) return;
+            clearReconnect();
+            void connectStream();
+          };
+
+          window.addEventListener("online", handleOnline);
           const browserNotification = new Notification(notification.title, {
             body: notification.message,
             tag: notification.id,
             icon: "/jkfenner/jkfenner-logo.png",
             badge: "/jkfenner/jkfenner-favicon.svg",
+            window.removeEventListener("online", handleOnline);
             requireInteraction: true,
             data: { url: notification.link, woId: notification.wo_id },
           });

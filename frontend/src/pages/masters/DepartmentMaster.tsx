@@ -98,7 +98,12 @@ export default function DepartmentMaster() {
     setSelectedPlant(plantOptions[0].value);
   }, [canSelectPlant, selectedPlant, plantOptions]);
 
-  const getPlantName = (plantId: string | null) => plantsOptions.find((item) => item.value === plantId)?.label || "-";
+  const getPlantName = (plantId: string | null) => {
+    const label = plantsOptions.find((item) => item.value === plantId)?.label || "";
+    if (!label) return "-";
+    const codeToken = label.split(" - ")[0]?.trim();
+    return codeToken || "-";
+  };
 
   const filtered = useMemo(() => departments, [departments]);
 

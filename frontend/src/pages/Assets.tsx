@@ -82,14 +82,14 @@ function AssetOverviewPanel({
   return (
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="overflow-hidden rounded-[2rem] border-none bg-slate-50 shadow-inner">
+        <Card className="overflow-hidden rounded-[2rem] border border-border/60 bg-card/70 shadow-inner dark:bg-card/60">
            {overview.asset.machineImageUrl ? (
              <div className="relative h-64 w-full overflow-hidden">
                <img src={overview.asset.machineImageUrl} alt={overview.asset.name} className="h-full w-full object-cover" />
                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
              </div>
            ) : (
-             <div className="flex h-48 flex-col items-center justify-center gap-3 text-slate-300">
+             <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
                <ImageIcon className="h-12 w-12" />
                <p className="text-[10px] font-black uppercase tracking-widest">No Intelligence Image</p>
              </div>
@@ -98,59 +98,59 @@ function AssetOverviewPanel({
              <div className="flex items-center justify-between mb-4">
                 <div className="space-y-0.5">
                    <p className="text-[9px] font-black uppercase tracking-widest text-primary">Node Core</p>
-                   <h3 className="text-lg font-black text-slate-900 tracking-tight">{overview.asset.name}</h3>
+                   <h3 className="text-lg font-black text-foreground tracking-tight">{overview.asset.name}</h3>
                 </div>
                 <StatusBadge variant={assetStatusVariant(overview.asset.status)}>{overview.asset.status.replace(/_/g, " ")}</StatusBadge>
              </div>
              
              <div className="grid grid-cols-2 gap-3 mb-6">
-               <div className="rounded-2xl bg-white p-3 shadow-sm border border-slate-100">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">MTTR</p>
-                  <p className="text-sm font-bold text-slate-900">{formatMinutes(reliability?.mttrMinutes)}</p>
+              <div className="rounded-2xl bg-card/70 p-3 shadow-sm border border-border/60 dark:bg-card/60">
+                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">MTTR</p>
+                <p className="text-sm font-bold text-foreground">{formatMinutes(reliability?.mttrMinutes)}</p>
                </div>
-               <div className="rounded-2xl bg-white p-3 shadow-sm border border-slate-100">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Criticality</p>
+              <div className="rounded-2xl bg-card/70 p-3 shadow-sm border border-border/60 dark:bg-card/60">
+                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">Criticality</p>
                   <StatusBadge variant={overview.asset.criticality === "HIGH" ? "critical" : "default"} className="h-5 px-2 text-[9px]">{overview.asset.criticality || "STABLE"}</StatusBadge>
                </div>
              </div>
 
              <div className="space-y-3">
-               <div className="flex items-center justify-between pb-2 border-b border-slate-100/50">
-                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Serial Number</span>
-                 <span className="text-xs font-black text-slate-700">{overview.asset.serialNumber || "-"}</span>
+               <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Serial Number</span>
+                 <span className="text-xs font-black text-foreground">{overview.asset.serialNumber || "-"}</span>
                </div>
                <div className="flex items-center justify-between">
-                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Model</span>
-                 <span className="text-xs font-black text-slate-700">{overview.asset.model || "-"}</span>
+                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Model</span>
+                 <span className="text-xs font-black text-foreground">{overview.asset.model || "-"}</span>
                </div>
              </div>
            </CardContent>
         </Card>
 
         <div className="space-y-6">
-          <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
-             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">Operations Context</h4>
+          <div className="rounded-[2rem] border border-border/60 bg-card/70 p-6 shadow-sm dark:bg-card/60">
+             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-4">Operations Context</h4>
              <div className="space-y-4">
                 <div className="flex items-center gap-4">
                   <div className="h-10 w-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600"><Factory className="h-5 w-5" /></div>
                   <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Department</p>
-                    <p className="text-sm font-bold text-slate-900">{overview.hierarchy?.department?.name || "-"}</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Department</p>
+                    <p className="text-sm font-bold text-foreground">{overview.hierarchy?.department?.name || "-"}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="h-10 w-10 rounded-xl bg-violet-50 flex items-center justify-center text-violet-600"><Gauge className="h-5 w-5" /></div>
                   <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Module Mapping</p>
-                    <p className="text-sm font-bold text-slate-900">{overview.hierarchy?.module?.name || "-"}</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Module Mapping</p>
+                    <p className="text-sm font-bold text-foreground">{overview.hierarchy?.module?.name || "-"}</p>
                   </div>
                 </div>
              </div>
           </div>
 
-          <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm overflow-hidden">
+          <div className="rounded-[2rem] border border-border/60 bg-card/70 p-6 shadow-sm overflow-hidden dark:bg-card/60">
              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Quick Actions & Identity</h4>
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Quick Actions & Identity</h4>
              </div>
              
              <div className="flex gap-4">
@@ -159,14 +159,14 @@ function AssetOverviewPanel({
                     <Wrench className="h-4 w-4" />
                     <span className="text-[10px] font-black uppercase">Raise Incident</span>
                   </Button>
-                  <Button variant="outline" className="h-14 rounded-2xl flex-row gap-2 border-slate-100" onClick={() => toast.info("History download initiated")}>
+                  <Button variant="outline" className="h-14 rounded-2xl flex-row gap-2 border-border/60 text-foreground" onClick={() => toast.info("History download initiated")}>
                     <History className="h-4 w-4" />
                     <span className="text-[10px] font-black uppercase">Logbook</span>
                   </Button>
                 </div>
 
                 <div 
-                   className="group relative h-32 w-32 shrink-0 cursor-pointer rounded-[2rem] border border-slate-100 bg-white p-3 transition-all hover:shadow-industrial-lg hover:border-primary/20"
+                   className="group relative h-32 w-32 shrink-0 cursor-pointer rounded-[2rem] border border-border/60 bg-card/70 p-3 transition-all hover:shadow-industrial-lg hover:border-primary/20 dark:bg-card/60"
                    onClick={handleCopyResolverUrl}
                    title="Click to copy machine link"
                  >
@@ -182,7 +182,7 @@ function AssetOverviewPanel({
                          </div>
                       </>
                     ) : (
-                      <div className="flex h-full items-center justify-center text-slate-200">
+                      <div className="flex h-full items-center justify-center text-muted-foreground">
                          <QrCode className="h-10 w-10" />
                       </div>
                     )}
@@ -192,24 +192,24 @@ function AssetOverviewPanel({
           </div>
         </div>
 
-      <div className="rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-sm">
+      <div className="rounded-[2.5rem] border border-border/60 bg-card/70 p-8 shadow-sm dark:bg-card/60">
          <div className="flex items-center justify-between mb-6">
-            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Maintenance History</h4>
-            <div className="h-1 w-12 bg-slate-100 rounded-full" />
+            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Maintenance History</h4>
+            <div className="h-1 w-12 bg-muted/40 rounded-full" />
          </div>
          <div className="space-y-3">
            {overview.workOrders.length === 0 ? (
-             <div className="py-12 text-center border-2 border-dashed border-slate-50 rounded-3xl">
-               <p className="text-xs font-bold text-slate-300">Operational Log Stable</p>
+             <div className="py-12 text-center border-2 border-dashed border-border/60 rounded-3xl">
+               <p className="text-xs font-bold text-muted-foreground">Operational Log Stable</p>
              </div>
            ) : (
              overview.workOrders.slice(0, 5).map((wo) => (
-               <div key={wo.id} className="group flex items-center justify-between p-4 rounded-2xl border border-slate-50 hover:border-primary/20 hover:bg-primary/5 transition-all">
+               <div key={wo.id} className="group flex items-center justify-between p-4 rounded-2xl border border-border/60 hover:border-primary/20 hover:bg-accent/20 transition-all">
                   <div className="flex items-center gap-4">
                     <div className={cn("h-2 w-2 rounded-full", workOrderStatusVariant(wo.status) === "active" ? "bg-emerald-500" : "bg-rose-500")} />
                     <div>
-                      <p className="text-xs font-black text-slate-900">{wo.woNumber}</p>
-                      <p className="text-[10px] font-bold text-slate-400 truncate max-w-[200px]">{wo.problemDescription || "Routine maintenance"}</p>
+                      <p className="text-xs font-black text-foreground">{wo.woNumber}</p>
+                      <p className="text-[10px] font-bold text-muted-foreground truncate max-w-[200px]">{wo.problemDescription || "Routine maintenance"}</p>
                     </div>
                   </div>
                   <StatusBadge className="text-[8px]" variant={workOrderStatusVariant(wo.status)}>{wo.status.replace(/_/g, " ")}</StatusBadge>
@@ -509,7 +509,7 @@ export default function Assets() {
       render: (asset: Asset) => (
         <div className="flex flex-col">
           <span className="text-xs font-black uppercase tracking-widest text-primary">{asset.code}</span>
-          <span className="text-sm font-bold text-slate-700 tracking-tight">{asset.name}</span>
+          <span className="text-sm font-bold text-foreground tracking-tight">{asset.name}</span>
         </div>
       ),
     },
@@ -521,8 +521,8 @@ export default function Assets() {
         const module = modules.find((item) => item.id === asset.moduleId);
         return (
           <div className="flex flex-col">
-            <span className="text-xs font-bold text-slate-600">{department ? department.name : "-"}</span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            <span className="text-xs font-bold text-foreground">{department ? department.name : "-"}</span>
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
               {module ? module.name : "Unmapped Module"}
             </span>
           </div>
@@ -537,7 +537,7 @@ export default function Assets() {
           <StatusBadge variant={assetStatusVariant(asset.status)} className="h-5 px-2 text-[10px]">{asset.status.replace(/_/g, " ")}</StatusBadge>
           <div className="flex items-center gap-1 opacity-60">
             <div className={cn("h-1.5 w-1.5 rounded-full", asset.criticality === "HIGH" ? "bg-rose-500" : "bg-slate-300")} />
-            <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">{asset.criticality || "STABLE"}</span>
+            <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">{asset.criticality || "STABLE"}</span>
           </div>
         </div>
       ),
@@ -547,8 +547,8 @@ export default function Assets() {
       header: "Log Count",
       render: (asset: Asset) => (
         <div className="flex items-center gap-2">
-           <span className="text-xs font-black text-slate-700">{(workOrdersByAsset.get(asset.id) || []).length}</span>
-           <span className="text-[9px] font-bold text-slate-400 uppercase">Records</span>
+           <span className="text-xs font-black text-foreground">{(workOrdersByAsset.get(asset.id) || []).length}</span>
+           <span className="text-[9px] font-bold text-muted-foreground uppercase">Records</span>
         </div>
       ),
       hideOnMobile: true,
@@ -561,7 +561,7 @@ export default function Assets() {
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 rounded-lg hover:bg-slate-50 text-slate-400 hover:text-primary"
+            className="h-8 rounded-lg hover:bg-accent/40 text-muted-foreground hover:text-primary"
             onClick={() => {
               setSelectedAsset(asset);
               setIsViewOpen(true);
@@ -572,7 +572,7 @@ export default function Assets() {
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 rounded-lg hover:bg-slate-50 text-slate-400"
+            className="h-8 rounded-lg hover:bg-accent/40 text-muted-foreground"
             onClick={() => openWorkOrderHistory(asset)}
           >
             <History className="h-4 w-4" />
@@ -614,7 +614,7 @@ export default function Assets() {
         <div className="flex items-center gap-3">
           <Button 
             variant="outline" 
-            className="h-11 gap-2 rounded-2xl border-slate-200 bg-white shadow-sm hover:bg-slate-50 transition-all" 
+            className="h-11 gap-2 rounded-2xl border-border/60 bg-card/80 shadow-sm hover:bg-accent/40 transition-all text-foreground" 
             onClick={() => setIsQrScannerOpen(true)} 
             disabled={resolvingQr}
           >
@@ -631,62 +631,62 @@ export default function Assets() {
         className="space-y-6"
       >
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-           <Card className="overflow-hidden rounded-[2.5rem] border-none bg-white shadow-industrial-sm">
+           <Card className="overflow-hidden rounded-[2.5rem] border border-border/60 bg-card/70 shadow-industrial-sm dark:bg-card/60">
              <CardContent className="p-8">
                 <div className="flex items-center justify-between mb-4">
-                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Total Inventory</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Total Inventory</p>
                   <div className="h-8 w-8 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600"><Wrench className="h-4 w-4" /></div>
                 </div>
-                <p className="text-3xl font-black text-slate-900 tracking-tight">{visibleAssets.length}</p>
-                <p className="mt-1 text-[10px] font-bold text-slate-400">Registered assets in scope</p>
+                <p className="text-3xl font-black text-foreground tracking-tight">{visibleAssets.length}</p>
+                <p className="mt-1 text-[10px] font-bold text-muted-foreground">Registered assets in scope</p>
              </CardContent>
            </Card>
-           <Card className="overflow-hidden rounded-[2.5rem] border-none bg-white shadow-industrial-sm">
+           <Card className="overflow-hidden rounded-[2.5rem] border border-border/60 bg-card/70 shadow-industrial-sm dark:bg-card/60">
              <CardContent className="p-8">
                 <div className="flex items-center justify-between mb-4">
-                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Active Alerts</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Active Alerts</p>
                   <div className="h-8 w-8 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600"><ScanLine className="h-4 w-4" /></div>
                 </div>
-                <p className="text-3xl font-black text-slate-900 tracking-tight">{assetsWithOpenWo}</p>
-                <p className="mt-1 text-[10px] font-bold text-slate-400">Nodes requiring attention</p>
+                <p className="text-3xl font-black text-foreground tracking-tight">{assetsWithOpenWo}</p>
+                <p className="mt-1 text-[10px] font-bold text-muted-foreground">Nodes requiring attention</p>
              </CardContent>
            </Card>
-           <Card className="overflow-hidden rounded-[2.5rem] border-none bg-white shadow-industrial-sm">
+           <Card className="overflow-hidden rounded-[2.5rem] border border-border/60 bg-card/70 shadow-industrial-sm dark:bg-card/60">
              <CardContent className="p-8">
                 <div className="flex items-center justify-between mb-4">
-                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Deployment</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Deployment</p>
                   <div className="h-8 w-8 rounded-xl bg-sky-50 flex items-center justify-center text-sky-600"><Factory className="h-4 w-4" /></div>
                 </div>
-                <p className="text-sm font-black text-slate-900 tracking-tight truncate">
+                <p className="text-sm font-black text-foreground tracking-tight truncate">
                   {userIsSuperAdmin && !selectedPlantId ? "GLOBAL JK FENNER" : selectedPlant?.plantCode || "PRIMARY UNIT"}
                 </p>
-                <p className="mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{selectedDepartment?.code || "ALL DEPARTMENTS"}</p>
+                <p className="mt-1 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{selectedDepartment?.code || "ALL DEPARTMENTS"}</p>
              </CardContent>
            </Card>
         </div>
 
-        <Card className="rounded-[3rem] border-none bg-white shadow-industrial overflow-hidden">
+        <Card className="rounded-[3rem] border border-border/60 bg-card/70 shadow-industrial overflow-hidden dark:bg-card/60">
           <CardContent className="space-y-8 p-10">
             {/* Professional Filter Bar */}
-            <div className="flex flex-wrap items-end gap-6 pb-6 border-b border-slate-50">
+            <div className="flex flex-wrap items-end gap-6 pb-6 border-b border-border/60">
               <div className="flex-1 min-w-[300px] space-y-2">
-                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Search Identifier</label>
+                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground ml-1">Search Identifier</label>
                 <div className="relative group">
-                  <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-primary" />
+                  <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-primary" />
                   <Input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 pl-11 focus-visible:ring-primary/20 shadow-none hover:bg-slate-50 transition-all text-sm font-medium"
+                    className="h-12 rounded-2xl border border-border/60 bg-card/70 pl-11 focus-visible:ring-primary/20 shadow-none hover:bg-accent/20 transition-all text-sm font-medium text-foreground dark:bg-card/60"
                     placeholder="Search by code, name or model..."
                   />
                 </div>
               </div>
 
               <div className="w-[200px] space-y-2">
-                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Plant Context</label>
+                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground ml-1">Plant Context</label>
                 {userIsSuperAdmin ? (
                   <select
-                    className="h-12 w-full rounded-2xl border-slate-100 bg-slate-50/50 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20"
+                    className="h-12 w-full rounded-2xl border border-border/60 bg-card/70 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20 text-foreground dark:bg-card/60"
                     value={selectedPlantId}
                     onChange={(event) => {
                       setSelectedPlantId(event.target.value);
@@ -698,16 +698,16 @@ export default function Assets() {
                     {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode}</option>)}
                   </select>
                 ) : (
-                  <div className="flex h-12 w-full items-center rounded-2xl border border-slate-100 bg-slate-50/30 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  <div className="flex h-12 w-full items-center rounded-2xl border border-border/60 bg-card/60 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                     {selectedPlant?.plantCode || "Default Unit"}
                   </div>
                 )}
               </div>
 
               <div className="w-[200px] space-y-2">
-                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Workcenter</label>
+                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground ml-1">Workcenter</label>
                 <select
-                  className="h-12 w-full rounded-2xl border-slate-100 bg-slate-50/50 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20"
+                  className="h-12 w-full rounded-2xl border border-border/60 bg-card/70 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20 text-foreground dark:bg-card/60"
                   value={selectedDepartmentId}
                   onChange={(event) => {
                     setSelectedDepartmentId(event.target.value);
@@ -720,9 +720,9 @@ export default function Assets() {
               </div>
 
               <div className="w-[180px] space-y-2">
-                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Health Filter</label>
+                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground ml-1">Health Filter</label>
                 <select
-                  className="h-12 w-full rounded-2xl border-slate-100 bg-slate-50/50 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20"
+                  className="h-12 w-full rounded-2xl border border-border/60 bg-card/70 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20 text-foreground dark:bg-card/60"
                   value={statusFilter}
                   onChange={(event) => setStatusFilter(event.target.value as AssetStatusFilter)}
                 >
@@ -736,7 +736,7 @@ export default function Assets() {
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="h-12 w-12 rounded-2xl hover:bg-slate-50 text-slate-400"
+                className="h-12 w-12 rounded-2xl hover:bg-accent/40 text-muted-foreground"
                 onClick={() => {
                   setSearch("");
                   setSelectedPlantId("");
@@ -751,10 +751,10 @@ export default function Assets() {
             {isLoading ? (
               <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
                 <Loader2 className="h-8 w-8 animate-spin text-primary opacity-20" />
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Synchronizing Directory</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Synchronizing Directory</p>
               </div>
             ) : (
-              <div className="rounded-[2rem] border border-slate-50 bg-white shadow-sm overflow-hidden">
+              <div className="rounded-[2rem] border border-border/60 bg-card/70 shadow-sm overflow-hidden dark:bg-card/60">
                 <ResponsiveTable
                   data={visibleAssets}
                   columns={columns}
@@ -811,7 +811,7 @@ export default function Assets() {
         }}
         title={selectedAsset?.code || "Operational Node"}
         subtitle={selectedAsset?.name}
-        contentClassName="sm:max-w-[860px] rounded-[3.5rem] border-none bg-white/95 backdrop-blur-2xl shadow-2xl"
+        contentClassName="sm:max-w-[860px] rounded-[3.5rem] border border-border/60 bg-card/90 backdrop-blur-2xl shadow-2xl dark:bg-card/80"
       >
         {overviewQuery.isLoading ? (
           <div className="flex items-center justify-center py-32">
@@ -826,8 +826,8 @@ export default function Assets() {
             onRaiseWorkOrder={handleRaiseWorkOrder}
           />
         ) : selectedAsset ? (
-          <div className="rounded-[2.5rem] border-2 border-dashed border-slate-100 p-20 text-center">
-            <p className="text-sm font-bold text-slate-300 uppercase tracking-widest">Diagnostic Snapshot Offline</p>
+          <div className="rounded-[2.5rem] border-2 border-dashed border-border/60 p-20 text-center">
+            <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Diagnostic Snapshot Offline</p>
           </div>
         ) : null}
       </ViewDialog>

@@ -52,16 +52,16 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
 
   return (
     <div>
-      <Card className="rounded-[2.5rem] border-none shadow-industrial overflow-hidden bg-white/40 backdrop-blur-xl">
-        <CardHeader className="p-8 border-b border-white/20 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <Card className="rounded-[2.5rem] border border-border/60 shadow-industrial overflow-hidden bg-card/70 backdrop-blur-xl dark:bg-card/60">
+        <CardHeader className="p-8 border-b border-border/60 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <CardTitle className="text-2xl font-black tracking-tight text-slate-900">Recent Work Orders</CardTitle>
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Live Maintenance Feed</p>
+            <CardTitle className="text-2xl font-black tracking-tight text-foreground">Recent Work Orders</CardTitle>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Live Maintenance Feed</p>
           </div>
           <Button 
             variant="outline" 
             onClick={() => navigate("/work-orders")}
-            className="h-12 px-6 rounded-2xl border-slate-200 bg-white/80 hover:bg-white font-bold"
+            className="h-12 px-6 rounded-2xl border-border/60 bg-card/80 hover:bg-accent/40 font-bold text-foreground"
           >
             Open Command Center
           </Button>
@@ -74,7 +74,7 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left">
-                <thead className="bg-slate-50/50 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <thead className="bg-muted/40 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                   <tr>
                     <th className="px-8 py-6">WO ID</th>
                     <th className="px-6 py-6">Asset Detail</th>
@@ -83,11 +83,11 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
                     <th className="px-8 py-6 text-right">Age</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border/60">
                   {workOrders.map((wo: any) => (
                     <tr 
                       key={wo.id} 
-                      className="group cursor-pointer hover:bg-white/60 transition-colors"
+                      className="group cursor-pointer hover:bg-muted/40 transition-colors"
                       onClick={() => navigate("/work-orders")}
                     >
                       <td className="px-8 py-6">
@@ -97,12 +97,12 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
                       </td>
                       <td className="px-6 py-6">
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold text-slate-900 text-slate-900">{wo.assets?.name || "System Generic"}</span>
-                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{wo.assets?.code || "N/A"}</span>
+                          <span className="text-sm font-bold text-foreground">{wo.assets?.name || "System Generic"}</span>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">{wo.assets?.code || "N/A"}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-6">
-                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100/50 text-[10px] font-black uppercase tracking-widest text-slate-500 border border-slate-200/30">
+                       <td className="px-6 py-6">
+                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-muted/40 text-[10px] font-black uppercase tracking-widest text-muted-foreground border border-border/60">
                            {resolveCategoryLabel(wo.category, wo.plant_id)}
                          </div>
                       </td>
@@ -128,10 +128,10 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
                       </td>
                       <td className="px-8 py-6 text-right">
                         <div className="flex flex-col items-end">
-                          <span className="text-sm font-black text-slate-700">
+                          <span className="text-sm font-black text-foreground">
                             {formatDistanceToNow(new Date(wo.created_at), { addSuffix: false })}
                           </span>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Elapsed</span>
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">Elapsed</span>
                         </div>
                       </td>
                     </tr>
@@ -139,7 +139,7 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
                   {workOrders.length === 0 && (
                     <tr>
                       <td colSpan={5} className="px-8 py-20 text-center">
-                        <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">No recent work orders found</p>
+                        <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">No recent work orders found</p>
                       </td>
                     </tr>
                   )}

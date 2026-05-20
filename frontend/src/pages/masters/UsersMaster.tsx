@@ -446,7 +446,12 @@ export default function UsersMaster() {
   };
 
   const getInitials = (name: string) => name.split(" ").map((part) => part[0]).join("").toUpperCase();
-  const getPlantName = (plantId: string | null) => plantsOptions.find((option) => option.value === plantId)?.label || "-";
+  const getPlantName = (plantId: string | null) => {
+    const label = plantsOptions.find((option) => option.value === plantId)?.label || "";
+    if (!label) return "-";
+    const codeToken = label.split("-")[0]?.trim();
+    return codeToken || "-";
+  };
 
   const getRoleVariant = (role: string) => {
     if (role.includes("ADMIN")) return "primary" as const;
