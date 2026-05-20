@@ -188,7 +188,7 @@ function WebappErrorLogger() {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, user } = useAuthStore();
+  const { isAuthenticated, isLoading, user, isFallbackMode } = useAuthStore();
   const accessToken = getStoredAccessToken();
   const location = useLocation();
   const rootAllowedPaths = [
@@ -214,7 +214,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  if (!isAuthenticated || !accessToken) {
+  // In fallback mode, there is no access token but the user is still authenticated
+  if (!isAuthenticated || (!isFallbackMode && !accessToken)) {
     const returnTo = `${location.pathname}${location.search}${location.hash}`;
     return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
   }
@@ -238,6 +239,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuthStore();
+  const location = useLocation();
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -248,7 +250,14 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  if (isAuthenticated) return <Navigate to={isRootAdmin(user) ? "/root/dashboard" : "/"} replace />;
+  if (isAuthenticated) {
+    const target = isRootAdmin(user) ? "/root/dashboard" : "/";
+    // Avoid redirect loops: if already on the target path, render children instead
+    if (location.pathname === target) {
+      return <>{children}</>;
+    }
+    return <Navigate to={target} replace />;
+  }
   return <>{children}</>;
 }
 
