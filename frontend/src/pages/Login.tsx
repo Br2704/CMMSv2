@@ -10,7 +10,8 @@ import { ApiError, clearSessionBootstrapHint, clearStoredAccessToken } from "@/a
 import { login } from "@/api/auth";
 import { useAuthStore, fetchUserProfile, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
 import { useBrandingStore } from "@/store/branding.store";
-import { Eye, EyeOff, LogIn, Factory, ShieldCheck, Building2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { Eye, EyeOff, LogIn, ShieldCheck, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { tryFallbackLogin, getFallbackBrandingSeed } from "@/fallback-auth";
 import { setFallbackMode as setHttpFallbackMode } from "@/api/http";
@@ -39,7 +40,6 @@ function resolveLoginBrand(): LoginBrand {
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [plantCode, setPlantCode] = useState("");
   const [captchaAnswer, setCaptchaAnswer] = useState("");
   const [captchaChallenge, setCaptchaChallenge] = useState<{ question: string; token: string } | null>(null);
   const [mfaCode, setMfaCode] = useState("");
@@ -187,24 +187,6 @@ export default function Login() {
         return;
       }
 
-      if (!plantCode.trim()) {
-        clearStoredAccessToken();
-        clearSessionBootstrapHint();
-        setError("Plant Code is required for your account.");
-        setIsLoading(false);
-        return;
-      }
-
-      const normalizedPlantCode = plantCode.trim().toUpperCase();
-      const assignedPlantCode = profile.plantCode?.toUpperCase();
-      if (!assignedPlantCode || assignedPlantCode !== normalizedPlantCode) {
-        clearStoredAccessToken();
-        clearSessionBootstrapHint();
-        setError("Invalid Plant Code for your account.");
-        setIsLoading(false);
-        return;
-      }
-
       primeBranding(brandingSeed);
       setUser(profile);
       setActivePlant(profile.plantId, profile.plantCode, profile.plantName);
@@ -301,34 +283,18 @@ export default function Login() {
               </div>
             </div>
 
-            <div
+            <motion.div
               className="space-y-1 text-center"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.2 }}
             >
               <h1 className="text-2xl font-bold text-foreground">Maintenance Operations Portal</h1>
-            </div>
+            </motion.div>
           </CardHeader>
 
           <CardContent className="pt-4">
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="plantCode" className="flex items-center gap-2 font-medium text-foreground">
-                  <Factory className="h-4 w-4 text-primary" />
-                  Plant Code
-                </Label>
-                <Input
-                  id="plantCode"
-                  type="text"
-                  placeholder="Enter your plant code"
-                  value={plantCode}
-                  onChange={(e) => setPlantCode(e.target.value.toUpperCase())}
-                  className="h-12 border-input bg-background font-mono uppercase tracking-wider focus:border-primary"
-                  autoComplete="off"
-                />
-              </div>
-
               <div className="space-y-2">
                 <Label htmlFor="email" className="font-medium text-foreground">
                   Email
@@ -371,7 +337,7 @@ export default function Login() {
               </div>
 
               {captchaChallenge ? (
-                <div
+                <motion.div
                   className="space-y-2"
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -392,7 +358,7 @@ export default function Login() {
                     className="h-12 border-input bg-background focus:border-primary"
                     autoComplete="off"
                   />
-                </div>
+                </motion.div>
               ) : null}
 
               {mfaRequired ? (

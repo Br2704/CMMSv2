@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Eye, Factory, Gauge, History, Image as ImageIcon, Loader2, QrCode, RotateCcw, ScanLine, Search, ShieldCheck, Wrench } from "lucide-react";
@@ -599,7 +600,12 @@ export default function Assets() {
 
   return (
     <PageShell className="safe-area-inset space-y-6">
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
+        className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between"
+      >
         <PageHeader
           title="Machine Directory"
           subtitle="Enterprise asset catalog and operational intelligence"
@@ -616,9 +622,14 @@ export default function Assets() {
             <span className="text-xs font-black uppercase tracking-widest">{resolvingQr ? "Resolving..." : "QR Scanner"}</span>
           </Button>
         </div>
-      </div>
+      </motion.div>
 
-      <div className="space-y-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.08, ease: [0.25, 0.1, 0.25, 1] }}
+        className="space-y-6"
+      >
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
            <Card className="overflow-hidden rounded-[2.5rem] border-none bg-white shadow-industrial-sm">
              <CardContent className="p-8">
@@ -779,7 +790,7 @@ export default function Assets() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </motion.div>
 
       <MobileQrScannerDialog
         open={isQrScannerOpen}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Activity,
@@ -36,6 +37,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useDashboardData } from "@/hooks/useDashboardData";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/store/auth.store";
 import { useBrandingStore } from "@/store/branding.store";
@@ -49,6 +51,7 @@ type PlantRow = {
 export default function Dashboard() {
   const { user, activePlantId, setActivePlant } = useAuthStore();
   const organizationName = useBrandingStore((state) => state.organizationName);
+  const isMobile = useIsMobile();
   const [selectedPlantId, setSelectedPlantId] = useState<string | null>(activePlantId || null);
 
   const { 
@@ -155,9 +158,14 @@ export default function Dashboard() {
   const costKpis = kpis.costKPIs || {};
 
   return (
-    <PageShell className="space-y-12 animate-fade-in pb-16">
+    <PageShell className="space-y-12 pb-16">
       {/* Dynamic Header Section */}
-      <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
+        className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between"
+      >
         <div className="space-y-2">
           <div className="flex items-center gap-3">
              <div className="h-10 w-1 rounded-full bg-primary" />
@@ -189,8 +197,13 @@ export default function Dashboard() {
               </Select>
           </div>
         )}
-      </div>
+      </motion.div>
 
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.08, ease: [0.25, 0.1, 0.25, 1] }}
+      >
       {/* Primary KPI Grid */}
       <div className="space-y-6">
         <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
@@ -202,9 +215,14 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+      </motion.div>
 
-      {/* Phase 3: Detailed Industrial Analytics Grid */}
       {!userIsHR && !userIsSafety && (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.16, ease: [0.25, 0.1, 0.25, 1] }}
+      >
         <div className="space-y-12">
           
           {/* Work Order Lifecycle */}
@@ -212,7 +230,7 @@ export default function Dashboard() {
             <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
               <Workflow className="h-4 w-4" /> Work Order Lifecycle
             </h2>
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
               <KPICard title="Total Raised" value={woKpis.totalWO || 0} icon={FileText} variant="default" className="p-4" />
               <KPICard title="In Progress" value={woKpis.inProgressWO || 0} icon={Activity} variant="primary" className="p-4" />
               <KPICard title="Pending Appr" value={woKpis.pendingApprovalWO || 0} icon={ShieldAlert} variant="warning" className="p-4" />
@@ -249,9 +267,15 @@ export default function Dashboard() {
              </div>
           </div>
         </div>
+      </motion.div>
       )}
 
       {userIsHR && (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.24, ease: [0.25, 0.1, 0.25, 1] }}
+      >
         <div className="grid gap-6 lg:grid-cols-2">
            <Card className="rounded-[2rem] border-none shadow-industrial overflow-hidden">
               <CardHeader className="p-8">
@@ -280,9 +304,15 @@ export default function Dashboard() {
               </CardContent>
            </Card>
         </div>
+      </motion.div>
       )}
 
       {userIsSafety && (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.24, ease: [0.25, 0.1, 0.25, 1] }}
+      >
         <div className="space-y-6">
            <div className="grid gap-6 lg:grid-cols-2">
               <Card className="rounded-[2rem] border-none shadow-industrial overflow-hidden">
@@ -307,15 +337,58 @@ export default function Dashboard() {
               </Card>
            </div>
         </div>
+      </motion.div>
       )}
 
       {userIsSuperAdmin && showingOverview && (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.32, ease: [0.25, 0.1, 0.25, 1] }}
+      >
         <Card className="rounded-[2.5rem] border-none shadow-industrial overflow-hidden bg-white/40 backdrop-blur-xl">
-           <CardHeader className="p-8 border-b border-white/20">
-              <CardTitle className="text-2xl font-black">Organization Plant Comparison</CardTitle>
-              <p className="text-muted-foreground font-medium">Cross-plant operational benchmarks</p>
+           <CardHeader className="p-4 sm:p-8 border-b border-white/20">
+              <CardTitle className="text-lg sm:text-2xl font-black">Organization Plant Comparison</CardTitle>
+              <p className="text-muted-foreground font-medium text-sm sm:text-base">Cross-plant operational benchmarks</p>
            </CardHeader>
            <CardContent className="p-0">
+              {isMobile ? (
+                <div className="space-y-3 p-4">
+                  {comparisonRows.map((row) => (
+                    <div key={row.plantId} className="rounded-2xl border border-slate-100 bg-white/60 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-base font-bold text-slate-900">{row.plantCode}</p>
+                          <p className="text-xs font-medium text-slate-400">{row.plantName}</p>
+                        </div>
+                        <StatusBadge variant={row.pmCompliance > 80 ? "success" : row.pmCompliance > 60 ? "warning" : "destructive"}>
+                          {row.pmCompliance > 80 ? "Excellent" : row.pmCompliance > 60 ? "Stable" : "Critical"}
+                        </StatusBadge>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 text-center">
+                        <div className="rounded-xl bg-slate-50 p-2">
+                          <p className="text-xs text-muted-foreground">Assets</p>
+                          <p className="text-sm font-black text-slate-900">{row.totalAssets}</p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 p-2">
+                          <p className="text-xs text-muted-foreground">PM</p>
+                          <p className="text-sm font-black text-emerald-600">{row.pmCompliance}%</p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 p-2">
+                          <p className="text-xs text-muted-foreground">MTTR</p>
+                          <p className="text-sm font-black text-slate-900">{row.mttrAvg}m</p>
+                        </div>
+                      </div>
+                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-500 rounded-full"
+                          style={{ width: `${row.pmCompliance}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                    <thead className="bg-slate-50/50 text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -349,8 +422,8 @@ export default function Dashboard() {
                            </td>
                            <td className="px-6 py-6">
                               <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                 <div 
-                                    className="h-full bg-emerald-500 rounded-full" 
+                                 <div
+                                    className="h-full bg-emerald-500 rounded-full"
                                     style={{ width: `${row.pmCompliance}%` }}
                                   />
                               </div>
@@ -370,8 +443,10 @@ export default function Dashboard() {
                    </tbody>
                 </table>
               </div>
+              )}
            </CardContent>
         </Card>
+      </motion.div>
       )}
     </PageShell>
   );

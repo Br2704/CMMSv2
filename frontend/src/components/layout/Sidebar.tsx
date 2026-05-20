@@ -225,7 +225,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
 
           <button
             onClick={onToggleMobile}
-            className="absolute right-4 rounded-lg p-2.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground lg:hidden"
+            className="absolute right-4 rounded-lg p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-[0.98] transition-transform lg:hidden"
             aria-label="Close sidebar"
           >
             <X className="h-5 w-5" />
@@ -263,7 +263,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                       onClick={handleNavItemClick}
                       title={item.title}
                       className={cn(
-                        "flex flex-1 items-center gap-3 rounded-l-lg px-3 py-3 text-sm font-medium ",
+                        "flex flex-1 items-center gap-3 rounded-l-lg px-3 py-3 min-h-[44px] text-sm font-medium active:scale-[0.98] transition-transform",
                         itemIsActive
                           ? "bg-primary text-primary-foreground shadow-md"
                           : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
@@ -275,7 +275,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                     <button
                       onClick={() => toggleExpand(item.title)}
                       className={cn(
-                        "rounded-r-lg px-2 py-3 text-sm ",
+                        "rounded-r-lg px-2 py-3 min-h-[44px] min-w-[44px] flex items-center justify-center text-sm active:scale-[0.98] transition-transform",
                         expandedItems.includes(item.title)
                           ? "bg-accent text-accent-foreground"
                           : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
@@ -301,7 +301,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                               to={child.href}
                               onClick={handleNavItemClick}
                               className={cn(
-                                "block rounded-lg px-3 py-2.5 text-sm transition-colors",
+                                "block rounded-lg px-3 py-2.5 min-h-[40px] text-sm transition-colors active:scale-[0.98]",
                                 isActive(child.href)
                                   ? "bg-primary/10 font-medium text-primary"
                                   : "text-foreground/70 hover:bg-accent hover:text-accent-foreground",
@@ -329,7 +329,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                   onClick={handleNavItemClick}
                   title={item.title}
                   className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium ",
+                    "flex items-center gap-3 rounded-lg px-3 py-3 min-h-[44px] text-sm font-medium active:scale-[0.98] transition-transform",
                     itemIsActive
                       ? "bg-primary text-primary-foreground shadow-md"
                       : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
@@ -364,7 +364,7 @@ export function SidebarToggle({
       onClick={onClick}
       aria-label={label}
       className={cn(
-        "rounded-lg p-2.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+        "rounded-lg p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-[0.98] transition-transform",
         className,
       )}
       title={label}

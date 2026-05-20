@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePermissions } from "@/hooks/usePermissions";
 import { isRootAdmin, isSuperAdmin, hasRole, useAuthStore } from "@/store/auth.store";
@@ -246,37 +247,73 @@ export default function Masters() {
     return hasModuleAccess(item.moduleId, "view");
   });
 
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.05 },
+    },
+  };
+
+  const cardVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: { duration: 0.3, ease: [0.25, 0.1, 0.25, 1] },
+    },
+  };
+
   return (
-    <div className="space-y-4 sm:space-y-6">
-      <div>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
+      className="space-y-4 sm:space-y-6"
+    >
+      <motion.div
+        initial={{ opacity: 0, x: -12 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.3, delay: 0.05 }}
+      >
         <h1 className="text-xl sm:text-2xl font-bold tracking-tight lg:text-3xl">Masters</h1>
         <p className="text-sm text-muted-foreground">
           {isRootUser ? "Governance masters for organizations, plants, and role access" : "Configure and manage all system master data"}
         </p>
-      </div>
+      </motion.div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+      >
         {showSkeleton
           ? Array.from({ length: 8 }).map((_, index) => (
-              <Card key={`master-skeleton-${index}`} className="animate-pulse shadow-card">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-lg bg-muted" />
-                    <div className="h-4 w-28 rounded bg-muted" />
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="h-4 w-full rounded bg-muted" />
-                </CardContent>
-              </Card>
+              <motion.div
+                key={`master-skeleton-${index}`}
+                variants={cardVariants}
+              >
+                <Card className="animate-pulse shadow-card">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-lg bg-muted" />
+                      <div className="h-4 w-28 rounded bg-muted" />
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="h-4 w-full rounded bg-muted" />
+                  </CardContent>
+                </Card>
+              </motion.div>
             ))
           : visibleItems.map((item, index) => (
-          <div key={item.href}>
+          <motion.div key={item.href} variants={cardVariants}>
             <Link to={item.href}>
-              <Card className="shadow-card hover:shadow-lg transition-all duration-300 hover:-translate-y-1 cursor-pointer group">
+              <Card className="shadow-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1.5 cursor-pointer group border border-border/50 hover:border-primary/20">
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-3">
-                    <div className={`rounded-lg p-2.5 ${item.color} text-white`}>
+                    <div className={`rounded-lg p-2.5 ${item.color} text-white shadow-sm transition-transform duration-300 group-hover:scale-110`}>
                       <item.icon className="h-5 w-5" />
                     </div>
                     <CardTitle className="text-base font-semibold group-hover:text-primary transition-colors">
@@ -285,13 +322,13 @@ export default function Masters() {
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  <p className="text-sm text-muted-foreground">{item.description}</p>
+                  <p className="text-sm text-muted-foreground group-hover:text-foreground/80 transition-colors">{item.description}</p>
                 </CardContent>
               </Card>
             </Link>
-          </div>
+          </motion.div>
         ))}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

@@ -1925,13 +1925,25 @@ export default function WorkOrders() {
             }
             filters={
               <div className="flex flex-wrap gap-2">
-                <SelectField label="" value={statusFilter} onChange={setStatusFilter} options={[
-                  { value: "all", label: "All Status" },
-                  { value: "RAISED", label: "Raised" }, { value: "TRIAGED", label: "Triaged" }, { value: "ASSIGNED", label: "Assigned" }, { value: "OPENED", label: "Opened" },
-                  { value: "IN_PROGRESS", label: "In Progress" }, { value: "REASSIGNED", label: "Reassigned" },
-                  { value: "APPROVAL_PENDING", label: "Pending Approval" }, { value: "USER_VERIFICATION", label: "Pending Approval" },
-                  { value: "REJECTED", label: "Rejected" }, { value: "CLOSED", label: "Completed" },
-                ]} className="w-full sm:w-[160px] h-11" />
+                <SelectField
+                  label=""
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  options={dedupeOptions([
+                    { value: "all", label: "All Status" },
+                    { value: "RAISED", label: "Raised" },
+                    { value: "TRIAGED", label: "Triaged" },
+                    { value: "ASSIGNED", label: "Assigned" },
+                    { value: "OPENED", label: "Opened" },
+                    { value: "IN_PROGRESS", label: "In Progress" },
+                    { value: "REASSIGNED", label: "Reassigned" },
+                    { value: "APPROVAL_PENDING", label: "Pending Approval" },
+                    { value: "USER_VERIFICATION", label: "User Verification" },
+                    { value: "REJECTED", label: "Rejected" },
+                    { value: "CLOSED", label: "Completed" },
+                  ])}
+                  className="w-full sm:w-[160px] h-11"
+                />
                 <SelectField label="" value={categoryFilter} onChange={setCategoryFilter} options={[
                   { value: "all", label: "All Categories" }, ...filterCategoryOptions
                 ]} className="w-full sm:w-[160px] h-11" />

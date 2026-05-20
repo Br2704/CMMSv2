@@ -11,15 +11,19 @@ if [ ! -f frontend/.env.local ]; then
   echo "Created frontend/.env.local from frontend/.env.example"
 fi
 
-docker compose -f docker-compose.dev.yml up -d
+docker compose --profile dev up -d
 
 cat <<'EOF'
 
 Services started:
 - Postgres:  localhost:5432
 - Backend:   http://localhost:3001/health
+- Frontend:  http://localhost:5173
 
-Run frontend in another terminal:
-cd frontend && npm install && npm run dev
+To also start tools (pgadmin):
+  docker compose --profile dev --profile tools up -d
+
+For production stack:
+  docker compose --profile production up -d --build
 EOF
 

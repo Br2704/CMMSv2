@@ -13,6 +13,7 @@ import { SafeRoute } from "@/components/guards/SafeRoute";
 import { SuspenseLoader } from "@/components/guards/SuspenseLoader";
 import { getStoredAccessToken } from "@/api/token";
 import { queueWebappLog } from "@/api/logs";
+import { ConsoleErrorPanel } from "@/components/dev/ConsoleErrorPanel";
 
 // Lazy-loaded page components for code splitting
 const Login = lazy(() => import("@/pages/Login"));
@@ -430,6 +431,7 @@ function App() {
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        {import.meta.env.DEV && <ConsoleErrorPanel />}
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <AppErrorBoundary>
             <RouteFlowManager />

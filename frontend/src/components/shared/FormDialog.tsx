@@ -49,7 +49,7 @@ export function FormDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={`${sizeClasses[size]} w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-4 sm:p-6 ${contentClassName || ""}`}
+        className={`${sizeClasses[size]} w-[calc(100vw-1rem)] max-h-[90vh] sm:max-h-[85vh] overflow-y-auto p-4 sm:p-6 ${contentClassName || ""}`}
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           cancelButtonRef.current?.focus();

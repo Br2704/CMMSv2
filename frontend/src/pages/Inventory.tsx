@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -485,7 +486,12 @@ export default function Inventory() {
   const showPlantPrompt = isGlobalUser && !resolvedPlantId && !plantsQuery.isLoading;
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
+      className="space-y-4 sm:space-y-6"
+    >
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div className="space-y-2">
           <div>
@@ -837,6 +843,6 @@ export default function Inventory() {
         }}
         isLoading={deleteMutation.isPending}
       />
-    </div>
+    </motion.div>
   );
 }

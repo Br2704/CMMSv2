@@ -1,17 +1,11 @@
-FROM node:22-bookworm-slim AS build
-WORKDIR /app
-RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+FROM node:22-alpine AS build
+WORKDIR /app/frontend
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-COPY frontend/package*.json ./frontend/
-WORKDIR /app/frontend
+COPY frontend/package*.json ./
 RUN npm install --loglevel=error
-WORKDIR /app
-COPY frontend ./frontend
-COPY scripts ./scripts
-WORKDIR /app/frontend
-RUN rm -rf node_modules
-RUN npm install --loglevel=error
+COPY frontend/ ./
+COPY scripts/ /app/scripts/
 RUN npm run build
 
 FROM nginx:1-alpine-slim
