@@ -10,6 +10,7 @@ import {
 import { ensureAccessToken, getApiBaseUrl, getStoredAccessToken } from "@/api/http";
 import { useAuthStore } from "@/store/auth.store";
 import { toast } from "sonner";
+import { useApiHealth } from "@/hooks/useApiHealth";
 
 export interface Notification {
   id: string;
@@ -70,6 +71,7 @@ function consumeSseBuffer(
 
 export function useNotifications(options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true;
+  const { healthy: apiHealthy } = useApiHealth();
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,6 +86,10 @@ export function useNotifications(options?: { enabled?: boolean }) {
       setLoading(false);
       return;
     }
+    if (!apiHealthy) {
+      setLoading(false);
+      return;
+    }
     try {
       const rows = await listNotifications("?limit=50&page=1");
       setNotifications(rows.map((row) => toLegacyNotification(row as Record<string, any>)));
@@ -92,14 +98,14 @@ export function useNotifications(options?: { enabled?: boolean }) {
     } finally {
       setLoading(false);
     }
-  }, [authLoading, enabled, isAuthenticated, user]);
+  }, [apiHealthy, authLoading, enabled, isAuthenticated, user]);
 
   useEffect(() => {
     void fetchNotifications();
   }, [fetchNotifications]);
 
   useEffect(() => {
-    if (!enabled || !user || authLoading || !isAuthenticated || !getStoredAccessToken()) return;
+    if (!enabled || !user || authLoading || !isAuthenticated || !getStoredAccessToken() || !apiHealthy) return;
 
     const poll = () => {
       void fetchNotifications();
@@ -121,10 +127,10 @@ export function useNotifications(options?: { enabled?: boolean }) {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [authLoading, enabled, fetchNotifications, isAuthenticated, user]);
+  }, [apiHealthy, authLoading, enabled, fetchNotifications, isAuthenticated, user]);
 
   useEffect(() => {
-    if (!enabled || !user || authLoading || !isAuthenticated) return;
+    if (!enabled || !user || authLoading || !isAuthenticated || !apiHealthy) return;
 
     let cancelled = false;
 
@@ -253,7 +259,7 @@ export function useNotifications(options?: { enabled?: boolean }) {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       abortCurrentStream();
     };
-  }, [authLoading, enabled, fetchNotifications, isAuthenticated, user]);
+  }, [apiHealthy, authLoading, enabled, fetchNotifications, isAuthenticated, user]);
 
   const unreadCount = notifications.filter((notification) => !notification.is_read).length;
   const notificationAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -312,10 +318,10 @@ export function useNotifications(options?: { enabled?: boolean }) {
             tag: notification.id,
             icon: "/jkfenner/jkfenner-logo.png",
             badge: "/jkfenner/jkfenner-favicon.svg",
-            window.removeEventListener("online", handleOnline);
             requireInteraction: true,
             data: { url: notification.link, woId: notification.wo_id },
           });
+          window.removeEventListener("online", handleOnline);
           browserNotification.onclick = (event) => {
             event.preventDefault();
             if (notification.link) {

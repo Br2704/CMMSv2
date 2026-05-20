@@ -403,7 +403,7 @@ export default function RootPlantMaster() {
                   organizationFilter === "ALL" ? "border-primary bg-primary/10" : "border-border hover:bg-accent/40"
                 }`}
               >
-                <div className="h-14 w-14 rounded-md border border-border/70 bg-white p-2 flex items-center justify-center">
+                <div className="h-14 w-14 rounded-md border border-border/70 bg-card/80 p-2 flex items-center justify-center dark:bg-card/60">
                   <Building className="h-6 w-6 text-muted-foreground" />
                 </div>
                 <p className="mt-2 font-medium text-sm">All Organizations</p>
@@ -418,7 +418,7 @@ export default function RootPlantMaster() {
                     organizationFilter === organization.id ? "border-primary bg-primary/10" : "border-border hover:bg-accent/40"
                   }`}
                 >
-                  <div className="h-14 w-14 rounded-md border border-border/70 bg-white p-2 flex items-center justify-center overflow-hidden">
+                  <div className="h-14 w-14 rounded-md border border-border/70 bg-card/80 p-2 flex items-center justify-center overflow-hidden dark:bg-card/60">
                     {organization.logoUrl ? (
                       <img src={organization.logoUrl} alt={`${organization.name} logo`} className="h-full w-full object-contain" />
                     ) : (

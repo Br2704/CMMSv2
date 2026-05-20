@@ -2679,7 +2679,7 @@ export default function MachinesMaster() {
         <div className="space-y-4">
           {qrImageDataUrl ? (
             <div className="flex justify-center">
-              <img src={qrImageDataUrl} alt="Asset QR code" className="h-64 w-64 rounded-md border border-border bg-white p-2" />
+              <img src={qrImageDataUrl} alt="Asset QR code" className="h-64 w-64 rounded-md border border-border bg-card/80 p-2 dark:bg-card/60" />
             </div>
           ) : (
             <div className="text-center text-sm text-muted-foreground">QR image is being generated...</div>

@@ -6,6 +6,7 @@ import { useAuthStore, isAdmin, isIncharge, isSuperAdmin, isMaintenanceUser, isP
 import { usePermissions } from "@/hooks/usePermissions";
 import { useMemo, useRef } from "react";
 import { useDashboardRealtime } from "@/hooks/useDashboardRealtime";
+import { useApiHealth } from "@/hooks/useApiHealth";
 import { subDays, subHours, format, startOfDay } from "date-fns";
 import { getDashboardKPIs } from "@/api/reports";
 
@@ -85,6 +86,7 @@ function calculateMachineWiseMtbfMinutes(workOrders: any[]): number {
 
 export function useDashboardData(selectedPlantId?: string | null) {
   const queryClient = useQueryClient();
+  const { healthy: apiHealthy } = useApiHealth();
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const { hasModuleAccess, loading: permissionsLoading } = usePermissions();
   const authEnabled = !authLoading && isAuthenticated && Boolean(getStoredAccessToken());
@@ -104,9 +106,9 @@ export function useDashboardData(selectedPlantId?: string | null) {
   const canReadCalibration = hasModuleAccess("calibration", "view");
   const canReadGates = hasModuleAccess("security-gate", "view");
   const canReadPlants = hasModuleAccess("masters.plant", "view") || hasModuleAccess("PLANTS", "view");
-  const dashboardRefetchInterval: number | false = authEnabled ? 20_000 : false;
+  const dashboardRefetchInterval: number | false = authEnabled && apiHealthy ? 20_000 : false;
   const protectedQueryOptions = {
-    enabled: authEnabled && permissionsReady,
+    enabled: authEnabled && permissionsReady && apiHealthy,
     refetchOnMount: "always" as const,
     refetchOnWindowFocus: true as const,
     refetchOnReconnect: true as const,
@@ -122,7 +124,7 @@ export function useDashboardData(selectedPlantId?: string | null) {
 
   const lastRealtimeRefreshAtRef = useRef(0);
   useDashboardRealtime({
-    enabled: authEnabled && permissionsReady,
+    enabled: authEnabled && permissionsReady && apiHealthy,
     onRefresh: () => {
       const now = Date.now();
       if (now - lastRealtimeRefreshAtRef.current < 1500) return;

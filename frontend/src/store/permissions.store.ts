@@ -3,6 +3,7 @@ import { getMe } from "@/api/auth";
 import { getOrganizationRbacVersion, getRbacPermissionsMe, getRbacVersion } from "@/api/rbac";
 import { getStoredAccessToken } from "@/api/token";
 import { create } from "zustand";
+import { isApiHealthy } from "@/lib/apiHealth";
 
 const PERMISSIONS_CACHE_TTL_MS = 60_000;
 const RBAC_WATCH_INTERVAL_MS = 8_000;
@@ -424,6 +425,10 @@ export const usePermissionsStore = create<PermissionsStoreState>((set, get) => (
     const auth = AuthStore.getState();
     const accessToken = getStoredAccessToken();
     if (!auth.user || !accessToken) {
+      return;
+    }
+
+    if (!isApiHealthy()) {
       return;
     }
 

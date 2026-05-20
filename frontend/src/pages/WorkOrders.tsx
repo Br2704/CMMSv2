@@ -119,17 +119,17 @@ const WorkflowTimeline = ({ status, createdAt, openedAt, closedAt }: { status: s
       {steps.map((step, idx) => (
         <div key={step.label} className="flex flex-col items-center relative flex-1">
           <div className={`h-10 w-10 rounded-2xl flex items-center justify-center z-10 transition-all duration-500 shadow-sm ${
-            step.active ? "bg-primary text-white shadow-glow" : "bg-slate-100 text-slate-400"
+            step.active ? "bg-primary text-white shadow-glow" : "bg-muted text-muted-foreground"
           }`}>
             {step.active ? <CheckCircle className="h-5 w-5" /> : <div className="h-2 w-2 rounded-full bg-current" />}
           </div>
-          <span className={`mt-3 text-[10px] font-black uppercase tracking-widest ${step.active ? "text-primary" : "text-slate-400"}`}>
+          <span className={`mt-3 text-[10px] font-black uppercase tracking-widest ${step.active ? "text-primary" : "text-muted-foreground"}`}>
             {step.label}
           </span>
-          {step.date && <span className="mt-1 text-[9px] font-bold text-slate-400">{format(new Date(step.date), "dd MMM, HH:mm")}</span>}
+          {step.date && <span className="mt-1 text-[9px] font-bold text-muted-foreground">{format(new Date(step.date), "dd MMM, HH:mm")}</span>}
           {idx < steps.length - 1 && (
             <div className={`absolute top-5 left-1/2 w-full h-[2px] -z-0 ${
-              steps[idx+1].active ? "bg-primary" : "bg-slate-100"
+              steps[idx+1].active ? "bg-primary" : "bg-muted"
             }`} />
           )}
         </div>
@@ -2458,7 +2458,7 @@ export default function WorkOrders() {
               ) : null}
             </div>
 
-            <Card className="border-none shadow-sm bg-slate-50/50 rounded-3xl overflow-hidden">
+            <Card className="border border-border/60 shadow-sm bg-card/70 rounded-3xl overflow-hidden dark:bg-card/60">
                <WorkflowTimeline 
                   status={selectedWO.status} 
                   createdAt={selectedWO.created_at} 
@@ -2807,7 +2807,7 @@ function ActivityTimeline({ workOrderId }: { workOrderId: string }) {
           value={newComment}
           onChange={function(e) { setNewComment(e.target.value); }}
           placeholder="Add a comment..."
-          className="h-9 text-sm bg-white/50"
+          className="h-9 text-sm bg-card/70 border border-border/60 text-foreground dark:bg-card/60"
           onKeyDown={function(e) {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();

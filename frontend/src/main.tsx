@@ -5,9 +5,11 @@ import { ThemeProvider } from "next-themes";
 import { AppErrorBoundary } from "@/components/guards/AppErrorBoundary.tsx";
 import { bootstrapMobileRuntime } from "@/mobile/runtime";
 import { installGlobalErrorHandler } from "@/lib/globalErrorHandler";
+import { startApiHealthMonitor } from "@/lib/apiHealth";
 
 installGlobalErrorHandler();
 bootstrapMobileRuntime();
+startApiHealthMonitor();
 
 const rootEl = document.getElementById("root");
 if (rootEl) {

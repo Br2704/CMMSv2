@@ -245,22 +245,22 @@ export default function Login() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#f6f8fb] p-4">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(13,148,136,0.18),transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.14),transparent_32%),linear-gradient(180deg,_#ffffff_0%,_#f8fafc_48%,_#eef4f8_100%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:56px_56px] opacity-40" />
-      <div className="pointer-events-none absolute -left-16 top-16 h-56 w-56 rounded-full bg-teal-100/70 blur-3xl" />
-      <div className="pointer-events-none absolute -right-20 bottom-10 h-64 w-64 rounded-full bg-cyan-100/70 blur-3xl" />
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(13,148,136,0.18),transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.14),transparent_32%),linear-gradient(180deg,_#ffffff_0%,_#f8fafc_48%,_#eef4f8_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(13,148,136,0.12),transparent_38%),radial-gradient(circle_at_bottom_right,_rgba(14,116,144,0.12),transparent_38%),linear-gradient(180deg,_#0b111a_0%,_#0a0f17_50%,_#0a0f16_100%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px)] dark:bg-[linear-gradient(rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.12)_1px,transparent_1px)] bg-[size:56px_56px] opacity-40" />
+      <div className="pointer-events-none absolute -left-16 top-16 h-56 w-56 rounded-full bg-teal-100/70 blur-3xl dark:bg-teal-900/40" />
+      <div className="pointer-events-none absolute -right-20 bottom-10 h-64 w-64 rounded-full bg-cyan-100/70 blur-3xl dark:bg-cyan-900/30" />
 
       <div className="relative z-10 w-full max-w-lg">
-        <Card className="overflow-hidden border border-slate-200/90 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.12)]">
-          <div className="border-b border-slate-200/90 bg-gradient-to-r from-white via-teal-50/70 to-cyan-50/80 px-6 py-4">
-            <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.24em] text-slate-500">
+        <Card className="overflow-hidden border border-slate-200/90 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.12)] dark:border-border/60 dark:bg-card/90 dark:shadow-[0_30px_80px_rgba(0,0,0,0.5)]">
+          <div className="border-b border-slate-200/90 bg-gradient-to-r from-white via-teal-50/70 to-cyan-50/80 px-6 py-4 dark:border-border/60 dark:from-slate-900 dark:via-slate-900/70 dark:to-slate-900/40">
+            <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.24em] text-slate-500 dark:text-muted-foreground">
               <span className="inline-flex items-center gap-2 font-semibold">
                 <ShieldCheck className="h-4 w-4 text-teal-600" />
                 Secure CMMS Access
               </span>
               <span className="inline-flex items-center gap-2 font-semibold">
-                <Building2 className="h-4 w-4 text-slate-500" />
+                <Building2 className="h-4 w-4 text-muted-foreground" />
                 {loginBrand.name}
               </span>
             </div>
@@ -269,7 +269,7 @@ export default function Login() {
           <CardHeader className="space-y-5 pb-3 pt-6">
             <div className="flex justify-center">
               <div className="w-full max-w-sm space-y-4">
-                <div className="rounded-3xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 px-6 py-5 shadow-sm">
+                <div className="rounded-3xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 px-6 py-5 shadow-sm dark:border-border/60 dark:from-slate-900 dark:to-slate-950">
                   <img
                     src={JK_FENNER_LOGO}
                     alt={`${loginBrand.name} Logo`}
@@ -420,16 +420,16 @@ export default function Login() {
               </div>
             </form>
 
-            <div className="mt-8 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-4">
+            <div className="mt-8 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-4 dark:border-border/60 dark:from-slate-900/60 dark:to-slate-950/60">
               <div className="flex flex-col items-center gap-3 text-center">
                 <img src={TAMOPTIX_LOGO} alt="TamOptiX" className="h-8 w-auto object-contain" />
                 <div className="flex items-center gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Organization Aware Login</p>
-                    <p className="text-sm text-slate-600">Sign in to access your organization's CMMS workspace.</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">Organization Aware Login</p>
+                    <p className="text-sm text-muted-foreground">Sign in to access your organization's CMMS workspace.</p>
                   </div>
                 </div>
-                <p className="text-xs text-slate-500">Computerized Maintenance Management System</p>
+                <p className="text-xs text-muted-foreground">Computerized Maintenance Management System</p>
               </div>
             </div>
           </CardContent>
