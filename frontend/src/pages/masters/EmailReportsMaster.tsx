@@ -12,9 +12,10 @@ import { Mail, Save, Plus, Trash2, Eye, Send, Clock, CheckCircle, XCircle, Loade
 import BackButton from "@/components/masters/BackButton";
 import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
-import { createReportSchedule, deleteReportSchedule, listReportHistory, listReportSchedules, sendReportNow, updateReportSchedule, type ReportSchedule } from "@/api/reports";
+import { createReportSchedule, deleteReportSchedule, listReportHistory, listReportSchedules, sendReportNow, updateReportSchedule, type ReportSchedule, type ReportLog } from "@/api/reports";
 import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
+import { getErrorMessage } from "@/lib/utils";
 
 const REPORT_SECTIONS = [
   { value: "work_orders", label: "Work Orders" },
@@ -55,7 +56,7 @@ export default function EmailReportsMaster() {
   const { plantsOptions, fetchPlants } = useMastersOptions();
 
   const [schedules, setSchedules] = useState<ReportSchedule[]>([]);
-  const [logs, setLogs] = useState<Array<Record<string, any>>>([]);
+  const [logs, setLogs] = useState<ReportLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -75,42 +76,17 @@ export default function EmailReportsMaster() {
         plantId: canSelectPlant ? undefined : defaultPlantId || undefined,
       });
       setSchedules(response.data);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to load report schedules");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to load report schedules"));
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchHistory = async (scheduleId: string) => {
-    setLogsLoading(true);
-    try {
-      const response = await listReportHistory({
-        page: 1,
-        limit: 50,
-        schedule_id: scheduleId,
-        plantId: canSelectPlant ? undefined : defaultPlantId || undefined,
-      });
-      setLogs(response.data as Array<Record<string, any>>);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to load send history");
-    } finally {
-      setLogsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchPlants();
-    fetchSchedules();
-  }, [defaultPlantId, canSelectPlant]);
-
-  const getSectionLabel = (value: string) => REPORT_SECTIONS.find((section) => section.value === value)?.label || value;
-  const getPlantName = (plantId: string | null) => plantsOptions.find((option) => option.value === plantId)?.label || "-";
-
   const handleAdd = () => {
-    setFormData({ ...emptyForm, plantId: canSelectPlant ? "" : defaultPlantId });
-    setIsEditing(false);
+    setFormData({ ...emptyForm, plantId: defaultPlantId });
     setSelectedSchedule(null);
+    setIsEditing(false);
     setIsFormOpen(true);
   };
 
@@ -119,14 +95,14 @@ export default function EmailReportsMaster() {
       reportName: schedule.reportName,
       description: schedule.description || "",
       frequency: schedule.frequency,
-      sendTime: schedule.sendTime || "08:00",
+      sendTime: schedule.sendTime?.slice(0, 5) || "08:00",
       recipients: (schedule.recipients || []).join(", "),
       isEnabled: schedule.isEnabled,
       reportSections: schedule.reportSections || [],
       includeCharts: schedule.includeCharts,
       includeTables: schedule.includeTables,
-      includeDetailedLogs: schedule.includeDetailedLogs,
-      plantId: schedule.plantId || (canSelectPlant ? "" : defaultPlantId),
+      includeDetailedLogs: schedule.includeDetailedLogs || false,
+      plantId: schedule.plantId,
     });
     setSelectedSchedule(schedule);
     setIsEditing(true);
@@ -138,14 +114,12 @@ export default function EmailReportsMaster() {
       toast.error("Report name is required");
       return;
     }
-    if (formData.reportSections.length === 0) {
-      toast.error("Select at least one report section");
+    if (!formData.recipients.trim()) {
+      toast.error("At least one recipient is required");
       return;
     }
-
-    const recipients = formData.recipients.split(",").map((value) => value.trim()).filter(Boolean);
-    if (recipients.length === 0) {
-      toast.error("At least one recipient email is required");
+    if (formData.reportSections.length === 0) {
+      toast.error("Select at least one report section");
       return;
     }
 
@@ -161,8 +135,8 @@ export default function EmailReportsMaster() {
         reportName: formData.reportName.trim(),
         description: formData.description.trim() || null,
         frequency: formData.frequency,
-        sendTime: formData.sendTime || "08:00",
-        recipients,
+        sendTime: formData.sendTime,
+        recipients: formData.recipients.split(",").map((email) => email.trim()).filter(Boolean),
         isEnabled: formData.isEnabled,
         reportSections: formData.reportSections,
         includeCharts: formData.includeCharts,
@@ -170,62 +144,75 @@ export default function EmailReportsMaster() {
         includeDetailedLogs: formData.includeDetailedLogs,
         plantId: resolvedPlantId,
       };
-
       if (isEditing && selectedSchedule) {
         await updateReportSchedule(selectedSchedule.id, payload);
-        toast.success("Schedule updated");
+        toast.success("Report schedule updated");
       } else {
         await createReportSchedule(payload);
-        toast.success("Schedule created");
+        toast.success("Report schedule created");
       }
-
       setIsFormOpen(false);
       await fetchSchedules();
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to save schedule");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to save report schedule"));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (scheduleId: string) => {
+    if (!confirm("Delete this report schedule? This action cannot be undone.")) return;
     setSubmitting(true);
     try {
-      await deleteReportSchedule(id);
-      toast.success("Schedule deleted");
+      await deleteReportSchedule(scheduleId);
+      toast.success("Report schedule deleted");
       await fetchSchedules();
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to delete schedule");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to delete report schedule"));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleToggleEnabled = async (schedule: ReportSchedule, enabled: boolean) => {
-    setSubmitting(true);
+  const handleToggleEnabled = async (schedule: ReportSchedule, checked: boolean) => {
     try {
-      await updateReportSchedule(schedule.id, { isEnabled: enabled });
+      await updateReportSchedule(schedule.id, { isEnabled: checked });
       await fetchSchedules();
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to update status");
-    } finally {
-      setSubmitting(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to update schedule status"));
     }
   };
 
   const handleSendNow = async (scheduleId: string) => {
     setSubmitting(true);
     try {
-      const response = await sendReportNow(scheduleId);
-      toast.success(response.message || "Report send triggered");
+      await sendReportNow(scheduleId);
+      toast.success("Report sent successfully");
       await fetchSchedules();
-      if (selectedSchedule?.id === scheduleId && isHistoryOpen) {
-        await fetchHistory(scheduleId);
-      }
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to send report");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to send report"));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const getPlantName = (plantId: string | null) => {
+    return plantsOptions.find((option) => option.value === plantId)?.label || "-";
+  };
+
+  const getSectionLabel = (section: string) => {
+    return REPORT_SECTIONS.find((s) => s.value === section)?.label || section;
+  };
+
+  const fetchHistory = async (scheduleId: string) => {
+    setLogsLoading(true);
+    try {
+      const response = await listReportHistory({ schedule_id: scheduleId, page: 1, limit: 50 });
+      setLogs(response.data);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to load send history"));
+    } finally {
+      setLogsLoading(false);
     }
   };
 
@@ -485,14 +472,14 @@ export default function EmailReportsMaster() {
               {logs.map((log) => (
                 <div key={log.id} className="rounded-lg border p-3 space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{format(new Date(log.sentAt || log.sent_at), "PPpp")}</span>
+                    <span className="text-sm font-medium">{format(new Date(log.sentAt), "PPpp")}</span>
                     <Badge variant={log.status === "SUCCESS" ? "default" : log.status === "PARTIAL" ? "secondary" : "destructive"} className="text-xs">
                       {log.status === "SUCCESS" ? <CheckCircle className="h-3 w-3 mr-1" /> : <XCircle className="h-3 w-3 mr-1" />}
                       {log.status}
                     </Badge>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    Recipients: {(log.recipients || []).join(", ")} - Records: {log.recordsIncluded ?? log.records_included ?? 0}
+                    Recipients: {(log.recipients || []).join(", ")} - Records: {log.recordsIncluded ?? 0}
                   </div>
                   {log.errorMessage && <p className="text-xs text-destructive">{log.errorMessage}</p>}
                 </div>

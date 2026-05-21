@@ -1,4 +1,4 @@
-import { Building2, Factory, LayoutDashboard, Settings2, Users } from "lucide-react";
+import { Building2, Factory, FileText, LayoutDashboard, Settings2, Users } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +8,7 @@ const ROOT_WORKSPACE_ITEMS = [
   { href: "/root/plant", label: "Plants", icon: Factory },
   { href: "/root/users", label: "Users", icon: Users },
   { href: "/root/role-access", label: "Role & Access", icon: Settings2 },
+  { href: "/root/report-format", label: "Report Format", icon: FileText },
 ];
 
 export function RootWorkspaceNav() {

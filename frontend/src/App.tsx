@@ -63,6 +63,7 @@ const RootOrganizationMaster = lazy(() => import("@/pages/root/RootOrganizationM
 const RootPlantMaster = lazy(() => import("@/pages/root/RootPlantMaster"));
 const RootRoleAccessMaster = lazy(() => import("@/pages/root/RootRoleAccessMaster"));
 const RootUsersMaster = lazy(() => import("@/pages/root/RootUsersMaster"));
+const ReportFormatMaster = lazy(() => import("@/pages/root/ReportFormatMaster"));
 
 // Lazy-loaded Mobile Pages
 const QrScanResolver = lazy(() => import("@/pages/mobile/QrScanResolver"));
@@ -199,7 +200,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     "/root/users",
     "/root/role-access",
     "/root/mail-config",
-    "/root/sla-config"
+    "/root/sla-config",
+    "/root/report-format"
   ];
   const isAllowedForRoot = rootAllowedPaths.some((path) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`)
@@ -448,7 +450,6 @@ function App() {
                   <Route path="/root/plant" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootPlantMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
                   <Route path="/root/users" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootUsersMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
                   <Route path="/root/role-access" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootRoleAccessMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
-                  <Route path="/root/role-accesss" element={<SafeRoute><Navigate to="/root/role-access" replace /></SafeRoute>} />
                   <Route path="/amc" element={<SafeRoute><ModuleGuard moduleId="amc"><SuspenseLoader><AMC /></SuspenseLoader></ModuleGuard></SafeRoute>} />
                   <Route path="/work-orders" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><WorkOrders /></SuspenseLoader></ModuleGuard></SafeRoute>} />
                   <Route path="/technician" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><TechnicianDashboard /></SuspenseLoader></ModuleGuard></SafeRoute>} />
@@ -470,6 +471,7 @@ function App() {
                   <Route path="/masters" element={<SafeRoute><ModuleGuard moduleId="masters"><SuspenseLoader><Masters /></SuspenseLoader></ModuleGuard></SafeRoute>} />
                   <Route path="/root/organizations" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootOrganizationMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
                   <Route path="/root/mail-config" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><MailConfigMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                  <Route path="/root/report-format" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><ReportFormatMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
                   <Route path="/root/sla-config" element={<SafeRoute><Navigate to="/masters/sla-config" replace /></SafeRoute>} />
                   <Route path="/masters/organizations" element={<SafeRoute><Navigate to="/root/organizations" replace /></SafeRoute>} />
                   <Route path="/masters/mail-config" element={<SafeRoute><Navigate to="/root/mail-config" replace /></SafeRoute>} />
@@ -482,7 +484,6 @@ function App() {
                   <Route path="/masters/vendors" element={<SafeRoute><ModuleGuard moduleId="masters.vendors"><SuspenseLoader><VendorsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
                   <Route path="/masters/users" element={<SafeRoute><UsersMasterRoute /></SafeRoute>} />
                   <Route path="/masters/role-access" element={<SafeRoute><RoleAccessRoute /></SafeRoute>} />
-                  <Route path="/masters/role-accesss" element={<SafeRoute><RoleAccessRoute /></SafeRoute>} />
                   <Route path="/masters/pm-config" element={<SafeRoute><ModuleGuard moduleId="masters.pm-config"><SuspenseLoader><PMConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
                   <Route path="/masters/calibration-config" element={<SafeRoute><ModuleGuard moduleId="masters.calibration-config"><SuspenseLoader><CalibrationConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
                   <Route path="/masters/amc-config" element={<SafeRoute><ModuleGuard moduleId="masters.amc-config"><SuspenseLoader><AMCConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
@@ -493,7 +494,6 @@ function App() {
                   <Route path="/masters/email-reports" element={<SafeRoute><ModuleGuard moduleId="masters.email-reports"><SuspenseLoader><EmailReportsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
                   <Route path="/masters/log-templates" element={<SafeRoute><ModuleGuard moduleId="masters.log-templates"><SuspenseLoader><LogTemplateMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
                   <Route path="/masters/mail-config" element={<SafeRoute><Navigate to="/root/mail-config" replace /></SafeRoute>} />
-                  <Route path="/masters/sla-config" element={<SafeRoute><SLAConfigRoute /></SafeRoute>} />
                   <Route path="/masters/machine-instruments" element={<SafeRoute><ModuleGuard moduleId="masters.machine-instruments"><SuspenseLoader><MachineInstrumentsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
                   <Route path="/masters/shifts" element={<SafeRoute><ModuleGuard moduleId="masters.shifts"><SuspenseLoader><ShiftMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
                   <Route path="/masters/maintenance-teams" element={<SafeRoute><ModuleGuard moduleId="masters.maintenance-teams"><SuspenseLoader><MaintenanceTeamsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />

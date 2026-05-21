@@ -22,6 +22,7 @@ import { createSimpleExcelWorkbook } from '../../utils/excel';
 import { sendMail } from '../../utils/mailer';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { createSimplePdf } from '../../utils/pdf';
+import { getReportBranding } from '../../utils/reportBranding';
 import { resolvePlantFilter } from '../../utils/plantScope';
 import { resolveScopedPlantId } from '../../utils/plantScope';
 import { applyPlantScope, applySearch } from '../../utils/query';
@@ -646,8 +647,14 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
 
     const reportTitle = 'Machine Reliability Report';
     const generatedAt = now.toISOString();
-    const brandedHeader = `${organizationName} | ${reportTitle} | Generated: ${generatedAt}`;
-    const brandedFooter = 'Powered by TamOptix Technologies | TamOptix CMMS Platform';
+    const branding = await getReportBranding({
+      organizationName,
+      organizationLogoUrl,
+      generatedAt,
+      reportTitle,
+    });
+    const brandedHeader = branding.headerLine;
+    const brandedFooter = branding.footerBranding;
 
     const detailRows = rows.map((row) => [
       row.woNumber,
@@ -719,6 +726,18 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
         organizationLogoUrl,
         generatedAt,
         footerBranding: brandedFooter,
+        primaryColor: branding.primaryColor,
+        headerBgColor: branding.headerBgColor,
+        headerFontSize: branding.headerFontSize,
+        footerFontSize: branding.footerFontSize,
+        headerBold: branding.headerBold,
+        headerUnderline: branding.headerUnderline,
+        headerAlignment: branding.headerAlignment,
+        logoAlignment: branding.logoAlignment,
+        headerSubtitle: branding.headerSubtitle,
+        headerColor: branding.headerColor,
+        footerColor: branding.footerColor,
+        footerBold: branding.footerBold,
       });
       res.setHeader('Content-Type', 'application/vnd.ms-excel');
       res.setHeader('Content-Disposition', `attachment; filename="machine-reliability-${now.toISOString().slice(0, 10)}.xls"`);
@@ -744,6 +763,11 @@ reportsRouter.get('/reports/advanced/export', requirePermission('REPORTS', 'EXPO
       organizationLogoUrl,
       generatedAt,
       footerBranding: brandedFooter,
+      primaryColor: branding.primaryColor,
+      headerBgColor: branding.headerBgColor,
+      headerFontSize: branding.headerFontSize,
+      footerFontSize: branding.footerFontSize,
+      showOrganizationLogo: branding.showOrganizationLogo,
     });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="machine-reliability-${now.toISOString().slice(0, 10)}.pdf"`);

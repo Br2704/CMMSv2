@@ -72,7 +72,11 @@ export function MobileBottomNav({ isSidebarOpen = false }: MobileBottomNavProps)
   }, [isRootUser, loading, hasModuleAccess]);
 
   const filteredMore = useMemo(() => {
-    if (isRootUser) return [{ title: "Role Access", href: "/root/role-access", moduleId: "root.role_access" }];
+    if (isRootUser) return [
+      { title: "Role Access", href: "/root/role-access", moduleId: "root.role_access" },
+      { title: "Report Format", href: "/root/report-format", moduleId: "root.report-format" },
+      { title: "Mail Config", href: "/root/mail-config", moduleId: "root.mail-config" },
+    ];
     if (loading) return [];
     return moreNavItems.filter((item) => hasModuleAccess(item.moduleId, "view"));
   }, [isRootUser, loading, hasModuleAccess]);

@@ -156,7 +156,7 @@ function policyAllowsModule(moduleId: string, roles: string[], action = "view"):
   ]);
 
   const isRootModule = (): boolean => {
-    const rootPaths = ["root.organizations", "root.plants", "root.users", "root.role-access", "root.role_access", "root.mail-config", "root.dashboard", "root.sla-config"];
+    const rootPaths = ["root.organizations", "root.plants", "root.users", "root.role-access", "root.role_access", "root.mail-config", "root.dashboard", "root.sla-config", "root.report-format"];
     return rootPaths.includes(normalizedModuleLower) || rootPaths.includes(upperModuleId.toLowerCase());
   };
 

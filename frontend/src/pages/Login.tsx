@@ -266,7 +266,7 @@ export default function Login() {
             </div>
           </div>
 
-          <CardHeader className="space-y-5 pb-3 pt-6">
+          <CardHeader className="space-y-5 pb-3 pt-6 text-foreground">
             <div className="flex justify-center">
               <div className="w-full max-w-sm space-y-4">
                 <div className="rounded-3xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 px-6 py-5 shadow-sm dark:border-border/60 dark:from-slate-900 dark:to-slate-950">

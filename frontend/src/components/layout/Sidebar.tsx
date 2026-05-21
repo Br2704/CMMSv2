@@ -13,6 +13,7 @@ import {
   ClipboardList,
   DoorOpen,
   Factory,
+  FileText,
   Gauge,
   LayoutDashboard,
   Leaf,
@@ -90,6 +91,7 @@ const rootNavigation: NavItem[] = [
   { title: "User Management", href: "/root/users", icon: Users, moduleId: "root.users" },
   { title: "Role & Access Master", href: "/root/role-access", icon: Settings, moduleId: "root.role_access" },
   { title: "Mail Config", href: "/root/mail-config", icon: Mail, moduleId: "root.mail-config" },
+  { title: "Report Format", href: "/root/report-format", icon: FileText, moduleId: "root.report-format" },
 ];
 
 interface SidebarProps {

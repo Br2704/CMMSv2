@@ -26,6 +26,7 @@ import { toCsv } from '../../utils/csvExport';
 import { HttpError } from '../../utils/httpError';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { createSimplePdf } from '../../utils/pdf';
+import { getReportBranding } from '../../utils/reportBranding';
 import { resolvePlantFilter, resolveScopedPlantId } from '../../utils/plantScope';
 import { normalizeRoleName } from '../../utils/rbac';
 
@@ -932,7 +933,14 @@ esgRouter.get('/esg/reports', requirePermission('ESG', 'READ'), async (req, res,
         row.renewable_energy_ ?? row.renewable_energy ?? '',
         row.waste_generated ?? row.total_waste ?? '',
       ]);
-      const csv = toCsv(headers, rows);
+      const brandingNow = new Date().toISOString();
+      const branding = await getReportBranding({
+        organizationName: 'ESG Report',
+        generatedAt: brandingNow,
+        reportTitle: `ESG ${query.reportType} Report - ${query.year}`,
+      });
+
+      const csv = toCsv(headers, rows, branding);
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="esg-${query.reportType.toLowerCase()}-${query.year}.csv"`);
       res.send(csv);
@@ -955,7 +963,29 @@ esgRouter.get('/esg/reports', requirePermission('ESG', 'READ'), async (req, res,
           '',
         ]),
       ];
-      const pdf = createSimplePdf(lines);
+      const brandingNow = new Date().toISOString();
+      const branding = await getReportBranding({
+        generatedAt: brandingNow,
+        reportTitle: `ESG ${query.reportType} Report`,
+      });
+      const pdf = createSimplePdf(lines, {
+        title: `ESG ${query.reportType} Report`,
+        subtitle: `Year: ${query.year}`,
+        generatedAt: brandingNow,
+        footerBranding: branding.footerBranding,
+        primaryColor: branding.primaryColor,
+        headerBgColor: branding.headerBgColor,
+        headerFontSize: branding.headerFontSize,
+        footerFontSize: branding.footerFontSize,
+        headerBold: branding.headerBold,
+        headerUnderline: branding.headerUnderline,
+        headerAlignment: branding.headerAlignment,
+        logoAlignment: branding.logoAlignment,
+        headerColor: branding.headerColor,
+        footerColor: branding.footerColor,
+        footerBold: branding.footerBold,
+        showOrganizationLogo: branding.showOrganizationLogo,
+      });
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="esg-${query.reportType.toLowerCase()}-${query.year}.pdf"`);
       res.send(pdf);

@@ -66,9 +66,7 @@ systemRouter.get('/system/health', async (_req, res) => {
   );
 });
 
-systemRouter.use('/system', requireAuth, requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']));
-
-systemRouter.get('/system/health/details', async (_req, res, next) => {
+systemRouter.get('/system/health/details', requireAuth, requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
   try {
     const startedAt = Date.now();
     await AppDataSource.query('SELECT 1 AS ok');
@@ -93,7 +91,7 @@ systemRouter.get('/system/health/details', async (_req, res, next) => {
   }
 });
 
-systemRouter.get('/system/performance', async (_req, res, next) => {
+systemRouter.get('/system/performance', requireAuth, requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
   try {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const auditRepo = AppDataSource.getRepository(AuditLogEntity);
@@ -125,7 +123,7 @@ systemRouter.get('/system/performance', async (_req, res, next) => {
   }
 });
 
-systemRouter.get('/system/errors', async (_req, res, next) => {
+systemRouter.get('/system/errors', requireAuth, requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (_req, res, next) => {
   try {
     const auditRepo = AppDataSource.getRepository(AuditLogEntity);
     const securityRepo = AppDataSource.getRepository(SecurityEventEntity);

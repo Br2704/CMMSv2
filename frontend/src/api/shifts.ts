@@ -2,7 +2,7 @@ import { httpRequest } from "@/api/http";
 import type { ApiListResponse, ApiResponse, DeleteResult, ListParams } from "@/api/types";
 import { toQueryString } from "@/api/types";
 
-export interface Shift {
+export interface Shift extends Record<string, unknown> {
   id: string;
   shiftName: string;
   startTime: string;

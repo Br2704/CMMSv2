@@ -64,7 +64,7 @@ async function checkApiHealth(): Promise<void> {
     const timeoutId = window.setTimeout(() => controller.abort(), 4000);
 
     try {
-      const response = await fetch(`${getApiBaseUrl()}/system/health`, {
+      const response = await fetch(`${getApiBaseUrl()}/health`, {
         method: "GET",
         cache: "no-store",
         credentials: "include",

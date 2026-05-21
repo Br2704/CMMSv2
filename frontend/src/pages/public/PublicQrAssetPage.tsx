@@ -272,7 +272,7 @@ export default function PublicQrAssetPage() {
           {/* Footer Info */}
           <div className="flex flex-col items-center gap-4 pt-12 opacity-40 grayscale hover:grayscale-0 transition-all duration-500">
              <div className="h-px w-24 bg-gradient-to-r from-transparent via-slate-500 to-transparent" />
-             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">JK Fenner CMMS • Powered by Antigravity</p>
+             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">JK Fenner CMMS • Powered by TamOptiX Technologies</p>
           </div>
         </div>
       </div>

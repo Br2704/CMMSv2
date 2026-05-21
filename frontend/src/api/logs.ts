@@ -2,11 +2,7 @@ import { getStoredAccessToken, httpRequest, isCurrentlyRateLimited } from "@/api
 import type { ApiListResponse, ApiResponse, DeleteResult, ListParams } from "@/api/types";
 import { toQueryString } from "@/api/types";
 
-export type LogEntry = Record<string, unknown>;
-export type LogTemplate = Record<string, unknown>;
-export type LogTemplateField = Record<string, unknown>;
-export type LogTemplateAssignment = Record<string, unknown>;
-export interface WebappLogRecord extends Record<string, unknown> {
+export interface LogEntry {
   id: string;
   action: string;
   module: string | null;
@@ -18,6 +14,38 @@ export interface WebappLogRecord extends Record<string, unknown> {
   level: "INFO" | "WARN" | "ERROR";
   message: string;
   metadata?: Record<string, unknown> | null;
+  userId?: string | null;
+  userName?: string | null;
+  ip?: string | null;
+  duration?: number | null;
+}
+
+export interface LogTemplate {
+  id: string;
+  templateName: string;
+  description: string | null;
+  plantId: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LogTemplateField {
+  id: string;
+  templateId: string;
+  fieldName: string;
+  fieldType: string;
+  isRequired: boolean;
+  sortOrder: number;
+  options: string[] | null;
+}
+
+export interface LogTemplateAssignment {
+  id: string;
+  templateId: string;
+  assetId: string;
+  shiftId: string | null;
+  isActive: boolean;
 }
 
 type WebappLogPayload = {
@@ -117,7 +145,7 @@ export function deleteLogTemplateAssignment(id: string) {
 }
 
 export function listWebappLogs(params: ListParams = {}) {
-  return httpRequest<ApiListResponse<WebappLogRecord>>(`/webapp-logs${toQueryString(params)}`, { method: "GET" });
+  return httpRequest<ApiListResponse<LogEntry>>(`/webapp-logs${toQueryString(params)}`, { method: "GET" });
 }
 
 export function createWebappLog(payload: WebappLogPayload) {

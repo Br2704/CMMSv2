@@ -305,14 +305,6 @@ export function useNotifications(options?: { enabled?: boolean }) {
 
         // Trigger native browser notification
         if ("Notification" in window && Notification.permission === "granted") {
-
-          const handleOnline = () => {
-            if (cancelled) return;
-            clearReconnect();
-            void connectStream();
-          };
-
-          window.addEventListener("online", handleOnline);
           const browserNotification = new Notification(notification.title, {
             body: notification.message,
             tag: notification.id,
@@ -321,7 +313,6 @@ export function useNotifications(options?: { enabled?: boolean }) {
             requireInteraction: true,
             data: { url: notification.link, woId: notification.wo_id },
           });
-          window.removeEventListener("online", handleOnline);
           browserNotification.onclick = (event) => {
             event.preventDefault();
             if (notification.link) {

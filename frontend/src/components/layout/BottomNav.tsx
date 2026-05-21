@@ -67,6 +67,8 @@ const rootMainNavItems = [
 
 const rootMoreNavItems: Array<{ title: string; href: string; moduleId: string }> = [
   { title: "Role Access", href: "/root/role-access", moduleId: "root.role_access" },
+  { title: "Report Format", href: "/root/report-format", moduleId: "root.report-format" },
+  { title: "Mail Config", href: "/root/mail-config", moduleId: "root.mail-config" },
 ];
 
 interface BottomNavProps {
