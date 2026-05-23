@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
-import { AnimatePresence } from "framer-motion";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { MobileBottomNav } from "./MobileBottomNav";
@@ -185,9 +184,7 @@ export function MainLayout() {
           "min-w-0 flex-1 px-3 py-4 pb-24 sm:px-6 sm:py-5 sm:pb-24 lg:px-8 lg:py-6 lg:pb-8",
         )}>
           <div className="mx-auto w-full min-w-0 max-w-[1720px]">
-            <AnimatePresence mode="wait">
-              <Outlet />
-            </AnimatePresence>
+            <Outlet />
           </div>
         </main>
 

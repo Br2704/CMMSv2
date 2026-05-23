@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 import {
   FileText, Download, BarChart3, Calendar, TrendingUp, Package, Wrench,
   Loader2, Activity, Gauge, ShieldAlert, Clock, Timer, AlertTriangle,
@@ -151,6 +152,9 @@ const esc = (v: string | null | undefined) => `"${(v || "").replace(/"/g, '""')}
 export default function Reports() {
   const queryClient = useQueryClient();
   const [dateRange, setDateRange] = useState("30");
+  const [customDateFrom, setCustomDateFrom] = useState("");
+  const [customDateTo, setCustomDateTo] = useState("");
+  const useCustomDates = customDateFrom.trim().length > 0 || customDateTo.trim().length > 0;
 
   // MTTR filters
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
@@ -298,8 +302,14 @@ export default function Reports() {
   }, [departments]);
   const toDeptIds = (names: string[]) => names.map(n => deptIdMap[n]).filter(Boolean);
 
-  const startDate = useMemo(() => format(subDays(new Date(), parseInt(dateRange, 10)), "yyyy-MM-dd"), [dateRange]);
-  const endDate = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
+  const startDate = useMemo(() => {
+    if (customDateFrom.trim()) return customDateFrom.trim();
+    return format(subDays(new Date(), parseInt(dateRange, 10)), "yyyy-MM-dd");
+  }, [dateRange, customDateFrom]);
+  const endDate = useMemo(() => {
+    if (customDateTo.trim()) return customDateTo.trim();
+    return format(new Date(), "yyyy-MM-dd");
+  }, [customDateTo]);
 
   const { data: advancedReliability } = useQuery({
     queryKey: ["advanced_reliability", dateRange],
@@ -635,10 +645,48 @@ export default function Reports() {
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight lg:text-3xl">Reports & Analytics</h1>
           <p className="text-sm text-muted-foreground">Comprehensive insights — MTTR, MTBF, safety, inventory & more</p>
         </div>
-        <SelectField label="" value={dateRange} onChange={setDateRange} options={[
-          { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" },
-          { value: "90", label: "Last 90 days" }, { value: "365", label: "Last year" },
-        ]} className="w-[150px]" />
+        <div className="flex items-center gap-2 flex-wrap">
+          <SelectField label="" value={dateRange} onChange={setDateRange} options={[
+            { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" },
+            { value: "90", label: "Last 90 days" }, { value: "365", label: "Last year" },
+          ]} className="w-[150px]" />
+          <div className="flex items-center gap-1.5">
+            <Input
+              type="date"
+              value={customDateFrom}
+              onChange={(e) => {
+                setCustomDateFrom(e.target.value);
+                setDateRange("");
+              }}
+              className="h-9 w-[140px] text-xs bg-card/70 border-border/60"
+              title="Custom from date"
+              placeholder="From"
+            />
+            <span className="text-xs text-muted-foreground">to</span>
+            <Input
+              type="date"
+              value={customDateTo}
+              onChange={(e) => setCustomDateTo(e.target.value)}
+              className="h-9 w-[140px] text-xs bg-card/70 border-border/60"
+              title="Custom to date"
+              placeholder="To"
+            />
+            {useCustomDates && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 px-2 text-xs"
+                onClick={() => {
+                  setCustomDateFrom("");
+                  setCustomDateTo("");
+                  setDateRange("30");
+                }}
+              >
+                <X className="h-3 w-3 mr-1" /> Clear
+              </Button>
+            )}
+          </div>
+        </div>
       </div>
 
       {isLoading ? (

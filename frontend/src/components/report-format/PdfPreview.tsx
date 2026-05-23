@@ -1,5 +1,5 @@
 import { type ReportFormatConfigPayload, type ChartConfig } from "@/api/reportFormat";
-import { FilePdf, Info, Loader2, Monitor, Download } from "lucide-react";
+import { FileText, Info, Loader2, Monitor, Download } from "lucide-react";
 import { ImageCell } from "./ImageCell";
 import { MiniChartPreview } from "./MiniCharts";
 import { PaginationBar } from "./PaginationBar";
@@ -24,7 +24,7 @@ export function PdfPreview({
   previewSheetIdx: number;
   onPreviewSheetChange: (idx: number) => void;
   pagination: {
-    page: number;
+    currentPage: number;
     totalPages: number;
     total: number;
     displayedCount: number;
@@ -78,7 +78,7 @@ export function PdfPreview({
     <div className="font-sans text-[11px] leading-relaxed">
       {/* PDF viewer toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 bg-[#f3f4f6] border-b border-[#d1d5db] rounded-t-xl text-[10px]">
-        <FilePdf className="h-3.5 w-3.5 text-[#dc2626]" />
+        <FileText className="h-3.5 w-3.5 text-[#dc2626]" />
         <span className="font-medium text-[#374151]">report.pdf</span>
         <div className="ml-auto flex items-center gap-3 text-[#6b7280]">
           <span className="tabular-nums">

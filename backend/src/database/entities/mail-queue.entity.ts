@@ -19,10 +19,10 @@ export class MailQueueEntity extends TimestampedUuidEntity {
   @Column({ type: 'varchar' })
   subject!: string;
 
-  @Column({ type: 'text' })
+  @Column({ name: 'html_body', type: 'text' })
   htmlBody!: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ name: 'text_body', type: 'text', nullable: true })
   textBody!: string | null;
 
   @Column({ type: 'varchar', default: 'PENDING' })

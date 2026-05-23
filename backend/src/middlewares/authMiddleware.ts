@@ -40,7 +40,6 @@ export function buildFallbackPermissionsForRole(role: string): Record<string, st
     return map;
   }
   if (normalized === 'ROOT_ADMIN') {
-    // Root Admin is governance-only. No operational module access.
     return fromModules([
       'ORGANIZATIONS',
       'PLANTS',
@@ -52,6 +51,8 @@ export function buildFallbackPermissionsForRole(role: string): Record<string, st
       'NOTIFICATIONS',
       'SECURITY',
       'REPORTS',
+      'WORK_ORDERS',
+      'GATES',
     ], allActions);
   }
   if (normalized === 'ADMIN') {
@@ -468,7 +469,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
 
     if (isRootAdmin) {
-      // Root Admin is governance-only. Restrict to governance module keys only.
       const governanceModuleKeys = [
         'ORGANIZATIONS',
         'PLANTS',
@@ -480,6 +480,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         'NOTIFICATIONS',
         'SECURITY',
         'REPORTS',
+        'WORK_ORDERS',
+        'GATES',
       ];
       const rootScopedPermissions: Record<string, string[]> = {};
       governanceModuleKeys.forEach((moduleKey) => {

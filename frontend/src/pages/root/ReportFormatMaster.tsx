@@ -45,7 +45,6 @@ import {
   Palette,
   Columns3,
   FileSpreadsheet,
-  FilePdf,
   Table,
   CheckCircle2,
 } from "lucide-react";
@@ -55,9 +54,7 @@ import { CellDefaultsEditor } from "@/components/report-format/CellDefaultsEdito
 import { ColorPickerField } from "@/components/report-format/ColorPickerField";
 import { ReportPreview } from "@/components/report-format/ReportPreview";
 import { DataSourceConfig } from "@/components/report-format/DataSourceConfig";
-
-
-
+import { AdvancedSettings } from "@/components/report-format/AdvancedSettings";
 
 /* ──────────────────────────────────────────────
    Main Page Component
@@ -971,7 +968,7 @@ export default function ReportFormatMaster() {
                             {f === "excel" ? (
                               <FileSpreadsheet className="h-3.5 w-3.5" />
                             ) : f === "pdf" ? (
-                              <FilePdf className="h-3.5 w-3.5" />
+                              <FileText className="h-3.5 w-3.5" />
                             ) : (
                               <Table className="h-3.5 w-3.5" />
                             )}

@@ -285,7 +285,7 @@ export function useNotifications(options?: { enabled?: boolean }) {
           }
           notificationAudioRef.current.play().catch(() => {});
         } catch (e) {
-          console.error("Failed to play notification chime", e);
+          if (import.meta.env.DEV) console.error("Failed to play notification chime", e);
         }
 
         // Show in-app Sonner Toast popup!

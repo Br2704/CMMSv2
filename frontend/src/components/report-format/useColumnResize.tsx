@@ -98,14 +98,11 @@ export function useColumnResize(columnCount: number): ColumnResizeApi {
 export function DragHandle({ onMouseDown }: DragHandleProps) {
   return (
     <div
-      className="absolute right-0 top-0 bottom-0 w-[5px] -mr-[2px] z-10
-        cursor-col-resize group"
+      className="absolute right-0 top-0 bottom-0 w-[5px] -mr-[2px] z-10 cursor-col-resize group"
       onMouseDown={onMouseDown}
     >
       <div
-        className="absolute right-[1.5px] top-1 bottom-1 w-[2px] rounded-full
-          bg-transparent group-hover:bg-blue-400 group-active:bg-blue-500
-          transition-colors duration-150"
+        className="absolute right-[1.5px] top-1 bottom-1 w-[2px] rounded-full bg-transparent group-hover:bg-blue-400 group-active:bg-blue-500 transition-colors duration-150"
       />
     </div>
   );

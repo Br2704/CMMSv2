@@ -398,6 +398,32 @@ export default function SLAConfigMaster() {
                 <Input value={String((editItem as any).description || '')} onChange={(e) => setEditItem({ ...editItem, description: e.target.value })} placeholder="Purpose of this SLA rule" className="h-8" />
               </div>
 
+              <div className="rounded-xl border border-dashed border-primary/30 bg-primary/5 p-4 space-y-3">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-primary">🔔 Notification & Mail Configuration</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Notification Email(s)</Label>
+                    <Input value={String((editItem as any).notificationEmail || '')} onChange={(e) => setEditItem({ ...editItem, notificationEmail: e.target.value })} placeholder="admin@example.com, manager@example.com" className="h-8" />
+                    <p className="text-[10px] text-muted-foreground">Comma-separated emails for escalation alerts</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Send Email On</Label>
+                    <Select value={String((editItem as any).sendEmailOn || 'ESCALATION')} onValueChange={(v) => setEditItem({ ...editItem, sendEmailOn: v })}>
+                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ESCALATION">🚨 Escalation Only</SelectItem>
+                        <SelectItem value="REMINDER">⏰ Reminder Only</SelectItem>
+                        <SelectItem value="OVERDUE">⚠️ Overdue Only</SelectItem>
+                        <SelectItem value="ESCALATION,REMINDER">🚨 Escalation + Reminder</SelectItem>
+                        <SelectItem value="ESCALATION,OVERDUE">🚨 Escalation + Overdue</SelectItem>
+                        <SelectItem value="REMINDER,OVERDUE">⏰ Reminder + Overdue</SelectItem>
+                        <SelectItem value="ESCALATION,REMINDER,OVERDUE">📬 All Events</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between border-t pt-4">
                 <Button variant="outline" size="sm" onClick={() => setEditDialog(false)}>Cancel</Button>
                 <Button onClick={handleSave} disabled={saving} size="sm">

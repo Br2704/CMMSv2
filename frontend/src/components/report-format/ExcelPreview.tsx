@@ -23,7 +23,7 @@ export function ExcelPreview({
   previewSheetIdx: number;
   onPreviewSheetChange: (idx: number) => void;
   pagination: {
-    page: number;
+    currentPage: number;
     totalPages: number;
     total: number;
     displayedCount: number;
@@ -272,8 +272,9 @@ export function ExcelPreview({
               );
             })}
           </div>
+          </div>
         </div>
-
+        
         {/* Footer */}
         <div
           className="pt-3 space-y-0.5 border-t"

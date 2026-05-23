@@ -126,6 +126,7 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
       <div className="relative hidden sm:flex flex-1 max-w-md">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
+          id="desktop-search"
           placeholder="Search work orders, assets..."
           className="h-10 w-full pl-9 bg-muted/50 border-0 focus-visible:ring-1"
         />
@@ -150,6 +151,7 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              id="mobile-search"
               placeholder="Search work orders, assets..."
               className="h-12 w-full pl-9 text-base"
               autoFocus

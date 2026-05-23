@@ -21,7 +21,8 @@ import { FormDialog } from "@/components/shared/FormDialog";
 import { InputField, SelectField, TextareaField } from "@/components/shared/FormField";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
-import { SpareUsageEditor, type SpareUsageDraft } from "@/components/spares/SpareUsageEditor";
+import { MaterialsUsageEditor, type MaterialDraft } from "@/components/spares/MaterialsUsageEditor";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
 import { useAuthStore, isAdmin, isIncharge, isSuperAdmin, isMaintenanceManager, isMaintenanceUser, isProductionUser } from "@/store/auth.store";
 import { getStoredAccessToken } from "@/api/http";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -78,7 +79,7 @@ interface PhotoAttachment {
 
 interface CloseDraftSnapshot {
   closeData?: typeof EMPTY_CLOSE_DATA;
-  closeSpareUsage?: SpareUsageDraft[];
+  closeSpareUsage?: MaterialDraft[];
   closeAttachments?: PhotoAttachment[];
 }
 
@@ -266,7 +267,7 @@ function clearCloseDraft(workOrderId: string | null) {
   window.localStorage.removeItem(getCloseDraftStorageKey(workOrderId));
 }
 
-function buildSpareUsagePayload(rows: SpareUsageDraft[], availableSpares: SpareItem[]) {
+function buildSpareUsagePayload(rows: MaterialDraft[], availableSpares: SpareItem[]) {
   const spareById = new Map(availableSpares.map((item) => [item.id, item]));
   return rows
     .map((row) => {
@@ -274,7 +275,7 @@ function buildSpareUsagePayload(rows: SpareUsageDraft[], availableSpares: SpareI
       if (!Number.isFinite(quantity) || quantity <= 0) return null;
 
       if (row.isManual) {
-        const spareName = (row.spareName || "").trim();
+        const spareName = (row.itemName || "").trim();
         if (!spareName) return null;
         return {
           spare_item_id: `manual-${spareName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
@@ -284,7 +285,7 @@ function buildSpareUsagePayload(rows: SpareUsageDraft[], availableSpares: SpareI
         };
       }
 
-      const spare = spareById.get(row.spareItemId);
+      const spare = spareById.get(row.itemId);
       if (!spare) return null;
       return {
         spare_item_id: spare.id,
@@ -596,6 +597,8 @@ export default function WorkOrders() {
   const [verifiedAssetId, setVerifiedAssetId] = useState<string | null>(null);
   const [isManualVerifyOpen, setIsManualVerifyOpen] = useState(false);
   const [manualMachineCode, setManualMachineCode] = useState("");
+  const [manualMachineSearchResults, setManualMachineSearchResults] = useState<Array<{ value: string; label: string }>>([]);
+  const [isSearchingMachine, setIsSearchingMachine] = useState(false);
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
   const [safetyChecklist, setSafetyChecklist] = useState({
     ppe_worn: false,
@@ -893,7 +896,7 @@ export default function WorkOrders() {
 
   // Close WO form
   const [closeData, setCloseData] = useState(() => ({ ...EMPTY_CLOSE_DATA }));
-  const [closeSpareUsage, setCloseSpareUsage] = useState<SpareUsageDraft[]>([]);
+  const [closeSpareUsage, setCloseSpareUsage] = useState<MaterialDraft[]>([]);
   const [isCloseFormOpen, setIsCloseFormOpen] = useState(false);
   const [closingWOId, setClosingWOId] = useState<string | null>(null);
 
@@ -1232,6 +1235,18 @@ export default function WorkOrders() {
     setVerifiedAssetId(null);
     setManualMachineCode("");
     setIsManualVerifyOpen(true);
+    // Load assets for machine search
+    listAssets({ page: 1, limit: 500, includeInactive: false })
+      .then((response) => {
+        const assets = (response.data || []).filter((a: any) => a.isActive !== false);
+        setManualMachineSearchResults(
+          assets.map((a: any) => ({
+            value: a.code || a.id,
+            label: `${a.code} - ${a.name}`,
+          }))
+        );
+      })
+      .catch(() => setManualMachineSearchResults([]));
   };
 
   const confirmManualVerification = () => {
@@ -1586,6 +1601,7 @@ export default function WorkOrders() {
     }
   };
 
+  
   const handleCloseWithDetails = async () => {
     if (!closingWOId || !closingWO) return;
     const spareConsumption = buildSpareUsagePayload(closeSpareUsage, closeAvailableSpares);
@@ -2074,16 +2090,16 @@ export default function WorkOrders() {
           <div className="rounded-2xl border border-border/70 bg-card/80 p-4 sm:p-5 shadow-sm">
             <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground"><Wrench className="h-4 w-4" />Machine Selection</h3>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <SelectField
+              <SearchableSelect
                 label="Plant"
                 value={formData.plant_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, plant_id: value, department_id: "", module_id: "", asset_id: "" }))}
                 options={plantOptions}
-                placeholder={userIsSuperAdmin ? "Select plant" : "Assigned plant"}
+                placeholder={userIsSuperAdmin ? "Search plants..." : "Assigned plant"}
                 disabled={!userIsSuperAdmin || plantOptions.length === 0}
                 required
               />
-              <SelectField
+              <SearchableSelect
                 label="Department"
                 value={formData.department_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, department_id: value, module_id: "", asset_id: "" }))}
@@ -2091,11 +2107,11 @@ export default function WorkOrders() {
                   value: department.id,
                   label: `${department.code} - ${department.name}`,
                 }))}
-                placeholder={formData.plant_id ? "Select department" : "Select plant first"}
+                placeholder={formData.plant_id ? "Search departments..." : "Select plant first"}
                 disabled={!formData.plant_id}
                 required
               />
-              <SelectField
+              <SearchableSelect
                 label="Module"
                 value={formData.module_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, module_id: value, asset_id: "" }))}
@@ -2103,16 +2119,16 @@ export default function WorkOrders() {
                   value: module.id,
                   label: `${module.code ? `${module.code} - ` : ""}${module.name}`,
                 }))}
-                placeholder={formData.department_id ? "Select module" : "Select department first"}
+                placeholder={formData.department_id ? "Search modules..." : "Select department first"}
                 disabled={!formData.department_id}
                 required
               />
-              <SelectField
+              <SearchableSelect
                 label="Machine"
                 value={formData.asset_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, asset_id: value }))}
                 options={assetOptions}
-                placeholder={formData.module_id ? "Select machine" : "Select module first"}
+                placeholder={formData.module_id ? "Search machines..." : "Select module first"}
                 disabled={!formData.module_id || assetOptions.length === 0}
                 required
               />
@@ -2315,13 +2331,12 @@ export default function WorkOrders() {
               </div>
               {closeData.spare_used ? (
                 <>
-                  <SpareUsageEditor
+                  <MaterialsUsageEditor
                     title="Spare Usage"
                     description="Select spares from master or add manual entries when unavailable."
-                    rows={closeSpareUsage}
-                    onChange={setCloseSpareUsage}
-                    options={closeSpareOptions}
-                    allowManualEntry
+                    spareRows={closeSpareUsage}
+                    onSpareChange={setCloseSpareUsage}
+                    spareOptions={closeSpareOptions}
                   />
                   <TextareaField label="Additional Materials Notes" value={closeData.parts_replaced} onChange={(v) => setCloseData({ ...closeData, parts_replaced: v })} placeholder="Optional notes for non-catalog spares" />
                 </>
@@ -2605,18 +2620,49 @@ export default function WorkOrders() {
         open={isManualVerifyOpen}
         onOpenChange={setIsManualVerifyOpen}
         title="Manual Machine Verification"
-        description="Enter the assigned machine code exactly as printed on the machine or asset card."
+        description="Search and select the machine, or enter the machine code manually."
         onSubmit={confirmManualVerification}
         submitLabel="Confirm Machine"
         size="sm"
       >
-        <InputField
-          label="Machine Code"
-          value={manualMachineCode}
-          onChange={setManualMachineCode}
-          placeholder={verifyTargetWO?.assets?.code || "Enter machine code"}
-          required
-        />
+        <div className="space-y-3">
+          <SearchableSelect
+            value={manualMachineCode}
+            onChange={(value) => {
+              setManualMachineCode(value);
+              setManualMachineSearchResults([]);
+            }}
+            options={manualMachineSearchResults}
+            placeholder="Search machine by code or name..."
+            emptyMessage="Type to search machines..."
+            label="Machine Search"
+          />
+          <p className="text-xs text-muted-foreground text-center">— OR —</p>
+          <InputField
+            label="Machine Code Direct Entry"
+            value={manualMachineCode}
+            onChange={setManualMachineCode}
+            placeholder={verifyTargetWO?.assets?.code || "Enter machine code"}
+            required
+          />
+          {manualMachineSearchResults.length > 0 && (
+            <div className="max-h-32 overflow-y-auto rounded-lg border border-border/70 bg-background p-1">
+              {manualMachineSearchResults.map((result) => (
+                <button
+                  key={result.value}
+                  type="button"
+                  className="w-full rounded-md px-3 py-1.5 text-left text-sm hover:bg-accent transition-colors"
+                  onClick={() => {
+                    setManualMachineCode(result.value);
+                    setManualMachineSearchResults([]);
+                  }}
+                >
+                  {result.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </FormDialog>
 
       {qrMismatchMessage ? (

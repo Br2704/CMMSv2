@@ -17,7 +17,7 @@ export function CsvPreview({
   loading: boolean;
   error: string | null;
   pagination: {
-    page: number;
+    currentPage: number;
     totalPages: number;
     total: number;
     displayedCount: number;

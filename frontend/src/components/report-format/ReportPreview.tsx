@@ -80,7 +80,7 @@ export function ReportPreview({
   }, [allRows, debouncedQuery, searchColumn, headers]);
 
   const paginationProps = {
-    page,
+    currentPage: page,
     totalPages,
     total,
     displayedCount: filteredRows.length,

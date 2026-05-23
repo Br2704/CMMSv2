@@ -60,6 +60,7 @@ import { reportFormatRouter } from '../modules/report-format/report-format.route
 export const router = Router();
 
 router.use(healthRouter);
+router.use(systemRouter);
 router.use(authRouter);
 router.use(brandingRouter);
 router.use(pushRouter);
@@ -102,7 +103,6 @@ router.use('/maintenance-reports', maintenanceReportsRouter);
 router.use(mastersRouter);
 router.use('/master-data', masterDataRouter);
 router.use(shiftsRouter);
-router.use(systemRouter);
 router.use('/modules', modulesRouter);
 router.use(featureFlagsRouter);
 router.use(alertsRouter);

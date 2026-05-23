@@ -198,7 +198,7 @@ export function useReportData(
         setPage(pageNum);
       } catch (err) {
         if (fetchId !== fetchIdRef.current) return;
-        console.error(`useReportData: failed to fetch ${source}`, err);
+        if (import.meta.env.DEV) console.error(`useReportData: failed to fetch ${source}`, err);
         setError(err instanceof Error ? err.message : String(err));
         if (!append) {
           setAllRecords([]);

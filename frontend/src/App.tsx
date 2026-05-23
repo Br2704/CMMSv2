@@ -193,19 +193,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user, isFallbackMode } = useAuthStore();
   const accessToken = getStoredAccessToken();
   const location = useLocation();
-  const rootAllowedPaths = [
-    "/root/dashboard",
-    "/root/organizations",
-    "/root/plant",
-    "/root/users",
-    "/root/role-access",
-    "/root/mail-config",
-    "/root/sla-config",
-    "/root/report-format"
-  ];
-  const isAllowedForRoot = rootAllowedPaths.some((path) =>
-    location.pathname === path || location.pathname.startsWith(`${path}/`)
-  );
 
   if (isLoading) {
     return (
@@ -222,18 +209,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const returnTo = `${location.pathname}${location.search}${location.hash}`;
     return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
   }
-  if (isRootAdmin(user) && location.pathname.startsWith("/masters/users")) {
-    return <Navigate to="/root/users" replace />;
-  }
-  if (isRootAdmin(user) && location.pathname.startsWith("/masters/role-access")) {
-    return <Navigate to="/root/role-access" replace />;
-  }
-  if (isRootAdmin(user) && location.pathname.startsWith("/masters/organizations")) {
-    return <Navigate to="/root/organizations" replace />;
-  }
-  if (isRootAdmin(user) && location.pathname.startsWith("/masters/plant")) {
-    return <Navigate to="/root/plant" replace />;
-  }
+  // Root admin is restricted to governance-only root/* pages
+  const rootAllowedPaths = ["/root/", "/masters/sla-config", "/login"];
+  const isAllowedForRoot = rootAllowedPaths.some((path) => location.pathname.startsWith(path));
   if (isRootAdmin(user) && !isAllowedForRoot) {
     return <Navigate to="/root/dashboard" replace />;
   }
@@ -434,7 +412,7 @@ function App() {
         <Toaster />
         <Sonner />
         {import.meta.env.DEV && <ConsoleErrorPanel />}
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <BrowserRouter>
           <AppErrorBoundary>
             <RouteFlowManager />
             <DevRouteLogger />

@@ -61,44 +61,45 @@ export class ReportFormatConfigEntity {
   headerAlignment!: string;
 
   // ── Advanced Config Columns ──
+  // NOTE: Column name must match the database column names created by migration 0055 (snake_case)
 
-  @Column({ type: 'text', nullable: true, comment: 'JSON array of sheet configurations' })
+  @Column({ name: 'sheets_config', type: 'text', nullable: true, comment: 'JSON array of sheet configurations' })
   sheetsConfig!: string | null;
 
-  @Column({ type: 'text', nullable: true, comment: 'JSON configuration for charts' })
+  @Column({ name: 'chart_config', type: 'text', nullable: true, comment: 'JSON configuration for charts' })
   chartConfig!: string | null;
 
-  @Column({ type: 'text', nullable: true, comment: 'JSON default cell formatting settings' })
+  @Column({ name: 'cell_defaults', type: 'text', nullable: true, comment: 'JSON default cell formatting settings' })
   cellDefaults!: string | null;
 
-  @Column({ type: 'varchar', length: 100, nullable: true, default: 'work_orders' })
+  @Column({ name: 'report_data_source', type: 'varchar', length: 100, nullable: true, default: 'work_orders' })
   reportDataSource!: string | null;
 
-  @Column({ type: 'int', nullable: true, default: 30 })
+  @Column({ name: 'default_date_range', type: 'int', nullable: true, default: 30 })
   defaultDateRange!: number | null;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ name: 'organization_logo_url', type: 'text', nullable: true })
   organizationLogoUrl!: string | null;
 
-  @Column({ type: 'text', nullable: true, default: '/tamoptix/tamoptix-logo.svg' })
+  @Column({ name: 'tamoptix_logo_url', type: 'text', nullable: true, default: '/tamoptix/tamoptix-logo.svg' })
   tamoptixLogoUrl!: string | null;
 
-  @Column({ type: 'varchar', length: 10, nullable: true, default: 'en' })
+  @Column({ name: 'report_locale', type: 'varchar', length: 10, nullable: true, default: 'en' })
   reportLocale!: string | null;
 
-  @Column({ type: 'int', nullable: true, default: 120 })
+  @Column({ name: 'default_cell_width', type: 'int', nullable: true, default: 120 })
   defaultCellWidth!: number | null;
 
-  @Column({ type: 'int', nullable: true, default: 30 })
+  @Column({ name: 'default_cell_height', type: 'int', nullable: true, default: 30 })
   defaultCellHeight!: number | null;
 
-  @Column({ type: 'boolean', nullable: true, default: true })
+  @Column({ name: 'show_row_striping', type: 'boolean', nullable: true, default: true })
   showRowStriping!: boolean | null;
 
-  @Column({ type: 'varchar', length: 20, nullable: true, default: 'portrait' })
+  @Column({ name: 'page_orientation', type: 'varchar', length: 20, nullable: true, default: 'portrait' })
   pageOrientation!: string | null;
 
-  @Column({ type: 'varchar', length: 20, nullable: true, default: 'A4' })
+  @Column({ name: 'paper_size', type: 'varchar', length: 20, nullable: true, default: 'A4' })
   paperSize!: string | null;
 
   @UpdateDateColumn({ name: 'updated_at', type: DATETIME_COLUMN_TYPE })
