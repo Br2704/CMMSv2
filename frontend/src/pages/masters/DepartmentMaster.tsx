@@ -342,7 +342,7 @@ export default function DepartmentMaster() {
                 )}
                 <div className="relative w-full sm:w-72">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input placeholder="Search departments..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-10 pl-9" />
+                  <Input id="dept-search" name="deptSearch" placeholder="Search departments..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-10 pl-9" />
                 </div>
                 <Button variant="outline" size="sm" className="h-10 gap-1.5" onClick={handleExportCsv} disabled={filtered.length === 0}>
                   <Download className="h-4 w-4" />

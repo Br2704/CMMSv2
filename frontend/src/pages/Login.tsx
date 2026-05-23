@@ -301,6 +301,7 @@ export default function Login() {
                 </Label>
                 <Input
                   id="email"
+                  name="email"
                   type="email"
                   placeholder="Enter your email"
                   value={email}
@@ -318,6 +319,7 @@ export default function Login() {
                 <div className="relative">
                   <Input
                     id="password"
+                    name="password"
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter your password"
                     value={password}
@@ -351,6 +353,7 @@ export default function Login() {
                   </div>
                   <Input
                     id="captcha"
+                    name="captcha"
                     type="text"
                     placeholder="Enter the answer"
                     value={captchaAnswer}
@@ -368,6 +371,7 @@ export default function Login() {
                   </Label>
                   <Input
                     id="mfaCode"
+                    name="mfaCode"
                     type="text"
                     inputMode="numeric"
                     maxLength={6}
@@ -383,6 +387,7 @@ export default function Login() {
               <div className="flex items-center gap-2">
                 <input
                   id="rememberMe"
+                  name="rememberMe"
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}

@@ -189,7 +189,7 @@ export default function ShiftMaster() {
       header: "",
       className: "w-10",
       render: (item: Shift) => (
-        <input type="checkbox" className="h-4 w-4 rounded border-input" checked={selectedIds.has(item.id)} onChange={() => toggleSelect(item.id)} onClick={(e) => e.stopPropagation()} />
+        <input type="checkbox" id={`select-shift-${item.id}`} name="selectShift" className="h-4 w-4 rounded border-input" checked={selectedIds.has(item.id)} onChange={() => toggleSelect(item.id)} onClick={(e) => e.stopPropagation()} />
       ),
     },
     { key: "name", header: "Shift Name", render: (item: Shift) => <span className="font-medium">{item.shiftName}</span> },
@@ -262,7 +262,7 @@ export default function ShiftMaster() {
         ) : (
           <div>
             <div className="mb-2 flex items-center gap-2 px-1">
-              <input type="checkbox" className="h-4 w-4 rounded border-input" checked={shifts.length > 0 && selectedIds.size === shifts.length} onChange={toggleSelectAll} />
+              <input type="checkbox" id="select-all-shifts" name="selectAllShifts" className="h-4 w-4 rounded border-input" checked={shifts.length > 0 && selectedIds.size === shifts.length} onChange={toggleSelectAll} />
               <span className="text-xs text-muted-foreground">{selectedIds.size === shifts.length ? "Deselect all" : "Select all"}</span>
               <button className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1" onClick={handleExportCsv} disabled={shifts.length === 0}>
                 <Download className="h-3 w-3" /> Export CSV

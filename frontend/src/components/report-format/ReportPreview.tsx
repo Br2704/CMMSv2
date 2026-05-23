@@ -165,6 +165,8 @@ export function ReportPreview({
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-[#9ca3af] pointer-events-none" />
           <input
+            id="report-search"
+            name="reportSearch"
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

@@ -132,6 +132,8 @@ export function PaginationBar({
             {showJump ? (
               <div className="flex items-center gap-0.5">
                 <input
+                  id="page-jump"
+                  name="pageJump"
                   ref={inputRef}
                   type="number"
                   min={1}

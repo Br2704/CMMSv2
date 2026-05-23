@@ -1032,7 +1032,7 @@ export default function UsersMaster() {
               <>
                 <div className="relative w-full sm:w-72">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input placeholder="Search users..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
+                  <Input id="user-search" name="userSearch" placeholder="Search users..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
                 </div>
                 <SelectField
                   label=""

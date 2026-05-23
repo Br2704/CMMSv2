@@ -233,7 +233,7 @@ export default function Calibration() {
       <Card className="shadow-card">
         <CardContent className="p-4">
           <FilterToolbar
-            search={<><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" placeholder="Search task, machine, instrument..." /></>}
+            search={<><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="calibration-search" name="calibrationSearch" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" placeholder="Search task, machine, instrument..." /></>}
             filters={
               <div className="grid w-full gap-3 sm:grid-cols-2">
                 {canSelectPlant ? <SelectField label="" value={selectedPlantId} onChange={setSelectedPlantId} options={plantOptions} placeholder="Select plant" /> : null}

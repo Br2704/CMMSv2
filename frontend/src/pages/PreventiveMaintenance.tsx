@@ -274,7 +274,7 @@ export default function PreventiveMaintenance() {
             search={
               <>
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search PM ID, asset, template..." className="h-10 pl-9" />
+                <Input id="pm-search" name="pmSearch" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search PM ID, asset, template..." className="h-10 pl-9" />
               </>
             }
             filters={

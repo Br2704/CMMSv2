@@ -52,10 +52,10 @@ export default function CostCentersMaster() {
   const [formData, setFormData] = useState<CostCenterFormState>({ ...emptyForm, plantId: defaultPlantId });
   const [isEditing, setIsEditing] = useState(false);
 
-  const fetchCostCentersList = async () => {
+  const fetchCostCentersList = async (plantIdOverride?: string) => {
     setLoading(true);
     try {
-      const effectivePlantId = canSelectPlant ? selectedPlant || undefined : defaultPlantId || undefined;
+      const effectivePlantId = canSelectPlant ? (plantIdOverride ?? selectedPlant) || undefined : defaultPlantId || undefined;
       if (canSelectPlant && !effectivePlantId) {
         setCostCenters([]);
         return;
@@ -100,6 +100,11 @@ export default function CostCentersMaster() {
     fetchPlants();
     fetchDepartmentsList(canSelectPlant ? selectedPlant : defaultPlantId);
   }, []);
+
+  useEffect(() => {
+    if (!canSelectPlant || selectedPlant || plantsOptions.length === 0) return;
+    setSelectedPlant(plantsOptions[0].value);
+  }, [canSelectPlant, selectedPlant, plantsOptions]);
 
   const filtered = useMemo(() => costCenters, [costCenters]);
   const deptOptions = useMemo(
@@ -165,9 +170,10 @@ export default function CostCentersMaster() {
         await createCostCenter(payload);
         toast.success("Cost center created");
       }
+      if (canSelectPlant && selectedPlant !== resolvedPlantId) setSelectedPlant(resolvedPlantId);
       invalidateOptions(["departments", "assets"]);
       setIsFormOpen(false);
-      await fetchCostCentersList();
+      await fetchCostCentersList(resolvedPlantId);
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to save cost center"));
     } finally {
@@ -255,7 +261,7 @@ export default function CostCentersMaster() {
             )}
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
+              <Input id="cost-center-search" name="costCenterSearch" placeholder="Search..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
             </div>
           </div>
         }
