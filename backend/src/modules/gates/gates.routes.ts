@@ -1693,18 +1693,18 @@ gatesRouter.get('/gate-reports', requirePermission('GATES', 'EXPORT'), async (re
         organizationLogoUrl,
         generatedAt,
         footerBranding: brandedFooter,
-        primaryColor: branding.primaryColor,
-        headerBgColor: branding.headerBgColor,
-        headerFontSize: branding.headerFontSize,
-        footerFontSize: branding.footerFontSize,
-        headerBold: branding.headerBold,
-        headerUnderline: branding.headerUnderline,
-        headerAlignment: branding.headerAlignment,
-        logoAlignment: branding.logoAlignment,
-        headerSubtitle: branding.headerSubtitle,
-        headerColor: branding.headerColor,
-        footerColor: branding.footerColor,
-        footerBold: branding.footerBold,
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
       });
       res.setHeader('Content-Type', 'application/vnd.ms-excel');
       res.setHeader('Content-Disposition', `attachment; filename="gate-report-${new Date().toISOString().slice(0, 10)}.xls"`);
@@ -1727,18 +1727,18 @@ gatesRouter.get('/gate-reports', requirePermission('GATES', 'EXPORT'), async (re
         organizationLogoUrl,
         generatedAt,
         footerBranding: brandedFooter,
-        primaryColor: branding.primaryColor,
-        headerBgColor: branding.headerBgColor,
-        headerFontSize: branding.headerFontSize,
-        footerFontSize: branding.footerFontSize,
-        headerBold: branding.headerBold,
-        headerUnderline: branding.headerUnderline,
-        headerAlignment: branding.headerAlignment,
-        logoAlignment: branding.logoAlignment,
-        headerColor: branding.headerColor,
-        footerColor: branding.footerColor,
-        footerBold: branding.footerBold,
-        showOrganizationLogo: branding.showOrganizationLogo,
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
       });
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="gate-report-${new Date().toISOString().slice(0, 10)}.pdf"`);
