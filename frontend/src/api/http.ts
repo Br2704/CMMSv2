@@ -225,7 +225,11 @@ async function parseResponse<T>(response: Response): Promise<T> {
   if (!text) {
     return {} as T;
   }
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return { message: "Invalid JSON response", raw: text.slice(0, 200) } as unknown as T;
+  }
 }
 
 let refreshInFlight: Promise<boolean> | null = null;

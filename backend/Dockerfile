@@ -25,7 +25,7 @@ RUN apk upgrade --no-cache && \
     adduser -S appuser -G appgroup
 
 ENV NODE_ENV=production \
-    NODE_OPTIONS="--max-old-space-size=384" \
+    NODE_OPTIONS="--max-old-space-size=512 --expose-gc" \
     PORT=3001
 
 # Install production dependencies

@@ -153,6 +153,7 @@ function policyAllowsModule(moduleId: string, roles: string[], action = "view"):
     "NOTIFICATIONS",
     "SECURITY",
     "REPORTS",
+    "WORKORDERS",
   ]);
 
   const isRootModule = (): boolean => {
@@ -325,7 +326,10 @@ export function usePermissions() {
   const actualRoleKey = permissionsMe?.roleKey || actualRoles[0] || "USER";
 
   // Role Simulation Mode: allows Root Admins and Super Admins to dynamically preview other role perspectives.
-  const simulatedRole = typeof window !== "undefined" ? localStorage.getItem("cmms:simulated_role") : null;
+  const simulatedRole = (() => {
+    if (typeof window === "undefined") return null;
+    try { return localStorage.getItem("cmms:simulated_role"); } catch { return null; }
+  })();
   const isSimulating = Boolean(simulatedRole) && actualRoles.some(r => ["ROOT_ADMIN", "SUPERADMIN"].includes(normalizeRole(r)));
   const userRoles = isSimulating ? [simulatedRole!] : actualRoles;
   const roleKey = isSimulating ? simulatedRole! : actualRoleKey;
@@ -593,7 +597,8 @@ export function usePermissions() {
       reasons.push("SESSION_TAMPERING_DETECTED");
     }
 
-    const permissionsChecksum = localStorage.getItem("cmms:permissions_checksum");
+    let permissionsChecksum = null;
+    try { permissionsChecksum = localStorage.getItem("cmms:permissions_checksum"); } catch { /* ignore */ }
     if (permissionsMe && !permissionsChecksum) {
       reasons.push("LOCAL_STORAGE_PERMISSIONS_ALTERED");
     }

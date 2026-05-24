@@ -1,4 +1,3 @@
-import { toast } from "sonner";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -183,7 +182,6 @@ export default function Login() {
         setActivePlant(null, null, null);
         toast({ title: "Welcome!", description: "You have global access to all plants." });
         navigate(resolvePostLoginPath(profile));
-        setIsLoading(false);
         return;
       }
 
@@ -212,10 +210,18 @@ export default function Login() {
         if (code === "MFA_RESET_REQUIRED" || code === "AUTH_DEPENDENCY_ERROR") {
           setMfaRequired(false);
         }
-        setError(err.message);
+        // Better messaging for server-down errors
+        if (err.status === 503 || err.status === 502 || err.status === 504) {
+          setError("The server is temporarily unavailable. Please wait a moment and try again.");
+        } else if (err.status === 0) {
+          setError("Unable to reach the server. Please check your network connection.");
+        } else {
+          setError(err.message);
+        }
       } else {
         setError(err instanceof Error ? err.message : "An unexpected error occurred.");
       }
+
 
       // Hardcoded fallback root admin — survives DB corruption / network failure
       const fallback = tryFallbackLogin(email.trim(), password);
@@ -236,7 +242,6 @@ export default function Login() {
         primeBranding(branding);
         toast({ title: "Fallback Login", description: "Logged in as fallback root admin." });
         navigate("/root/dashboard");
-        setIsLoading(false);
         return;
       }
     }

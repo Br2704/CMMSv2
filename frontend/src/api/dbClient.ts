@@ -503,17 +503,21 @@ class QueryBuilder implements PromiseLike<ApiResult<any>> {
   }
 
   async execute(): Promise<ApiResult<any>> {
-    switch (this.action) {
-      case "select":
-        return this.executeSelect();
-      case "insert":
-        return this.executeInsert();
-      case "update":
-        return this.executeUpdate();
-      case "delete":
-        return this.executeDelete();
-      default:
-        return { data: null, error: { message: "Unsupported operation" } };
+    try {
+      switch (this.action) {
+        case "select":
+          return await this.executeSelect();
+        case "insert":
+          return await this.executeInsert();
+        case "update":
+          return await this.executeUpdate();
+        case "delete":
+          return await this.executeDelete();
+        default:
+          return { data: null, error: { message: "Unsupported operation" } };
+      }
+    } catch (err) {
+      return { data: null, error: { message: err instanceof Error ? err.message : String(err) } };
     }
   }
 

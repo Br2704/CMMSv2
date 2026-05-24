@@ -75,15 +75,25 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
+      // Exponential stale time to reduce unnecessary refetches
+      staleTime: 30_000,
       retry: (failureCount, error: unknown) => {
         const status = typeof error === "object" && error !== null && "status" in error
           ? (error as { status?: number }).status
           : undefined;
-        if (status === 401 || status === 403) {
-          return false;
-        }
+        // Never retry auth errors or server-down errors
+        if (status === 401 || status === 403) return false;
+        // Don't retry server errors — prevents flooding when backend is down
+        if (status === 502 || status === 503 || status === 504) return false;
+        if (status === 500) return false;
+        // Network error (status 0) — retry once
+        if (status === 0) return failureCount < 1;
         return failureCount < 1;
       },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    },
+    mutations: {
+      retry: false,
     },
   },
 });
@@ -200,7 +210,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     "/root/role-access",
     "/root/mail-config",
     "/root/sla-config",
-    "/root/secret-rotation"
+    "/root/secret-rotation",
+    "/work-orders"
   ];
   const isAllowedForRoot = rootAllowedPaths.some((path) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`)

@@ -21,7 +21,7 @@ import { FormDialog } from "@/components/shared/FormDialog";
 import { InputField, SelectField, TextareaField } from "@/components/shared/FormField";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
-import { SpareUsageEditor, type SpareUsageDraft } from "@/components/spares/SpareUsageEditor";
+import { MaterialsUsageEditor, type MaterialDraft } from "@/components/spares/MaterialsUsageEditor";
 import { useAuthStore, isAdmin, isIncharge, isSuperAdmin, isMaintenanceManager, isMaintenanceUser, isProductionUser } from "@/store/auth.store";
 import { getStoredAccessToken } from "@/api/http";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -78,7 +78,7 @@ interface PhotoAttachment {
 
 interface CloseDraftSnapshot {
   closeData?: typeof EMPTY_CLOSE_DATA;
-  closeSpareUsage?: SpareUsageDraft[];
+  closeSpareUsage?: MaterialDraft[];
   closeAttachments?: PhotoAttachment[];
 }
 
@@ -266,35 +266,38 @@ function clearCloseDraft(workOrderId: string | null) {
   window.localStorage.removeItem(getCloseDraftStorageKey(workOrderId));
 }
 
-function buildSpareUsagePayload(rows: SpareUsageDraft[], availableSpares: SpareItem[]) {
+function buildSpareUsagePayload(rows: MaterialDraft[], availableSpares: SpareItem[]) {
   const spareById = new Map(availableSpares.map((item) => [item.id, item]));
   return rows
     .map((row) => {
-      const quantity = Number.parseInt(row.quantity, 10);
+      const quantity = Number.parseFloat(row.quantity);
       if (!Number.isFinite(quantity) || quantity <= 0) return null;
 
-      if (row.isManual) {
-        const spareName = (row.spareName || "").trim();
+      if (row.category !== "SPARE" || row.isManual) {
+        const spareName = (row.itemName || "").trim();
         if (!spareName) return null;
         return {
-          spare_item_id: `manual-${spareName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+          spare_item_id: `manual-${row.category.toLowerCase()}-${spareName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
           quantity,
-          spare_name: spareName,
           is_manual: true,
+          manual_name: spareName,
+          cost_per_unit: 0,
         };
       }
 
-      const spare = spareById.get(row.spareItemId);
+      if (!row.itemId) return null;
+      const spare = spareById.get(row.itemId);
       if (!spare) return null;
+
       return {
         spare_item_id: spare.id,
         quantity,
-        spare_name: spare.name,
-        spare_code: spare.code,
         is_manual: false,
+        manual_name: null,
+        cost_per_unit: spare.unit_cost || 0,
       };
     })
-    .filter((item): item is { spare_item_id: string; quantity: number; spare_name: string; spare_code: string; is_manual: boolean } => Boolean(item));
+    .filter(Boolean);
 }
 
 function sortWorkOrderMasters(left: WorkOrderMaster, right: WorkOrderMaster) {
@@ -893,7 +896,7 @@ export default function WorkOrders() {
 
   // Close WO form
   const [closeData, setCloseData] = useState(() => ({ ...EMPTY_CLOSE_DATA }));
-  const [closeSpareUsage, setCloseSpareUsage] = useState<SpareUsageDraft[]>([]);
+  const [closeSpareUsage, setCloseSpareUsage] = useState<MaterialDraft[]>([]);
   const [isCloseFormOpen, setIsCloseFormOpen] = useState(false);
   const [closingWOId, setClosingWOId] = useState<string | null>(null);
 
@@ -2308,13 +2311,12 @@ export default function WorkOrders() {
               </div>
               {closeData.spare_used ? (
                 <>
-                  <SpareUsageEditor
-                    title="Spare Usage"
-                    description="Select spares from master or add manual entries when unavailable."
-                    rows={closeSpareUsage}
-                    onChange={setCloseSpareUsage}
-                    options={closeSpareOptions}
-                    allowManualEntry
+                  <MaterialsUsageEditor
+                    title="Materials & Spares Used"
+                    description="Record parts, oils, refrigerants, and consumables used for this work order."
+                    spareRows={closeSpareUsage}
+                    onSpareChange={setCloseSpareUsage}
+                    spareOptions={closeSpareOptions}
                   />
                   <TextareaField label="Additional Materials Notes" value={closeData.parts_replaced} onChange={(v) => setCloseData({ ...closeData, parts_replaced: v })} placeholder="Optional notes for non-catalog spares" />
                 </>

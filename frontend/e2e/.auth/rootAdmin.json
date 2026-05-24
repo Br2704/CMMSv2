@@ -1,0 +1,53 @@
+{
+  "cookies": [
+    {
+      "name": "cmms_refresh_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhYTc4ODZjZS02NWIzLTQ4YjgtYTUyZi1jZjJjYWYzNDA4ZjQiLCJ0b2tlbklkIjoiZjRmNTY2MzgtMTMzMS00NTUyLWEzMmEtZjA5NjNlMzcyZDMzIiwiaWF0IjoxNzc5NjA2MDc3LCJleHAiOjE3ODAyMTA4NzcsImF1ZCI6ImNtbXMtd2ViIiwiaXNzIjoiY21tcy1iYWNrZW5kIn0.REVG_pLRe400R7qbYS9eYEBH5l7bSFZooL-1UHCQ8So",
+      "domain": "localhost",
+      "path": "/api/auth",
+      "expires": 1780210877.45505,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Strict"
+    },
+    {
+      "name": "cmms_csrf_token",
+      "value": "9qh6wBYBZ_Exl7y6K5duOZLlg4w0Kv12Ka2-dsI6Auk",
+      "domain": "localhost",
+      "path": "/",
+      "expires": 1782198077.455294,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Strict"
+    },
+    {
+      "name": "cmms_session",
+      "value": "1",
+      "domain": "localhost",
+      "path": "/",
+      "expires": 1780210877.455323,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Strict"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://localhost:8081",
+      "localStorage": [
+        {
+          "name": "cmms:sidebar-collapsed",
+          "value": "false"
+        },
+        {
+          "name": "cmms:device_id",
+          "value": "0e8caeff-5716-4a25-829c-ce412599349f"
+        },
+        {
+          "name": "cmms_has_session",
+          "value": "true"
+        }
+      ]
+    }
+  ]
+}

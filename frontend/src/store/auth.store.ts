@@ -96,7 +96,7 @@ function debugAuth(...args: unknown[]) {
 
 function mapMeToUser(me: MeResponse): AppUser | null {
   if (!me.user || !me.profile) return null;
-  const normalizedRoles = me.roles.map((role) => (role === "SUPERADMIN" ? "SUPER_ADMIN" : role)) as AppRole[];
+  const normalizedRoles = (me.roles || []).map((role) => (role === "SUPERADMIN" ? "SUPER_ADMIN" : role)) as AppRole[];
 
   return {
     id: me.profile.id,

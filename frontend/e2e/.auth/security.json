@@ -1,0 +1,53 @@
+{
+  "cookies": [
+    {
+      "name": "cmms_refresh_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxYzZjOGU5My02ZTkwLTQ1ZDMtYmU1Mi1lMzFlNTlmNWMxYjQiLCJ0b2tlbklkIjoiZjA5ZTczNDQtMjI0Yi00MzgyLTk0ZGMtZWZjYmJkZjBhM2IzIiwiaWF0IjoxNzc5NjAxMzY1LCJleHAiOjE3ODAyMDYxNjUsImF1ZCI6ImNtbXMtd2ViIiwiaXNzIjoiY21tcy1iYWNrZW5kIn0.5gQFkUMh93Pj2MQNHvvm-2y3Ds7adEc0vZeAYxB-G_0",
+      "domain": "127.0.0.1",
+      "path": "/api/auth",
+      "expires": 1780206165.235159,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Strict"
+    },
+    {
+      "name": "cmms_csrf_token",
+      "value": "aQy3KZrlfbngPmOeXMdJw0xpdttXJ_tbuohF9EHI6bg",
+      "domain": "127.0.0.1",
+      "path": "/",
+      "expires": 1782193365.23525,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Strict"
+    },
+    {
+      "name": "cmms_session",
+      "value": "1",
+      "domain": "127.0.0.1",
+      "path": "/",
+      "expires": 1780206165.235322,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Strict"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://127.0.0.1:8081",
+      "localStorage": [
+        {
+          "name": "cmms:sidebar-collapsed",
+          "value": "false"
+        },
+        {
+          "name": "cmms:device_id",
+          "value": "e752fd07-3e5a-46db-bca0-9c70a9f463f8"
+        },
+        {
+          "name": "cmms_has_session",
+          "value": "true"
+        }
+      ]
+    }
+  ]
+}

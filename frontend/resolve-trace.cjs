@@ -1,21 +1,28 @@
 const fs = require('fs');
+const path = require('path');
 const { SourceMapConsumer } = require('source-map');
 
 async function resolveTrace() {
-    const rawSourceMap = fs.readFileSync('dist/assets/vendor-radix-CpStvzS5.js.map', 'utf8');
+    const assetsDir = 'dist/assets';
+    const files = fs.readdirSync(assetsDir);
+    const mapFile = files.find(f => f.startsWith('vendor-radix-') && f.endsWith('.js.map'));
+    if (!mapFile) {
+        throw new Error('No vendor-radix map file found in ' + assetsDir);
+    }
+    const mapPath = path.join(assetsDir, mapFile);
+    console.log('Using map file:', mapPath);
+    
+    const rawSourceMap = fs.readFileSync(mapPath, 'utf8');
     const consumer = await new SourceMapConsumer(rawSourceMap);
 
     const positions = [
-        { line: 1, column: 4746 },
-        { line: 8, column: 63103 },
-        { line: 6, column: 17251 },
-        { line: 8, column: 1575 },
-        { line: 8, column: 46429 },
-        { line: 8, column: 40082 },
-        { line: 8, column: 40010 },
-        { line: 8, column: 39863 },
-        { line: 8, column: 36178 },
-        { line: 8, column: 36990 }
+        { line: 8, column: 128382 },
+        { line: 48, column: 8804 },
+        { line: 48, column: 8200 },
+        { line: 8, column: 68271 },
+        { line: 48, column: 7426 },
+        { line: 48, column: 6629 },
+        { line: 48, column: 5869 }
     ];
 
     for (const pos of positions) {

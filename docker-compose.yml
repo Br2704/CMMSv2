@@ -106,15 +106,22 @@ services:
       postgres:
         condition: service_healthy
 
+    deploy:
+      resources:
+        limits:
+          memory: 700m
+        reservations:
+          memory: 256m
+
     healthcheck:
       test:
         - CMD-SHELL
         - wget -qO- http://127.0.0.1:3001/health > /dev/null 2>&1 || exit 1
 
-      interval: 15s
-      timeout: 5s
+      interval: 20s
+      timeout: 8s
       retries: 5
-      start_period: 40s
+      start_period: 60s
 
   # ────────────────────────────────────────────────────────────────
   # Frontend Application
@@ -139,6 +146,13 @@ services:
     # Public frontend port
     ports:
       - "8081:80"
+
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+        reservations:
+          memory: 32m
 
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/"]
