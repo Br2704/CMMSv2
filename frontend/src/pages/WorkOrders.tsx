@@ -2085,7 +2085,7 @@ export default function WorkOrders() {
       </Card>
 
       {/* ===== RAISE WORK ORDER FORM (Enhanced) ===== */}
-      <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title="Raise Work Order" description="Create a maintenance work order" onSubmit={handleSubmit} submitLabel="Raise Work Order" isLoading={isRaisingWorkOrder} size="xl">
+      <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title="Raise Work Order" description="Create a maintenance work order" onSubmit={handleSubmit} submitLabel="Raise Work Order" isLoading={isRaisingWorkOrder} size="xl" modal={false}>
         <div className="space-y-6">
           <div className="rounded-2xl border border-border/70 bg-card/80 p-4 sm:p-5 shadow-sm">
             <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground"><Wrench className="h-4 w-4" />Machine Selection</h3>

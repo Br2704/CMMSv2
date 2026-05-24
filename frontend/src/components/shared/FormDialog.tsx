@@ -21,6 +21,7 @@ interface FormDialogProps {
   isLoading?: boolean;
   submitDisabled?: boolean;
   size?: "sm" | "md" | "lg" | "xl";
+  modal?: boolean;
   contentClassName?: string;
 }
 
@@ -42,13 +43,15 @@ export function FormDialog({
   isLoading = false,
   submitDisabled = false,
   size = "md",
+  modal = true,
   contentClassName,
 }: FormDialogProps) {
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} modal={modal}>
       <DialogContent
+        modal={modal}
         className={`${sizeClasses[size]} w-[calc(100vw-1rem)] max-h-[90vh] sm:max-h-[85vh] overflow-y-auto p-4 sm:p-6 ${contentClassName || ""}`}
         onOpenAutoFocus={(e) => {
           e.preventDefault();

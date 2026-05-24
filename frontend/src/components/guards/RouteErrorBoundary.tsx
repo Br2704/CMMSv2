@@ -19,7 +19,7 @@ export class RouteErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("[RouteErrorBoundary]", error?.message || error, info?.componentStack?.slice(0, 500) || "");
+    console.error("[RouteErrorBoundary]", error?.message || error, info?.componentStack?.slice(0, 5000) || "");
   }
 
   render() {

@@ -412,7 +412,7 @@ function App() {
         <Toaster />
         <Sonner />
         {import.meta.env.DEV && <ConsoleErrorPanel />}
-        <BrowserRouter>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <AppErrorBoundary>
             <RouteFlowManager />
             <DevRouteLogger />

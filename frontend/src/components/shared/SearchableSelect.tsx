@@ -74,17 +74,18 @@ export function SearchableSelect({
         </label>
       )}
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild disabled={disabled}>            <Button
-              variant="outline"
-              role="combobox"
-              aria-expanded={open}
-              disabled={disabled}
-              className={cn(
-                "w-full h-10 justify-between bg-card/70 border-border/60 text-sm font-normal",
-                !value && "text-muted-foreground",
-                triggerClassName,
-              )}
-            >
+        <PopoverTrigger asChild disabled={disabled}>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            disabled={disabled}
+            className={cn(
+              "w-full h-10 justify-between bg-card/70 border-border/60 text-sm font-normal",
+              !value && "text-muted-foreground",
+              triggerClassName,
+            )}
+          >
             {value ? (
               <span className="truncate">{selectedLabel}</span>
             ) : (

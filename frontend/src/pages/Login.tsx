@@ -12,6 +12,7 @@ import { useAuthStore, fetchUserProfile, isRootAdmin, isSuperAdmin } from "@/sto
 import { useBrandingStore } from "@/store/branding.store";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, LogIn, ShieldCheck, Building2 } from "lucide-react";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { useToast } from "@/hooks/use-toast";
 import { tryFallbackLogin, getFallbackBrandingSeed } from "@/fallback-auth";
 import { setFallbackMode as setHttpFallbackMode } from "@/api/http";
@@ -250,6 +251,11 @@ export default function Login() {
       <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px)] dark:bg-[linear-gradient(rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.12)_1px,transparent_1px)] bg-[size:56px_56px] opacity-40" />
       <div className="pointer-events-none absolute -left-16 top-16 h-56 w-56 rounded-full bg-teal-100/70 blur-3xl dark:bg-teal-900/40" />
       <div className="pointer-events-none absolute -right-20 bottom-10 h-64 w-64 rounded-full bg-cyan-100/70 blur-3xl dark:bg-cyan-900/30" />
+
+      {/* Theme Toggle */}
+      <div className="absolute right-6 top-6 z-20">
+        <ThemeToggle />
+      </div>
 
       <div className="relative z-10 w-full max-w-lg">
         <Card className="overflow-hidden border border-slate-200/90 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.12)] dark:border-border/60 dark:bg-card/90 dark:shadow-[0_30px_80px_rgba(0,0,0,0.5)]">
