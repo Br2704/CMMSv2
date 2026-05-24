@@ -37,8 +37,8 @@ x-backend-env: &backend-env
   DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?Set DATA_ENCRYPTION_KEY in .env}
 
   # Production URLs
-  CORS_ORIGINS: ${APP_CORS_ORIGINS:-https://tamoptix.tech,https://www.tamoptix.tech}
-  FRONTEND_URL: ${FRONTEND_URL:-https://tamoptix.tech}
+  CORS_ORIGINS: ${APP_CORS_ORIGINS:-https://tamoptix.tech,https://www.tamoptix.tech,https://jkf-cmms.tamoptix.tech,https://www.jkf-cmms.tamoptix.tech}
+  FRONTEND_URL: ${FRONTEND_URL:-https://jkf-cmms.tamoptix.tech}
 
   ROOT_ADMIN_EMAIL: ${ROOT_ADMIN_EMAIL:-admin@tamoptix.tech}
   ROOT_ADMIN_PASSWORD: ${ROOT_ADMIN_PASSWORD:?Set ROOT_ADMIN_PASSWORD in .env}
