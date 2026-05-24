@@ -18,10 +18,10 @@ import {
 } from 'lucide-react';
 
 const PRIORITY_CONFIG: Record<string, { color: string; bg: string; label: string; icon: string }> = {
-  CRITICAL: { color: 'text-red-600', bg: 'bg-red-50 border-red-200', label: 'Critical', icon: '🔴' },
-  HIGH: { color: 'text-orange-600', bg: 'bg-orange-50 border-orange-200', label: 'High', icon: '🟠' },
-  MEDIUM: { color: 'text-yellow-600', bg: 'bg-yellow-50 border-yellow-200', label: 'Medium', icon: '🟡' },
-  LOW: { color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', label: 'Low', icon: '🔵' },
+  CRITICAL: { color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 border-red-200 dark:bg-red-500/15 dark:border-red-500/40', label: 'Critical', icon: '🔴' },
+  HIGH: { color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 border-orange-200 dark:bg-orange-500/15 dark:border-orange-500/40', label: 'High', icon: '🟠' },
+  MEDIUM: { color: 'text-yellow-600 dark:text-yellow-400', bg: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-500/15 dark:border-yellow-500/40', label: 'Medium', icon: '🟡' },
+  LOW: { color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 border-blue-200 dark:bg-blue-500/15 dark:border-blue-500/40', label: 'Low', icon: '🔵' },
 };
 
 function formatMinutes(m: number): string {
@@ -112,7 +112,7 @@ export default function SLAConfigMaster() {
   }
 
   const slaComplianceRate = (stats as any).slaComplianceRate ?? 100;
-  const complianceColor = slaComplianceRate >= 90 ? 'text-green-600' : slaComplianceRate >= 70 ? 'text-orange-600' : 'text-red-600';
+  const complianceColor = slaComplianceRate >= 90 ? 'text-green-600 dark:text-green-400' : slaComplianceRate >= 70 ? 'text-orange-600 dark:text-orange-400' : 'text-red-600 dark:text-red-400';
 
   return (
     <div className="space-y-6 p-6">
@@ -131,15 +131,15 @@ export default function SLAConfigMaster() {
         </Button>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="border-l-4 border-l-blue-500"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Active Rules</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{(stats as any).totalActiveRules ?? 0}</p></CardContent></Card>
-        <Card className="border-l-4 border-l-green-500"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">SLA Compliance</CardTitle></CardHeader><CardContent><p className={`text-2xl font-bold ${complianceColor}`}>{slaComplianceRate}%</p></CardContent></Card>
-        <Card className={`border-l-4 ${(stats as any).overdueWOs > 0 ? 'border-l-red-500' : 'border-l-green-500'}`}>
+        <Card className="border-l-4 border-l-blue-500 dark:border-l-blue-400"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Active Rules</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{(stats as any).totalActiveRules ?? 0}</p></CardContent></Card>
+        <Card className="border-l-4 border-l-green-500 dark:border-l-green-400"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">SLA Compliance</CardTitle></CardHeader><CardContent><p className={`text-2xl font-bold ${complianceColor}`}>{slaComplianceRate}%</p></CardContent></Card>
+        <Card className={`border-l-4 ${(stats as any).overdueWOs > 0 ? 'border-l-red-500 dark:border-l-red-400' : 'border-l-green-500 dark:border-l-green-400'}`}>
           <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Overdue WOs</CardTitle></CardHeader>
-          <CardContent className="flex items-center gap-2"><p className={`text-2xl font-bold ${(stats as any).overdueWOs > 0 ? 'text-red-600' : 'text-green-600'}`}>{(stats as any).overdueWOs ?? 0}</p>{(stats as any).overdueWOs > 0 && <AlertTriangle className="h-4 w-4 text-red-500" />}</CardContent>
+          <CardContent className="flex items-center gap-2"><p className={`text-2xl font-bold ${(stats as any).overdueWOs > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{(stats as any).overdueWOs ?? 0}</p>{(stats as any).overdueWOs > 0 && <AlertTriangle className="h-4 w-4 text-red-500 dark:text-red-400" />}</CardContent>
         </Card>
-        <Card className={`border-l-4 ${(stats as any).escalatedWOs > 0 ? 'border-l-orange-500' : 'border-l-gray-300'}`}>
+        <Card className={`border-l-4 ${(stats as any).escalatedWOs > 0 ? 'border-l-orange-500 dark:border-l-orange-400' : 'border-l-gray-300 dark:border-l-slate-700'}`}>
           <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Escalated</CardTitle></CardHeader>
-          <CardContent className="flex items-center gap-2"><p className={`text-2xl font-bold ${(stats as any).escalatedWOs > 0 ? 'text-orange-600' : 'text-gray-600'}`}>{(stats as any).escalatedWOs ?? 0}</p>{(stats as any).escalatedWOs > 0 && <ArrowUpRight className="h-4 w-4 text-orange-500" />}</CardContent>
+          <CardContent className="flex items-center gap-2"><p className={`text-2xl font-bold ${(stats as any).escalatedWOs > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-muted-foreground'}`}>{(stats as any).escalatedWOs ?? 0}</p>{(stats as any).escalatedWOs > 0 && <ArrowUpRight className="h-4 w-4 text-orange-500 dark:text-orange-400" />}</CardContent>
         </Card>
       </div>
 
@@ -179,9 +179,9 @@ export default function SLAConfigMaster() {
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                        <div className="p-2 bg-blue-50 rounded-lg"><p className="font-semibold text-blue-700">{formatMinutes((config as any).responseTimeMinutes)}</p><p className="text-blue-600/70 mt-0.5">Response</p></div>
-                        <div className="p-2 bg-purple-50 rounded-lg"><p className="font-semibold text-purple-700">{formatMinutes((config as any).acknowledgementTimeMinutes)}</p><p className="text-purple-600/70 mt-0.5">Ack</p></div>
-                        <div className="p-2 bg-green-50 rounded-lg"><p className="font-semibold text-green-700">{formatMinutes((config as any).closureTimeMinutes)}</p><p className="text-green-600/70 mt-0.5">Closure</p></div>
+                        <div className="p-2 bg-blue-50 rounded-lg dark:bg-blue-500/15"><p className="font-semibold text-blue-700 dark:text-blue-200">{formatMinutes((config as any).responseTimeMinutes)}</p><p className="text-blue-600/70 dark:text-blue-200/70 mt-0.5">Response</p></div>
+                        <div className="p-2 bg-purple-50 rounded-lg dark:bg-purple-500/15"><p className="font-semibold text-purple-700 dark:text-purple-200">{formatMinutes((config as any).acknowledgementTimeMinutes)}</p><p className="text-purple-600/70 dark:text-purple-200/70 mt-0.5">Ack</p></div>
+                        <div className="p-2 bg-green-50 rounded-lg dark:bg-green-500/15"><p className="font-semibold text-green-700 dark:text-green-200">{formatMinutes((config as any).closureTimeMinutes)}</p><p className="text-green-600/70 dark:text-green-200/70 mt-0.5">Closure</p></div>
                       </div>
                       <div className="mt-3 space-y-1">
                         <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1"><Bell className="h-3 w-3" />Escalation Ladder</p>
@@ -190,7 +190,7 @@ export default function SLAConfigMaster() {
                             const mins = (config as any)[`escalation${l}Minutes`];
                             const active = (config as any).escalation_level >= l;
                             return (
-                              <div key={l} className={`flex-1 text-center py-1 px-1 rounded text-[10px] font-medium ${active ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
+                              <div key={l} className={`flex-1 text-center py-1 px-1 rounded text-[10px] font-medium ${active ? 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-200' : 'bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-300'}`}>
                                 L{l} {mins ? formatMinutes(mins) : '-'}
                               </div>
                             );
@@ -199,7 +199,7 @@ export default function SLAConfigMaster() {
                       </div>
                       <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
                         <span>Reminder: {formatMinutes((config as any).reminderIntervalMinutes)}</span>
-                        <span>{(config as any).isActive ? <Badge className="bg-green-100 text-green-700 text-[10px]">Active</Badge> : <Badge variant="outline" className="text-[10px]">Inactive</Badge>}</span>
+                        <span>{(config as any).isActive ? <Badge className="bg-green-100 text-green-700 text-[10px] dark:bg-green-500/20 dark:text-green-200">Active</Badge> : <Badge variant="outline" className="text-[10px]">Inactive</Badge>}</span>
                       </div>
                     </CardContent>
                   </Card>
@@ -222,10 +222,10 @@ export default function SLAConfigMaster() {
                       <TableHead>Response</TableHead>
                       <TableHead>Ack</TableHead>
                       <TableHead>Closure</TableHead>
-                      <TableHead className="text-red-600">Esc L1</TableHead>
-                      <TableHead className="text-orange-600">Esc L2</TableHead>
-                      <TableHead className="text-yellow-600">Esc L3</TableHead>
-                      <TableHead className="text-gray-600">Esc L4</TableHead>
+                      <TableHead className="text-red-600 dark:text-red-400">Esc L1</TableHead>
+                      <TableHead className="text-orange-600 dark:text-orange-400">Esc L2</TableHead>
+                      <TableHead className="text-yellow-600 dark:text-yellow-400">Esc L3</TableHead>
+                      <TableHead className="text-gray-600 dark:text-muted-foreground">Esc L4</TableHead>
                       <TableHead>Reminder</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
@@ -239,10 +239,10 @@ export default function SLAConfigMaster() {
                         <TableCell className="text-xs font-mono">{formatMinutes((config as any).responseTimeMinutes)}</TableCell>
                         <TableCell className="text-xs font-mono">{formatMinutes((config as any).acknowledgementTimeMinutes)}</TableCell>
                         <TableCell className="text-xs font-mono">{formatMinutes((config as any).closureTimeMinutes)}</TableCell>
-                        <TableCell className="text-xs font-mono text-red-600">{formatMinutes((config as any).escalation1Minutes)}</TableCell>
-                        <TableCell className="text-xs font-mono text-orange-600">{formatMinutes((config as any).escalation2Minutes)}</TableCell>
-                        <TableCell className="text-xs font-mono text-yellow-600">{formatMinutes((config as any).escalation3Minutes)}</TableCell>
-                        <TableCell className="text-xs font-mono text-gray-600">{formatMinutes((config as any).escalation4Minutes)}</TableCell>
+                        <TableCell className="text-xs font-mono text-red-600 dark:text-red-400">{formatMinutes((config as any).escalation1Minutes)}</TableCell>
+                        <TableCell className="text-xs font-mono text-orange-600 dark:text-orange-400">{formatMinutes((config as any).escalation2Minutes)}</TableCell>
+                        <TableCell className="text-xs font-mono text-yellow-600 dark:text-yellow-400">{formatMinutes((config as any).escalation3Minutes)}</TableCell>
+                        <TableCell className="text-xs font-mono text-gray-600 dark:text-muted-foreground">{formatMinutes((config as any).escalation4Minutes)}</TableCell>
                         <TableCell className="text-xs font-mono">{formatMinutes((config as any).reminderIntervalMinutes)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
@@ -283,13 +283,13 @@ export default function SLAConfigMaster() {
                         <TableCell className="font-mono text-xs font-medium">{(entry as any).woNumber}</TableCell>
                         <TableCell>
                           <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                            (entry as any).level >= 3 ? 'bg-red-100 text-red-700' : (entry as any).level >= 2 ? 'bg-orange-100 text-orange-700' : 'bg-yellow-100 text-yellow-700'
+                            (entry as any).level >= 3 ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200' : (entry as any).level >= 2 ? 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-200' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-200'
                           }`}>L{(entry as any).level}</span>
                         </TableCell>
                         <TableCell className="text-xs">{(entry as any).triggerType}</TableCell>
                         <TableCell className="text-xs whitespace-nowrap">{new Date((entry as any).triggeredAt).toLocaleString()}</TableCell>
                         <TableCell className="text-xs">{(entry as any).reminderCount > 0 ? <Badge variant="outline">{`${(entry as any).reminderCount}x`}</Badge> : '-'}</TableCell>
-                        <TableCell>{(entry as any).resolved ? <Badge className="bg-green-100 text-green-700">Resolved</Badge> : <Badge className="bg-yellow-100 text-yellow-700">Active</Badge>}</TableCell>
+                        <TableCell>{(entry as any).resolved ? <Badge className="bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-200">Resolved</Badge> : <Badge className="bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-200">Active</Badge>}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{((entry as any).notifiedUsers || []).length} users, {((entry as any).notifiedEmails || []).length} emails</TableCell>
                       </TableRow>
                     ))}
@@ -339,9 +339,9 @@ export default function SLAConfigMaster() {
                 <Label className="text-xs font-medium mb-2 block">SLA Timers</Label>
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { key: 'responseTimeMinutes', label: 'Response SLA', icon: '⚡', color: 'bg-blue-50 border-blue-200' },
-                    { key: 'acknowledgementTimeMinutes', label: 'Acknowledgement', icon: '👀', color: 'bg-purple-50 border-purple-200' },
-                    { key: 'closureTimeMinutes', label: 'Closure SLA', icon: '✅', color: 'bg-green-50 border-green-200' },
+                    { key: 'responseTimeMinutes', label: 'Response SLA', icon: '⚡', color: 'bg-blue-50 border-blue-200 dark:bg-blue-500/15 dark:border-blue-500/40' },
+                    { key: 'acknowledgementTimeMinutes', label: 'Acknowledgement', icon: '👀', color: 'bg-purple-50 border-purple-200 dark:bg-purple-500/15 dark:border-purple-500/40' },
+                    { key: 'closureTimeMinutes', label: 'Closure SLA', icon: '✅', color: 'bg-green-50 border-green-200 dark:bg-green-500/15 dark:border-green-500/40' },
                   ].map((sla) => (
                     <div key={sla.key} className={`p-3 rounded-lg border ${sla.color}`}>
                       <Label className="text-xs font-medium block mb-1.5">{sla.icon} {sla.label}</Label>
@@ -358,7 +358,7 @@ export default function SLAConfigMaster() {
                 <Label className="text-xs font-medium mb-2 block">Escalation Ladder</Label>
                 <div className="grid grid-cols-4 gap-3">
                   {[1, 2, 3, 4].map((l) => {
-                    const colors = ['bg-red-50 border-red-200', 'bg-orange-50 border-orange-200', 'bg-yellow-50 border-yellow-200', 'bg-gray-50 border-gray-200'];
+                    const colors = ['bg-red-50 border-red-200 dark:bg-red-500/15 dark:border-red-500/40', 'bg-orange-50 border-orange-200 dark:bg-orange-500/15 dark:border-orange-500/40', 'bg-yellow-50 border-yellow-200 dark:bg-yellow-500/15 dark:border-yellow-500/40', 'bg-gray-50 border-gray-200 dark:bg-slate-800 dark:border-slate-700'];
                     const icons = ['🚨', '⚠️', '⏰', '🔔'];
                     return (
                       <div key={l} className={`p-3 rounded-lg border ${colors[l - 1]}`}>
@@ -396,6 +396,32 @@ export default function SLAConfigMaster() {
               <div className="space-y-2">
                 <Label className="text-xs font-medium">Description</Label>
                 <Input value={String((editItem as any).description || '')} onChange={(e) => setEditItem({ ...editItem, description: e.target.value })} placeholder="Purpose of this SLA rule" className="h-8" />
+              </div>
+
+              <div className="rounded-xl border border-dashed border-primary/30 bg-primary/5 p-4 space-y-3">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-primary">🔔 Notification & Mail Configuration</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Notification Email(s)</Label>
+                    <Input value={String((editItem as any).notificationEmail || '')} onChange={(e) => setEditItem({ ...editItem, notificationEmail: e.target.value })} placeholder="admin@example.com, manager@example.com" className="h-8" />
+                    <p className="text-[10px] text-muted-foreground">Comma-separated emails for escalation alerts</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Send Email On</Label>
+                    <Select value={String((editItem as any).sendEmailOn || 'ESCALATION')} onValueChange={(v) => setEditItem({ ...editItem, sendEmailOn: v })}>
+                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ESCALATION">🚨 Escalation Only</SelectItem>
+                        <SelectItem value="REMINDER">⏰ Reminder Only</SelectItem>
+                        <SelectItem value="OVERDUE">⚠️ Overdue Only</SelectItem>
+                        <SelectItem value="ESCALATION,REMINDER">🚨 Escalation + Reminder</SelectItem>
+                        <SelectItem value="ESCALATION,OVERDUE">🚨 Escalation + Overdue</SelectItem>
+                        <SelectItem value="REMINDER,OVERDUE">⏰ Reminder + Overdue</SelectItem>
+                        <SelectItem value="ESCALATION,REMINDER,OVERDUE">📬 All Events</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-between border-t pt-4">

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
 import { createDepartment, deleteDepartment, listDepartments, type Department, updateDepartment } from "@/api/departments";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Plus, Search, Edit, Trash2, Building2, Eye } from "lucide-react";
+import { Building2, Download, Edit, Eye, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import BackButton from "@/components/masters/BackButton";
 import HierarchyBreadcrumb from "@/components/masters/HierarchyBreadcrumb";
@@ -15,7 +15,10 @@ import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { InputField, SelectField } from "@/components/shared/FormField";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
+import { AuditInfo } from "@/components/shared/AuditInfo";
+import { BulkActionsBar } from "@/components/shared/BulkActionsBar";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
+import { useCsvExport } from "@/hooks/useCsvExport";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Toolbar } from "@/components/layout/Toolbar";
@@ -24,6 +27,7 @@ import { FormGrid } from "@/components/layout/FormGrid";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import { EmptyState } from "@/components/app-shell/EmptyState";
 import { usePermissions } from "@/hooks/usePermissions";
+import { getErrorMessage } from "@/lib/utils";
 
 interface DepartmentFormState {
   code: string;
@@ -43,6 +47,7 @@ export default function DepartmentMaster() {
   const canDeleteDepartment = can("DEPARTMENTS", "delete");
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants, invalidateOptions } = useMastersOptions();
+  const { exportCsv } = useCsvExport<Department>();
 
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,6 +60,7 @@ export default function DepartmentMaster() {
   const [selectedDept, setSelectedDept] = useState<Department | null>(null);
   const [formData, setFormData] = useState<DepartmentFormState>({ ...emptyForm, plantId: defaultPlantId });
   const [isEditing, setIsEditing] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const fetchDepartments = async (plantIdOverride?: string) => {
     setLoading(true);
@@ -66,13 +72,13 @@ export default function DepartmentMaster() {
       }
       const response = await listDepartments({
         page: 1,
-        limit: 100,
+        limit: 500,
         search: searchQuery || undefined,
         plantId: scopedPlantId,
       });
       setDepartments(response.data);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to load departments");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to load departments"));
     } finally {
       setLoading(false);
     }
@@ -86,19 +92,19 @@ export default function DepartmentMaster() {
     fetchDepartments();
   }, [searchQuery, selectedPlant, defaultPlantId, canSelectPlant]);
 
-  const plantOptions = useMemo(
-    () => plantsOptions,
-    [plantsOptions],
-  );
+  const plantOptions = useMemo(() => plantsOptions, [plantsOptions]);
 
   useEffect(() => {
-    if (!canSelectPlant || selectedPlant || plantOptions.length === 0) {
-      return;
-    }
+    if (!canSelectPlant || selectedPlant || plantOptions.length === 0) return;
     setSelectedPlant(plantOptions[0].value);
   }, [canSelectPlant, selectedPlant, plantOptions]);
 
-  const getPlantName = (plantId: string | null) => plantsOptions.find((item) => item.value === plantId)?.label || "-";
+  const getPlantName = (plantId: string | null) => {
+    const label = plantsOptions.find((item) => item.value === plantId)?.label || "";
+    if (!label) return "-";
+    const codeToken = label.split(" - ")[0]?.trim();
+    return codeToken || "-";
+  };
 
   const filtered = useMemo(() => departments, [departments]);
 
@@ -115,15 +121,74 @@ export default function DepartmentMaster() {
   };
 
   const handleEdit = (department: Department) => {
-    setFormData({
-      code: department.code,
-      name: department.name,
-      plantId: department.plantId || "",
-      isActive: department.isActive,
-    });
+    setFormData({ code: department.code, name: department.name, plantId: department.plantId || "", isActive: department.isActive });
     setSelectedDept(department);
     setIsEditing(true);
     setIsFormOpen(true);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map((d) => d.id)));
+    }
+  };
+
+  const handleBulkToggle = async (active: boolean) => {
+    const ids = Array.from(selectedIds);
+    setSaving(true);
+    try {
+      await Promise.all(ids.map((id) => updateDepartment(id, { isActive: active })));
+      toast.success(`${ids.length} departments ${active ? "activated" : "deactivated"}`);
+      setSelectedIds(new Set());
+      await fetchDepartments();
+    } catch (error) {
+      toast.error(getErrorMessage(error, `Failed to ${active ? "activate" : "deactivate"} departments`));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    setSaving(true);
+    try {
+      await Promise.all(ids.map((id) => deleteDepartment(id)));
+      toast.success(`${ids.length} departments deleted`);
+      setSelectedIds(new Set());
+      await fetchDepartments();
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to delete departments"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExportCsv = () => {
+    const items = selectedIds.size > 0 ? filtered.filter((d) => selectedIds.has(d.id)) : filtered;
+    if (items.length === 0) return;
+    exportCsv({
+      items,
+      filename: "departments",
+      columns: [
+        { key: "code", header: "Code", render: (d) => d.code },
+        { key: "name", header: "Name", render: (d) => d.name },
+        { key: "plantId", header: "Plant", render: (d) => getPlantName(d.plantId) },
+        { key: "isActive", header: "Status", render: (d) => d.isActive ? "Active" : "Inactive" },
+        { key: "createdAt", header: "Created At", render: (d) => d.createdAt ? new Date(d.createdAt).toISOString() : "" },
+        { key: "updatedAt", header: "Updated At", render: (d) => d.updatedAt ? new Date(d.updatedAt).toISOString() : "" },
+      ],
+    });
+    toast.success(`Exported ${items.length} departments`);
   };
 
   const handleSubmit = async () => {
@@ -131,22 +196,14 @@ export default function DepartmentMaster() {
       toast.error("Code and name are required");
       return;
     }
-
     const resolvedPlantId = canSelectPlant ? formData.plantId || null : defaultPlantId || null;
     if (!resolvedPlantId) {
       toast.error("Plant is required");
       return;
     }
-
     setSaving(true);
     try {
-      const payload = {
-        code: formData.code.trim(),
-        name: formData.name.trim(),
-        plantId: resolvedPlantId,
-        isActive: formData.isActive,
-      };
-
+      const payload = { code: formData.code.trim(), name: formData.name.trim(), plantId: resolvedPlantId, isActive: formData.isActive };
       if (isEditing && selectedDept) {
         await updateDepartment(selectedDept.id, payload);
         toast.success("Department updated");
@@ -154,16 +211,12 @@ export default function DepartmentMaster() {
         await createDepartment(payload);
         toast.success("Department created");
       }
-
-      if (canSelectPlant && selectedPlant !== resolvedPlantId) {
-        setSelectedPlant(resolvedPlantId);
-      }
-
+      if (canSelectPlant && selectedPlant !== resolvedPlantId) setSelectedPlant(resolvedPlantId);
       invalidateOptions(["departments", "modules", "assets"]);
       setIsFormOpen(false);
       await fetchDepartments(resolvedPlantId);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to save department");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to save department"));
     } finally {
       setSaving(false);
     }
@@ -173,30 +226,50 @@ export default function DepartmentMaster() {
     if (!selectedDept) return;
     setSaving(true);
     const previous = departments;
-    setDepartments((curr) => curr.filter((department) => department.id !== selectedDept.id));
+    setDepartments((curr) => curr.filter((d) => d.id !== selectedDept.id));
     try {
       await deleteDepartment(selectedDept.id);
       toast.success("Department deleted");
       invalidateOptions(["departments", "modules", "assets"]);
       setIsDeleteOpen(false);
       await fetchDepartments();
-    } catch (error: any) {
+    } catch (error) {
       setDepartments(previous);
-      if (error?.status === 409) {
-        toast.error(error?.message || "Department cannot be deleted because modules/assets exist.");
-        return;
-      }
-      toast.error(error?.message || "Failed to delete department");
+      toast.error(getErrorMessage(error, "Failed to delete department"));
     } finally {
       setSaving(false);
     }
   };
 
   const columns = [
+    {
+      key: "select",
+      header: "",
+      className: "w-10",
+      render: (item: Department) => (
+        <input
+          type="checkbox"
+          className="h-4 w-4 rounded border-input"
+          checked={selectedIds.has(item.id)}
+          onChange={() => toggleSelect(item.id)}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ),
+    },
     { key: "code", header: "Code", render: (item: Department) => <span className="font-semibold text-primary">{item.code}</span> },
     { key: "name", header: "Name", render: (item: Department) => <span className="font-medium">{item.name}</span> },
     { key: "plant", header: "Plant", render: (item: Department) => getPlantName(item.plantId), hideOnMobile: true },
     { key: "status", header: "Status", render: (item: Department) => <StatusBadge variant={item.isActive ? "active" : "inactive"}>{item.isActive ? "Active" : "Inactive"}</StatusBadge> },
+    {
+      key: "audit",
+      header: "Updated",
+      hideOnMobile: true,
+      render: (item: Department) => {
+        if (!item.updatedAt) return <span className="text-xs text-muted-foreground">-</span>;
+        const d = new Date(item.updatedAt);
+        return <span className="text-xs text-muted-foreground whitespace-nowrap" title={`Created: ${item.createdAt || "-"}`}>{d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span>;
+      },
+    },
     {
       key: "actions",
       header: "Actions",
@@ -228,12 +301,14 @@ export default function DepartmentMaster() {
         title="Department Master"
         subtitle="Manage departments"
         actions={
-          canCreateDepartment ? (
-            <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
-              <Plus className="h-4 w-4" />
-              Add Department
-            </Button>
-          ) : undefined
+          <div className="flex w-full gap-2 sm:w-auto">
+            {canCreateDepartment && (
+              <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
+                <Plus className="h-4 w-4" />
+                Add Department
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -248,12 +323,13 @@ export default function DepartmentMaster() {
           <span className="flex items-center gap-2">
             <Building2 className="h-5 w-5 text-primary" />
             Departments ({filtered.length})
+            {selectedIds.size > 0 && <span className="text-xs text-muted-foreground">({selectedIds.size} selected)</span>}
           </span>
         }
         toolbar={
           <Toolbar
             right={
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                 {canSelectPlant && (
                   <SelectField
                     label=""
@@ -266,8 +342,12 @@ export default function DepartmentMaster() {
                 )}
                 <div className="relative w-full sm:w-72">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input placeholder="Search departments..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
+                  <Input id="dept-search" name="deptSearch" placeholder="Search departments..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-10 pl-9" />
                 </div>
+                <Button variant="outline" size="sm" className="h-10 gap-1.5" onClick={handleExportCsv} disabled={filtered.length === 0}>
+                  <Download className="h-4 w-4" />
+                  Export
+                </Button>
               </div>
             }
           />
@@ -276,83 +356,74 @@ export default function DepartmentMaster() {
         {loading ? (
           <TableSkeleton />
         ) : canSelectPlant && !selectedPlant ? (
-          <EmptyState
-            title="Select a plant"
-            description="Choose a plant to view department data."
-          />
+          <EmptyState title="Select a plant" description="Choose a plant to view department data." />
         ) : filtered.length === 0 ? (
-          <EmptyState
-            title="No departments found"
-            description="Add a department to continue hierarchy setup."
-            actionLabel={canCreateDepartment ? "Add Department" : undefined}
-            onAction={canCreateDepartment ? handleAdd : undefined}
-          />
+          <EmptyState title="No departments found" description="Add a department to continue hierarchy setup." actionLabel={canCreateDepartment ? "Add Department" : undefined} onAction={canCreateDepartment ? handleAdd : undefined} />
         ) : (
-          <ResponsiveTable
-            data={filtered}
-            columns={columns}
-            keyExtractor={(item: Department) => item.id}
-            mobileCard={(item: Department) => (
-              <MobileCard
-                onView={() => { setSelectedDept(item); setIsViewOpen(true); }}
-                onEdit={canUpdateDepartment ? () => handleEdit(item) : undefined}
-                onDelete={canDeleteDepartment ? () => { setSelectedDept(item); setIsDeleteOpen(true); } : undefined}
-              >
-                <MobileCardHeader
-                  title={item.code}
-                  subtitle={item.name}
-                  badge={<StatusBadge variant={item.isActive ? "active" : "inactive"}>{item.isActive ? "Active" : "Inactive"}</StatusBadge>}
-                />
-                <MobileCardRow label="Plant" value={getPlantName(item.plantId)} />
-              </MobileCard>
-            )}
-          />
+          <div>
+            <div className="mb-2 flex items-center gap-2 px-1">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-input"
+                checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                onChange={toggleSelectAll}
+              />
+              <span className="text-xs text-muted-foreground">{selectedIds.size === filtered.length ? "Deselect all" : "Select all"}</span>
+            </div>
+            <ResponsiveTable
+              data={filtered}
+              columns={columns}
+              keyExtractor={(item: Department) => item.id}
+              mobileCard={(item: Department) => (
+                <MobileCard
+                  onView={() => { setSelectedDept(item); setIsViewOpen(true); }}
+                  onEdit={canUpdateDepartment ? () => handleEdit(item) : undefined}
+                  onDelete={canDeleteDepartment ? () => { setSelectedDept(item); setIsDeleteOpen(true); } : undefined}
+                >
+                  <MobileCardHeader title={item.code} subtitle={item.name} badge={<StatusBadge variant={item.isActive ? "active" : "inactive"}>{item.isActive ? "Active" : "Inactive"}</StatusBadge>} />
+                  <MobileCardRow label="Plant" value={getPlantName(item.plantId)} />
+                  <MobileCardRow label="Updated" value={item.updatedAt ? new Date(item.updatedAt).toLocaleDateString("en-IN") : "-"} />
+                </MobileCard>
+              )}
+            />
+          </div>
         )}
       </DataTableShell>
+
+      <BulkActionsBar
+        selectedCount={selectedIds.size}
+        totalCount={filtered.length}
+        onClearSelection={() => setSelectedIds(new Set())}
+        onActivate={() => handleBulkToggle(true)}
+        onDeactivate={() => handleBulkToggle(false)}
+        onDelete={canDeleteDepartment ? handleBulkDelete : undefined}
+        onExport={handleExportCsv}
+        isProcessing={saving}
+      />
 
       <FormDialog
         open={isFormOpen}
         onOpenChange={setIsFormOpen}
         title={isEditing ? "Edit Department" : "Add New Department"}
-        description={isEditing ? "Update department" : "Add a new department"}
+        description={isEditing ? "Update department details" : "Add a new department"}
         onSubmit={handleSubmit}
         submitLabel={saving ? "Saving..." : isEditing ? "Update" : "Add Department"}
         submitDisabled={!canSubmitDepartmentForm}
         size="lg"
       >
         <FormGrid>
-          <InputField label="Code" value={formData.code} onChange={(value) => setFormData({ ...formData, code: value })} placeholder="DEPT-001" required />
-          <InputField label="Name" value={formData.name} onChange={(value) => setFormData({ ...formData, name: value })} placeholder="Production" required />
+          <InputField label="Code" value={formData.code} onChange={(v) => setFormData({ ...formData, code: v })} placeholder="DEPT-001" required />
+          <InputField label="Name" value={formData.name} onChange={(v) => setFormData({ ...formData, name: v })} placeholder="Production" required />
           {canSelectPlant ? (
-            <SelectField
-              label="Plant"
-              value={formData.plantId}
-              onChange={(value) => setFormData({ ...formData, plantId: value })}
-              options={plantOptions}
-              placeholder="Select plant"
-              required
-            />
+            <SelectField label="Plant" value={formData.plantId} onChange={(v) => setFormData({ ...formData, plantId: v })} options={plantOptions} placeholder="Select plant" required />
           ) : (
             <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => { }} disabled />
           )}
-          <SelectField
-            label="Status"
-            value={formData.isActive ? "Active" : "Inactive"}
-            onChange={(value) => setFormData({ ...formData, isActive: value === "Active" })}
-            options={[
-              { value: "Active", label: "Active" },
-              { value: "Inactive", label: "Inactive" },
-            ]}
-          />
+          <SelectField label="Status" value={formData.isActive ? "Active" : "Inactive"} onChange={(v) => setFormData({ ...formData, isActive: v === "Active" })} options={[{ value: "Active", label: "Active" }, { value: "Inactive", label: "Inactive" }]} />
         </FormGrid>
       </FormDialog>
 
-      <ViewDialog
-        open={isViewOpen}
-        onOpenChange={setIsViewOpen}
-        title={selectedDept?.name || ""}
-        subtitle={selectedDept?.code}
-      >
+      <ViewDialog open={isViewOpen} onOpenChange={setIsViewOpen} title={selectedDept?.name || ""} subtitle={selectedDept?.code}>
         {selectedDept && (
           <div className="space-y-6">
             <DetailSection title="Information">
@@ -361,18 +432,14 @@ export default function DepartmentMaster() {
               <DetailRow label="Plant" value={getPlantName(selectedDept.plantId)} />
               <DetailRow label="Status" value={<StatusBadge variant={selectedDept.isActive ? "active" : "inactive"}>{selectedDept.isActive ? "Active" : "Inactive"}</StatusBadge>} />
             </DetailSection>
+            <DetailSection title="Audit Trail">
+              <AuditInfo createdAt={selectedDept.createdAt} updatedAt={selectedDept.updatedAt} />
+            </DetailSection>
           </div>
         )}
       </ViewDialog>
 
-      <DeleteConfirmDialog
-        open={isDeleteOpen}
-        onOpenChange={setIsDeleteOpen}
-        title="Delete Department"
-        itemName={selectedDept?.name}
-        onConfirm={confirmDelete}
-        isLoading={saving}
-      />
+      <DeleteConfirmDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} title="Delete Department" itemName={selectedDept?.name} onConfirm={confirmDelete} isLoading={saving} />
     </PageShell>
   );
 }

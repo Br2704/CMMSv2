@@ -330,7 +330,7 @@ export default function AMC() {
             search={
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search AMC asset, contract, or report..." className="pl-9" />
+                <Input id="amc-search" name="amcSearch" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search AMC asset, contract, or report..." className="pl-9" />
               </div>
             }
           />

@@ -605,7 +605,12 @@ export default function MachinesMaster() {
   const getDepartmentName = (departmentId: string | null) => departments.find((item) => item.id === departmentId)?.name || "-";
   const getModuleName = (moduleId: string | null) => modules.find((item) => item.id === moduleId)?.name || "-";
   const getCostCenterName = (costCenterId: string | null) => costCenters.find((item) => item.id === costCenterId)?.name || "-";
-  const getPlantName = (plantId: string | null) => plantsOptions.find((item) => item.value === plantId)?.label || "-";
+  const getPlantName = (plantId: string | null) => {
+    const label = plantsOptions.find((item) => item.value === plantId)?.label || "";
+    if (!label) return "-";
+    const codeToken = label.split(" - ")[0]?.trim();
+    return codeToken || "-";
+  };
   const formatTimestamp = (value: string | null | undefined) => {
     if (!value) return "-";
     const parsed = new Date(value);
@@ -2674,7 +2679,7 @@ export default function MachinesMaster() {
         <div className="space-y-4">
           {qrImageDataUrl ? (
             <div className="flex justify-center">
-              <img src={qrImageDataUrl} alt="Asset QR code" className="h-64 w-64 rounded-md border border-border bg-white p-2" />
+              <img src={qrImageDataUrl} alt="Asset QR code" className="h-64 w-64 rounded-md border border-border bg-card/80 p-2 dark:bg-card/60" />
             </div>
           ) : (
             <div className="text-center text-sm text-muted-foreground">QR image is being generated...</div>

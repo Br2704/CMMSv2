@@ -403,7 +403,7 @@ export default function RootPlantMaster() {
                   organizationFilter === "ALL" ? "border-primary bg-primary/10" : "border-border hover:bg-accent/40"
                 }`}
               >
-                <div className="h-14 w-14 rounded-md border border-border/70 bg-white p-2 flex items-center justify-center">
+                <div className="h-14 w-14 rounded-md border border-border/70 bg-card/80 p-2 flex items-center justify-center dark:bg-card/60">
                   <Building className="h-6 w-6 text-muted-foreground" />
                 </div>
                 <p className="mt-2 font-medium text-sm">All Organizations</p>
@@ -418,7 +418,7 @@ export default function RootPlantMaster() {
                     organizationFilter === organization.id ? "border-primary bg-primary/10" : "border-border hover:bg-accent/40"
                   }`}
                 >
-                  <div className="h-14 w-14 rounded-md border border-border/70 bg-white p-2 flex items-center justify-center overflow-hidden">
+                  <div className="h-14 w-14 rounded-md border border-border/70 bg-card/80 p-2 flex items-center justify-center overflow-hidden dark:bg-card/60">
                     {organization.logoUrl ? (
                       <img src={organization.logoUrl} alt={`${organization.name} logo`} className="h-full w-full object-contain" />
                     ) : (
@@ -455,7 +455,7 @@ export default function RootPlantMaster() {
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                 <div className="relative w-full sm:w-72">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input placeholder="Search plants..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
+                  <Input id="plant-search" name="plantSearch" placeholder="Search plants..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
                 </div>
               </div>
             }

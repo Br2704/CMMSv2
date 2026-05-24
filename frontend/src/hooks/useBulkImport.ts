@@ -81,7 +81,7 @@ export const useBulkImport = (config: BulkImportConfig) => {
                 fileContent: content,
             }));
         } catch (error) {
-            console.error("Failed to read file:", error);
+            if (import.meta.env.DEV) console.error("Failed to read file:", error);
             setState((prev) => ({
                 ...prev,
                 importErrors: [

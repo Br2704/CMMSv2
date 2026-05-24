@@ -522,14 +522,41 @@ export async function httpRequest<T>(
   }
 
   // Coalesce identical GET requests; always use coalescing for GET
-  const response = method === "GET"
-    ? await coalescedFetch<Response>(url, { ...init, headers, credentials: "include", cache: "no-store" }, requestCacheKey)
-    : await fetch(url, {
-        ...init,
-        headers,
-        credentials: "include",
-        cache: "no-store",
-      });
+  let response: Response;
+  try {
+    response = method === "GET"
+      ? await coalescedFetch<Response>(url, { ...init, headers, credentials: "include", cache: "no-store" }, requestCacheKey)
+      : await fetch(url, {
+          ...init,
+          headers,
+          credentials: "include",
+          cache: "no-store",
+        });
+  } catch (fetchError) {
+    // Network error: backend unreachable, connection dropped, DNS failure, etc.
+    const message = fetchError instanceof TypeError
+      ? "Unable to reach the server. Please check your connection or try again later."
+      : `Network error: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`;
+
+    if (path !== "/webapp-logs") {
+      void import("@/api/logs").then(({ queueWebappLog }) => {
+        queueWebappLog({
+          level: "ERROR",
+          action: "api.network_error",
+          message: `${method} ${path} failed: ${message}`,
+          path,
+        });
+      }).catch(() => {});
+    }
+
+    // Try offline cache fallback for GET requests
+    if (method === "GET" && offlineCapable) {
+      const cached = await cacheGet<T>(requestCacheKey);
+      if (cached) return cached.value;
+    }
+
+    throw new ApiError(0, message, null);
+  }
   debugLog("response", { url, status: response.status });
 
   if (shouldAttemptRefresh(path, response.status, retry)) {

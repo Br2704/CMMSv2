@@ -20,6 +20,7 @@ import {
   workOrdersSummaryQuerySchema,
   acceptWorkOrderSchema,
   workOrderActivitySchema,
+  bulkUpdateSchema,
 } from './workorders.validators';
 
 const crudRouter = createCrudRouter(
@@ -176,12 +177,10 @@ workordersRouter.post(
 workordersRouter.post(
   '/work-orders/bulk-update',
   requirePermission('WORK_ORDERS', 'UPDATE'),
+  validateRequest({ body: bulkUpdateSchema }),
   async (req, res, next) => {
     try {
       const { ids, ...payload } = req.body as { ids: string[]; [key: string]: unknown };
-      if (!Array.isArray(ids) || ids.length === 0) {
-        return res.status(400).json({ success: false, message: 'ids array is required' });
-      }
       const result = await workordersService.bulkUpdate(ids, payload as Record<string, unknown>, req.auth!);
       res.json(ok(result, 'Bulk update completed'));
     } catch (error) {

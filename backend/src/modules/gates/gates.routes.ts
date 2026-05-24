@@ -22,6 +22,7 @@ import { toCsv } from '../../utils/csvExport';
 import { createSimpleExcelWorkbook } from '../../utils/excel';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { createSimplePdf } from '../../utils/pdf';
+import { getReportBranding } from '../../utils/reportBranding';
 import { resolveScopedPlantId } from '../../utils/plantScope';
 import { applyPlantScope, applySearch } from '../../utils/query';
 
@@ -1573,7 +1574,13 @@ gatesRouter.get('/gate-reports', requirePermission('GATES', 'EXPORT'), async (re
       (query.plantId ? plantMap.get(query.plantId ?? '')?.organization?.logoUrl : plants[0]?.organization?.logoUrl) ?? null;
     const plantName = query.plantId ? plantMap.get(query.plantId ?? '')?.plantName ?? 'All Plants' : 'All Plants';
     const generatedAt = new Date().toISOString();
-    const brandedFooter = 'Powered by TamOptix Technologies | TamOptix CMMS Platform';
+    const branding = await getReportBranding({
+      organizationName,
+      organizationLogoUrl,
+      generatedAt,
+      reportTitle: 'Gate Entry Report',
+    });
+    const brandedFooter = branding.footerBranding;
     const transportLogMap = new Map<string, GhgTransportLogEntity>();
     for (const item of transportLogs) {
       if (item.gateEntryId && !transportLogMap.has(item.gateEntryId)) {
@@ -1686,6 +1693,18 @@ gatesRouter.get('/gate-reports', requirePermission('GATES', 'EXPORT'), async (re
         organizationLogoUrl,
         generatedAt,
         footerBranding: brandedFooter,
+        primaryColor: branding.primaryColor,
+        headerBgColor: branding.headerBgColor,
+        headerFontSize: branding.headerFontSize,
+        footerFontSize: branding.footerFontSize,
+        headerBold: branding.headerBold,
+        headerUnderline: branding.headerUnderline,
+        headerAlignment: branding.headerAlignment,
+        logoAlignment: branding.logoAlignment,
+        headerSubtitle: branding.headerSubtitle,
+        headerColor: branding.headerColor,
+        footerColor: branding.footerColor,
+        footerBold: branding.footerBold,
       });
       res.setHeader('Content-Type', 'application/vnd.ms-excel');
       res.setHeader('Content-Disposition', `attachment; filename="gate-report-${new Date().toISOString().slice(0, 10)}.xls"`);
@@ -1708,6 +1727,18 @@ gatesRouter.get('/gate-reports', requirePermission('GATES', 'EXPORT'), async (re
         organizationLogoUrl,
         generatedAt,
         footerBranding: brandedFooter,
+        primaryColor: branding.primaryColor,
+        headerBgColor: branding.headerBgColor,
+        headerFontSize: branding.headerFontSize,
+        footerFontSize: branding.footerFontSize,
+        headerBold: branding.headerBold,
+        headerUnderline: branding.headerUnderline,
+        headerAlignment: branding.headerAlignment,
+        logoAlignment: branding.logoAlignment,
+        headerColor: branding.headerColor,
+        footerColor: branding.footerColor,
+        footerBold: branding.footerBold,
+        showOrganizationLogo: branding.showOrganizationLogo,
       });
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="gate-report-${new Date().toISOString().slice(0, 10)}.pdf"`);

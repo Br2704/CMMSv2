@@ -2,7 +2,7 @@ import { httpRequest } from "@/api/http";
 import type { ApiListResponse, ApiResponse, DeleteResult, ListParams } from "@/api/types";
 import { toQueryString } from "@/api/types";
 
-export interface Department {
+export interface Department extends Record<string, unknown> {
   id: string;
   name: string;
   code: string;

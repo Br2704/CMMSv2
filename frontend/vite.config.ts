@@ -174,6 +174,7 @@ export default defineConfig(({ mode }) => ({
     }),
   ].filter(Boolean),
   build: {
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks: {

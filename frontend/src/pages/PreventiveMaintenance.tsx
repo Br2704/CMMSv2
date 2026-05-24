@@ -8,7 +8,7 @@ import { FilterToolbar } from "@/components/layout/FilterToolbar";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
-import { SpareUsageEditor, type SpareUsageDraft } from "@/components/spares/SpareUsageEditor";
+import { MaterialsUsageEditor, type MaterialDraft } from "@/components/spares/MaterialsUsageEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -41,15 +41,15 @@ function normalizeChecklist(value: PMSchedule["checklist"]): PMScheduleChecklist
   };
 }
 
-function buildSpareUsagePayload(rows: SpareUsageDraft[], availableSpares: SpareItem[]): SpareUsageItem[] {
+function buildSpareUsagePayload(rows: MaterialDraft[], availableSpares: SpareItem[]): SpareUsageItem[] {
   return rows
     .map((row) => {
       const quantity = Number(row.quantity);
-      if (!row.spareItemId || !Number.isFinite(quantity) || quantity <= 0) return null;
-      const match = availableSpares.find((item) => item.id === row.spareItemId);
+            if (!row.itemId || !Number.isFinite(quantity) || quantity <= 0) return null;
+            const match = availableSpares.find((item) => item.id === row.itemId);
       if (!match) return null;
       return {
-        spareItemId: match.id,
+                spareItemId: match.id,
         quantity,
         spareCode: match.code,
         spareName: match.name,
@@ -107,7 +107,7 @@ export default function PreventiveMaintenance() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [selectedTask, setSelectedTask] = useState<PMSchedule | null>(null);
   const [draftTasks, setDraftTasks] = useState<DraftTask[]>([]);
-  const [draftSpareUsage, setDraftSpareUsage] = useState<SpareUsageDraft[]>([]);
+  const [draftSpareUsage, setDraftSpareUsage] = useState<MaterialDraft[]>([]);
   const [executionNotes, setExecutionNotes] = useState("");
   const [savingState, setSavingState] = useState<"idle" | "progress" | "complete">("idle");
 
@@ -163,10 +163,13 @@ export default function PreventiveMaintenance() {
         photos: Array.isArray(entry.photos) ? entry.photos : [],
       })),
     );
-    setDraftSpareUsage(
+        setDraftSpareUsage(
       (checklist.spareUsage || []).map((item) => ({
-        spareItemId: String(item.spareItemId || ""),
+        itemId: String(item.spareItemId || ""),
+        itemName: "",
         quantity: String(item.quantity || ""),
+        category: "SPARE" as const,
+        isManual: false,
       })),
     );
     setExecutionNotes("");
@@ -271,7 +274,7 @@ export default function PreventiveMaintenance() {
             search={
               <>
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search PM ID, asset, template..." className="h-10 pl-9" />
+                <Input id="pm-search" name="pmSearch" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search PM ID, asset, template..." className="h-10 pl-9" />
               </>
             }
             filters={
@@ -441,7 +444,7 @@ export default function PreventiveMaintenance() {
                   <p className="text-sm font-semibold">Spares Used</p>
                   <p className="text-sm text-muted-foreground">Any spares recorded here will reduce stock automatically when the task is completed.</p>
                 </div>
-                <SpareUsageEditor rows={draftSpareUsage} onChange={setDraftSpareUsage} options={spareOptions} />
+                <MaterialsUsageEditor spareRows={draftSpareUsage} onSpareChange={setDraftSpareUsage} spareOptions={spareOptions} />
               </div>
 
               <div className="space-y-2">

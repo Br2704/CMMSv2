@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuthStore, isAdmin, isSuperAdmin } from "@/store/auth.store";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Plus, Search, Edit, Trash2, Wallet, Eye, Loader2 } from "lucide-react";
+import { Plus, Edit, Trash2, Wallet, Eye, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import BackButton from "@/components/masters/BackButton";
+import { PageShell } from "@/components/layout/PageShell";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { DataTableShell } from "@/components/layout/DataTableShell";
+import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
+import { EmptyState } from "@/components/app-shell/EmptyState";
 import { FormDialog } from "@/components/shared/FormDialog";
 import { ViewDialog, DetailRow, DetailSection } from "@/components/shared/ViewDialog";
 import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
@@ -16,6 +20,7 @@ import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared
 import { createCostCenter, deleteCostCenter, listCostCenters, type CostCenter, updateCostCenter } from "@/api/costCenters";
 import { listDepartments, type Department } from "@/api/departments";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
+import { getErrorMessage } from "@/lib/utils";
 
 interface CostCenterFormState {
   code: string;
@@ -47,10 +52,10 @@ export default function CostCentersMaster() {
   const [formData, setFormData] = useState<CostCenterFormState>({ ...emptyForm, plantId: defaultPlantId });
   const [isEditing, setIsEditing] = useState(false);
 
-  const fetchCostCentersList = async () => {
+  const fetchCostCentersList = async (plantIdOverride?: string) => {
     setLoading(true);
     try {
-      const effectivePlantId = canSelectPlant ? selectedPlant || undefined : defaultPlantId || undefined;
+      const effectivePlantId = canSelectPlant ? (plantIdOverride ?? selectedPlant) || undefined : defaultPlantId || undefined;
       if (canSelectPlant && !effectivePlantId) {
         setCostCenters([]);
         return;
@@ -62,8 +67,8 @@ export default function CostCentersMaster() {
         plantId: effectivePlantId,
       });
       setCostCenters(response.data);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to load cost centers");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to load cost centers"));
     } finally {
       setLoading(false);
     }
@@ -82,8 +87,8 @@ export default function CostCentersMaster() {
         plantId: effectivePlantId,
       });
       setDepartments(response.data);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to load departments");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to load departments"));
     }
   };
 
@@ -95,6 +100,11 @@ export default function CostCentersMaster() {
     fetchPlants();
     fetchDepartmentsList(canSelectPlant ? selectedPlant : defaultPlantId);
   }, []);
+
+  useEffect(() => {
+    if (!canSelectPlant || selectedPlant || plantsOptions.length === 0) return;
+    setSelectedPlant(plantsOptions[0].value);
+  }, [canSelectPlant, selectedPlant, plantsOptions]);
 
   const filtered = useMemo(() => costCenters, [costCenters]);
   const deptOptions = useMemo(
@@ -160,11 +170,12 @@ export default function CostCentersMaster() {
         await createCostCenter(payload);
         toast.success("Cost center created");
       }
+      if (canSelectPlant && selectedPlant !== resolvedPlantId) setSelectedPlant(resolvedPlantId);
       invalidateOptions(["departments", "assets"]);
       setIsFormOpen(false);
-      await fetchCostCentersList();
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to save cost center");
+      await fetchCostCentersList(resolvedPlantId);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to save cost center"));
     } finally {
       setSaving(false);
     }
@@ -179,8 +190,8 @@ export default function CostCentersMaster() {
       invalidateOptions(["departments", "assets"]);
       setIsDeleteOpen(false);
       await fetchCostCentersList();
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to delete cost center");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to delete cost center"));
     } finally {
       setSaving(false);
     }
@@ -217,73 +228,70 @@ export default function CostCentersMaster() {
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <PageShell>
       <BackButton />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight lg:text-3xl">Cost Centers</h1>
-          <p className="text-sm text-muted-foreground">Manage cost centers</p>
-        </div>
-        {canManage && (
-          <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
-            <Plus className="h-4 w-4" />
-            Add Cost Center
-          </Button>
-        )}
-      </div>
-      <Card className="shadow-card">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-base sm:text-lg font-semibold flex items-center gap-2">
-              <Wallet className="h-5 w-5 text-primary" />
-              Cost Centers ({filtered.length})
-            </CardTitle>
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-              {canSelectPlant && (
-                <SelectField
-                  label=""
-                  value={selectedPlant}
-                  onChange={(value) => {
-                    setSelectedPlant(value);
-                    setFormData((prev) => ({ ...prev, plantId: value, departmentId: "" }));
-                    void fetchDepartmentsList(value);
-                  }}
-                  options={plantsOptions}
-                  placeholder="Select plant"
-                  className="w-full sm:w-[180px]"
-                />
-              )}
-              <div className="relative w-full sm:w-64">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input placeholder="Search..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
-              </div>
+      <PageHeader
+        title="Cost Centers"
+        subtitle="Manage cost centers"
+        actions={
+          canManage ? (
+            <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
+              <Plus className="h-4 w-4" />
+              Add Cost Center
+            </Button>
+          ) : undefined
+        }
+      />
+      <DataTableShell
+        title={<><Wallet className="h-5 w-5 text-primary" /> Cost Centers ({filtered.length})</>}
+        toolbar={
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            {canSelectPlant && (
+              <SelectField
+                label=""
+                value={selectedPlant}
+                onChange={(value) => {
+                  setSelectedPlant(value);
+                  setFormData((prev) => ({ ...prev, plantId: value, departmentId: "" }));
+                  void fetchDepartmentsList(value);
+                }}
+                options={plantsOptions}
+                placeholder="All Plants"
+              />
+            )}
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input id="cost-center-search" name="costCenterSearch" placeholder="Search..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
             </div>
           </div>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            </div>
-          ) : canSelectPlant && !selectedPlant ? (
-            <div className="text-center py-12 text-muted-foreground">Select a plant to view cost center data.</div>
-          ) : filtered.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">No cost centers found.</div>
-          ) : (
-            <ResponsiveTable
-              data={filtered}
-              columns={columns}
-              keyExtractor={(item: CostCenter) => item.id}
-              mobileCard={(item: CostCenter) => (
-                <MobileCard onView={() => { setSelectedCC(item); setIsViewOpen(true); }} onEdit={canManage ? () => handleEdit(item) : undefined} onDelete={canManage ? () => { setSelectedCC(item); setIsDeleteOpen(true); } : undefined}>
-                  <MobileCardHeader title={item.code} subtitle={item.name} badge={<StatusBadge variant={item.isActive ? "active" : "inactive"}>{item.isActive ? "Active" : "Inactive"}</StatusBadge>} />
-                  <MobileCardRow label="Department" value={getDeptName(item.departmentId)} />
-                </MobileCard>
-              )}
-            />
-          )}
-        </CardContent>
-      </Card>
+        }
+      >
+        {loading ? (
+          <TableSkeleton rows={5} />
+        ) : canSelectPlant && !selectedPlant ? (
+          <EmptyState title="Select a plant" description="Choose a plant to view cost center data." />
+        ) : filtered.length === 0 ? (
+          <EmptyState title="No cost centers" description="Add your first cost center using the Add Cost Center button." />
+        ) : (
+          <ResponsiveTable
+            data={filtered}
+            columns={columns}
+            keyExtractor={(item: CostCenter) => item.id}
+            mobileCard={(item: CostCenter) => (
+              <MobileCard
+                onView={() => { setSelectedCC(item); setIsViewOpen(true); }}
+                onEdit={canManage ? () => handleEdit(item) : undefined}
+                onDelete={canManage ? () => { setSelectedCC(item); setIsDeleteOpen(true); } : undefined}
+              >
+                <MobileCardHeader title={item.code} badge={<StatusBadge variant={item.isActive ? "active" : "inactive"}>{item.isActive ? "Active" : "Inactive"}</StatusBadge>} />
+                <MobileCardRow label="Name" value={item.name} />
+                <MobileCardRow label="Department" value={getDeptName(item.departmentId)} />
+                <MobileCardRow label="Plant" value={getPlantName(item.plantId)} />
+              </MobileCard>
+            )}
+          />
+        )}
+      </DataTableShell>
 
       <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title={isEditing ? "Edit Cost Center" : "Add New Cost Center"} description="Manage cost center" onSubmit={handleSubmit} submitLabel={saving ? "Saving..." : isEditing ? "Update" : "Add"} size="lg">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -312,6 +320,6 @@ export default function CostCentersMaster() {
         )}
       </ViewDialog>
       <DeleteConfirmDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} title="Delete Cost Center" itemName={selectedCC?.name} onConfirm={confirmDelete} isLoading={saving} />
-    </div>
+    </PageShell>
   );
 }

@@ -55,15 +55,18 @@ import { workOrderMastersRouter } from '../modules/workOrderMasters/work-order-m
 import { pushRouter } from '../modules/push/push.routes';
 import { mailRouter } from '../modules/mail/mail.routes';
 import { webappLogsRouter } from '../modules/webapp-logs/webapp-logs.routes';
+import { reportFormatRouter } from '../modules/report-format/report-format.routes';
 
 export const router = Router();
 
 router.use(healthRouter);
+router.use(systemRouter);
 router.use(authRouter);
 router.use(brandingRouter);
 router.use(pushRouter);
 router.use(mailRouter);
 router.use(webappLogsRouter);
+router.use(reportFormatRouter);
 router.use(governanceRouter);
 router.use(organizationsRouter);
 router.use(rootUsersRouter);
@@ -100,7 +103,6 @@ router.use('/maintenance-reports', maintenanceReportsRouter);
 router.use(mastersRouter);
 router.use('/master-data', masterDataRouter);
 router.use(shiftsRouter);
-router.use(systemRouter);
 router.use('/modules', modulesRouter);
 router.use(featureFlagsRouter);
 router.use(alertsRouter);

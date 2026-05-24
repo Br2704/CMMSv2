@@ -142,16 +142,29 @@ function policyAllowsModule(moduleId: string, roles: string[], action = "view"):
   const normalizedModuleLower = moduleId.trim().toLowerCase();
   const upperModuleId = moduleId.trim().toUpperCase();
   const requestedAction = normalizeAction(action);
+  const rootGovernanceModules = new Set([
+    "DASHBOARD",
+    "ORGANIZATIONS",
+    "PLANTS",
+    "USERS",
+    "ROLE_ACCESS",
+    "MODULES",
+    "MASTERS",
+    "NOTIFICATIONS",
+    "SECURITY",
+    "REPORTS",
+  ]);
 
   const isRootModule = (): boolean => {
-    const rootPaths = ["root.organizations", "root.plants", "root.users", "root.role-access", "root.role_access", "root.mail-config", "root.dashboard", "root.sla-config"];
+    const rootPaths = ["root.organizations", "root.plants", "root.users", "root.role-access", "root.role_access", "root.mail-config", "root.dashboard", "root.sla-config", "root.report-format"];
     return rootPaths.includes(normalizedModuleLower) || rootPaths.includes(upperModuleId.toLowerCase());
   };
 
   // 1. Root Admin has exclusive governance-only system access via root/* routes.
   //    Operational modules, masters, and standard pages are strictly blocked.
   if (normalizedRoles.includes("ROOT_ADMIN")) {
-    return false;
+    if (isRootModule()) return true;
+    return rootGovernanceModules.has(upperModuleId);
   }
 
   // Block non-root, non-super from root modules

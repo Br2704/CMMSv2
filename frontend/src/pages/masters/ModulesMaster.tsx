@@ -139,7 +139,12 @@ export default function ModulesMaster() {
   const resolvedPlantIdForForm = canSelectPlant ? formData.plantId : defaultPlantId;
   const canSubmitModuleForm = Boolean(resolvedPlantIdForForm && formData.departmentId && formData.name.trim().length > 0);
 
-  const getPlantName = (plantId: string | null) => plantsOptions.find((item) => item.value === plantId)?.label || "-";
+  const getPlantName = (plantId: string | null) => {
+    const label = plantsOptions.find((item) => item.value === plantId)?.label || "";
+    if (!label) return "-";
+    const codeToken = label.split(" - ")[0]?.trim();
+    return codeToken || "-";
+  };
   const getDepartmentName = (departmentId: string | null) => departments.find((item) => item.id === departmentId)?.name || "-";
 
   const handleAdd = () => {

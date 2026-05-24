@@ -6,9 +6,6 @@ export type AuthorizationDecision =
   | { allowed: false; moduleKey: string; action: string; permissionKey: string; reason: string };
 
 const ROOT_ADMIN_MODULE_ALLOWLIST = new Set([
-  // Governance-only modules for Root Admin.
-  // Operational modules (WORK_ORDERS, ASSETS, PM, CALIBRATION, AMC, GATES, ESG, etc.)
-  // are not accessible by Root Admin.
   'DASHBOARD',
   'ORGANIZATIONS',
   'PLANTS',
@@ -19,6 +16,8 @@ const ROOT_ADMIN_MODULE_ALLOWLIST = new Set([
   'NOTIFICATIONS',
   'SECURITY',
   'REPORTS',
+  'WORK_ORDERS',
+  'GATES',
 ]);
 
 const MODULE_ALIASES: Record<string, string[]> = {

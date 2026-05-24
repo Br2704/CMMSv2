@@ -2,7 +2,7 @@ import type { CorsOptions } from 'cors';
 import { env } from './env';
 
 const allowed = new Set(
-  `${env.CORS_ORIGINS},${env.FRONTEND_URL},http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080`
+  `${env.CORS_ORIGINS},${env.FRONTEND_URL},http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081`
     .split(',')
     .map((v) => v.trim())
     .filter(Boolean),

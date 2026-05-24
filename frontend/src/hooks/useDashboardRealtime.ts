@@ -35,13 +35,26 @@ export function useDashboardRealtime(options: { enabled: boolean; onRefresh: () 
     let disposed = false;
     let socket: WebSocket | null = null;
     let reconnectTimer: number | null = null;
+    let retryAttempt = 0;
+
+    const getReconnectDelay = () => {
+      const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+      const baseDelay = isOffline ? 10_000 : 3_000;
+      const delay = Math.min(60_000, baseDelay * Math.pow(2, retryAttempt));
+      retryAttempt = Math.min(retryAttempt + 1, 6);
+      return delay;
+    };
+
+    const resetReconnect = () => {
+      retryAttempt = 0;
+    };
 
     const scheduleReconnect = () => {
       if (disposed || reconnectTimer !== null) return;
       reconnectTimer = window.setTimeout(() => {
         reconnectTimer = null;
         connect();
-      }, 3000);
+      }, getReconnectDelay());
     };
 
     const connect = () => {
@@ -56,6 +69,10 @@ export function useDashboardRealtime(options: { enabled: boolean; onRefresh: () 
       const url = new URL(getDashboardSocketUrl(), window.location.origin);
       // Pass token as subprotocol for security
       socket = new WebSocket(url.toString(), [token]);
+
+      socket.onopen = () => {
+        resetReconnect();
+      };
 
       socket.onmessage = (event) => {
         try {
@@ -82,10 +99,22 @@ export function useDashboardRealtime(options: { enabled: boolean; onRefresh: () 
       };
     };
 
+    const handleOnline = () => {
+      if (disposed) return;
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      connect();
+    };
+
+    window.addEventListener("online", handleOnline);
+
     connect();
 
     return () => {
       disposed = true;
+      window.removeEventListener("online", handleOnline);
       if (reconnectTimer !== null) {
         window.clearTimeout(reconnectTimer);
         reconnectTimer = null;

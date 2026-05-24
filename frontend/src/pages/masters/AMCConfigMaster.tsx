@@ -613,7 +613,7 @@ export default function AMCConfigMaster() {
             search={
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contract, vendor, code..." className="pl-9" />
+                <Input id="amc-config-search" name="amcConfigSearch" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contract, vendor, code..." className="pl-9" />
               </div>
             }
             filters={

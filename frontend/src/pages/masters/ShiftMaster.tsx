@@ -1,20 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Plus, Search, Edit, Trash2, Clock, Eye, Loader2 } from "lucide-react";
+import { Download, Edit, Eye, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import BackButton from "@/components/masters/BackButton";
+import { PageShell } from "@/components/layout/PageShell";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { DataTableShell } from "@/components/layout/DataTableShell";
+import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
+import { EmptyState } from "@/components/app-shell/EmptyState";
 import { FormDialog } from "@/components/shared/FormDialog";
 import { ViewDialog, DetailRow, DetailSection } from "@/components/shared/ViewDialog";
 import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { InputField, SelectField } from "@/components/shared/FormField";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
+import { AuditInfo } from "@/components/shared/AuditInfo";
+import { BulkActionsBar } from "@/components/shared/BulkActionsBar";
 import { useAuthStore, isAdmin, isSuperAdmin } from "@/store/auth.store";
 import { createShift, deleteShift, listShifts, type Shift, updateShift } from "@/api/shifts";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
+import { useCsvExport } from "@/hooks/useCsvExport";
+import { getErrorMessage } from "@/lib/utils";
 
 interface ShiftFormState {
   shiftName: string;
@@ -32,6 +39,7 @@ export default function ShiftMaster() {
   const canSelectPlant = isSuperAdmin(user);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants } = useMastersOptions();
+  const { exportCsv } = useCsvExport<Shift>();
 
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +50,7 @@ export default function ShiftMaster() {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<Shift | null>(null);
   const [formData, setFormData] = useState<ShiftFormState>({ ...emptyForm, plantId: defaultPlantId });
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const fetchShiftRows = async () => {
     setLoading(true);
@@ -53,8 +62,8 @@ export default function ShiftMaster() {
         plantId: canSelectPlant ? undefined : defaultPlantId || undefined,
       });
       setShifts(response.data);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to load shifts");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to load shifts"));
     } finally {
       setLoading(false);
     }
@@ -105,8 +114,8 @@ export default function ShiftMaster() {
       setIsFormOpen(false);
       setSelected(null);
       await fetchShiftRows();
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to save shift");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to save shift"));
     } finally {
       setSaving(false);
     }
@@ -120,19 +129,84 @@ export default function ShiftMaster() {
       toast.success("Shift deleted");
       setIsDeleteOpen(false);
       await fetchShiftRows();
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to delete shift");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to delete shift"));
     } finally {
       setSaving(false);
     }
   };
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === shifts.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(shifts.map((s) => s.id)));
+    }
+  };
+
+  const handleBulkToggle = async (active: boolean) => {
+    const ids = Array.from(selectedIds);
+    setSaving(true);
+    try {
+      await Promise.all(ids.map((id) => updateShift(id, { isActive: active })));
+      toast.success(`${ids.length} shifts ${active ? "activated" : "deactivated"}`);
+      setSelectedIds(new Set());
+      await fetchShiftRows();
+    } catch (error) {
+      toast.error(getErrorMessage(error, `Failed to ${active ? "activate" : "deactivate"} shifts`));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExportCsv = () => {
+    const items = selectedIds.size > 0 ? shifts.filter((s) => selectedIds.has(s.id)) : shifts;
+    if (items.length === 0) return;
+    exportCsv({
+      items,
+      filename: "shifts",
+      columns: [
+        { key: "shiftName", header: "Shift Name", render: (s) => s.shiftName },
+        { key: "startTime", header: "Start Time", render: (s) => s.startTime },
+        { key: "endTime", header: "End Time", render: (s) => s.endTime },
+        { key: "isActive", header: "Status", render: (s) => s.isActive ? "Active" : "Inactive" },
+      ],
+    });
+    toast.success(`Exported ${items.length} shifts`);
+  };
+
   const columns = [
+    {
+      key: "select",
+      header: "",
+      className: "w-10",
+      render: (item: Shift) => (
+        <input type="checkbox" id={`select-shift-${item.id}`} name="selectShift" className="h-4 w-4 rounded border-input" checked={selectedIds.has(item.id)} onChange={() => toggleSelect(item.id)} onClick={(e) => e.stopPropagation()} />
+      ),
+    },
     { key: "name", header: "Shift Name", render: (item: Shift) => <span className="font-medium">{item.shiftName}</span> },
     { key: "start", header: "Start Time", render: (item: Shift) => item.startTime },
     { key: "end", header: "End Time", render: (item: Shift) => item.endTime },
     { key: "plant", header: "Plant", render: (item: Shift) => getPlantLabel(item.plantId), hideOnMobile: true },
     { key: "status", header: "Status", render: (item: Shift) => <StatusBadge variant={item.isActive ? "active" : "inactive"}>{item.isActive ? "Active" : "Inactive"}</StatusBadge> },
+    {
+      key: "audit",
+      header: "Updated",
+      hideOnMobile: true,
+      render: (item: Shift) => {
+        if (!item.updatedAt) return <span className="text-xs text-muted-foreground">-</span>;
+        const d = new Date(item.updatedAt);
+        return <span className="text-xs text-muted-foreground whitespace-nowrap">{d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span>;
+      },
+    },
     {
       key: "actions",
       header: "Actions",
@@ -158,45 +232,44 @@ export default function ShiftMaster() {
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <PageShell>
       <BackButton />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight lg:text-3xl">Shift Management</h1>
-          <p className="text-sm text-muted-foreground">Configure plant shifts for data logging</p>
-        </div>
-        {canManage && (
-          <Button onClick={() => { setFormData({ ...emptyForm, plantId: canSelectPlant ? (formData.plantId || plantsOptions[0]?.value || "") : defaultPlantId }); setSelected(null); setIsFormOpen(true); }} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
-            <Plus className="h-4 w-4" />
-            Add Shift
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Shift Management"
+        subtitle="Configure plant shifts for data logging"
+        actions={
+          canManage ? (
+            <Button onClick={() => { setFormData({ ...emptyForm, plantId: canSelectPlant ? (formData.plantId || plantsOptions[0]?.value || "") : defaultPlantId }); setSelected(null); setIsFormOpen(true); }} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
+              <Plus className="h-4 w-4" />
+              Add Shift
+            </Button>
+          ) : undefined
+        }
+      />
 
-      <Card className="shadow-card">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-base sm:text-lg font-semibold flex items-center gap-2">
-              <Clock className="h-5 w-5 text-primary" />
-              Shifts ({filtered.length})
-            </CardTitle>
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search shifts..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
+      <DataTableShell
+        title={
+          <span className="flex items-center gap-2">
+            Shifts ({shifts.length})
+            {selectedIds.size > 0 && <span className="text-xs text-muted-foreground">({selectedIds.size} selected)</span>}
+          </span>
+        }
+      >
+        {loading ? (
+          <TableSkeleton rows={5} />
+        ) : shifts.length === 0 ? (
+          <EmptyState title="No shifts configured" description="Add your first shift using the Add Shift button." />
+        ) : (
+          <div>
+            <div className="mb-2 flex items-center gap-2 px-1">
+              <input type="checkbox" id="select-all-shifts" name="selectAllShifts" className="h-4 w-4 rounded border-input" checked={shifts.length > 0 && selectedIds.size === shifts.length} onChange={toggleSelectAll} />
+              <span className="text-xs text-muted-foreground">{selectedIds.size === shifts.length ? "Deselect all" : "Select all"}</span>
+              <button className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1" onClick={handleExportCsv} disabled={shifts.length === 0}>
+                <Download className="h-3 w-3" /> Export CSV
+              </button>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              <span className="ml-2 text-muted-foreground">Loading...</span>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">No shifts found.</div>
-          ) : (
             <ResponsiveTable
-              data={filtered}
+              data={shifts}
               columns={columns}
               keyExtractor={(item: Shift) => item.id}
               mobileCard={(item: Shift) => (
@@ -209,12 +282,23 @@ export default function ShiftMaster() {
                   <MobileCardRow label="Start" value={item.startTime} />
                   <MobileCardRow label="End" value={item.endTime} />
                   <MobileCardRow label="Plant" value={getPlantLabel(item.plantId)} />
+                  <MobileCardRow label="Updated" value={item.updatedAt ? new Date(item.updatedAt).toLocaleDateString("en-IN") : "-"} />
                 </MobileCard>
               )}
             />
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        )}
+      </DataTableShell>
+
+      <BulkActionsBar
+        selectedCount={selectedIds.size}
+        totalCount={shifts.length}
+        onClearSelection={() => setSelectedIds(new Set())}
+        onActivate={() => handleBulkToggle(true)}
+        onDeactivate={() => handleBulkToggle(false)}
+        onExport={handleExportCsv}
+        isProcessing={saving}
+      />
 
       <FormDialog
         open={isFormOpen}
@@ -249,13 +333,18 @@ export default function ShiftMaster() {
 
       <ViewDialog open={isViewOpen} onOpenChange={setIsViewOpen} title={selected?.shiftName || ""}>
         {selected && (
-          <DetailSection title="Shift Details">
-            <DetailRow label="Shift Name" value={selected.shiftName} />
-            <DetailRow label="Start Time" value={selected.startTime} />
-            <DetailRow label="End Time" value={selected.endTime} />
-            <DetailRow label="Plant" value={getPlantLabel(selected.plantId)} />
-            <DetailRow label="Status" value={selected.isActive ? "Active" : "Inactive"} />
-          </DetailSection>
+          <div className="space-y-6">
+            <DetailSection title="Shift Details">
+              <DetailRow label="Shift Name" value={selected.shiftName} />
+              <DetailRow label="Start Time" value={selected.startTime} />
+              <DetailRow label="End Time" value={selected.endTime} />
+              <DetailRow label="Plant" value={getPlantLabel(selected.plantId)} />
+              <DetailRow label="Status" value={selected.isActive ? "Active" : "Inactive"} />
+            </DetailSection>
+            <DetailSection title="Audit Trail">
+              <AuditInfo createdAt={selected.createdAt} updatedAt={selected.updatedAt} />
+            </DetailSection>
+          </div>
         )}
       </ViewDialog>
 
@@ -267,6 +356,6 @@ export default function ShiftMaster() {
         description={`Are you sure you want to delete "${selected?.shiftName}"?`}
         isLoading={saving}
       />
-    </div>
+    </PageShell>
   );
 }

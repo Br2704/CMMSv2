@@ -66,23 +66,23 @@ export function KPICard({
     <div
       className={cn(
         "group relative overflow-hidden rounded-[2rem] border p-6",
-        "bg-white/40 backdrop-blur-xl shadow-industrial-sm",
-        variant === "primary" ? "border-primary/20 bg-gradient-to-br from-primary/[0.08] to-transparent" :
-        variant === "success" ? "border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.08] to-transparent" :
-        variant === "warning" ? "border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] to-transparent" :
-        variant === "destructive" ? "border-rose-500/20 bg-gradient-to-br from-rose-500/[0.08] to-transparent" :
-        variant === "info" ? "border-sky-500/20 bg-gradient-to-br from-sky-500/[0.08] to-transparent" :
-        "border-slate-200/60 bg-white/60",
+        "border-border/80 bg-card/80 backdrop-blur-xl shadow-industrial-sm dark:bg-card/70",
+        variant === "primary" ? "border-primary/30 bg-gradient-to-br from-primary/10 to-transparent dark:from-primary/20" :
+        variant === "success" ? "border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 to-transparent dark:from-emerald-500/20" :
+        variant === "warning" ? "border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-transparent dark:from-amber-500/20" :
+        variant === "destructive" ? "border-rose-500/30 bg-gradient-to-br from-rose-500/10 to-transparent dark:from-rose-500/20" :
+        variant === "info" ? "border-sky-500/30 bg-gradient-to-br from-sky-500/10 to-transparent dark:from-sky-500/20" :
+        "border-border/70",
         className
       )}
     >
       <div className="relative z-10 flex items-start justify-between">
         <div className="space-y-4">
           <div className="space-y-1">
-             <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 text-slate-600">
+             <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">
                {title}
              </p>
-             <h3 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
+             <h3 className="text-3xl font-black tracking-tight text-foreground sm:text-4xl">
                {value}
              </h3>
           </div>
@@ -91,13 +91,13 @@ export function KPICard({
              {trend && (
                <div className={cn(
                  "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase",
-                 trend.isPositive ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600"
+                 trend.isPositive ? "bg-emerald-500/15 text-emerald-500" : "bg-rose-500/15 text-rose-500"
                )}>
                  {trend.isPositive ? "+" : ""}{trend.value}%
                </div>
              )}
              {subtitle && (
-               <p className="text-[11px] font-bold text-slate-400 text-slate-500">
+               <p className="text-[11px] font-bold text-muted-foreground">
                  {subtitle}
                </p>
              )}
@@ -106,12 +106,12 @@ export function KPICard({
 
         <div className={cn(
           "flex h-14 w-14 items-center justify-center rounded-2xl",
-          variant === "primary" ? "bg-primary/10 text-primary shadow-lg shadow-primary/10" :
-          variant === "success" ? "bg-emerald-500/10 text-emerald-600 shadow-lg shadow-emerald-500/10" :
-          variant === "warning" ? "bg-amber-500/10 text-amber-600 shadow-lg shadow-amber-500/10" :
-          variant === "destructive" ? "bg-rose-500/10 text-rose-600 shadow-lg shadow-rose-500/10" :
-          variant === "info" ? "bg-sky-500/10 text-sky-600 shadow-lg shadow-sky-500/10" :
-          "bg-slate-100 text-slate-500"
+          variant === "primary" ? "bg-primary/15 text-primary shadow-lg shadow-primary/15" :
+          variant === "success" ? "bg-emerald-500/15 text-emerald-500 shadow-lg shadow-emerald-500/15" :
+          variant === "warning" ? "bg-amber-500/15 text-amber-500 shadow-lg shadow-amber-500/15" :
+          variant === "destructive" ? "bg-rose-500/15 text-rose-500 shadow-lg shadow-rose-500/15" :
+          variant === "info" ? "bg-sky-500/15 text-sky-500 shadow-lg shadow-sky-500/15" :
+          "bg-muted text-muted-foreground"
         )}>
           <Icon className="h-7 w-7" />
         </div>

@@ -418,4 +418,17 @@ export const workOrdersListQuerySchema = listQuerySchema.extend({
   ),
 });
 
+const bulkUpdateBodySchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, { message: 'At least one work order ID is required' }),
+  assigned_to: optionalUuidOrNull.optional(),
+  priority: optionalTrimmedString.optional(),
+  status: z.enum(['ASSIGNED', 'OPENED', 'IN_PROGRESS', 'CLOSED', 'CANCELLED']).optional(),
+  category: optionalTrimmedString.optional(),
+  wo_type: optionalTrimmedString.optional(),
+  plant_id: optionalUuidOrNull.optional(),
+  remarks: nullableTrimmedString.optional(),
+});
+
+export const bulkUpdateSchema = z.preprocess(normalizeObjectKeys, bulkUpdateBodySchema);
+
 export const workOrdersSummaryQuerySchema = listQuerySchema.pick({ plantId: true });

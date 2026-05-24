@@ -747,7 +747,7 @@ export default function RootOrganizationMaster() {
               <Card key={item.id} className="border-border/70 shadow-card">
                 <CardContent className="space-y-4 p-4">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/70 bg-white p-2">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/70 bg-card/80 p-2 dark:bg-card/60">
                       {item.logoUrl ? (
                         <img src={item.logoUrl} alt={`${item.name} logo`} className="h-full w-full object-contain" />
                       ) : (
@@ -1033,7 +1033,7 @@ export default function RootOrganizationMaster() {
                   />
                   {formData.logoUrl ? (
                     <div className="flex items-center gap-3 rounded-md border border-border/60 bg-muted/20 p-3">
-                      <div className="h-12 w-12 overflow-hidden rounded-md border border-border/60 bg-white p-1">
+                      <div className="h-12 w-12 overflow-hidden rounded-md border border-border/60 bg-card/80 p-1 dark:bg-card/60">
                         <img src={formData.logoUrl} alt="Organization logo preview" className="h-full w-full object-contain" />
                       </div>
                       <Button variant="ghost" size="sm" type="button" onClick={() => setFormData({ ...formData, logoUrl: "" })}>
@@ -1058,7 +1058,7 @@ export default function RootOrganizationMaster() {
                   />
                   {formData.faviconUrl ? (
                     <div className="flex items-center gap-3 rounded-md border border-border/60 bg-muted/20 p-3">
-                      <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-md border border-border/60 bg-white p-1">
+                      <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-md border border-border/60 bg-card/80 p-1 dark:bg-card/60">
                         <img src={formData.faviconUrl} alt="Organization favicon preview" className="h-8 w-8 object-contain" />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -1091,7 +1091,7 @@ export default function RootOrganizationMaster() {
             <div className="rounded-md border border-border/60 p-4">
               {selectedOrganization.logoUrl ? (
                 <div className="flex justify-center">
-                  <div className="h-24 w-24 rounded-md border border-border/60 bg-white p-2 overflow-hidden">
+                  <div className="h-24 w-24 rounded-md border border-border/60 bg-card/80 p-2 overflow-hidden dark:bg-card/60">
                     <img src={selectedOrganization.logoUrl} alt={`${selectedOrganization.name} logo`} className="h-full w-full object-contain" />
                   </div>
                 </div>
@@ -1165,7 +1165,7 @@ export default function RootOrganizationMaster() {
                 value={
                   selectedOrganization.faviconUrl ? (
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md border border-border/60 bg-white p-1">
+                      <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md border border-border/60 bg-card/80 p-1 dark:bg-card/60">
                         <img src={selectedOrganization.faviconUrl} alt={`${selectedOrganization.name} favicon`} className="h-6 w-6 object-contain" />
                       </div>
                       <span>Configured</span>

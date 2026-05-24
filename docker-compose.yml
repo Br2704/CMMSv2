@@ -1,100 +1,280 @@
+# ───────────────────────────────────────────────────────────────────
+#  CMMS v2 — Docker Compose (Production Secure)
+# ───────────────────────────────────────────────────────────────────
+
+name: cmmsv2
+
+x-common: &common
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - app
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: 3
+
+x-backend-env: &backend-env
+  NODE_ENV: production
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_USER: ${DB_USER:?Set DB_USER in .env}
+  DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+  DB_NAME: ${DB_NAME:-postgres}
+  DB_SSL: "false"
+
+  PORT: 3001
+
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET in .env}
+  DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?Set DATA_ENCRYPTION_KEY in .env}
+
+  CORS_ORIGINS: ${APP_CORS_ORIGINS:-https://tamoptix.tech,https://www.tamoptix.tech}
+  FRONTEND_URL: ${FRONTEND_URL:-https://tamoptix.tech}
+
+  ROOT_ADMIN_EMAIL: ${ROOT_ADMIN_EMAIL:-admin@tamoptix.tech}
+  ROOT_ADMIN_PASSWORD: ${ROOT_ADMIN_PASSWORD:?Set ROOT_ADMIN_PASSWORD in .env}
+  ROOT_ADMIN_FULL_NAME: ${ROOT_ADMIN_FULL_NAME:-TamOptiX Admin}
+
 services:
+
+  # ────────────────────────────────────────────────────────────────
+  # PostgreSQL Database
+  # ────────────────────────────────────────────────────────────────
+
   postgres:
+    <<: *common
     image: postgres:16-alpine
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+    container_name: cmms-postgres
+
     environment:
-      POSTGRES_DB: postgres
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-postgres}
+      POSTGRES_USER: ${DB_USER:?Set DB_USER in .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+
+    # Localhost only for security
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
+
     volumes:
       - cmms_postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME:-postgres}"]
       interval: 10s
       timeout: 5s
-      retries: 12
-    networks:
-      - app
+      retries: 5
+      start_period: 10s
+
+    stop_grace_period: 30s
+
+  # ────────────────────────────────────────────────────────────────
+  # Backend API
+  # ────────────────────────────────────────────────────────────────
 
   backend:
+    <<: *common
+
     build:
       context: ./backend
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+      dockerfile: Dockerfile
+
+    container_name: cmms-backend
+
     command: >
-      sh -c "npm run migration:run:prod &&
-             npm run start"
+      sh -c "
+        echo '=== CMMS Backend Starting ===' &&
+        echo 'Running migrations...' &&
+        npm run migration:run:prod &&
+        echo 'Migrations complete. Starting server...' &&
+        npm run start
+      "
+
+    stop_grace_period: 30s
+
     environment:
-      NODE_ENV: production
-      PORT: 3001
-      TRUST_PROXY_HOPS: 1
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_SSL: "false"
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
-      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
-      ROOT_ADMIN_PASSWORD: ${ROOT_ADMIN_PASSWORD}
-      FRONTEND_URL: ${APP_BASE_URL:-http://localhost:8081}
-      CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:8081}
+      <<: *backend-env
+
+    # Backend accessible only locally
     ports:
-      - "3002:3001"
+      - "127.0.0.1:3001:3001"
+
     depends_on:
       postgres:
         condition: service_healthy
+
     healthcheck:
       test:
-        - CMD
-        - node
-        - -e
-        - >
-          require('http').get('http://127.0.0.1:3001/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))
+        - CMD-SHELL
+        - wget -qO- http://127.0.0.1:3001/health > /dev/null 2>&1 || exit 1
+
       interval: 15s
       timeout: 5s
-      retries: 12
-      start_period: 25s
-    networks:
-      - app
+      retries: 5
+      start_period: 40s
+
+  # ────────────────────────────────────────────────────────────────
+  # Frontend Application
+  # ────────────────────────────────────────────────────────────────
 
   frontend:
+    <<: *common
+
     build:
       context: .
       dockerfile: frontend/Dockerfile
+
       args:
         VITE_API_BASE_URL: /api
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    deploy:
-      resources:
-        limits:
-          memory: 256M
+
+    container_name: cmms-frontend
+
     depends_on:
       backend:
         condition: service_healthy
+
+    # Public frontend port
     ports:
-      - "${FRONTEND_PORT:-8081}:80"
-    networks:
-      - app
+      - "8081:80"
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/"]
+
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ────────────────────────────────────────────────────────────────
+  # Development Backend
+  # ────────────────────────────────────────────────────────────────
+
+  backend-dev:
+    <<: *common
+
+    profiles: ["dev"]
+
+    image: node:22-alpine
+    container_name: cmms-backend-dev
+
+    working_dir: /app
+
+    command: >
+      sh -c "
+        npm install &&
+        npm run migration:run &&
+        npm run dev
+      "
+
+    environment:
+      NODE_ENV: development
+
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-postgres}
+
+      DB_SSL: "false"
+
+      PORT: 3001
+
+      TS_NODE_TRANSPILE_ONLY: "true"
+
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-32-chars}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me-32-chars}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-dev-encryption-key-change-me-32-chars}
+
+      CORS_ORIGINS: http://localhost:5173,http://localhost:4173
+      FRONTEND_URL: http://localhost:5173
+
+    ports:
+      - "3001:3001"
+
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ────────────────────────────────────────────────────────────────
+  # Development Frontend
+  # ────────────────────────────────────────────────────────────────
+
+  frontend-dev:
+    <<: *common
+
+    profiles: ["dev"]
+
+    image: node:22-alpine
+    container_name: cmms-frontend-dev
+
+    working_dir: /app/frontend
+
+    command: >
+      sh -c "
+        npm install &&
+        npm run dev -- --host 0.0.0.0 --port 5173
+      "
+
+    environment:
+      VITE_API_BASE_URL: http://localhost:3001/api
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+
+    ports:
+      - "5173:5173"
+
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+
+    depends_on:
+      backend-dev:
+        condition: service_started
+
+  # ────────────────────────────────────────────────────────────────
+  # pgAdmin (Optional Tools Profile)
+  # ────────────────────────────────────────────────────────────────
+
+  pgadmin:
+    <<: *common
+
+    profiles: ["tools"]
+
+    image: dpage/pgadmin4:8
+    container_name: cmms-pgadmin
+
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@cmms.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+
+    # Localhost only for security
+    ports:
+      - "127.0.0.1:5050:80"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+# ────────────────────────────────────────────────────────────────
+# Networks
+# ────────────────────────────────────────────────────────────────
 
 networks:
   app:
+    name: cmmsv2_network
     driver: bridge
+
+# ────────────────────────────────────────────────────────────────
+# Volumes
+# ────────────────────────────────────────────────────────────────
 
 volumes:
   cmms_postgres_data:
+    name: cmmsv2_postgres_data

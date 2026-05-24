@@ -97,27 +97,41 @@ function findSlaConfig(
   wo: { plant_id: string | null; category: string | null; priority: string },
   configs: SlaConfigEntity[]
 ): SlaConfigEntity | null {
-  // 1. Plant match
-  if (wo.plant_id) {
-    const plantConfig = configs.find(c => c.scope === 'PLANT' && c.scopeValue === wo.plant_id && c.priority === wo.priority);
-    if (plantConfig) return plantConfig;
-  }
-  // 2. Category match
-  if (wo.category) {
-    const categoryConfig = configs.find(c => c.scope === 'CATEGORY' && c.scopeValue?.toUpperCase() === (wo.category as string).toUpperCase() && c.priority === wo.priority);
-    if (categoryConfig) return categoryConfig;
-  }
-  // 3. Priority match
-  const priorityConfig = configs.find(c => c.scope === 'PRIORITY' && c.priority === wo.priority);
-  if (priorityConfig) return priorityConfig;
+  if (configs.length === 0) return null;
 
-  // 4. Global Priority match
-  const globalPriorityConfig = configs.find(c => c.scope === 'GLOBAL' && c.priority === wo.priority);
-  if (globalPriorityConfig) return globalPriorityConfig;
+  const exactMatches: Array<{ config: SlaConfigEntity; score: number }> = [];
 
-  // 5. Fallback to any active Global config
-  const globalConfig = configs.find(c => c.scope === 'GLOBAL');
-  return globalConfig || null;
+  for (const config of configs) {
+    let score = 0;
+
+    // Priority match is mandatory
+    if (config.priority !== wo.priority) continue;
+    score += 1;
+
+    // Score higher for more specific scope matches
+    if (wo.plant_id && config.scope === 'PLANT' && config.scopeValue === wo.plant_id) {
+      score += 100;
+    }
+    if (wo.category && config.scope === 'CATEGORY' && config.scopeValue?.toUpperCase() === (wo.category as string).toUpperCase()) {
+      score += 50;
+    }
+    if (config.scope === 'PRIORITY' && !config.scopeValue) {
+      score += 10;
+    }
+    if (config.scope === 'GLOBAL') {
+      score += 5;
+    }
+
+    if (score > 0) {
+      exactMatches.push({ config, score });
+    }
+  }
+
+  if (exactMatches.length === 0) return null;
+
+  // Return highest-scoring match
+  exactMatches.sort((a, b) => b.score - a.score);
+  return exactMatches[0].config;
 }
 
 export async function runEnhancedEscalationScheduler(): Promise<void> {

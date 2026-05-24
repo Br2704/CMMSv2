@@ -1197,7 +1197,7 @@ authRouter.post('/auth/refresh', authRefreshRateLimiter, validateRequest({ body:
     setAuthCookies(res, tokens.refreshToken, csrfToken);
 
     const me = await buildMePayload(user.id);
-    res.status(200).json(ok({ ...buildAuthTokenPayload(tokens.accessToken, csrfToken), ...me }, 'Token refreshed'));
+    res.status(200).json(ok({ ...buildAuthTokenPayload(tokens.accessToken, csrfToken, tokens.refreshToken), ...me }, 'Token refreshed'));
   } catch (error) {
     next(error);
   }

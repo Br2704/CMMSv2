@@ -27,10 +27,10 @@ function resolveVapidConfiguration(): { publicKey: string; privateKey: string } 
 pushRouter.get('/push/vapid-public-key', (_req, res) => {
   const vapidConfig = resolveVapidConfiguration();
   if (!vapidConfig) {
-    res.status(503).json({ error: 'Push notifications are not configured' });
+    res.json({ publicKey: null, configured: false });
     return;
   }
-  res.json({ publicKey: vapidConfig.publicKey });
+  res.json({ publicKey: vapidConfig.publicKey, configured: true });
 });
 
 const pushSubscribeSchema = z.object({

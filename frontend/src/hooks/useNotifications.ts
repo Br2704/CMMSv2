@@ -10,6 +10,7 @@ import {
 import { ensureAccessToken, getApiBaseUrl, getStoredAccessToken } from "@/api/http";
 import { useAuthStore } from "@/store/auth.store";
 import { toast } from "sonner";
+import { useApiHealth } from "@/hooks/useApiHealth";
 
 export interface Notification {
   id: string;
@@ -70,16 +71,22 @@ function consumeSseBuffer(
 
 export function useNotifications(options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true;
+  const { healthy: apiHealthy } = useApiHealth();
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const streamAbortRef = useRef<AbortController | null>(null);
   const streamReconnectRef = useRef<number | null>(null);
+  const streamRetryRef = useRef(0);
 
   const fetchNotifications = useCallback(async () => {
     if (!enabled || !user || authLoading || !isAuthenticated || !getStoredAccessToken()) {
       setNotifications([]);
+      setLoading(false);
+      return;
+    }
+    if (!apiHealthy) {
       setLoading(false);
       return;
     }
@@ -91,14 +98,14 @@ export function useNotifications(options?: { enabled?: boolean }) {
     } finally {
       setLoading(false);
     }
-  }, [authLoading, enabled, isAuthenticated, user]);
+  }, [apiHealthy, authLoading, enabled, isAuthenticated, user]);
 
   useEffect(() => {
     void fetchNotifications();
   }, [fetchNotifications]);
 
   useEffect(() => {
-    if (!enabled || !user || authLoading || !isAuthenticated || !getStoredAccessToken()) return;
+    if (!enabled || !user || authLoading || !isAuthenticated || !getStoredAccessToken() || !apiHealthy) return;
 
     const poll = () => {
       void fetchNotifications();
@@ -120,10 +127,10 @@ export function useNotifications(options?: { enabled?: boolean }) {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [authLoading, enabled, fetchNotifications, isAuthenticated, user]);
+  }, [apiHealthy, authLoading, enabled, fetchNotifications, isAuthenticated, user]);
 
   useEffect(() => {
-    if (!enabled || !user || authLoading || !isAuthenticated) return;
+    if (!enabled || !user || authLoading || !isAuthenticated || !apiHealthy) return;
 
     let cancelled = false;
 
@@ -136,10 +143,19 @@ export function useNotifications(options?: { enabled?: boolean }) {
 
     const scheduleReconnect = (delayMs = 3_000) => {
       if (cancelled || streamReconnectRef.current !== null) return;
+      const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+      const baseDelay = isOffline ? 10_000 : delayMs;
+      const attempt = streamRetryRef.current;
+      const delay = Math.min(60_000, baseDelay * Math.pow(2, attempt));
+      streamRetryRef.current = Math.min(attempt + 1, 6);
       streamReconnectRef.current = window.setTimeout(() => {
         streamReconnectRef.current = null;
         void connectStream();
-      }, delayMs);
+      }, delay);
+    };
+
+    const resetReconnect = () => {
+      streamRetryRef.current = 0;
     };
 
     const abortCurrentStream = () => {
@@ -192,6 +208,8 @@ export function useNotifications(options?: { enabled?: boolean }) {
           return;
         }
 
+        resetReconnect();
+
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -241,7 +259,7 @@ export function useNotifications(options?: { enabled?: boolean }) {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       abortCurrentStream();
     };
-  }, [authLoading, enabled, fetchNotifications, isAuthenticated, user]);
+  }, [apiHealthy, authLoading, enabled, fetchNotifications, isAuthenticated, user]);
 
   const unreadCount = notifications.filter((notification) => !notification.is_read).length;
   const notificationAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -267,7 +285,7 @@ export function useNotifications(options?: { enabled?: boolean }) {
           }
           notificationAudioRef.current.play().catch(() => {});
         } catch (e) {
-          console.error("Failed to play notification chime", e);
+          if (import.meta.env.DEV) console.error("Failed to play notification chime", e);
         }
 
         // Show in-app Sonner Toast popup!

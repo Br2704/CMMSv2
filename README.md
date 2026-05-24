@@ -10,11 +10,38 @@ The single consolidated project handover, architecture summary, and ISO 27001 / 
 
 ## Quick Start
 
-Create env files:
+### One-command setup (recommended)
+
+From the repository root, run the setup script to auto-generate a `.env` file with secure secrets:
+
+**PowerShell:**
+```powershell
+.\setup.ps1
+```
+
+**Bash:**
+```bash
+chmod +x setup.sh && ./setup.sh
+```
+
+What it does:
+- Copies `.env.example` → `.env` (if not already present)
+- Replaces all `changeme_*` placeholders with cryptographically secure random values
+- Prints connection details and next steps
+
+Then start the production stack (frontend + backend + PostgreSQL):
 
 ```powershell
-Copy-Item backend/.env.example backend/.env
-Copy-Item frontend/.env.example frontend/.env.local
+docker compose up --build -d
+```
+
+Open the app at [http://localhost:8081](http://localhost:8081).
+
+### Manual setup
+
+```powershell
+Copy-Item .env.example .env
+# Then manually edit .env with your own secrets
 ```
 
 Database setup:

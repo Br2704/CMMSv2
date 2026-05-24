@@ -57,12 +57,23 @@ export function deleteReportSchedule(id: string) {
   return httpRequest<ApiResponse<DeleteResult>>(`/reports/${id}`, { method: "DELETE" });
 }
 
+export interface ReportLog {
+  id: string;
+  scheduleId: string;
+  sentAt: string;
+  status: "SUCCESS" | "PARTIAL" | "FAILED";
+  recipients: string[];
+  recordsIncluded: number;
+  errorMessage?: string | null;
+  createdAt: string;
+}
+
 export function listReportHistory(params: ListParams & { schedule_id?: string } = {}) {
   const query = new URLSearchParams();
   if (params.schedule_id) query.set("schedule_id", params.schedule_id);
   const common = toQueryString(params);
   const join = common ? `${common}&${query.toString()}` : query.toString() ? `?${query.toString()}` : "";
-  return httpRequest<ApiListResponse<Record<string, unknown>>>(`/reports/history${join}`, { method: "GET" });
+  return httpRequest<ApiListResponse<ReportLog>>(`/reports/history${join}`, { method: "GET" });
 }
 
 export function sendReportNow(scheduleId: string) {

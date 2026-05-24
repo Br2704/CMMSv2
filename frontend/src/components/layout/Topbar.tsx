@@ -9,6 +9,8 @@ import { Bell, LogOut, Search, AlertCircle, CheckCircle, Info, Clock, CheckCheck
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ThemeToggle } from "./ThemeToggle";
 import { useNotifications } from "@/hooks/useNotifications";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useBrandingStore } from "@/store/branding.store";
@@ -28,6 +30,7 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const isRootUser = isRootAdmin(user);
   const brandingOrganizationName = useBrandingStore((state) => state.organizationName);
   const organizationName = user?.organizationName || brandingOrganizationName || null;
@@ -119,16 +122,48 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
         </div>
       )}
 
-      {/* Search */}
+      {/* Search - Desktop */}
       <div className="relative hidden sm:flex flex-1 max-w-md">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
+          id="desktop-search"
           placeholder="Search work orders, assets..."
           className="h-10 w-full pl-9 bg-muted/50 border-0 focus-visible:ring-1"
         />
       </div>
 
-      <div className="ml-auto flex items-center gap-2 sm:gap-3">
+      {/* Search - Mobile */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="relative h-11 w-11 sm:hidden"
+        aria-label="Search"
+        onClick={() => setIsMobileSearchOpen(true)}
+      >
+        <Search className="h-5 w-5 text-muted-foreground" />
+      </Button>
+
+      <Sheet open={isMobileSearchOpen} onOpenChange={setIsMobileSearchOpen}>
+        <SheetContent side="top" className="h-auto p-4">
+          <SheetHeader className="mb-3">
+            <SheetTitle className="text-lg">Search</SheetTitle>
+          </SheetHeader>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="mobile-search"
+              placeholder="Search work orders, assets..."
+              className="h-12 w-full pl-9 text-base"
+              autoFocus
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <div className="ml-auto flex items-center gap-1 sm:gap-2">
+        {/* Theme Toggle */}
+        <ThemeToggle />
+
         {/* Notifications Dialog */}
         {canReadNotifications && (
           <>

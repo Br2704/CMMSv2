@@ -121,7 +121,7 @@ export const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
                                 : "border-gray-300 bg-gray-50 hover:border-gray-400"
                     }`}
             >
-                <input ref={fileInputRef} type="file" onChange={handleInputChange} className="hidden" accept={acceptedFormats.join(",")} />
+                <input id="file-upload" name="fileUpload" ref={fileInputRef} type="file" onChange={handleInputChange} className="hidden" accept={acceptedFormats.join(",")} />
 
                 <div className="flex flex-col items-center justify-center gap-3">
                     {isLoading ? (

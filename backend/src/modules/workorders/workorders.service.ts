@@ -1136,7 +1136,7 @@ class WorkOrdersService extends CrudService {
         WORKFLOW_STATUSES.REASSIGNED,
       ];
       if (!allowedStartStatuses.includes(status)) {
-        conflict('Work order can only be started from Raised, Triaged, Assigned, or Opened status');
+        conflict('Work order can only be started from Raised, Triaged, Assigned, Accepted, Opened, or Reassigned status');
       }
 
       await this.ensureExecutionAccess(existing, auth, manager);
@@ -1493,7 +1493,7 @@ class WorkOrdersService extends CrudService {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
       const status = String(existing.status ?? '').toUpperCase();
-      if (status !== WORKFLOW_STATUSES.IN_PROGRESS && status !== WORKFLOW_STATUSES.REJECTED) {
+      if (status !== WORKFLOW_STATUSES.IN_PROGRESS && status !== WORKFLOW_STATUSES.REJECTED && status !== WORKFLOW_STATUSES.ASSIGNED) {
         conflict('Only in-progress or reopened work orders can be completed for user verification');
       }
 
@@ -1558,34 +1558,37 @@ class WorkOrdersService extends CrudService {
         ...attachments,
       ];
 
+      const updateData: GenericRecord = {
+        status: followUpRequired ? WORKFLOW_STATUSES.IN_PROGRESS : WORKFLOW_STATUSES.APPROVAL_PENDING,
+        wo_type: workOrderType,
+        resolved_at: now,
+        downtime_end_at: now,
+        root_cause: issueDetails,
+        action_taken: correctiveAction,
+        downtime_minutes: downtimeMinutes,
+        is_failure_event: isFailureEvent,
+        failure_code: normalizedFailureCode,
+        actual_failure_category: normalizedActualFailureCategory,
+        why_why_analysis: whyWhyAnalysis,
+        preventive_recommendation: normalizeText(normalized.preventive_recommendation),
+        manpower_used: normalizeText(normalized.manpower_used),
+        labor_hours: minutesToLaborHours(laborMinutes),
+        actual_cost: actualCost,
+        parts_replaced: partsReplaced ?? formatSpareUsageSummary(spareConsumption),
+        spare_consumption: spareConsumption,
+        operator_fault: operatorFault,
+        warranty_claim: false,
+        follow_up_required: followUpRequired,
+        remarks,
+        attachments: mergedAttachments,
+      };
+      if (!followUpRequired) {
+        updateData.submitted_for_approval_at = now;
+        updateData.submitted_for_approval_by = auth.userId;
+      }
       const updated = await this.persistWorkOrderUpdate(
         id,
-        {
-          status: followUpRequired ? WORKFLOW_STATUSES.IN_PROGRESS : WORKFLOW_STATUSES.APPROVAL_PENDING,
-          wo_type: workOrderType,
-          resolved_at: now,
-          downtime_end_at: now,
-          submitted_for_approval_at: followUpRequired ? null : now,
-          submitted_for_approval_by: followUpRequired ? null : auth.userId,
-          root_cause: issueDetails,
-          action_taken: correctiveAction,
-          downtime_minutes: downtimeMinutes,
-          is_failure_event: isFailureEvent,
-          failure_code: normalizedFailureCode,
-          actual_failure_category: normalizedActualFailureCategory,
-          why_why_analysis: whyWhyAnalysis,
-          preventive_recommendation: normalizeText(normalized.preventive_recommendation),
-          manpower_used: normalizeText(normalized.manpower_used),
-          labor_hours: minutesToLaborHours(laborMinutes),
-          actual_cost: actualCost,
-          parts_replaced: partsReplaced ?? formatSpareUsageSummary(spareConsumption),
-          spare_consumption: spareConsumption,
-          operator_fault: operatorFault,
-          warranty_claim: false,
-          follow_up_required: followUpRequired,
-          remarks,
-          attachments: mergedAttachments,
-        },
+        updateData,
         auth,
         { manager, allowWorkflowMutation: true, existing },
       );
@@ -1782,7 +1785,7 @@ class WorkOrdersService extends CrudService {
       const updated = await this.persistWorkOrderUpdate(
         id,
         {
-          status: WORKFLOW_STATUSES.ASSIGNED,
+          status: WORKFLOW_STATUSES.REJECTED,
           started_at: null,
           closed_at: null,
           approved_by: null,

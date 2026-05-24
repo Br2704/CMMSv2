@@ -46,12 +46,14 @@ export type WorkOrderStatus =
   | 'RAISED'
   | 'TRIAGED'
   | 'ASSIGNED'
+  | 'ACCEPTED'
   | 'OPENED'
   | 'IN_PROGRESS'
-  | 'PARTIALLY_CLOSED'
   | 'USER_VERIFICATION'
   | 'APPROVAL_PENDING'
   | 'REJECTED'
+  | 'REASSIGNED'
+  | 'CANCELLED'
   | 'CLOSED';
 
 export type WorkOrderCategory = 

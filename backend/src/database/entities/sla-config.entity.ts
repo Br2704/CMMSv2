@@ -58,6 +58,12 @@ export class SlaConfigEntity extends TimestampedUuidEntity {
   @Column({ type: 'varchar', nullable: true })
   description!: string | null;
 
+  @Column({ name: 'notification_email', type: 'varchar', nullable: true })
+  notificationEmail!: string | null;
+
+  @Column({ name: 'send_email_on', type: 'simple-array', default: '' })
+  sendEmailOn!: string; // comma-separated: ESCALATION,REMINDER,OVERDUE
+
   @Column({ name: 'created_by', type: 'uuid', nullable: true })
   createdBy!: string | null;
 }

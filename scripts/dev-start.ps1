@@ -10,13 +10,16 @@ if (-not (Test-Path "frontend/.env.local")) {
   Write-Host "Created frontend/.env.local from frontend/.env.example"
 }
 
-docker compose -f docker-compose.dev.yml up -d
+docker compose --profile dev up -d
 
 Write-Host ""
 Write-Host "Services started:"
 Write-Host "- Postgres:  localhost:5432"
 Write-Host "- Backend:   http://localhost:3001/health"
+Write-Host "- Frontend:  http://localhost:5173"
 Write-Host ""
-Write-Host "Run frontend in another terminal:"
-Write-Host "cd frontend; npm install; npm run dev"
-
+Write-Host "To also start tools (pgadmin):"
+Write-Host "  docker compose --profile dev --profile tools up -d"
+Write-Host ""
+Write-Host "For production stack:"
+Write-Host "  docker compose --profile production up -d --build"

@@ -195,8 +195,16 @@ export default function MailConfigMaster() {
   };
 
   const statusColor = (status: string) => {
-    const map: Record<string, string> = { SENT: 'bg-green-100 text-green-800 border-green-200', FAILED: 'bg-red-100 text-red-800 border-red-200', QUEUED: 'bg-yellow-100 text-yellow-800 border-yellow-200', DEAD_LETTER: 'bg-gray-100 text-gray-800 border-gray-200', PENDING: 'bg-blue-100 text-blue-800 border-blue-200', BOUNCED: 'bg-orange-100 text-orange-800 border-orange-200', OPENED: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
-    return map[status] || 'bg-gray-100 text-gray-800 border-gray-200';
+    const map: Record<string, string> = {
+      SENT: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-500/20 dark:text-green-200 dark:border-green-500/40',
+      FAILED: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-500/20 dark:text-red-200 dark:border-red-500/40',
+      QUEUED: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-500/20 dark:text-yellow-200 dark:border-yellow-500/40',
+      DEAD_LETTER: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700',
+      PENDING: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-500/20 dark:text-blue-200 dark:border-blue-500/40',
+      BOUNCED: 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-500/20 dark:text-orange-200 dark:border-orange-500/40',
+      OPENED: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-200 dark:border-emerald-500/40',
+    };
+    return map[status] || 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700';
   };
 
   if (loading) {
@@ -219,8 +227,8 @@ export default function MailConfigMaster() {
         </div>
         <div className="flex items-center gap-3">
           {safeConfig.configured
-            ? <Badge className="bg-green-100 text-green-800 border-green-200 text-xs px-3 py-1.5"><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />Configured</Badge>
-            : <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 text-xs px-3 py-1.5"><AlertTriangle className="h-3.5 w-3.5 mr-1.5" />Not Configured</Badge>
+            ? <Badge className="bg-green-100 text-green-800 border-green-200 text-xs px-3 py-1.5 dark:bg-green-500/20 dark:text-green-200 dark:border-green-500/40"><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />Configured</Badge>
+            : <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 text-xs px-3 py-1.5 dark:bg-yellow-500/20 dark:text-yellow-200 dark:border-yellow-500/40"><AlertTriangle className="h-3.5 w-3.5 mr-1.5" />Not Configured</Badge>
           }
         </div>
       </div>
@@ -261,11 +269,11 @@ export default function MailConfigMaster() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         {[
-          { label: 'Pending', value: safeStats.pending, color: 'text-blue-600' },
-          { label: 'Sent', value: safeStats.sent, color: 'text-green-600' },
-          { label: 'Failed', value: safeStats.failed, color: 'text-red-600' },
-          { label: 'Dead Letter', value: safeStats.deadLetter, color: 'text-gray-600' },
-          { label: 'Processing', value: safeStats.processing, color: 'text-yellow-600' },
+          { label: 'Pending', value: safeStats.pending, color: 'text-blue-600 dark:text-blue-400' },
+          { label: 'Sent', value: safeStats.sent, color: 'text-green-600 dark:text-green-400' },
+          { label: 'Failed', value: safeStats.failed, color: 'text-red-600 dark:text-red-400' },
+          { label: 'Dead Letter', value: safeStats.deadLetter, color: 'text-gray-600 dark:text-muted-foreground' },
+          { label: 'Processing', value: safeStats.processing, color: 'text-yellow-600 dark:text-yellow-400' },
         ].map((s) => (
           <Card key={s.label}>
             <CardHeader className="pb-1.5"><CardTitle className="text-xs font-medium text-muted-foreground">{s.label}</CardTitle></CardHeader>
@@ -352,7 +360,7 @@ export default function MailConfigMaster() {
               </div>
 
               {verifyResult && (
-                <div className={`p-4 rounded-lg text-sm flex items-start gap-3 ${verifyResult.connected ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+                <div className={`p-4 rounded-lg text-sm flex items-start gap-3 ${verifyResult.connected ? 'bg-green-50 text-green-800 dark:bg-green-500/20 dark:text-green-200' : 'bg-red-50 text-red-800 dark:bg-red-500/20 dark:text-red-200'}`}>
                   {verifyResult.connected ? <CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0" /> : <XCircle className="h-5 w-5 mt-0.5 shrink-0" />}
                   <div>
                     <p className="font-medium">{verifyResult.connected ? 'Connection successful' : 'Connection failed'}</p>
@@ -368,7 +376,7 @@ export default function MailConfigMaster() {
             <CardContent>
               <div className="grid gap-3 sm:grid-cols-2">
                 {DNS_GUIDE.map((dns) => (
-                  <div key={dns.record} className="p-3 bg-muted/50 rounded-lg border">
+                  <div key={dns.record} className="p-3 bg-muted/50 rounded-lg border border-border/60">
                     <div className="flex items-center gap-2 mb-1.5">
                       <Badge variant="outline" className="font-mono text-xs">{dns.record}</Badge>
                     </div>
@@ -406,7 +414,7 @@ export default function MailConfigMaster() {
                 Send Test Email
               </Button>
               {!safeConfig.configured && (
-                <div className="p-3 bg-yellow-50 text-yellow-800 rounded-lg text-sm flex items-start gap-2">
+                <div className="p-3 bg-yellow-50 text-yellow-800 rounded-lg text-sm flex items-start gap-2 dark:bg-yellow-500/20 dark:text-yellow-200">
                   <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                   <p>SMTP is not configured. Save the configuration in the <button className="underline font-medium" onClick={() => setActiveTab('config')}>Configuration tab</button> first.</p>
                 </div>

@@ -107,6 +107,7 @@ import {
   RbacMetaEntity,
   MaintenanceReportEntity,
   SystemConfigEntity,
+  ReportFormatConfigEntity,
 } from './index';
 
 export const ALL_ENTITIES = [
@@ -218,4 +219,5 @@ export const ALL_ENTITIES = [
   NotificationSettingsEntity,
   MaintenanceReportEntity,
   SystemConfigEntity,
+  ReportFormatConfigEntity,
 ];

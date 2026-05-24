@@ -68,6 +68,7 @@ export function ProfileImageField({
     <div className={cn("space-y-3 rounded-xl border border-border/70 bg-card/70 p-4", className)}>
       <input
         id={inputId}
+        name={name}
         ref={inputRef}
         type="file"
         accept="image/*"

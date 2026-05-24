@@ -72,7 +72,11 @@ export function MobileBottomNav({ isSidebarOpen = false }: MobileBottomNavProps)
   }, [isRootUser, loading, hasModuleAccess]);
 
   const filteredMore = useMemo(() => {
-    if (isRootUser) return [{ title: "Role Access", href: "/root/role-access", moduleId: "root.role_access" }];
+    if (isRootUser) return [
+      { title: "Role Access", href: "/root/role-access", moduleId: "root.role_access" },
+      { title: "Report Format", href: "/root/report-format", moduleId: "root.report-format" },
+      { title: "Mail Config", href: "/root/mail-config", moduleId: "root.mail-config" },
+    ];
     if (loading) return [];
     return moreNavItems.filter((item) => hasModuleAccess(item.moduleId, "view"));
   }, [isRootUser, loading, hasModuleAccess]);
@@ -94,7 +98,7 @@ export function MobileBottomNav({ isSidebarOpen = false }: MobileBottomNavProps)
               key={item.href}
               to={item.href}
               className={cn(
-                "relative flex h-full flex-1 flex-col items-center justify-center gap-1 ",
+                "relative flex h-full flex-1 flex-col items-center justify-center gap-1 active:scale-[0.95] transition-transform",
                 active ? "text-primary" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -112,7 +116,7 @@ export function MobileBottomNav({ isSidebarOpen = false }: MobileBottomNavProps)
             <SheetTrigger asChild>
               <button
                 className={cn(
-                  "relative flex h-full flex-1 flex-col items-center justify-center gap-1 ",
+                  "relative flex h-full flex-1 flex-col items-center justify-center gap-1 active:scale-[0.95] transition-transform",
                   isMoreActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -132,7 +136,7 @@ export function MobileBottomNav({ isSidebarOpen = false }: MobileBottomNavProps)
                     to={item.href}
                     onClick={() => setIsMoreOpen(false)}
                     className={cn(
-                      "flex aspect-square flex-col items-center justify-center gap-2 rounded-2xl border p-2 text-center transition-all ",
+                      "flex aspect-square flex-col items-center justify-center gap-2 rounded-2xl border p-2 text-center transition-all active:scale-[0.95]",
                       isActive(item.href)
                         ? "border-primary/30 bg-primary/10 text-primary ring-1 ring-primary/20"
                         : "border-border/50 bg-muted/30 hover:bg-muted"
