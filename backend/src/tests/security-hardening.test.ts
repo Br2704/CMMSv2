@@ -60,6 +60,31 @@ describe('Security Hardening Tests', () => {
       const response = await request(app).get('/health');
       expect(response.headers['permissions-policy']).toBeDefined();
     });
+
+    it('should include Cross-Origin-Opener-Policy header', async () => {
+      const response = await request(app).get('/health');
+      expect(response.headers['cross-origin-opener-policy']).toBe('same-origin');
+    });
+
+    it('should include Cross-Origin-Resource-Policy header', async () => {
+      const response = await request(app).get('/health');
+      expect(response.headers['cross-origin-resource-policy']).toBe('cross-origin');
+    });
+
+    it('should include X-DNS-Prefetch-Control header', async () => {
+      const response = await request(app).get('/health');
+      expect(response.headers['x-dns-prefetch-control']).toBe('off');
+    });
+
+    it('should include X-Permitted-Cross-Domain-Policies header', async () => {
+      const response = await request(app).get('/health');
+      expect(response.headers['x-permitted-cross-domain-policies']).toBe('none');
+    });
+
+    it('should include Referrer-Policy header', async () => {
+      const response = await request(app).get('/health');
+      expect(response.headers['referrer-policy']).toBe('no-referrer');
+    });
   });
 
   describe('Rate Limiting', () => {
@@ -104,7 +129,7 @@ describe('Security Hardening Tests', () => {
 
       const token = jwt.signAccessToken({
         ...testPayload,
-        roles: ['USER'],
+        roles: ['MAINTENANCE_USER'],
         organizationId: null,
         plantIds: [],
         accessAllPlants: false,

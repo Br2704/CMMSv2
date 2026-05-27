@@ -4,7 +4,7 @@ import { In } from 'typeorm';
 import { AppDataSource } from '../../database/data-source';
 import { AssetEntity, DepartmentEntity, MachineModuleEntity, OrganizationEntity, PlantEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess } from '../../middlewares/permissions';
+import { ensurePlantAccess } from '../../middlewares/permissionGuard';
 import { logger } from '../../config/logger';
 import { ok } from '../../utils/apiResponse';
 

@@ -27,10 +27,10 @@ export function MobileCard({
   const hasActions = onView || onEdit || onDelete || (actions && actions.length > 0);
 
   return (
-    <Card className="shadow-card">
+    <Card className="overflow-hidden shadow-card">
       <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 space-y-2">{children}</div>
+        <div className="flex min-w-0 items-start justify-between gap-4">
+          <div className="min-w-0 flex-1 space-y-2">{children}</div>
           {hasActions && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -79,9 +79,9 @@ interface MobileCardRowProps {
 
 export function MobileCardRow({ label, value }: MobileCardRowProps) {
   return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium">{value}</span>
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-start gap-4 text-sm">
+      <span className="min-w-0 break-words text-muted-foreground">{label}</span>
+      <span className="min-w-0 break-words text-right font-medium">{value}</span>
     </div>
   );
 }
@@ -94,12 +94,12 @@ interface MobileCardHeaderProps {
 
 export function MobileCardHeader({ title, subtitle, badge }: MobileCardHeaderProps) {
   return (
-    <div className="flex items-start justify-between gap-2">
-      <div>
-        <p className="font-semibold text-primary">{title}</p>
+    <div className="flex min-w-0 items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="break-words font-semibold text-primary">{title}</p>
         {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
       </div>
-      {badge}
+      {badge ? <div className="shrink-0">{badge}</div> : null}
     </div>
   );
 }

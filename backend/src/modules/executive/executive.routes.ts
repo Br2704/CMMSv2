@@ -10,7 +10,7 @@ import {
   SafetyIncidentEntity,
 } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { mean, resolveDateRange, safeNumber } from '../../utils/advancedAnalytics';
 
@@ -31,7 +31,7 @@ function monthLabel(date: Date) {
 }
 
 export const executiveRouter = Router();
-executiveRouter.use('/executive', requireAuth, requireRole(['SUPERADMIN']), requirePermission('BENCHMARKING', 'READ'));
+executiveRouter.use('/executive', requireAuth, requireRole(['SUPER_ADMIN']), requirePermission('BENCHMARKING', 'READ'));
 
 executiveRouter.get('/executive/global-operations', async (req, res, next) => {
   try {

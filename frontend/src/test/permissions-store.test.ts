@@ -34,7 +34,7 @@ describe("permissions store RBAC sync", () => {
 
     usePermissionsStore.setState({
       permissionsMe: {
-        roles: ["ADMIN"],
+        roles: ["PLANT_ADMIN"],
         permissions: { ASSETS: ["READ"] },
         kpis: [],
         plantIds: [],

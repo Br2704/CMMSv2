@@ -1,24 +1,30 @@
 import type { ScopeType } from '../utils/rbac';
 
 export type AppRole =
-  | 'SUPERADMIN'
   | 'SUPER_ADMIN'
   | 'ROOT_ADMIN'
-  | 'ADMIN'
   | 'PLANT_ADMIN'
+  | 'ESG_ADMIN'
+  | 'HR_ADMIN'
   | 'MAINTENANCE_MANAGER'
-  | 'ENGINEER'
-  | 'STORE_USER'
-  | 'VIEWER'
+  | 'PRODUCTION_MANAGER'
+  | 'SCM_MANAGER'
+  | 'HR_MANAGER'
+  | 'CALIBRATION_MANAGER'
+  | 'ACCOUNTS_MANAGER'
+  | 'SAFETY_MANAGER'
+  | 'ESG_MANAGER'
+  | 'MAINTENANCE_USER'
+  | 'PRODUCTION_USER'
+  | 'SCM_USER'
+  | 'HR_USER'
+  | 'CALIBRATION_USER'
+  | 'ACCOUNTS_USER'
+  | 'SAFETY_USER'
+  | 'ESG_USER'
   | 'VENDOR'
-  | 'USER'
-  | 'MECHANICAL_INCHARGE'
-  | 'ELECTRICAL_INCHARGE'
-  | 'UTILITY_INCHARGE'
-  | 'TOOLCHANGE_INCHARGE'
-  | 'CALIBRATION_INCHARGE'
-  | 'TECHNICIAN'
-  | 'OPERATOR';
+  | 'VISITOR'
+  | 'SECURITY';
 
 export interface AuthContext {
   userId: string;

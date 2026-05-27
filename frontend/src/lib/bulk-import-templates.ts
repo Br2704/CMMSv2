@@ -440,5 +440,5 @@ export function downloadEnhancedCsvTemplate(config: EnhancedCsvTemplateConfig, f
 export function downloadEnhancedExcelTemplate(config: EnhancedExcelTemplateConfig, fileName?: string): void {
     // This would integrate with the existing Excel generator
     // For now, we'll create a placeholder that the developer can extend
-    console.log("Enhanced Excel template generation - integrate with existing Excel generator");
+    // TODO: Implement actual Excel generation when integrating with the Excel generator
 }

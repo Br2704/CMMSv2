@@ -1,3 +1,5 @@
+import { APP_NAME, APP_TAGLINE } from '../config/branding';
+
 function escapeCell(value: unknown): string {
   if (value === null || value === undefined) return '';
   const text = String(value);
@@ -27,10 +29,10 @@ export function toCsv(headers: string[], rows: Array<Array<unknown>>, branding?:
   }
 
   const now = branding.generatedAt ?? new Date().toISOString();
-  const orgName = branding.organizationName ?? 'CMMS Organization';
-  const title = branding.headerTitle ?? 'CMMS Report';
-  const footerText = branding.footerText ?? 'Powered by TamOptix Technologies';
-  const footerSubtext = branding.footerSubtext ?? 'TamOptiX Technologies | Intelligent CMMS Platform';
+  const orgName = branding.organizationName ?? APP_NAME;
+  const title = branding.headerTitle ?? APP_NAME;
+  const footerText = branding.footerText ?? APP_TAGLINE;
+  const footerSubtext = branding.footerSubtext ?? `${APP_NAME} | Intelligent CMMS Platform`;
   const showTamOptix = branding.showTamOptixBranding ?? true;
   const showDate = branding.showGeneratedDate ?? true;
 

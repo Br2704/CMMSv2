@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,8 @@ import { EmptyState } from "@/components/app-shell/EmptyState";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import { toast } from "sonner";
 import { createSafetyMetric, listSafetyMetrics, updateSafetyMetric, type SafetyMetric } from "@/api/safety";
-import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isSuperAdmin } from "@/lib/permission-engine";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -37,7 +38,7 @@ const emptyForm: MetricForm = {
 
 export default function SafetyConfigMaster() {
   const { user } = useAuthStore();
-  const canSelectPlant = isSuperAdmin(user);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants } = useMastersOptions();
 
@@ -46,7 +47,7 @@ export default function SafetyConfigMaster() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<MetricForm>({ ...emptyForm, plantId: defaultPlantId });
 
-  const fetchMetrics = async () => {
+  const fetchMetrics = useCallback(async () => {
     setLoading(true);
     try {
       const response = await listSafetyMetrics({
@@ -60,12 +61,12 @@ export default function SafetyConfigMaster() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [canSelectPlant, defaultPlantId]);
 
   useEffect(() => {
     fetchPlants();
     fetchMetrics();
-  }, [defaultPlantId, canSelectPlant]);
+  }, [fetchMetrics]);
 
   const activeCount = useMemo(() => metrics.filter((m) => m.isActive).length, [metrics]);
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requirePermission } from '../../middlewares/permissions';
+import { requirePermission } from '../../middlewares/permissionGuard';
 import { validateRequest } from '../../middlewares/validate';
 import { createCrudController } from './crud.controller';
 import type { CrudLikeService, ModuleConfig } from './crud.types';

@@ -72,7 +72,7 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
       const color = itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color;
       if (color) {
         const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, "");
-        const sanitizedColor = color.replace(/[^a-zA-Z0-9#,().%_ \-]/g, "");
+        const sanitizedColor = color.replace(/[^a-zA-Z0-9#,().%_ -]/g, "");
         cssLines.push(`  --color-${sanitizedKey}: ${sanitizedColor};`);
       }
     }

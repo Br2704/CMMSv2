@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { AssetEntity, AssetQrEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission } from '../../middlewares/permissionGuard';
 import { validateRequest } from '../../middlewares/validate';
 import { ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';

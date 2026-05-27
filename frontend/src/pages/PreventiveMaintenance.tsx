@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { AlertTriangle, CheckCircle2, ClipboardCheck, Clock3, Loader2, Play, Search, Wrench } from "lucide-react";
@@ -133,6 +133,18 @@ export default function PreventiveMaintenance() {
     [availableSpares],
   );
 
+  const refreshSelectedTask = useCallback(
+    async (taskId?: string | null) => {
+      if (!taskId) return;
+      const result = await schedulesQuery.refetch();
+      const latest = (result.data || []).find((item) => item.id === taskId) || null;
+      if (latest) {
+        setSelectedTask(latest);
+      }
+    },
+    [schedulesQuery],
+  );
+
   const filteredSchedules = useMemo(() => {
     return schedules.filter((item) => {
       const target = [item.pmId, item.asset?.code, item.asset?.name, item.template?.templateName, item.maintenanceType, item.status]
@@ -153,6 +165,7 @@ export default function PreventiveMaintenance() {
   const openTaskDialog = (task: PMSchedule) => {
     const checklist = normalizeChecklist(task.checklist);
     setSelectedTask(task);
+    void refreshSelectedTask(task.id);
     setDraftTasks(
       (checklist.checklistTasks || []).map((entry, index) => ({
         id: entry.id || `task-${index + 1}`,
@@ -182,6 +195,24 @@ export default function PreventiveMaintenance() {
     setExecutionNotes("");
     setSavingState("idle");
   };
+
+  useEffect(() => {
+    if (!selectedTask?.id) return;
+    if (!selectedTask) return;
+
+    const handleFocus = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshSelectedTask(selectedTask.id);
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [refreshSelectedTask, selectedTask?.id]);
 
   const updateDraftTask = (index: number, patch: Partial<DraftTask>) => {
     setDraftTasks((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
@@ -261,7 +292,7 @@ export default function PreventiveMaintenance() {
         subtitle="Generated asset-based preventive and predictive maintenance tasks with technician checklist execution."
       />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <KPICard title="Scheduled Tasks" value={filteredSchedules.length} subtitle="Live PM/PD task queue" icon={Wrench} variant="primary" />
         <KPICard title="Overdue" value={overdueCount} subtitle="Past due and still open" icon={AlertTriangle} variant="destructive" />
         <KPICard title="In Progress" value={inProgressCount} subtitle="Technicians actively working" icon={Clock3} variant="info" />
@@ -333,8 +364,19 @@ export default function PreventiveMaintenance() {
         </CardContent>
       </Card>
 
-      <Dialog open={Boolean(selectedTask)} onOpenChange={(open) => { if (!open) closeTaskDialog(); }}>
-        <DialogContent className="w-[calc(100vw-1rem)] max-h-[92vh] overflow-y-auto sm:max-w-[1080px]">
+      <Dialog
+        open={Boolean(selectedTask)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeTaskDialog();
+            return;
+          }
+          if (selectedTask?.id) {
+            void refreshSelectedTask(selectedTask.id);
+          }
+        }}
+      >
+        <DialogContent className="w-[calc(100vw-1rem)] max-h-[92vh] overflow-y-auto md:max-w-[90vw] lg:max-w-5xl xl:max-w-[1080px]">
           <DialogHeader>
             <DialogTitle>{selectedTask?.pmId || "PM Task"}</DialogTitle>
             <DialogDescription>
@@ -419,8 +461,8 @@ export default function PreventiveMaintenance() {
                             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                               {task.photos.map((photo, photoIndex) => (
                                 <div key={`${photo.name}-${photoIndex}`} className="overflow-hidden rounded-lg border">
-                                  <img src={photo.dataUrl} alt={photo.name} className="h-28 w-full object-cover" />
-                                  <div className="flex items-center justify-between gap-2 p-2">
+                                  <img src={photo.dataUrl} alt={photo.name} className="max-h-28 w-full object-contain bg-muted/30" />
+                                  <div className="flex items-start justify-between gap-2 p-2 flex-wrap">
                                     <p className="truncate text-xs">{photo.name}</p>
                                     {selectedTask.status !== "COMPLETED" ? (
                                       <Button variant="ghost" size="sm" onClick={() => updateDraftTask(index, { photos: task.photos.filter((_, idx) => idx !== photoIndex) })}>Remove</Button>

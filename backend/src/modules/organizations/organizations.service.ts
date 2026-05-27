@@ -8,6 +8,8 @@ export const organizationsService = new CrudService(
     moduleId: 'ORGANIZATIONS',
     basePath: '/api/organizations',
     tableName: 'organizations',
+    codeColumn: 'code',
+    codeType: 'ORG',
   },
   organizationsRepository,
 );

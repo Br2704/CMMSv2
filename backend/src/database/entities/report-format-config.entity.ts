@@ -1,21 +1,22 @@
 import { Column, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 import { DATETIME_COLUMN_TYPE } from './common';
+import { APP_NAME, APP_TAGLINE } from '../../config/branding';
 
 @Entity('report_format_config')
 export class ReportFormatConfigEntity {
   @PrimaryColumn({ type: 'int' })
   id!: number;
 
-  @Column({ type: 'varchar', length: 500, default: 'CMMS Report' })
+  @Column({ type: 'varchar', length: 500, default: APP_NAME })
   headerTitle!: string;
 
   @Column({ type: 'varchar', length: 200, default: '' })
   headerSubtitle!: string;
 
-  @Column({ type: 'varchar', length: 200, default: 'Powered by TamOptiX Technologies' })
+  @Column({ type: 'varchar', length: 200, default: APP_TAGLINE })
   footerText!: string;
 
-  @Column({ type: 'varchar', length: 500, default: 'TamOptiX Technologies | Intelligent CMMS Platform' })
+  @Column({ type: 'varchar', length: 500, default: `${APP_NAME} | Intelligent CMMS Platform` })
   footerSubtext!: string;
 
   @Column({ type: 'boolean', default: true })

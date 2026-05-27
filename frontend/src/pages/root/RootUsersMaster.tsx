@@ -26,7 +26,8 @@ import { FormGrid } from "@/components/layout/FormGrid";
 import { EmptyState } from "@/components/app-shell/EmptyState";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import { invalidatePermissionsCache } from "@/hooks/usePermissions";
-import { initializeAuthState, isRootAdmin, useAuthStore } from "@/store/auth.store";
+import { initializeAuthState, useAuthStore } from "@/store/auth.store";
+import { isRootAdmin } from "@/lib/permission-engine";
 import { useBrandingStore } from "@/store/branding.store";
 
 type RootRole = string;
@@ -52,7 +53,7 @@ const emptyUserForm: RootUserForm = {
   phone: "",
   profileImageUrl: "",
   userCode: "",
-  roleKey: "SUPERADMIN",
+  roleKey: "SUPER_ADMIN",
   organizationId: "",
   plantId: "",
   isActive: true,
@@ -77,9 +78,11 @@ function getErrorStatus(error: unknown) {
 }
 
 function normalizeRoleKey(role: string | null | undefined) {
-  if (!role) return "USER";
+  if (!role) return "MAINTENANCE_USER";
   const normalized = String(role || "").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  if (normalized === "SECURITY_USER") return "SECURITY";
+  if (normalized === "SUPER_ADMIN" || normalized === "SUPER_ADMIN") return "SUPER_ADMIN";
+  if (normalized === "PLANT_ADMIN" || normalized === "PLANTADMIN" || normalized === "PLANT_ADMIN") return "PLANT_ADMIN";
+  if (normalized === "SECURITY") return "SECURITY";
   return normalized;
 }
 
@@ -89,7 +92,7 @@ function formatRoleLabel(role: string, fallbackName?: string | null) {
   }
   const normalized = normalizeRoleKey(role);
   if (normalized === "ROOT_ADMIN") return "Root Admin";
-  if (normalized === "SUPERADMIN") return "Superadmin";
+  if (normalized === "SUPER_ADMIN") return "Super Admin";
   return normalized
     .toLowerCase()
     .replace(/_/g, " ")
@@ -99,14 +102,14 @@ function formatRoleLabel(role: string, fallbackName?: string | null) {
 function getRoleBadgeVariant(role: string) {
   const normalized = normalizeRoleKey(role);
   if (normalized === "ROOT_ADMIN") return "warning" as const;
-  if (normalized === "SUPERADMIN") return "primary" as const;
-  if (normalized === "ADMIN") return "info" as const;
+  if (normalized === "SUPER_ADMIN") return "primary" as const;
+  if (normalized === "PLANT_ADMIN") return "info" as const;
   return "default" as const;
 }
 
 function roleRequiresPlant(role: string) {
   const normalized = normalizeRoleKey(role);
-  return normalized !== "ROOT_ADMIN" && normalized !== "SUPERADMIN";
+  return normalized !== "ROOT_ADMIN" && normalized !== "SUPER_ADMIN";
 }
 
 function sortOrganizations(items: Organization[]) {
@@ -219,7 +222,7 @@ export default function RootUsersMaster() {
   const brandingOrganizationName = useBrandingStore((state) => state.organizationName);
   const brandingLogoUrl = useBrandingStore((state) => state.logoUrl);
   const refreshBranding = useBrandingStore((state) => state.fetchBranding);
-  const isRootUser = isRootAdmin(user);
+  const isRootUser = isRootAdmin(user?.roles ?? []);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [orgSearch, setOrgSearch] = useState("");
   const [orgLoading, setOrgLoading] = useState(true);
@@ -244,6 +247,8 @@ export default function RootUsersMaster() {
   const [userToDelete, setUserToDelete] = useState<RootOrgUser | null>(null);
   const [isUserViewOpen, setIsUserViewOpen] = useState(false);
   const [viewUser, setViewUser] = useState<RootOrgUser | null>(null);
+
+  const isChildOpen = isUserViewOpen || isUserFormOpen || isDeleteOpen;
   const fallbackOrganization = useMemo(
     () => buildRootOrganizationFallback(user, brandingOrganizationId, brandingOrganizationName, brandingLogoUrl),
     [brandingLogoUrl, brandingOrganizationId, brandingOrganizationName, user],
@@ -296,7 +301,7 @@ export default function RootUsersMaster() {
       const response = await listOrganizations({
         page: 1,
         limit: 200,
-        includeInactive: false,
+        includeInactive: true,
       });
       if (response.data.length > 0 || !isRootUser) {
         setOrganizations(sortOrganizations(response.data));
@@ -350,7 +355,7 @@ export default function RootUsersMaster() {
 
   const fetchPlants = useCallback(async () => {
     try {
-      const response = await listPlants({ page: 1, limit: 500, includeInactive: false });
+      const response = await listPlants({ page: 1, limit: 500, includeInactive: true });
       setPlants(response.data);
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, "Failed to load plants"));
@@ -425,10 +430,12 @@ export default function RootUsersMaster() {
   const roleOptions = useMemo(() => {
     const baseOptions = userFormMode === "root-admin"
       ? [{ value: "ROOT_ADMIN", label: "Root Admin" }]
-      : activeOrgRoles.map((role) => ({
-        value: role.key,
-        label: formatRoleLabel(role.key, role.name),
-      }));
+      : activeOrgRoles
+          .filter(role => ["SUPER_ADMIN", "PLANT_ADMIN", "ESG_ADMIN", "HR_ADMIN"].includes(normalizeRoleKey(role.key)))
+          .map((role) => ({
+            value: role.key,
+            label: formatRoleLabel(role.key, role.name),
+          }));
     const options = [...baseOptions];
     if (userForm.roleKey && !options.some((option) => option.value === userForm.roleKey)) {
       options.push({
@@ -462,7 +469,7 @@ export default function RootUsersMaster() {
     setUserForm({
       ...emptyUserForm,
       organizationId: selectedOrganizationId,
-      roleKey: orgRoles[0]?.key || "SUPERADMIN",
+      roleKey: orgRoles[0]?.key || "SUPER_ADMIN",
     });
     if (selectedOrganizationId) {
       void fetchOrgRoles(selectedOrganizationId);
@@ -672,17 +679,18 @@ export default function RootUsersMaster() {
       className: "text-right",
       render: (item: RootOrgUser) => (
         <div className="flex justify-end gap-1">
-          <Button variant="ghost" size="icon" onClick={() => openViewUser(item)}>
+          <Button variant="ghost" size="icon" onClick={(e) => { (e.currentTarget as HTMLElement).blur(); openViewUser(item); }}>
             <Eye className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => openEditUser(item)}>
+          <Button variant="ghost" size="icon" onClick={(e) => { (e.currentTarget as HTMLElement).blur(); openEditUser(item); }}>
             <Edit className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
             className="text-destructive"
-            onClick={() => {
+            onClick={(e) => {
+              (e.currentTarget as HTMLElement).blur();
               setUserToDelete(item);
               setIsDeleteOpen(true);
             }}
@@ -907,6 +915,7 @@ export default function RootUsersMaster() {
         title={selectedOrganization?.name || "Organization Users"}
         subtitle="Manage users and assigned roles for this organization"
         contentClassName="sm:max-w-[980px]"
+        modal={!isChildOpen}
       >
         {selectedOrganization && (
           <div className="space-y-4">

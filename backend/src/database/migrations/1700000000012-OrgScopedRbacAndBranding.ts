@@ -1,6 +1,6 @@
 import { MigrationInterface, QueryRunner, Table, TableColumn, TableForeignKey, TableIndex } from 'typeorm';
 
-const DEFAULT_ORG_ROLE_KEYS = ['SUPERADMIN', 'ADMIN', 'USER'] as const;
+const DEFAULT_ORG_ROLE_KEYS = ['SUPER_ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_USER'] as const;
 const DEFAULT_FEATURE_KEYS = ['SAFETY', 'ESG', 'GATE_ENTRY', 'ADVANCED_ANALYTICS', 'HR'] as const;
 
 export class OrgScopedRbacAndBranding1700000000012 implements MigrationInterface {
@@ -269,14 +269,14 @@ export class OrgScopedRbacAndBranding1700000000012 implements MigrationInterface
           WHEN EXISTS (
             SELECT 1 FROM user_roles ur
             WHERE ur.user_id = u.id
-              AND UPPER(REPLACE(ur.role, ' ', '_')) IN ('SUPERADMIN', 'SUPER_ADMIN')
-          ) THEN 'SUPERADMIN'
+              AND UPPER(REPLACE(ur.role, ' ', '_')) IN ('SUPER_ADMIN', 'SUPER_ADMIN')
+          ) THEN 'SUPER_ADMIN'
           WHEN EXISTS (
             SELECT 1 FROM user_roles ur
             WHERE ur.user_id = u.id
-              AND UPPER(REPLACE(ur.role, ' ', '_')) = 'ADMIN'
-          ) THEN 'ADMIN'
-          ELSE 'USER'
+              AND UPPER(REPLACE(ur.role, ' ', '_')) = 'PLANT_ADMIN'
+          ) THEN 'PLANT_ADMIN'
+          ELSE 'MAINTENANCE_USER'
         END AS role_key
       FROM users u
       WHERE u.organization_id IS NOT NULL

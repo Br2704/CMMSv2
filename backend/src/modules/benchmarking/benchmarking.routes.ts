@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { AssetEntity, AssetPerformanceLogEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 
 const ALLOWED_ASSET_TYPES = ['BOILER', 'COMPRESSOR', 'CHILLER', 'HVAC', 'PUMP', 'MOTOR', 'GENERATOR', 'FAN', 'CONVEYOR', 'ROBOT', 'CNC', 'TRANSFORMER', 'GEARBOX', 'COOLING_TOWER'] as const;
@@ -55,7 +55,7 @@ function getMetricValue(metric: string, row: AssetPerformanceLogEntity) {
 export const benchmarkingRouter = Router();
 benchmarkingRouter.use(requireAuth);
 
-benchmarkingRouter.get('/benchmarking/asset-types', requireRole(['SUPERADMIN']), requirePermission('BENCHMARKING', 'READ'), async (req, res, next) => {
+benchmarkingRouter.get('/benchmarking/asset-types', requireRole(['SUPER_ADMIN']), requirePermission('BENCHMARKING', 'READ'), async (req, res, next) => {
   try {
     const rowsQb = AppDataSource.getRepository(AssetEntity)
       .createQueryBuilder('asset')
@@ -78,7 +78,7 @@ benchmarkingRouter.get('/benchmarking/asset-types', requireRole(['SUPERADMIN']),
   }
 });
 
-benchmarkingRouter.get('/benchmarking/assets', requireRole(['SUPERADMIN']), requirePermission('BENCHMARKING', 'READ'), async (req, res, next) => {
+benchmarkingRouter.get('/benchmarking/assets', requireRole(['SUPER_ADMIN']), requirePermission('BENCHMARKING', 'READ'), async (req, res, next) => {
   try {
     const query = z
       .object({
@@ -118,7 +118,7 @@ benchmarkingRouter.get('/benchmarking/assets', requireRole(['SUPERADMIN']), requ
   }
 });
 
-benchmarkingRouter.get('/benchmarking/compare', requireRole(['SUPERADMIN']), requirePermission('BENCHMARKING', 'READ'), async (req, res, next) => {
+benchmarkingRouter.get('/benchmarking/compare', requireRole(['SUPER_ADMIN']), requirePermission('BENCHMARKING', 'READ'), async (req, res, next) => {
   try {
     const query = compareQuerySchema.parse(req.query);
     const range = resolveWindow(query.window, query.from, query.to);

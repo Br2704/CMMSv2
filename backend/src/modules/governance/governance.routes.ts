@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { AppDataSource } from '../../database/data-source';
 import { OrganizationEntity, PlantEntity, UserEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requireRole } from '../../middlewares/permissions';
+import { requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 
 export const governanceRouter = Router();

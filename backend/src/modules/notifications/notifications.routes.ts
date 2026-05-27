@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { NotificationEntity, PlantEntity, ProfileEntity, UserEntity, UserRoleEntity, WorkOrderEntity, PushSubscriptionEntity, NotificationSettingsEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requirePermission, requireRole } from '../../middlewares/permissions';
+import { requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { validateRequest } from '../../middlewares/validate';
 import { ok } from '../../utils/apiResponse';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
@@ -210,6 +210,81 @@ notificationsRouter.get('/notifications', requirePermission('NOTIFICATIONS', 'RE
   }
 });
 
+notificationsRouter.get('/notifications/settings', async (req, res, next) => {
+  try {
+    const repo = AppDataSource.getRepository(NotificationSettingsEntity);
+    let settings = await repo.findOneBy({ userId: req.auth!.userId });
+    if (!settings) {
+      settings = repo.create({
+        userId: req.auth!.userId,
+        emailNotifications: true,
+        pushNotifications: true,
+        inAppNotifications: true,
+        dailyDigest: false,
+        newWoEmail: true,
+        woAssignedEmail: true,
+        woEscalationEmail: true,
+        woReminderEmail: true,
+        woCompletedEmail: true,
+        slaBreachEmail: true,
+        quietHoursStart: null,
+        quietHoursEnd: null,
+        emailDigestFrequency: 'REALTIME',
+      });
+      await repo.save(settings);
+    }
+    res.json(ok(settings, 'Notification settings fetched'));
+  } catch (error) {
+    next(error);
+  }
+});
+
+notificationsRouter.patch('/notifications/settings', async (req, res, next) => {
+  try {
+    const repo = AppDataSource.getRepository(NotificationSettingsEntity);
+    let settings = await repo.findOneBy({ userId: req.auth!.userId });
+    if (!settings) {
+      settings = repo.create({
+        userId: req.auth!.userId,
+        emailNotifications: true,
+        pushNotifications: true,
+        inAppNotifications: true,
+        dailyDigest: false,
+        newWoEmail: true,
+        woAssignedEmail: true,
+        woEscalationEmail: true,
+        woReminderEmail: true,
+        woCompletedEmail: true,
+        slaBreachEmail: true,
+        quietHoursStart: null,
+        quietHoursEnd: null,
+        emailDigestFrequency: 'REALTIME',
+      });
+    }
+    const body = z.object({
+      emailNotifications: z.boolean().optional(),
+      pushNotifications: z.boolean().optional(),
+      inAppNotifications: z.boolean().optional(),
+      dailyDigest: z.boolean().optional(),
+      newWoEmail: z.boolean().optional(),
+      woAssignedEmail: z.boolean().optional(),
+      woEscalationEmail: z.boolean().optional(),
+      woReminderEmail: z.boolean().optional(),
+      woCompletedEmail: z.boolean().optional(),
+      slaBreachEmail: z.boolean().optional(),
+      quietHoursStart: z.string().nullable().optional(),
+      quietHoursEnd: z.string().nullable().optional(),
+      emailDigestFrequency: z.string().optional(),
+    }).parse(req.body);
+
+    Object.assign(settings, body);
+    await repo.save(settings);
+    res.json(ok(settings, 'Notification settings updated'));
+  } catch (error) {
+    next(error);
+  }
+});
+
 notificationsRouter.patch('/notifications/read-all', requirePermission('NOTIFICATIONS', 'READ'), async (req, res, next) => {
   try {
     const repo = AppDataSource.getRepository(NotificationEntity);
@@ -299,7 +374,7 @@ notificationsRouter.patch('/notifications/:id', requirePermission('NOTIFICATIONS
   }
 });
 
-notificationsRouter.post('/notifications', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('NOTIFICATIONS', 'CREATE'), async (req, res, next) => {
+notificationsRouter.post('/notifications', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('NOTIFICATIONS', 'CREATE'), async (req, res, next) => {
   try {
     const body = notificationSchema.parse(req.body);
     if (body.userId) {
@@ -337,7 +412,7 @@ notificationsRouter.post('/notifications', requireRole(['SUPERADMIN', 'ADMIN']),
   }
 });
 
-notificationsRouter.post('/notifications/by-role', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('NOTIFICATIONS', 'CREATE'), async (req, res, next) => {
+notificationsRouter.post('/notifications/by-role', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('NOTIFICATIONS', 'CREATE'), async (req, res, next) => {
   try {
     const body = byRoleSchema.parse(req.body);
     const roleRepo = AppDataSource.getRepository(UserRoleEntity);
@@ -430,77 +505,3 @@ notificationsRouter.delete('/notifications/:id', requirePermission('NOTIFICATION
   }
 });
 
-notificationsRouter.get('/notifications/settings', async (req, res, next) => {
-  try {
-    const repo = AppDataSource.getRepository(NotificationSettingsEntity);
-    let settings = await repo.findOneBy({ userId: req.auth!.userId });
-    if (!settings) {
-      settings = repo.create({
-        userId: req.auth!.userId,
-        emailNotifications: true,
-        pushNotifications: true,
-        inAppNotifications: true,
-        dailyDigest: false,
-        newWoEmail: true,
-        woAssignedEmail: true,
-        woEscalationEmail: true,
-        woReminderEmail: true,
-        woCompletedEmail: true,
-        slaBreachEmail: true,
-        quietHoursStart: null,
-        quietHoursEnd: null,
-        emailDigestFrequency: 'REALTIME',
-      });
-      await repo.save(settings);
-    }
-    res.json(ok(settings, 'Notification settings fetched'));
-  } catch (error) {
-    next(error);
-  }
-});
-
-notificationsRouter.patch('/notifications/settings', async (req, res, next) => {
-  try {
-    const repo = AppDataSource.getRepository(NotificationSettingsEntity);
-    let settings = await repo.findOneBy({ userId: req.auth!.userId });
-    if (!settings) {
-      settings = repo.create({
-        userId: req.auth!.userId,
-        emailNotifications: true,
-        pushNotifications: true,
-        inAppNotifications: true,
-        dailyDigest: false,
-        newWoEmail: true,
-        woAssignedEmail: true,
-        woEscalationEmail: true,
-        woReminderEmail: true,
-        woCompletedEmail: true,
-        slaBreachEmail: true,
-        quietHoursStart: null,
-        quietHoursEnd: null,
-        emailDigestFrequency: 'REALTIME',
-      });
-    }
-    const body = z.object({
-      emailNotifications: z.boolean().optional(),
-      pushNotifications: z.boolean().optional(),
-      inAppNotifications: z.boolean().optional(),
-      dailyDigest: z.boolean().optional(),
-      newWoEmail: z.boolean().optional(),
-      woAssignedEmail: z.boolean().optional(),
-      woEscalationEmail: z.boolean().optional(),
-      woReminderEmail: z.boolean().optional(),
-      woCompletedEmail: z.boolean().optional(),
-      slaBreachEmail: z.boolean().optional(),
-      quietHoursStart: z.string().nullable().optional(),
-      quietHoursEnd: z.string().nullable().optional(),
-      emailDigestFrequency: z.string().optional(),
-    }).parse(req.body);
-
-    Object.assign(settings, body);
-    await repo.save(settings);
-    res.json(ok(settings, 'Notification settings updated'));
-  } catch (error) {
-    next(error);
-  }
-});

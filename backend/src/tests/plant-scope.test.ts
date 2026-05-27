@@ -5,8 +5,8 @@ function authContext(overrides: Partial<AuthContext> = {}): AuthContext {
   return {
     userId: 'user-1',
     email: 'user@example.com',
-    roles: ['USER'],
-    roleKey: 'USER',
+    roles: ['MAINTENANCE_USER'],
+    roleKey: 'MAINTENANCE_USER',
     rolePrecedence: 0,
     scopeType: 'PLANT',
     organizationId: null,
@@ -22,8 +22,8 @@ function authContext(overrides: Partial<AuthContext> = {}): AuthContext {
 describe('plant scope utilities', () => {
   it('treats ROOT_ADMIN and SUPERADMIN as global scopes', () => {
     expect(isGlobalRole('ROOT_ADMIN', ['ROOT_ADMIN'], null)).toBe(true);
-    expect(isGlobalRole('SUPERADMIN', ['SUPERADMIN'], 'org-1')).toBe(true);
-    expect(isGlobalRole('ADMIN', ['ADMIN'], 'org-1')).toBe(false);
+    expect(isGlobalRole('SUPER_ADMIN', ['SUPER_ADMIN'], 'org-1')).toBe(true);
+    expect(isGlobalRole('PLANT_ADMIN', ['PLANT_ADMIN'], 'org-1')).toBe(false);
   });
 
   it('does not force a plant filter for ROOT_ADMIN list requests', () => {
@@ -42,8 +42,8 @@ describe('plant scope utilities', () => {
 
   it('preserves all organization plants for SUPERADMIN list requests', () => {
     const superAuth = authContext({
-      roles: ['SUPERADMIN'],
-      roleKey: 'SUPERADMIN',
+      roles: ['SUPER_ADMIN'],
+      roleKey: 'SUPER_ADMIN',
       scopeType: 'ORGANIZATION',
       organizationId: 'org-1',
       plantIds: ['plant-a', 'plant-b'],
@@ -70,8 +70,8 @@ describe('plant scope utilities', () => {
 
   it('blocks plant access outside organization scope for SUPERADMIN', () => {
     const superAuth = authContext({
-      roles: ['SUPERADMIN'],
-      roleKey: 'SUPERADMIN',
+      roles: ['SUPER_ADMIN'],
+      roleKey: 'SUPER_ADMIN',
       scopeType: 'ORGANIZATION',
       organizationId: 'org-1',
       plantIds: ['plant-a', 'plant-b'],
@@ -84,8 +84,8 @@ describe('plant scope utilities', () => {
 
   it('blocks organization-scoped access when no plants were resolved', () => {
     const superAuth = authContext({
-      roles: ['SUPERADMIN'],
-      roleKey: 'SUPERADMIN',
+      roles: ['SUPER_ADMIN'],
+      roleKey: 'SUPER_ADMIN',
       scopeType: 'ORGANIZATION',
       organizationId: 'org-1',
       plantIds: [],

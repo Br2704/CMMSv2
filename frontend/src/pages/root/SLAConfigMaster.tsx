@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,45 @@ function formatMinutes(m: number): string {
   return `${Math.round(m / 1440)}d ${Math.round((m % 1440) / 60)}h`;
 }
 
+function normalizeText(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function parseEventList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  return String(value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getRuleAlerts(config: Record<string, unknown>): string[] {
+  const alerts: string[] = [];
+  const emailTargets = normalizeText(config.notificationEmail);
+  const eventTargets = parseEventList(config.sendEmailOn);
+
+  if (!config.isActive) {
+    alerts.push('Inactive');
+  }
+  if (!emailTargets || eventTargets.length === 0) {
+    alerts.push('Notifications disabled');
+  }
+  if (
+    Number(config.responseTimeMinutes ?? 0) > Number(config.acknowledgementTimeMinutes ?? 0) ||
+    Number(config.acknowledgementTimeMinutes ?? 0) > Number(config.closureTimeMinutes ?? 0)
+  ) {
+    alerts.push('Timer order looks unusual');
+  }
+  if (![1, 2, 3, 4].some((level) => normalizeText(config[`escalationRole${level}`]))) {
+    alerts.push('No escalation roles mapped');
+  }
+
+  return alerts;
+}
+
 export default function SLAConfigMaster() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
@@ -39,6 +78,12 @@ export default function SLAConfigMaster() {
   const [stats, setStats] = useState<Record<string, unknown>>({});
   const [editDialog, setEditDialog] = useState(false);
   const [editItem, setEditItem] = useState<Record<string, unknown> | null>(null);
+  const [previewDialog, setPreviewDialog] = useState(false);
+  const [previewItem, setPreviewItem] = useState<Record<string, unknown> | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [scopeFilter, setScopeFilter] = useState('ALL');
+  const [priorityFilter, setPriorityFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
 
   const fetchConfigs = useCallback(async () => {
     try {
@@ -107,6 +152,70 @@ export default function SLAConfigMaster() {
     setEditDialog(true);
   };
 
+  const openPreview = (item: Record<string, unknown>) => {
+    setPreviewItem({ ...item });
+    setPreviewDialog(true);
+  };
+
+  const handleDelete = async (item: Record<string, unknown>) => {
+    const id = String(item.id ?? '');
+    if (!id) return;
+
+    const confirmed = window.confirm(`Delete SLA rule ${String(item.scope ?? 'rule')} for ${String(item.priority ?? 'priority')}? This cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      await httpRequest(`/sla/config/${id}`, { method: 'DELETE' });
+      toast({ title: 'SLA rule deleted' });
+      await Promise.all([fetchConfigs(), fetchHistory(), fetchStats()]);
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Error', description: String(error) });
+    }
+  };
+
+  const filteredConfigs = useMemo(() => {
+    return configs.filter((config) => {
+      const haystack = [
+        config.scope,
+        config.scopeValue,
+        config.priority,
+        config.description,
+        config.notificationEmail,
+        config.sendEmailOn,
+      ]
+        .map(normalizeText)
+        .join(' ');
+
+      const matchesSearch = !searchTerm || haystack.includes(normalizeText(searchTerm));
+      const matchesScope = scopeFilter === 'ALL' || String(config.scope ?? '') === scopeFilter;
+      const matchesPriority = priorityFilter === 'ALL' || String(config.priority ?? '') === priorityFilter;
+      const matchesStatus =
+        statusFilter === 'ALL' ||
+        (statusFilter === 'ACTIVE' && Boolean(config.isActive)) ||
+        (statusFilter === 'INACTIVE' && !config.isActive) ||
+        (statusFilter === 'NOTIFICATION_READY' && normalizeText(config.notificationEmail) && parseEventList(config.sendEmailOn).length > 0) ||
+        (statusFilter === 'NO_ALERTS' && (!normalizeText(config.notificationEmail) || parseEventList(config.sendEmailOn).length === 0));
+
+      return matchesSearch && matchesScope && matchesPriority && matchesStatus;
+    });
+  }, [configs, priorityFilter, scopeFilter, searchTerm, statusFilter]);
+
+  const ruleSummary = useMemo(() => {
+    const total = configs.length;
+    const active = configs.filter((config) => Boolean(config.isActive)).length;
+    const notificationReady = configs.filter((config) => normalizeText(config.notificationEmail) && parseEventList(config.sendEmailOn).length > 0).length;
+    const avgResponse = total > 0 ? Math.round(configs.reduce((sum, config) => sum + Number(config.responseTimeMinutes ?? 0), 0) / total) : 0;
+
+    return { total, active, inactive: total - active, notificationReady, avgResponse };
+  }, [configs]);
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setScopeFilter('ALL');
+    setPriorityFilter('ALL');
+    setStatusFilter('ALL');
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
   }
@@ -130,9 +239,15 @@ export default function SLAConfigMaster() {
           New SLA Rule
         </Button>
 
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
+        <Card className="border-l-4 border-l-blue-500 dark:border-l-blue-400"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Total Rules</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{ruleSummary.total}</p></CardContent></Card>
+        <Card className="border-l-4 border-l-emerald-500 dark:border-l-emerald-400"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Active Rules</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{ruleSummary.active}</p></CardContent></Card>
+        <Card className="border-l-4 border-l-violet-500 dark:border-l-violet-400"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Notification Ready</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold text-violet-600 dark:text-violet-400">{ruleSummary.notificationReady}</p></CardContent></Card>
+        <Card className="border-l-4 border-l-cyan-500 dark:border-l-cyan-400"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Avg Response</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">{formatMinutes(ruleSummary.avgResponse)}</p></CardContent></Card>
+        <Card className="border-l-4 border-l-amber-500 dark:border-l-amber-400"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">SLA Compliance</CardTitle></CardHeader><CardContent><p className={`text-2xl font-bold ${complianceColor}`}>{slaComplianceRate}%</p></CardContent></Card>
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="border-l-4 border-l-blue-500 dark:border-l-blue-400"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Active Rules</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{(stats as any).totalActiveRules ?? 0}</p></CardContent></Card>
-        <Card className="border-l-4 border-l-green-500 dark:border-l-green-400"><CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">SLA Compliance</CardTitle></CardHeader><CardContent><p className={`text-2xl font-bold ${complianceColor}`}>{slaComplianceRate}%</p></CardContent></Card>
         <Card className={`border-l-4 ${(stats as any).overdueWOs > 0 ? 'border-l-red-500 dark:border-l-red-400' : 'border-l-green-500 dark:border-l-green-400'}`}>
           <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Overdue WOs</CardTitle></CardHeader>
           <CardContent className="flex items-center gap-2"><p className={`text-2xl font-bold ${(stats as any).overdueWOs > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{(stats as any).overdueWOs ?? 0}</p>{(stats as any).overdueWOs > 0 && <AlertTriangle className="h-4 w-4 text-red-500 dark:text-red-400" />}</CardContent>
@@ -140,6 +255,14 @@ export default function SLAConfigMaster() {
         <Card className={`border-l-4 ${(stats as any).escalatedWOs > 0 ? 'border-l-orange-500 dark:border-l-orange-400' : 'border-l-gray-300 dark:border-l-slate-700'}`}>
           <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Escalated</CardTitle></CardHeader>
           <CardContent className="flex items-center gap-2"><p className={`text-2xl font-bold ${(stats as any).escalatedWOs > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-600 dark:text-muted-foreground'}`}>{(stats as any).escalatedWOs ?? 0}</p>{(stats as any).escalatedWOs > 0 && <ArrowUpRight className="h-4 w-4 text-orange-500 dark:text-orange-400" />}</CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-slate-500 dark:border-l-slate-400">
+          <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Inactive Rules</CardTitle></CardHeader>
+          <CardContent><p className="text-2xl font-bold text-slate-600 dark:text-slate-300">{ruleSummary.inactive}</p></CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-rose-500 dark:border-l-rose-400">
+          <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Open WOs</CardTitle></CardHeader>
+          <CardContent><p className="text-2xl font-bold text-rose-600 dark:text-rose-400">{(stats as any).openWOs ?? 0}</p></CardContent>
         </Card>
       </div>
 
@@ -151,13 +274,73 @@ export default function SLAConfigMaster() {
         </TabsList>
 
         <TabsContent value="rules" className="space-y-4 mt-4">
+          <Card>
+            <CardContent className="p-4 space-y-4">
+              <div className="grid gap-3 lg:grid-cols-[2fr,1fr,1fr,1fr]">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Search</Label>
+                  <Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search scope, priority, description, emails, or events" className="h-10" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Scope</Label>
+                  <Select value={scopeFilter} onValueChange={setScopeFilter}>
+                    <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All scopes</SelectItem>
+                      <SelectItem value="GLOBAL">Global</SelectItem>
+                      <SelectItem value="PRIORITY">Priority</SelectItem>
+                      <SelectItem value="DEPARTMENT">Department</SelectItem>
+                      <SelectItem value="CATEGORY">Category</SelectItem>
+                      <SelectItem value="ASSET_CRITICALITY">Asset Criticality</SelectItem>
+                      <SelectItem value="PLANT">Plant</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Priority</Label>
+                  <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                    <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All priorities</SelectItem>
+                      <SelectItem value="CRITICAL">Critical</SelectItem>
+                      <SelectItem value="HIGH">High</SelectItem>
+                      <SelectItem value="MEDIUM">Medium</SelectItem>
+                      <SelectItem value="LOW">Low</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Status</Label>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All rules</SelectItem>
+                      <SelectItem value="ACTIVE">Active</SelectItem>
+                      <SelectItem value="INACTIVE">Inactive</SelectItem>
+                      <SelectItem value="NOTIFICATION_READY">Notification ready</SelectItem>
+                      <SelectItem value="NO_ALERTS">No alerts configured</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-xs text-muted-foreground">
+                  Showing {filteredConfigs.length} of {configs.length} rules
+                </p>
+                <Button type="button" variant="outline" size="sm" onClick={clearFilters}>Clear filters</Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {configs.length === 0 ? (
             <Card><CardContent className="flex flex-col items-center justify-center py-12 text-center"><Gauge className="h-12 w-12 text-muted-foreground mb-4" /><h3 className="text-lg font-medium">No SLA rules configured</h3><p className="text-sm text-muted-foreground mt-1">Create your first SLA rule to start tracking response and resolution times.</p><Button className="mt-4" onClick={openNew}><Plus className="h-4 w-4 mr-2" />Add SLA Rule</Button></CardContent></Card>
+          ) : filteredConfigs.length === 0 ? (
+            <Card><CardContent className="flex flex-col items-center justify-center py-12 text-center"><Gauge className="h-12 w-12 text-muted-foreground mb-4" /><h3 className="text-lg font-medium">No rules match your filters</h3><p className="text-sm text-muted-foreground mt-1">Broaden the search or reset the filters to see all SLA rules.</p><Button className="mt-4" variant="outline" onClick={clearFilters}>Reset filters</Button></CardContent></Card>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {configs.map((config) => {
+              {filteredConfigs.map((config) => {
                 const pc = PRIORITY_CONFIG[(config as any).priority as string] || PRIORITY_CONFIG.MEDIUM;
-                const isOverdue = false; // not computed per-rule
+                const alerts = getRuleAlerts(config);
                 return (
                   <Card key={String((config as any).id)} className={`${(config as any).isActive ? '' : 'opacity-60'} hover:shadow-md transition-shadow`}>
                     <CardHeader className="pb-2 flex flex-row items-start justify-between">
@@ -173,7 +356,9 @@ export default function SLAConfigMaster() {
                         {(config as any).description && <CardDescription className="text-xs">{(config as any).description}</CardDescription>}
                       </div>
                       <div className="flex items-center gap-1">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openPreview(config)}><Eye className="h-3.5 w-3.5" /></Button>
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEdit(config)}><Pencil className="h-3.5 w-3.5" /></Button>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDelete(config)}><Trash2 className="h-3.5 w-3.5" /></Button>
                         <Switch checked={(config as any).isActive} onCheckedChange={() => toggleActive(config)} />
                       </div>
                     </CardHeader>
@@ -200,6 +385,15 @@ export default function SLAConfigMaster() {
                       <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
                         <span>Reminder: {formatMinutes((config as any).reminderIntervalMinutes)}</span>
                         <span>{(config as any).isActive ? <Badge className="bg-green-100 text-green-700 text-[10px] dark:bg-green-500/20 dark:text-green-200">Active</Badge> : <Badge variant="outline" className="text-[10px]">Inactive</Badge>}</span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {alerts.length === 0 ? (
+                          <Badge variant="outline" className="text-[10px] text-emerald-700 border-emerald-200 bg-emerald-50 dark:bg-emerald-500/15 dark:text-emerald-200">Healthy</Badge>
+                        ) : (
+                          alerts.map((alert) => (
+                            <Badge key={alert} variant="outline" className="text-[10px] text-amber-700 border-amber-200 bg-amber-50 dark:bg-amber-500/15 dark:text-amber-200">{alert}</Badge>
+                          ))
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -231,8 +425,8 @@ export default function SLAConfigMaster() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {configs.length === 0 && <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No SLA configurations</TableCell></TableRow>}
-                    {configs.map((config) => (
+                    {filteredConfigs.length === 0 && <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">No SLA configurations match the current filters</TableCell></TableRow>}
+                    {filteredConfigs.map((config) => (
                       <TableRow key={String((config as any).id)} className={!(config as any).isActive ? 'opacity-50' : ''}>
                         <TableCell><Badge className={PRIORITY_CONFIG[(config as any).priority as string]?.bg || ''} variant="outline">{(config as any).priority}</Badge></TableCell>
                         <TableCell className="text-xs">{(config as any).scope}{(config as any).scopeValue ? `: ${(config as any).scopeValue}` : ''}</TableCell>
@@ -246,7 +440,9 @@ export default function SLAConfigMaster() {
                         <TableCell className="text-xs font-mono">{formatMinutes((config as any).reminderIntervalMinutes)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openPreview(config)}><Eye className="h-3.5 w-3.5" /></Button>
                             <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEdit(config)}><Pencil className="h-3.5 w-3.5" /></Button>
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDelete(config)}><Trash2 className="h-3.5 w-3.5" /></Button>
                             <Switch checked={(config as any).isActive} onCheckedChange={() => toggleActive(config)} />
                           </div>
                         </TableCell>
@@ -300,6 +496,70 @@ export default function SLAConfigMaster() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={previewDialog} onOpenChange={setPreviewDialog}>
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg">SLA Rule Preview</DialogTitle>
+          </DialogHeader>
+          {previewItem && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="text-xs font-mono">{String(previewItem.scope ?? 'GLOBAL')}</Badge>
+                {previewItem.scopeValue && <Badge variant="secondary" className="text-xs">{String(previewItem.scopeValue)}</Badge>}
+                <Badge className={PRIORITY_CONFIG[String(previewItem.priority ?? 'MEDIUM')]?.bg || ''} variant="outline">
+                  {String(previewItem.priority ?? 'MEDIUM')}
+                </Badge>
+                {previewItem.isActive ? <Badge className="bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-200">Active</Badge> : <Badge variant="outline">Inactive</Badge>}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Response</CardTitle></CardHeader><CardContent><p className="text-lg font-bold">{formatMinutes(Number(previewItem.responseTimeMinutes ?? 0))}</p></CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Acknowledgement</CardTitle></CardHeader><CardContent><p className="text-lg font-bold">{formatMinutes(Number(previewItem.acknowledgementTimeMinutes ?? 0))}</p></CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Closure</CardTitle></CardHeader><CardContent><p className="text-lg font-bold">{formatMinutes(Number(previewItem.closureTimeMinutes ?? 0))}</p></CardContent></Card>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-4">
+                {[1, 2, 3, 4].map((level) => (
+                  <Card key={level}>
+                    <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Escalation L{level}</CardTitle></CardHeader>
+                    <CardContent>
+                      <p className="text-sm font-bold">{formatMinutes(Number(previewItem[`escalation${level}Minutes`] ?? 0))}</p>
+                      <p className="text-xs text-muted-foreground">{String(previewItem[`escalationRole${level}`] ?? 'No role mapped')}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Notification setup</CardTitle></CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <div><span className="font-medium">Targets:</span> {previewItem.notificationEmail ? String(previewItem.notificationEmail) : 'Not configured'}</div>
+                  <div><span className="font-medium">Events:</span> {parseEventList(previewItem.sendEmailOn).length > 0 ? parseEventList(previewItem.sendEmailOn).join(', ') : 'Not configured'}</div>
+                  <div><span className="font-medium">Reminder:</span> {formatMinutes(Number(previewItem.reminderIntervalMinutes ?? 0))}</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Rule health</CardTitle></CardHeader>
+                <CardContent className="flex flex-wrap gap-2">
+                  {getRuleAlerts(previewItem).length === 0 ? (
+                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">Healthy</Badge>
+                  ) : (
+                    getRuleAlerts(previewItem).map((alert) => (
+                      <Badge key={alert} variant="outline" className="text-amber-700 border-amber-200 bg-amber-50 dark:bg-amber-500/15 dark:text-amber-200">{alert}</Badge>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setPreviewDialog(false)}>Close preview</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={editDialog} onOpenChange={setEditDialog}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">

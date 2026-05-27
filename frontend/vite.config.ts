@@ -5,6 +5,10 @@ import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
 
 const proxyTarget = (process.env.VITE_PROXY_TARGET || "http://127.0.0.1:3001").replace(/\/+$/, "");
+const appName = (process.env.VITE_APP_NAME || "OptiX Maintenance Pro").trim();
+const appShortName = (process.env.VITE_APP_SHORT_NAME || "OptiX Maint - Pro").trim();
+const appCompany = (process.env.VITE_APP_COMPANY || "TamOptiX Technologies").trim();
+const appTagline = (process.env.VITE_APP_TAGLINE || `Powered by ${appCompany}`).trim();
 
 export default defineConfig(({ mode }) => ({
   server: {
@@ -37,11 +41,17 @@ export default defineConfig(({ mode }) => ({
         "tamoptix/tamoptix-favicon.png",
         "tamoptix/tamoptix-favicon.svg",
         "tamoptix/tamoptix-logo.png",
+        "tamoptix/favicon-16x16.png",
+        "tamoptix/favicon-32x32.png",
+        "tamoptix/favicon.ico",
+        "tamoptix/apple-touch-icon.png",
+        "tamoptix/maskable-icon.png",
+        "offline.html",
       ],
       manifest: {
-        name: "TamOptiX CMMS",
-        short_name: "TamOptiX CMMS",
-        description: "TamOptiX CMMS Platform",
+        name: appName,
+        short_name: appShortName,
+        description: appTagline,
         start_url: "/",
         scope: "/",
         display: "standalone",
@@ -49,30 +59,16 @@ export default defineConfig(({ mode }) => ({
         theme_color: "#0f172a",
         orientation: "any",
         icons: [
-          {
-            src: "/tamoptix/tamoptix-logo.png",
-            sizes: "192x192",
-            type: "image/png",
-            purpose: "any"
-          },
-          {
-            src: "/tamoptix/tamoptix-logo.png",
-            sizes: "192x192",
-            type: "image/png",
-            purpose: "maskable"
-          },
-          {
-            src: "/tamoptix/tamoptix-logo.png",
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "any"
-          },
-          {
-            src: "/tamoptix/tamoptix-logo.png",
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "maskable"
-          }
+          { src: "/tamoptix/tamoptix-logo.png", sizes: "72x72", type: "image/png", purpose: "any" },
+          { src: "/tamoptix/tamoptix-logo.png", sizes: "96x96", type: "image/png", purpose: "any" },
+          { src: "/tamoptix/tamoptix-logo.png", sizes: "128x128", type: "image/png", purpose: "any" },
+          { src: "/tamoptix/tamoptix-logo.png", sizes: "144x144", type: "image/png", purpose: "any" },
+          { src: "/tamoptix/tamoptix-logo.png", sizes: "152x152", type: "image/png", purpose: "any" },
+          { src: "/tamoptix/tamoptix-logo.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/tamoptix/tamoptix-logo.png", sizes: "384x384", type: "image/png", purpose: "any" },
+          { src: "/tamoptix/tamoptix-logo.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/tamoptix/tamoptix-logo.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+          { src: "/tamoptix/tamoptix-logo.png", sizes: "512x512", type: "image/png", purpose: "maskable" }
         ],
         categories: ["business", "productivity", "utilities"],
         shortcuts: [

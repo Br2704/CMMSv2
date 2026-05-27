@@ -2,7 +2,8 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePermissions } from "@/hooks/usePermissions";
-import { isRootAdmin, isSuperAdmin, hasRole, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isRootAdmin, isSuperAdmin, hasRole } from "@/lib/permission-engine";
 import {
   Factory,
   Building2,
@@ -231,12 +232,12 @@ const rootMasterPages = [
 
 export default function Masters() {
   const { user } = useAuthStore();
-  const isRootUser = isRootAdmin(user);
+  const isRootUser = isRootAdmin(user?.roles ?? []);
   const { hasModuleAccess, loading } = usePermissions();
   const effectivePages = isRootUser ? rootMasterPages : masterPages;
   const showSkeleton = !isRootUser && loading;
 
-  const isAdminOrSuper = (isSuperAdmin(user) || hasRole(user, ["ADMIN"])) && !isRootAdmin(user);
+  const isAdminOrSuper = (isSuperAdmin(user?.roles ?? []) || hasRole(user?.roles ?? [], "PLANT_ADMIN")) && !isRootAdmin(user?.roles ?? []);
 
   const visibleItems = effectivePages.filter((item) => {
     if (isRootUser) return true;

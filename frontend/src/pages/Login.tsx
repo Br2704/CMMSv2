@@ -7,7 +7,9 @@ import { Label } from "@/components/ui/label";
 import { buildBrandingManifestUrl } from "@/api/branding";
 import { ApiError, clearSessionBootstrapHint, clearStoredAccessToken } from "@/api/http";
 import { login } from "@/api/auth";
-import { useAuthStore, fetchUserProfile, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isRootAdmin, isSuperAdmin } from "@/lib/permission-engine";
+import { isPathAccessible, resolveAccessibleLandingPath } from "@/lib/accessible-routes";
 import { useBrandingStore } from "@/store/branding.store";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, LogIn, ShieldCheck, Building2 } from "lucide-react";
@@ -15,10 +17,11 @@ import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { useToast } from "@/hooks/use-toast";
 import { tryFallbackLogin, getFallbackBrandingSeed } from "@/fallback-auth";
 import { setFallbackMode as setHttpFallbackMode } from "@/api/http";
+import { APP_DEFAULT_THEME_COLOR, APP_LOGO_PNG, APP_LOGO_SVG, APP_NAME, APP_TAGLINE, APP_BROWSER_TITLE } from "@/config/branding";
 
 const TAMOPTIX_FAVICON = "/tamoptix/tamoptix-favicon.svg";
-const TAMOPTIX_LOGO = "/tamoptix/tamoptix-logo.svg";
-const TAMOPTIX_LOGO_FALLBACK = "/tamoptix/tamoptix-logo.png";
+const TAMOPTIX_LOGO = APP_LOGO_SVG;
+const TAMOPTIX_LOGO_FALLBACK = APP_LOGO_PNG;
 
 type LoginBrand = {
   name: string;
@@ -29,14 +32,15 @@ type LoginBrand = {
 
 function resolveLoginBrand(): LoginBrand {
   return {
-    name: "TamOptiX",
+    name: APP_NAME,
     code: null,
-    title: "TamOptiX CMMS",
-    themeColor: "#0f766e",
+    title: APP_NAME,
+    themeColor: APP_DEFAULT_THEME_COLOR,
   };
 }
 
 export default function Login() {
+  const PROTECTED_ROOT_ADMIN_EMAIL = "admin@tamoptix.tech";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [captchaAnswer, setCaptchaAnswer] = useState("");
@@ -65,22 +69,17 @@ export default function Login() {
     return candidate;
   }, [searchParams]);
 
-  const resolvePostLoginPath = (targetUser: Parameters<typeof isSuperAdmin>[0]): string => {
+  const resolvePostLoginPath = (targetUser: { roles?: string[] } | null): string => {
     if (!targetUser) return "/";
-    const roles = (targetUser.roles || []).map(r => r.toUpperCase());
-    
-    if (returnTo) {
-      const isRootOnlyPath = returnTo.startsWith("/root/");
-      if (isRootOnlyPath && isRootAdmin(targetUser)) return returnTo;
-      if (!isRootOnlyPath) return returnTo;
+    const roles = (targetUser.roles || []).map((role) => role.toUpperCase());
+    const routeContext = { roles, roleKey: roles[0] ?? null, canAccessModule: () => true };
+
+    if (returnTo && isPathAccessible(returnTo, routeContext)) {
+      return returnTo;
     }
 
     if (roles.includes("ROOT_ADMIN")) return "/root/dashboard";
-    if (roles.includes("SECURITY") || roles.includes("SECURITY_USER")) return "/security-gate";
-    if (roles.includes("VENDOR")) return "/work-orders";
-    if (roles.includes("VISITOR") || roles.includes("TEMPORARY_VISITOR")) return "/visitor-experience";
-    
-    return "/";
+    return resolveAccessibleLandingPath(routeContext);
   };
 
   useEffect(() => {
@@ -90,7 +89,7 @@ export default function Login() {
   useLayoutEffect(() => {
     if (typeof document === "undefined") return;
 
-    const resolvedTitle = loginBrand.title;
+    const resolvedTitle = `${loginBrand.title} | ${APP_BROWSER_TITLE}`;
     document.title = resolvedTitle;
 
     const updateMetaContent = (selector: string, value: string) => {
@@ -140,9 +139,13 @@ export default function Login() {
         mfaCode: mfaCode.trim() || undefined,
         rememberMe,
       });
-      const profile = await fetchUserProfile();
+      const accountEmail = (me.profile?.email || me.user?.email || email).trim().toLowerCase();
+      const roles = me.roles || [];
+      const isProtectedRootAdmin = accountEmail === PROTECTED_ROOT_ADMIN_EMAIL || roles.some((role) => role.toUpperCase() === "ROOT_ADMIN");
+      const accountIsActive = me.user?.isActive ?? me.profile?.isActive ?? true;
+      const resolvedAccountIsActive = accountIsActive || isProtectedRootAdmin;
 
-      if (!profile || !me.user) {
+      if (!me.user) {
         clearStoredAccessToken();
         clearSessionBootstrapHint();
         setError("User profile not found. Contact admin.");
@@ -150,7 +153,7 @@ export default function Login() {
         return;
       }
 
-      if (!profile.isActive) {
+      if (!resolvedAccountIsActive) {
         clearStoredAccessToken();
         clearSessionBootstrapHint();
         setError("Your account has been deactivated. Contact admin.");
@@ -162,34 +165,36 @@ export default function Login() {
       setCaptchaAnswer("");
       setMfaRequired(false);
       setMfaCode("");
+      setHttpFallbackMode(false);
+      setFallbackMode(false);
       setSession({
         accessToken: null,
         user: { id: me.user.id },
       });
 
       const brandingSeed = {
-        organizationId: profile.organizationId ?? null,
-        organizationName: profile.organizationName ?? null,
-        organizationLogoUrl: profile.organizationLogoUrl ?? null,
-        sidebarTitle: profile.organizationName ?? null,
-        browserTitle: profile.organizationName ? `${profile.organizationName} CMMS` : null,
+        organizationId: me.organizationId ?? null,
+        organizationName: me.organization?.name ?? null,
+        organizationLogoUrl: me.organization?.logoUrl ?? null,
+        sidebarTitle: me.organization?.name ?? null,
+        browserTitle: me.organization?.name ? `${me.organization.name} CMMS` : null,
       };
-      const hasGlobalPlantAccess = isSuperAdmin(profile) || isRootAdmin(profile);
+      const hasGlobalPlantAccess = isSuperAdmin(roles) || isRootAdmin(roles);
+      setUser(me);
+      setActivePlant(hasGlobalPlantAccess ? null : me.plantId, hasGlobalPlantAccess ? null : me.plant?.plantCode ?? null, hasGlobalPlantAccess ? null : me.plant?.plantName ?? null);
 
-      if (hasGlobalPlantAccess) {
+      try {
         primeBranding(brandingSeed);
-        setUser(profile);
-        setActivePlant(null, null, null);
-        toast({ title: "Welcome!", description: "You have global access to all plants." });
-        navigate(resolvePostLoginPath(profile));
-        return;
+        toast(
+          hasGlobalPlantAccess
+            ? { title: "Welcome!", description: "You have global access to all plants." }
+            : { title: "Welcome back!", description: `Logged in to ${me.plant?.plantName || "assigned plant"}` },
+        );
+      } catch (postLoginError) {
+        console.error("Post-login UI update failed", postLoginError);
       }
 
-      primeBranding(brandingSeed);
-      setUser(profile);
-      setActivePlant(profile.plantId, profile.plantCode, profile.plantName);
-      toast({ title: "Welcome back!", description: `Logged in to ${profile.plantName || "assigned plant"}` });
-      navigate(resolvePostLoginPath(profile));
+      navigate(resolvePostLoginPath(me));
     } catch (err) {
       if (err instanceof ApiError) {
         const payload = (err.payload ?? {}) as {
@@ -267,7 +272,7 @@ export default function Login() {
             <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.24em] text-slate-500 dark:text-muted-foreground">
               <span className="inline-flex items-center gap-2 font-semibold">
                 <ShieldCheck className="h-4 w-4 text-teal-600" />
-                Secure CMMS Access
+                Secure Access
               </span>
               <span className="inline-flex items-center gap-2 font-semibold">
                 <Building2 className="h-4 w-4 text-muted-foreground" />
@@ -281,8 +286,8 @@ export default function Login() {
               <div className="w-full max-w-sm space-y-4">
                 <div className="rounded-3xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 px-6 py-5 shadow-sm dark:border-border/60 dark:from-slate-900 dark:to-slate-950">
                   <img
-                    src={TAMOPTIX_LOGO}
-                    alt={`${loginBrand.name} Logo`}
+                      src={TAMOPTIX_LOGO}
+                      alt={`${APP_NAME} logo`}
                     className="mx-auto h-16 w-auto object-contain"
                     onError={(event) => {
                       event.currentTarget.onerror = null;
@@ -299,7 +304,8 @@ export default function Login() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.2 }}
             >
-              <h1 className="text-2xl font-bold text-foreground">Maintenance Operations Portal</h1>
+              <h1 className="text-2xl font-bold text-foreground">{APP_NAME}</h1>
+              <p className="text-sm text-muted-foreground">{APP_TAGLINE}</p>
             </motion.div>
           </CardHeader>
 

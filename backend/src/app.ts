@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
+import 'reflect-metadata'; // trigger restart
 import helmet from 'helmet';
 import { z } from 'zod';
 import pinoHttp from 'pino-http';
@@ -15,6 +16,8 @@ import { auditLogger } from './middlewares/auditLogger';
 import { errorHandler } from './middlewares/errorHandler';
 import { apiNotFoundHandler } from './middlewares/notFoundHandler';
 import { exportsRateLimiter, generalApiRateLimiter, mutatingApiRateLimiter, heavyApiRateLimiter } from './middlewares/rateLimiter';
+import { userApiRateLimiter, userMutationRateLimiter } from './middlewares/perUserRateLimiter';
+import { enforceIdleTimeout } from './middlewares/idleTimeout';
 import { sanitizeInput } from './middlewares/sanitizeInput';
 import { securityHeadersMiddleware, threatDetectionMiddleware, requestValidationMiddleware } from './middlewares/securityHeaders';
 import { router } from './routes';
@@ -23,6 +26,7 @@ import { notFound } from './utils/httpError';
 import { findQrResolutionRow, toResolvedPayload } from './modules/qr/qr.shared';
 import { emitDashboardRefresh } from './realtime/dashboard-socket';
 import { initializeSecretRotation } from './utils/secretRotation';
+import { APP_NAME } from './config/branding';
 
 const qrTokenParamSchema = z.object({
   token: z.string().trim().min(16).max(128).regex(/^[A-Za-z0-9_-]+$/),
@@ -105,6 +109,9 @@ app.use(securityHeadersMiddleware);
 app.use(threatDetectionMiddleware);
 app.use(generalApiRateLimiter);
 app.use(mutatingApiRateLimiter);
+app.use(userApiRateLimiter);
+app.use(userMutationRateLimiter);
+app.use(enforceIdleTimeout);
 app.use(sanitizeInput);
 app.use(auditLogger);
 app.use((req, res, next) => {
@@ -127,28 +134,8 @@ app.use((req, res, next) => {
   const inboundRequestId = req.header('x-request-id')?.trim();
   const requestId = inboundRequestId && inboundRequestId.length > 0 ? inboundRequestId : randomUUID();
   res.setHeader('X-Request-Id', requestId);
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Permissions-Policy', [
-    'camera=()',
-    'microphone=()',
-    'geolocation=()',
-    'payment=()',
-    'display-capture=()',
-    'clipboard-read=()',
-    'clipboard-write=(self)',
-    'fullscreen=(self)',
-    'accelerometer=()',
-    'gyroscope=()',
-    'magnetometer=()',
-    'ambient-light-sensor=()',
-    'usb=()',
-    'serial=()',
-    'midi=()',
-    'sync-xhr=(self)',
-    'picture-in-picture=()',
-    'screen-wake-lock=()',
-  ].join(', '));
+  // X-Content-Type-Options, Referrer-Policy, and Permissions-Policy
+  // are already set by helmet() and securityHeadersMiddleware
 
   if (req.path.startsWith(env.API_PREFIX)) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
@@ -162,7 +149,7 @@ app.use((req, res, next) => {
 app.get('/', (_req, res) => {
   res.status(200).json({
     success: true,
-    message: 'CMMS Backend API',
+    message: `${APP_NAME} Backend API`,
     data: {
       health: '/health',
       ready: '/ready',

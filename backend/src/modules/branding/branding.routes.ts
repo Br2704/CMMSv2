@@ -6,6 +6,7 @@ import { requireAuth } from '../../middlewares/authMiddleware';
 import { ok } from '../../utils/apiResponse';
 import { getBrandingVersion } from '../../utils/brandingVersion';
 import { resolveUserOrganizationScope } from '../../utils/userOrganization';
+import { APP_BROWSER_TITLE, APP_DEFAULT_BACKGROUND_COLOR, APP_DEFAULT_THEME_COLOR, APP_NAME, APP_SIDEBAR_TITLE, APP_TAGLINE } from '../../config/branding';
 
 const DEFAULT_THEME_COLOR = '#0f172a';
 const DEFAULT_BG_COLOR = '#ffffff';
@@ -15,9 +16,9 @@ const DEFAULT_BRANDING = {
   organizationLogoUrl: null as string | null,
   organizationLogoAssetUrl: '/api/branding/logo',
   organizationFaviconUrl: '/tamoptix/tamoptix-favicon.svg' as string | null,
-  sidebarTitle: 'TamOptiX',
-  browserTitle: 'TamOptiX CMMS',
-  brandColor: '#0f766e',
+  sidebarTitle: APP_SIDEBAR_TITLE,
+  browserTitle: APP_BROWSER_TITLE,
+  brandColor: APP_DEFAULT_THEME_COLOR,
   fallbackLogoUrl: '/tamoptix/tamoptix-logo.svg',
   fallbackFaviconUrl: '/tamoptix/tamoptix-favicon.svg',
   updatedAt: null as string | null,
@@ -296,8 +297,8 @@ brandingRouter.get('/branding/manifest', async (req, res) => {
     res.setHeader('Content-Type', 'application/manifest+json');
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.json({
-      id: '/', name: 'CMMS', short_name: 'CMMS', description: 'Maintenance Platform',
-      start_url: '/', display: 'standalone', background_color: '#ffffff', theme_color: '#0f766e',
+      id: '/', name: APP_NAME, short_name: APP_NAME, description: APP_TAGLINE,
+      start_url: '/', display: 'standalone', background_color: APP_DEFAULT_BACKGROUND_COLOR, theme_color: APP_DEFAULT_THEME_COLOR,
       icons: [
         { src: '/tamoptix/tamoptix-logo.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       ],
@@ -321,9 +322,9 @@ brandingRouter.get('/branding/manifest', async (req, res) => {
     res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
     res.json({
       id: '/',
-      name: 'TamOptiX CMMS',
-      short_name: 'TamOptiX CMMS',
-      description: 'Industrial CMMS Platform',
+      name: APP_NAME,
+      short_name: APP_NAME,
+      description: APP_TAGLINE,
       start_url: '/',
       display: 'standalone',
       background_color: DEFAULT_BG_COLOR,

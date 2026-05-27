@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useAuthStore, isAdmin, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isRootAdmin, isSuperAdmin } from "@/lib/permission-engine";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,8 @@ import { FormDialog } from "@/components/shared/FormDialog";
 import { ViewDialog } from "@/components/shared/ViewDialog";
 import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { InputField, SelectField } from "@/components/shared/FormField";
+import { AsyncSelect } from "@/components/ui/async-select";
+import { listPlants } from "@/api/plants";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import {
@@ -63,6 +66,7 @@ import { PageHeader } from "@/components/app-shell/PageHeader";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import { PageShell } from "@/components/layout/PageShell";
 import { FormGrid } from "@/components/layout/FormGrid";
+import { DataTableShell } from "@/components/layout/DataTableShell";
 import {
   downloadEnterpriseExcelTemplate,
   findHeaderRowFromRows,
@@ -318,8 +322,8 @@ function buildHierarchyImportValue(rawCombined: string, rawCode: string, rawName
 export default function MachinesMaster() {
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
-  const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user) || isRootAdmin(user);
+  const canManage = isAdminLevel(user?.roles ?? []);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []) || isRootAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants, invalidateOptions } = useMastersOptions();
 
@@ -1821,67 +1825,76 @@ export default function MachinesMaster() {
           ) : undefined
         }
       />
-      <Card className="shadow-card">
-        <CardContent className="py-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <DataTableShell
+        title={
+          <div className="flex flex-col gap-2">
             <HierarchyBreadcrumb currentLevel="machine" />
             <div className="flex items-center gap-2 text-sm text-muted-foreground shrink-0">
               <Cog className="h-4 w-4" />
               <span className="font-medium">{filtered.length}</span> equipment
             </div>
           </div>
-        </CardContent>
-      </Card>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
-        {canSelectPlant && (
-          <SelectField
-            label=""
-            value={selectedPlant}
-            onChange={(value) => {
-              setSelectedPlant(value);
-              setSelectedDepartmentFilter("all");
-              setSelectedModuleFilter("all");
-            }}
-            options={plantsOptions}
-            placeholder="Plant"
-            className="w-full sm:w-[160px]"
+        }
+        toolbar={
+          <Toolbar
+            left={
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center w-full">
+                {canSelectPlant && (
+                  <SelectField
+                    label=""
+                    value={selectedPlant}
+                    onChange={(value) => {
+                      setSelectedPlant(value);
+                      setSelectedDepartmentFilter("all");
+                      setSelectedModuleFilter("all");
+                    }}
+                    options={plantsOptions}
+                    placeholder="Plant"
+                    className="w-full sm:w-[160px]"
+                  />
+                )}
+                <SelectField
+                  label=""
+                  value={selectedDepartmentFilter}
+                  onChange={(value) => {
+                    setSelectedDepartmentFilter(value);
+                    setSelectedModuleFilter("all");
+                  }}
+                  options={[{ value: "all", label: "All Departments" }, ...departmentFilterOptions]}
+                  className="w-full sm:w-[180px]"
+                />
+                <SelectField
+                  label=""
+                  value={selectedModuleFilter}
+                  onChange={setSelectedModuleFilter}
+                  options={[{ value: "all", label: "All Modules" }, ...moduleFilterOptions]}
+                  className="w-full sm:w-[180px]"
+                />
+              </div>
+            }
+            right={
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center w-full">
+                <SelectField
+                  label=""
+                  value={categoryFilter}
+                  onChange={setCategoryFilter}
+                  options={[
+                    { value: "all", label: "All Types" },
+                    { value: "MACHINE", label: "Machine" },
+                    { value: "UTILITY", label: "Utility" },
+                  ]}
+                  className="w-full sm:w-[140px]"
+                />
+                <div className="relative flex-1 min-w-[160px] sm:max-w-xs">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input placeholder="Search machines..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-9 pl-9" />
+                </div>
+              </div>
+            }
           />
-        )}
-        <SelectField
-          label=""
-          value={selectedDepartmentFilter}
-          onChange={(value) => {
-            setSelectedDepartmentFilter(value);
-            setSelectedModuleFilter("all");
-          }}
-          options={[{ value: "all", label: "All Departments" }, ...departmentFilterOptions]}
-          className="w-full sm:w-[180px]"
-        />
-        <SelectField
-          label=""
-          value={selectedModuleFilter}
-          onChange={setSelectedModuleFilter}
-          options={[{ value: "all", label: "All Modules" }, ...moduleFilterOptions]}
-          className="w-full sm:w-[180px]"
-        />
-        <SelectField
-          label=""
-          value={categoryFilter}
-          onChange={setCategoryFilter}
-          options={[
-            { value: "all", label: "All Types" },
-            { value: "MACHINE", label: "Machine" },
-            { value: "UTILITY", label: "Utility" },
-          ]}
-          className="w-full sm:w-[140px]"
-        />
-        <div className="relative flex-1 min-w-[160px] sm:max-w-xs">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search machines..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-9 pl-9" />
-        </div>
-      </div>
-      <Card className="shadow-card">
-        <CardContent>
+        }
+      >
+
           {loading ? (<TableSkeleton />) : canSelectPlant && !selectedPlant ? (<EmptyState title="Select a plant" description="Choose a plant to view machine data." />) : filtered.length === 0 ? (<EmptyState title="No machines found" description="Add your first machine record to start work orders and logs." actionLabel={canManage ? "Add Machine" : undefined} onAction={canManage ? handleAdd : undefined} />) : (
             <ResponsiveTable
               data={filtered}
@@ -1916,8 +1929,7 @@ export default function MachinesMaster() {
               )}
             />
           )}
-        </CardContent>
-      </Card>
+      </DataTableShell>
 
       <FormDialog
         open={isFormOpen}
@@ -1965,44 +1977,68 @@ export default function MachinesMaster() {
           />
           <SelectField label="Criticality" value={formData.criticality} onChange={(value) => setFormData({ ...formData, criticality: value })} options={[{ value: "HIGH", label: "High" }, { value: "MEDIUM", label: "Medium" }, { value: "LOW", label: "Low" }]} />
           {canSelectPlant ? (
-            <SelectField label="Plant" required value={formData.plantId} onChange={handlePlantChange} options={plantsOptions} placeholder="Select plant" />
+            <AsyncSelect
+              label="Plant"
+              required
+              value={formData.plantId}
+              onChange={handlePlantChange}
+              fetchFn={listPlants}
+              labelExtractor={(plant) => `${plant.plantCode || "-"} - ${plant.plantName}`}
+              valueExtractor={(plant) => plant.id}
+              placeholder="Select plant"
+            />
           ) : (
             <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => { }} disabled />
           )}
-          <SelectField
+          <AsyncSelect
             label="Department"
             required
             value={formData.departmentId}
             onChange={handleDepartmentChange}
-            options={departmentOptions}
+            fetchFn={async (params) => {
+              if (canSelectPlant && !formData.plantId) return { data: [], total: 0 };
+              return listDepartments({ ...params, plantId: formData.plantId || defaultPlantId || undefined });
+            }}
+            labelExtractor={(dep) => `${dep.code} - ${dep.name}`}
+            valueExtractor={(dep) => dep.id}
             placeholder="Select department"
             disabled={canSelectPlant ? !formData.plantId : false}
             hint={
               canSelectPlant && !formData.plantId
                 ? "Select plant first."
-                : departmentOptions.length === 0
-                  ? "No departments for selected plant."
-                  : undefined
+                : undefined
             }
           />
-          <SelectField
+          <AsyncSelect
             label="Module"
             required
             value={formData.moduleId}
             onChange={(value) => setFormData({ ...formData, moduleId: value })}
-            options={moduleOptions}
+            fetchFn={async (params) => {
+               if (!formData.departmentId) return { data: [], total: 0 };
+               return listModules({ ...params, plantId: formData.plantId || defaultPlantId || undefined, departmentId: formData.departmentId });
+            }}
+            labelExtractor={(module) => `${module.code ? `${module.code} - ` : ""}${module.name}`}
+            valueExtractor={(module) => module.id}
             placeholder="Select module"
             disabled={!formData.departmentId}
-            hint={!formData.departmentId ? "Select department first." : moduleOptions.length === 0 ? "No modules for selected department." : undefined}
+            hint={!formData.departmentId ? "Select department first." : undefined}
           />
-          <SelectField
+          <AsyncSelect
             label="Cost Center"
             value={formData.costCenterId}
             onChange={(value) => setFormData({ ...formData, costCenterId: value })}
-            options={costCenterOptions}
+            fetchFn={async (params) => {
+               if (!formData.departmentId) return { data: [], total: 0 };
+               const response = await listCostCenters({ ...params, plantId: formData.plantId || defaultPlantId || undefined });
+               const filtered = response.data.filter((cc) => cc.departmentId === null || cc.departmentId === formData.departmentId);
+               return { data: filtered, total: filtered.length };
+            }}
+            labelExtractor={(cc) => `${cc.code} - ${cc.name}`}
+            valueExtractor={(cc) => cc.id}
             placeholder="Select cost center"
             disabled={!formData.departmentId}
-            hint={!formData.departmentId ? "Select department first." : costCenterOptions.length === 0 ? "No cost centers for selected scope." : undefined}
+            hint={!formData.departmentId ? "Select department first." : undefined}
           />
           {!isEditing ? (
             <div className="col-span-1 sm:col-span-2 space-y-3 rounded-md border border-border/60 bg-muted/20 p-4">
@@ -2726,7 +2762,7 @@ export default function MachinesMaster() {
       <DeleteConfirmDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} title="Delete Machine" itemName={selectedMachine?.name} onConfirm={confirmDelete} isLoading={saving} />
 
       <AlertDialog open={isImportConfirmOpen} onOpenChange={setIsImportConfirmOpen}>
-        <AlertDialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col">
+        <AlertDialogContent aria-describedby={undefined} className="sm:max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col">
           <AlertDialogHeader>
             <AlertDialogTitle>Bulk Import Review - {importSummary?.fileName}</AlertDialogTitle>
             <AlertDialogDescription>

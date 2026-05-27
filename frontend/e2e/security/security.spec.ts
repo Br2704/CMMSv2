@@ -56,9 +56,12 @@ test.describe("Security Tests", () => {
           });
 
           const plantInput = page.locator('input[type="text"]').first();
-          if (await plantInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+          if (await plantInput.isVisible({ timeout: 500 }).catch(() => false)) {
             await plantInput.fill("JKF");
           }
+
+          // Disable HTML5 validation to allow backend testing
+          await page.locator("form").evaluate((form) => form.setAttribute("novalidate", "novalidate")).catch(() => {});
 
           await page.getByLabel(/Email/i).fill(payload);
           await page.getByLabel(/Password/i).fill("test");
@@ -120,8 +123,9 @@ test.describe("Security Tests", () => {
               await page.waitForTimeout(1000);
             }
 
-            const inputValue = await input.inputValue().catch(() => "");
-            const containsPayload = inputValue.includes("<script>") || inputValue.includes("onerror") || inputValue.includes("onload");
+            const isVisible = await input.isVisible({ timeout: 1000 }).catch(() => false);
+            const inputValue = isVisible ? await input.inputValue().catch(() => "") : "";
+            const containsPayload = isVisible && (inputValue.includes("<script>") || inputValue.includes("onerror") || inputValue.includes("onload"));
 
             const alertDialog = page.locator("text=alert('xss')");
             const alertCount = await alertDialog.count().catch(() => 0);

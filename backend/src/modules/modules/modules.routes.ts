@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requireAnyPermission, requirePermission } from '../../middlewares/permissions';
+import { requireAnyPermission, requirePermission } from '../../middlewares/permissionGuard';
 import { validateRequest } from '../../middlewares/validate';
 import { modulesController } from './modules.controller';
 import {

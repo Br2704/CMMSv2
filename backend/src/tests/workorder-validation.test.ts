@@ -1,4 +1,4 @@
-import { createWorkOrderSchema } from '../modules/workorders/workorders.validators';
+import { createWorkOrderSchema, submitWorkOrderForApprovalSchema } from '../modules/workorders/workorders.validators';
 
 describe('Work order validation', () => {
   it('rejects payload with invalid required fields', () => {
@@ -22,5 +22,19 @@ describe('Work order validation', () => {
     if (!parsed.success) {
       expect(parsed.error.issues.some((issue) => String(issue.path[0]) === 'downtime_end_at')).toBe(true);
     }
+  });
+
+  it('accepts submit-for-approval when spare_used is false and no materials are provided', () => {
+    const parsed = submitWorkOrderForApprovalSchema.safeParse({
+      issue_details: 'Pump seal wear observed',
+      work_performed_description: 'Inspected and adjusted alignment',
+      corrective_action: 'Realigned coupling and tightened mountings',
+      remarks: 'Machine stable after test run',
+      spare_used: false,
+      materials_used: null,
+      spare_consumption: [],
+    });
+
+    expect(parsed.success).toBe(true);
   });
 });

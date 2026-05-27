@@ -4,7 +4,7 @@ import { In } from 'typeorm';
 import { AppDataSource } from '../../database/data-source';
 import { ProfileEntity, RoleDashboardKpiEntity, RolePermissionEntity, UserEntity, UserRoleEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requireRole } from '../../middlewares/permissions';
+import { requireRole } from '../../middlewares/permissionGuard';
 import { fail, ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { getOrgRbacVersion } from '../../utils/orgRbacVersion';
@@ -78,7 +78,7 @@ permissionsRouter.get('/permissions/me', async (req, res, next) => {
       }
     }
 
-    const roleKey = auth.roleKey || normalizeRoleName(auth.roles[0] ?? 'USER');
+    const roleKey = auth.roleKey || normalizeRoleName(auth.roles[0] ?? 'MAINTENANCE_USER');
     const normalizedRoles = auth.roles.map((role) => normalizeRoleName(role));
     const isRootAdmin = normalizedRoles.some((role) => isRootAdminRole(role));
     const isSuperAdmin = normalizedRoles.some((role) => isSuperAdminRole(role));

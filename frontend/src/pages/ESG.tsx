@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InputField, SelectField } from "@/components/shared/FormField";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AsyncSelect } from "@/components/ui/async-select";
 import { listPlants } from "@/api/plants";
 import {
   exportEsgReport,
@@ -34,7 +35,8 @@ import {
   type EsgWorkbookCategory,
 } from "@/api/esg";
 import { ESG_WORKBOOK_INPUT_METRICS } from "@/config/esg-workbook";
-import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isSuperAdmin } from "@/lib/permission-engine";
 import { usePermissions } from "@/hooks/usePermissions";
 
 const monthOptions = [{ value: "1", label: "Jan" }, { value: "2", label: "Feb" }, { value: "3", label: "Mar" }, { value: "4", label: "Apr" }, { value: "5", label: "May" }, { value: "6", label: "Jun" }, { value: "7", label: "Jul" }, { value: "8", label: "Aug" }, { value: "9", label: "Sep" }, { value: "10", label: "Oct" }, { value: "11", label: "Nov" }, { value: "12", label: "Dec" }];
@@ -55,7 +57,7 @@ export default function ESG() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const { hasModuleAccess } = usePermissions();
-  const superAdmin = isSuperAdmin(user);
+  const superAdmin = isSuperAdmin(user?.roles ?? []);
   const canApprove = hasModuleAccess("esg", "approve");
   const [plantId, setPlantId] = useState(user?.plantId || "");
   const [year, setYear] = useState(currentYear);
@@ -73,7 +75,6 @@ export default function ESG() {
   useEffect(() => { if (!superAdmin) setPlantId(user?.plantId || ""); }, [superAdmin, user?.plantId]);
   useEffect(() => { setEntryDate(`${year}-${String(month).padStart(2, "0")}-01`); }, [year, month]);
 
-  const plantsQuery = useQuery({ queryKey: ["esg_plants"], queryFn: () => listPlants({ page: 1, limit: 500, includeInactive: false }), enabled: superAdmin });
   const dashboardQuery = useQuery({ queryKey: ["esg_dashboard", plantId, year, month], queryFn: () => getEsgDashboard({ plantId: plantId || undefined, year, month }), enabled: Boolean(plantId) });
   const dataQuery = useQuery({ queryKey: ["esg_data", plantId, year, month], queryFn: () => getEsgData({ plantId: plantId || undefined, year, month }), enabled: Boolean(plantId) });
   const dailyQuery = useQuery({ queryKey: ["esg_workbook_daily", plantId, year, month, workbookCategory], queryFn: () => listEsgWorkbookDailyEntries({ plantId: plantId || undefined, year, month, category: workbookCategory }), enabled: Boolean(plantId) });
@@ -104,7 +105,6 @@ export default function ESG() {
   const currentCategory = { energy: "ENERGY", water: "WATER", emissions: "EMISSIONS", waste: "WASTE", production: "PRODUCTION" }[section];
   const currentReadOnly = !(superAdmin || access?.categories.includes(currentCategory) || access?.categories.includes("ALL")) || sectionLocked[section];
   const workbookReadOnly = !(superAdmin || access?.categories.includes(workbookCategory) || access?.categories.includes("ALL"));
-  const plantOptions = (plantsQuery.data?.data || []).map((plant) => ({ value: plant.id, label: `${plant.plantCode} - ${plant.plantName}` }));
   const workbookRows = workbookSummaryQuery.data?.data.rows || [];
   const workbookCards = ["PRODUCTION_TOTAL", "TOTAL_ENERGY_GJ", "TOTAL_EMISSIONS", "SPECIFIC_RAW_WATER"].map((code) => workbookRow(workbookRows, code)).filter(Boolean);
   const workbookSectionRows = workbookRows.filter((row) => row.category === workbookCategory);
@@ -153,7 +153,7 @@ export default function ESG() {
 
   return (
     <PageShell>
-      <PageHeader title="Sustainability ESG" subtitle="Plant-wise workbook entry, master-aligned month rollup, and organization ESG summary" actions={<div className="flex flex-wrap gap-2">{superAdmin ? <SelectField label="" value={plantId} onChange={setPlantId} options={plantOptions} placeholder="Select plant" /> : null}<SelectField label="" value={String(month)} onChange={(value) => setMonth(Number(value))} options={monthOptions} /><InputField label="" type="number" value={year} onChange={(value) => setYear(Number(value) || currentYear)} /></div>} />
+      <PageHeader title="Sustainability ESG" subtitle="Plant-wise workbook entry, master-aligned month rollup, and organization ESG summary" actions={<div className="flex flex-wrap items-end gap-2">{superAdmin ? <div className="w-64"><AsyncSelect fetchFn={(params) => listPlants({ ...params, includeInactive: true })} labelExtractor={(p) => `${p.plantCode} - ${p.plantName}`} valueExtractor={(p) => p.id} value={plantId} onChange={setPlantId} placeholder="Select Plant" /></div> : null}<SelectField label="" value={String(month)} onChange={(value) => setMonth(Number(value))} options={monthOptions} /><InputField label="" type="number" value={year} onChange={(value) => setYear(Number(value) || currentYear)} /></div>} />
       {dashboardQuery.data?.data.readOnly ? <Card className="border-amber-300 bg-amber-50"><CardContent className="flex items-center gap-3 py-4 text-sm text-amber-900"><ShieldCheck className="h-4 w-4" />ESG data entry is read-only for this plant. Only super admin or assigned ESG users can update section data.</CardContent></Card> : null}
 
       <Tabs defaultValue="dashboard" className="space-y-4">

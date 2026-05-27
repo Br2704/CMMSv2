@@ -38,7 +38,8 @@ import { listDepartments, type Department } from "@/api/departments";
 import { listModules, type MachineModule } from "@/api/modules";
 import { listMaintenanceTeams, type MaintenanceTeam } from "@/api/maintenanceTeams";
 import { listPlants, type Plant } from "@/api/plants";
-import { isAdmin, isSuperAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isSuperAdmin } from "@/lib/permission-engine";
 import { CalendarClock, Edit, Gauge, Link2, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -119,8 +120,8 @@ function formatFrequency(type: string, value: number) {
 
 export default function CalibrationConfigMaster() {
   const { user } = useAuthStore();
-  const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user);
+  const canManage = isAdminLevel(user?.roles ?? []);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
 
   const [plants, setPlants] = useState<Plant[]>([]);
@@ -178,9 +179,9 @@ export default function CalibrationConfigMaster() {
       const [templateRes, scheduleRes, departmentRes, moduleRes, assetRes, teamRes, instrumentRes] = await Promise.all([
         listCalibrationTemplates({ page: 1, limit: 300, plantId: resolvedPlantId || undefined, includeInactive: true, search: searchQuery || undefined }),
         listCalibrationSchedules({ page: 1, limit: 500, plantId: resolvedPlantId || undefined, includeInactive: true, search: searchQuery || undefined }),
-        listDepartments({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: false }),
-        listModules({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: false }),
-        listAssets({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: false }),
+        listDepartments({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: true }),
+        listModules({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: true }),
+        listAssets({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: true }),
         listMaintenanceTeams({ page: 1, limit: 200, plantId: resolvedPlantId || undefined, includeInactive: true }),
         listMachineInstruments({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: true }),
       ]);

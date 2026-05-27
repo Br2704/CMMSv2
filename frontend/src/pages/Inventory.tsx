@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -30,6 +30,7 @@ import { KPICard } from "@/components/dashboard/KPICard";
 import { FormDialog } from "@/components/shared/FormDialog";
 import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { InputField, SelectField, SwitchField } from "@/components/shared/FormField";
+import { AsyncSelect } from "@/components/ui/async-select";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { DetailRow, DetailSection, ViewDialog } from "@/components/shared/ViewDialog";
@@ -41,7 +42,8 @@ import { cn } from "@/lib/utils";
 import { PageShell } from "@/components/layout/PageShell";
 
 import { usePermissions } from "@/hooks/usePermissions";
-import { isSuperAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isSuperAdmin } from "@/lib/permission-engine";
 
 const ALL_FILTER = "__all__";
 const PLANT_SCOPE_VALUE = "__plant_scope__";
@@ -105,7 +107,7 @@ export default function Inventory() {
   const queryClient = useQueryClient();
   const { user, activePlantId, activePlantName } = useAuthStore();
   const { can } = usePermissions();
-  const isGlobalUser = isSuperAdmin(user);
+  const isGlobalUser = isSuperAdmin(user?.roles ?? []);
   const canCreate = can("inventory", "create");
   const canUpdate = can("inventory", "update");
   const canDelete = can("inventory", "delete");
@@ -124,6 +126,7 @@ export default function Inventory() {
   const [editingItem, setEditingItem] = useState<SpareItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<SpareItem | null>(null);
   const [formData, setFormData] = useState<SpareFormData>(emptyFormState(activePlantId || ""));
+
 
   useEffect(() => {
     if (!isGlobalUser) {
@@ -184,6 +187,18 @@ export default function Inventory() {
     enabled: Boolean(resolvedPlantId),
     staleTime: 10_000,
   });
+
+  const refreshSelectedItem = useCallback(
+    async (itemId?: string | null) => {
+      if (!itemId) return;
+      const response = await sparesQuery.refetch();
+      const latest = (response.data || []).find((entry) => entry.id === itemId) || null;
+      if (latest) {
+        setSelectedItem(latest);
+      }
+    },
+    [sparesQuery],
+  );
 
   const saveMutation = useMutation({
     mutationFn: async (payload: SpareItemPayload & { id?: string }) => {
@@ -323,6 +338,28 @@ export default function Inventory() {
     ? plantMap.get(resolvedPlantId) || ({ id: resolvedPlantId, plantName: activePlantName || "Selected Plant" } as Plant)
     : null;
 
+  useEffect(() => {
+    if (!isViewOpen || !selectedItem?.id) return;
+    void refreshSelectedItem(selectedItem.id);
+  }, [isViewOpen, refreshSelectedItem, selectedItem?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isViewOpen || !selectedItem?.id) return;
+
+    const handleFocus = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshSelectedItem(selectedItem.id);
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [isViewOpen, refreshSelectedItem, selectedItem?.id]);
+
   const openCreateDialog = () => {
     if (!resolvedPlantId) {
       toast.error("Select a plant first");
@@ -366,8 +403,8 @@ export default function Inventory() {
   };
 
   const handleSubmit = async () => {
-    if (!formData.code.trim() || !formData.name.trim()) {
-      toast.error("Code and spare name are required");
+    if (!formData.name.trim()) {
+      toast.error("Spare name is required");
       return;
     }
     if (!formData.plantId) {
@@ -463,7 +500,7 @@ export default function Inventory() {
       header: "Actions",
       className: "text-right",
       render: (item: SpareItem) => (
-        <div className="flex justify-end gap-1">
+        <div className="flex justify-end gap-0.5">
           <Button variant="ghost" size="icon" onClick={() => handleView(item)}>
             <Eye className="h-4 w-4" />
           </Button>
@@ -552,11 +589,11 @@ export default function Inventory() {
                         : "border-border/70 bg-muted/[0.18] hover:border-primary/30 hover:bg-muted/40",
                     )}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div
                           className={cn(
-                            "flex h-10 w-10 items-center justify-center rounded-xl border transition-colors",
+                            "flex h-10 w-10 items-center justify-center rounded-xl border transition-colors shrink-0",
                             active
                               ? "border-primary/25 bg-primary/10 text-primary"
                               : "border-border/60 bg-background text-muted-foreground group-hover:text-foreground",
@@ -564,14 +601,14 @@ export default function Inventory() {
                         >
                           <Icon className="h-4 w-4" />
                         </div>
-                        <div>
-                          <p className="text-sm font-semibold">{scope.title}</p>
-                          <p className="text-xs text-muted-foreground">{scope.caption}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate">{scope.title}</p>
+                          <p className="text-xs text-muted-foreground truncate">{scope.caption}</p>
                         </div>
                       </div>
                       <div className="text-right">
                         <p className={cn("text-xl font-semibold leading-none", active ? "text-primary" : "text-foreground")}>{scope.count}</p>
-                        <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Items</p>
+                        <p className="mt-1 text-[11px] sm:text-xs uppercase tracking-[0.18em] text-muted-foreground">Items</p>
                       </div>
                     </div>
                   </button>
@@ -725,38 +762,49 @@ export default function Inventory() {
         size="lg"
       >
         <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField
+          <AsyncSelect
             label="Plant"
             value={formData.plantId}
             onChange={(value) => setFormData((current) => ({ ...current, plantId: value, departmentId: "", moduleId: "", assetId: PLANT_SCOPE_VALUE, isCritical: false }))}
-            options={
-              isGlobalUser
-                ? plants.map((plant) => ({ value: plant.id, label: `${plant.plantCode} - ${plant.plantName}` }))
-                : formData.plantId
-                  ? [{ value: formData.plantId, label: activePlantName || "Active Plant" }]
-                  : []
-            }
+            fetchFn={async (params) => {
+               if (!isGlobalUser && formData.plantId) {
+                  return { data: [{ id: formData.plantId, plantName: activePlantName || "Active Plant" } as unknown as Plant], total: 1 };
+               }
+               return listPlants(params);
+            }}
+            labelExtractor={(plant) => plant.plantCode ? `${plant.plantCode} - ${plant.plantName}` : plant.plantName}
+            valueExtractor={(plant) => plant.id}
             placeholder="Select plant"
             disabled={!isGlobalUser}
             required
           />
-          <SelectField
+          <AsyncSelect
             label="Department"
             value={formData.departmentId}
             onChange={(value) => setFormData((current) => ({ ...current, departmentId: value, moduleId: "", assetId: PLANT_SCOPE_VALUE, isCritical: false }))}
-            options={departmentsForForm.map((department) => ({ value: department.id, label: `${department.code} - ${department.name}` }))}
+            fetchFn={async (params) => {
+              if (!formData.plantId) return { data: [], total: 0 };
+              return listDepartments({ ...params, plantId: formData.plantId });
+            }}
+            labelExtractor={(dep) => `${dep.code} - ${dep.name}`}
+            valueExtractor={(dep) => dep.id}
             placeholder="Select department"
             disabled={!formData.plantId}
           />
-          <SelectField
+          <AsyncSelect
             label="Module"
             value={formData.moduleId}
             onChange={(value) => setFormData((current) => ({ ...current, moduleId: value, assetId: PLANT_SCOPE_VALUE, isCritical: false }))}
-            options={modulesForForm.map((module) => ({ value: module.id, label: `${module.code || module.name} - ${module.name}` }))}
+            fetchFn={async (params) => {
+              if (!formData.plantId || !formData.departmentId) return { data: [], total: 0 };
+              return listModules({ ...params, plantId: formData.plantId, departmentId: formData.departmentId });
+            }}
+            labelExtractor={(module) => `${module.code || module.name} - ${module.name}`}
+            valueExtractor={(module) => module.id}
             placeholder="Select module"
             disabled={!formData.departmentId}
           />
-          <SelectField
+          <AsyncSelect
             label="Machine Scope"
             value={formData.assetId}
             onChange={(value) => {
@@ -773,10 +821,21 @@ export default function Inventory() {
                 isCritical: current.isCritical,
               }));
             }}
-            options={[{ value: PLANT_SCOPE_VALUE, label: "Overall plant spare" }, ...machineOptionsForForm]}
+            fetchFn={async (params) => {
+               if (!formData.plantId) return { data: [{ id: PLANT_SCOPE_VALUE, code: "", name: "Overall plant spare" } as unknown as Asset], total: 1 };
+               const response = await listAssets({ ...params, plantId: formData.plantId });
+               const filtered = response.data.filter((asset) => {
+                 if (formData.departmentId && asset.departmentId !== formData.departmentId) return false;
+                 if (formData.moduleId && asset.moduleId !== formData.moduleId) return false;
+                 return true;
+               });
+               return { data: [{ id: PLANT_SCOPE_VALUE, code: "", name: "Overall plant spare" } as unknown as Asset, ...filtered], total: filtered.length + 1 };
+            }}
+            labelExtractor={(asset) => asset.id === PLANT_SCOPE_VALUE ? "Overall plant spare" : `${asset.code} - ${asset.name}`}
+            valueExtractor={(asset) => asset.id}
             placeholder="Select machine or plant scope"
           />
-          <InputField label="Spare Code" value={formData.code} onChange={(value) => setFormData((current) => ({ ...current, code: value }))} placeholder="SPR-001" required />
+          <InputField label="Spare Code" value={formData.code} onChange={(value) => setFormData((current) => ({ ...current, code: value }))} placeholder="Leave empty to auto-generate" hint="Optional - auto-generated if left blank" />
           <InputField label="Spare Name" value={formData.name} onChange={(value) => setFormData((current) => ({ ...current, name: value }))} placeholder="Compressor Bearing" required />
           <InputField label="Category" value={formData.category} onChange={(value) => setFormData((current) => ({ ...current, category: value }))} placeholder="Bearings / Belts / Electrical" />
           <InputField label="Unit" value={formData.unit} onChange={(value) => setFormData((current) => ({ ...current, unit: value }))} placeholder="Pcs" />

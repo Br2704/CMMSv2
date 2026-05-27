@@ -8,7 +8,7 @@ import { VendorEntity } from './vendor.entity';
 
 @Entity('assets')
 export class AssetEntity extends TimestampedUuidEntity {
-  @Column({ type: 'varchar', unique: true })
+  @Column({ type: 'varchar' })
   code!: string;
 
   @Column({ type: 'varchar' })

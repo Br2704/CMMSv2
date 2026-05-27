@@ -60,7 +60,7 @@ describe('dashboard websocket hardening', () => {
         const token = signAccessToken({
             sub: 'test-user-id',
             email: 'security.tester@example.com',
-            roles: ['ADMIN'],
+            roles: ['PLANT_ADMIN'],
             organizationId: 'test-org-id',
             plantIds: [],
             accessAllPlants: true,

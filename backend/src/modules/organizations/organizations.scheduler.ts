@@ -5,7 +5,7 @@ import { env } from '../../config/env';
 import { AppDataSource } from '../../database/data-source';
 import { NotificationEntity, OrganizationEntity, UserEntity } from '../../database/entities';
 
-const ORGANIZATION_REMINDER_ROLES = ['SUPERADMIN', 'SUPER_ADMIN', 'ADMIN'];
+const ORGANIZATION_REMINDER_ROLES = ['SUPER_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN'];
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set(['TRIAL', 'ACTIVE', 'EXPIRING']);
 const MILLIS_PER_DAY = 24 * 60 * 60 * 1000;
 

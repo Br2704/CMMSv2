@@ -565,9 +565,9 @@ export const dbClient = {
       if (name === "admin-create-user") {
         const payload = { ...body };
         if (!Array.isArray(payload.roles) && typeof payload.role === "string") {
-          payload.roles = [payload.role === "SUPER_ADMIN" ? "SUPERADMIN" : payload.role];
+          payload.roles = [payload.role];
         } else if (Array.isArray(payload.roles)) {
-          payload.roles = payload.roles.map((role) => (role === "SUPER_ADMIN" ? "SUPERADMIN" : role));
+          payload.roles = payload.roles.map((role) => role);
         }
         const response = await apiFetch("/users", {
           method: "POST",

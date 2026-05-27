@@ -3,16 +3,26 @@ import { normalizeRoleName } from './rbac';
 
 export const SYSTEM_ROLES = [
   'ROOT_ADMIN',
-  'SUPERADMIN',
-  'ADMIN',
+  'SUPER_ADMIN',
   'PLANT_ADMIN',
+  'ESG_ADMIN',
+  'HR_ADMIN',
   'MAINTENANCE_MANAGER',
+  'PRODUCTION_MANAGER',
+  'SCM_MANAGER',
+  'HR_MANAGER',
+  'CALIBRATION_MANAGER',
+  'ACCOUNTS_MANAGER',
+  'SAFETY_MANAGER',
+  'ESG_MANAGER',
   'MAINTENANCE_USER',
-  'HR_USER',
-  'SAFETY_OFFICER',
-  'INVENTORY_MANAGER',
   'PRODUCTION_USER',
-  'USER',
+  'SCM_USER',
+  'HR_USER',
+  'CALIBRATION_USER',
+  'ACCOUNTS_USER',
+  'SAFETY_USER',
+  'ESG_USER',
   'VENDOR',
   'VISITOR',
   'SECURITY',
@@ -39,18 +49,26 @@ export type PolicyTargetUser = {
 
 const ROLE_PRECEDENCE: Record<string, number> = {
   ROOT_ADMIN: 400,
-  SUPERADMIN: 300,
-  ADMIN: 200,
+  SUPER_ADMIN: 320,
+  PLANT_ADMIN: 300,
+  ESG_ADMIN: 290,
+  HR_ADMIN: 285,
   MAINTENANCE_MANAGER: 180,
+  PRODUCTION_MANAGER: 176,
+  SCM_MANAGER: 174,
+  HR_MANAGER: 172,
+  CALIBRATION_MANAGER: 170,
+  ACCOUNTS_MANAGER: 168,
+  SAFETY_MANAGER: 166,
+  ESG_MANAGER: 164,
   MAINTENANCE_USER: 150,
+  SCM_USER: 148,
   HR_USER: 145,
-  SAFETY_OFFICER: 142,
-  INVENTORY_MANAGER: 140,
-  PRODUCTION_USER: 110,
-  ENGINEER: 140,
-  TECHNICIAN: 130,
-  STORE_USER: 125,
-  VIEWER: 110,
+  CALIBRATION_USER: 144,
+  ACCOUNTS_USER: 143,
+  SAFETY_USER: 142,
+  PRODUCTION_USER: 138,
+  ESG_USER: 136,
   VENDOR: 105,
   SECURITY: 102,
   VISITOR: 95,
@@ -59,16 +77,21 @@ const ROLE_PRECEDENCE: Record<string, number> = {
 
 const SUPERADMIN_MANAGED_ROLES = new Set([
   'MAINTENANCE_MANAGER',
+  'PRODUCTION_MANAGER',
+  'SCM_MANAGER',
+  'HR_MANAGER',
+  'CALIBRATION_MANAGER',
+  'ACCOUNTS_MANAGER',
+  'SAFETY_MANAGER',
+  'ESG_MANAGER',
   'MAINTENANCE_USER',
-  'HR_USER',
-  'SAFETY_OFFICER',
-  'INVENTORY_MANAGER',
   'PRODUCTION_USER',
-  'ENGINEER',
-  'TECHNICIAN',
-  'STORE_USER',
-  'VIEWER',
-  'USER',
+  'SCM_USER',
+  'HR_USER',
+  'CALIBRATION_USER',
+  'ACCOUNTS_USER',
+  'SAFETY_USER',
+  'ESG_USER',
   'SECURITY',
   'VENDOR',
   'VISITOR',
@@ -77,16 +100,21 @@ const SUPERADMIN_MANAGED_ROLES = new Set([
 
 const ADMIN_MANAGED_ROLES = new Set([
   'MAINTENANCE_MANAGER',
+  'PRODUCTION_MANAGER',
+  'SCM_MANAGER',
+  'HR_MANAGER',
+  'CALIBRATION_MANAGER',
+  'ACCOUNTS_MANAGER',
+  'SAFETY_MANAGER',
+  'ESG_MANAGER',
   'MAINTENANCE_USER',
-  'HR_USER',
-  'SAFETY_OFFICER',
-  'INVENTORY_MANAGER',
   'PRODUCTION_USER',
-  'ENGINEER',
-  'TECHNICIAN',
-  'STORE_USER',
-  'VIEWER',
-  'USER',
+  'SCM_USER',
+  'HR_USER',
+  'CALIBRATION_USER',
+  'ACCOUNTS_USER',
+  'SAFETY_USER',
+  'ESG_USER',
   'SECURITY',
   'VENDOR',
   'VISITOR',
@@ -103,7 +131,7 @@ export function rolePrecedence(roleKey: string): number {
 }
 
 export function getPrimaryRoleKey(roles: string[]): string {
-  if (roles.length === 0) return 'USER';
+  if (roles.length === 0) return 'VISITOR';
   return roles
     .map((role) => normalizeRole(role))
     .sort((a, b) => rolePrecedence(b) - rolePrecedence(a))[0];
@@ -120,33 +148,20 @@ export function isRegularRole(roleKey: string): boolean {
 
 export function visibleRolesForActor(actorRole: string): string[] {
   const role = normalizeRole(actorRole);
-  const common = [
-    'MAINTENANCE_MANAGER',
-    'MAINTENANCE_USER',
-    'HR_USER',
-    'SAFETY_OFFICER',
-    'INVENTORY_MANAGER',
-    'PRODUCTION_USER',
-    'ENGINEER',
-    'TECHNICIAN',
-    'STORE_USER',
-    'VIEWER',
-    'SECURITY',
-    'VENDOR',
-    'VISITOR',
-    'USER',
-  ];
+  const ALL_ROLES = [...SYSTEM_ROLES];
+  const ADMIN_ROLES = ['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'ESG_ADMIN', 'HR_ADMIN'];
+  const NON_ADMIN_ROLES = ALL_ROLES.filter((r) => !ADMIN_ROLES.includes(r as any));
 
   if (role === 'ROOT_ADMIN') {
-    return ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', ...common];
+    return ALL_ROLES;
   }
-  if (role === 'SUPERADMIN') {
-    return common;
+  if (role === 'SUPER_ADMIN' || role === 'PLANT_ADMIN' || role === 'ESG_ADMIN' || role === 'HR_ADMIN') {
+    return [role, ...NON_ADMIN_ROLES];
   }
-  if (role === 'ADMIN') {
-    return common.filter((r) => r !== 'SUPERADMIN');
+  if (role === 'HR_MANAGER') {
+    return [role, 'HR_USER', 'SECURITY', 'VENDOR', 'VISITOR'];
   }
-  return ['USER', 'SECURITY', 'VENDOR', 'VISITOR'];
+  return [role];
 }
 
 export function allowedRoleTargetsForCreate(actorRole: string): string[] {
@@ -161,45 +176,51 @@ export function canCreateUser(actorRole: string, createRole: string): boolean {
   const normalizedActor = normalizeRole(actorRole);
   const normalizedCreateRole = normalizeRole(createRole);
 
-  if (normalizedActor === 'ROOT_ADMIN') return true;
-  if (normalizedCreateRole === 'ROOT_ADMIN') return false;
-  if (normalizedActor === 'SUPERADMIN') {
+  const isAdminTarget = ['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'ESG_ADMIN', 'HR_ADMIN'].includes(normalizedCreateRole);
+
+  if (normalizedActor === 'ROOT_ADMIN') {
+    return true;
+  }
+
+  if (isAdminTarget) {
+    return false;
+  }
+
+  if (normalizedActor === 'SUPER_ADMIN') {
     return SUPERADMIN_MANAGED_ROLES.has(normalizedCreateRole);
   }
-  if (normalizedActor === 'ADMIN') {
+
+  if (normalizedActor === 'PLANT_ADMIN' || normalizedActor === 'ESG_ADMIN' || normalizedActor === 'HR_ADMIN') {
     return ADMIN_MANAGED_ROLES.has(normalizedCreateRole);
   }
+
+  if (normalizedActor === 'HR_MANAGER') {
+    return ['HR_USER', 'SECURITY', 'VENDOR', 'VISITOR'].includes(normalizedCreateRole);
+  }
+
   return false;
 }
 
 export function canAssignRole(actorRole: string, roleKey: string): boolean {
-  const normalizedActor = normalizeRole(actorRole);
-  const normalizedTargetRole = normalizeRole(roleKey);
-
-  if (normalizedActor === 'ROOT_ADMIN') return true;
-  if (normalizedTargetRole === 'ROOT_ADMIN') return false;
-  if (normalizedActor === 'SUPERADMIN') {
-    return SUPERADMIN_MANAGED_ROLES.has(normalizedTargetRole);
-  }
-  if (normalizedActor === 'ADMIN') {
-    return ADMIN_MANAGED_ROLES.has(normalizedTargetRole);
-  }
-  return false;
+  return canCreateUser(actorRole, roleKey);
 }
 
 export function canViewUser(actor: PolicyActor, targetUser: PolicyTargetUser): boolean {
   const actorRole = normalizeRole(actor.roleKey);
   const targetRoles = targetUser.roleKeys.map((item) => normalizeRole(item));
+  const hasAdminTarget = targetRoles.some((r) => ['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'ESG_ADMIN', 'HR_ADMIN'].includes(r));
 
   if (actorRole === 'ROOT_ADMIN') return true;
-  if (targetRoles.includes('ROOT_ADMIN')) return false;
 
-  if (actorRole === 'SUPERADMIN') {
+  if (hasAdminTarget) {
+    return targetUser.userId === actor.userId;
+  }
+
+  if (actorRole === 'SUPER_ADMIN') {
     return true;
   }
 
-  if (actorRole === 'ADMIN') {
-    if (targetRoles.includes('SUPERADMIN')) return false;
+  if (actorRole === 'PLANT_ADMIN' || actorRole === 'ESG_ADMIN' || actorRole === 'HR_ADMIN' || actorRole === 'HR_MANAGER') {
     return !!targetUser.plantId && actor.plantIds.includes(targetUser.plantId);
   }
 
@@ -209,20 +230,21 @@ export function canViewUser(actor: PolicyActor, targetUser: PolicyTargetUser): b
 export function canEditUser(actor: PolicyActor, targetUser: PolicyTargetUser): boolean {
   const actorRole = normalizeRole(actor.roleKey);
   const targetRoles = targetUser.roleKeys.map((item) => normalizeRole(item));
+  const hasAdminTarget = targetRoles.some((r) => ['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'ESG_ADMIN', 'HR_ADMIN'].includes(r));
 
   if (actorRole === 'ROOT_ADMIN') {
     return true;
   }
 
-  if (targetRoles.includes('ROOT_ADMIN')) {
+  if (hasAdminTarget) {
     return false;
   }
 
-  if (actorRole === 'SUPERADMIN') {
+  if (actorRole === 'SUPER_ADMIN') {
     return targetRoles.every((role) => canAssignRole(actorRole, role));
   }
 
-  if (actorRole === 'ADMIN') {
+  if (actorRole === 'PLANT_ADMIN' || actorRole === 'ESG_ADMIN' || actorRole === 'HR_ADMIN' || actorRole === 'HR_MANAGER') {
     if (!targetRoles.every((role) => canAssignRole(actorRole, role))) return false;
     return !!targetUser.plantId && actor.plantIds.includes(targetUser.plantId);
   }

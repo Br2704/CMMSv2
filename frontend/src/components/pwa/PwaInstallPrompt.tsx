@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Download, X } from "lucide-react";
 import { useAuthStore } from "@/store/auth.store";
+import { APP_NAME } from "@/config/branding";
 
 export function PwaInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -60,7 +61,7 @@ export function PwaInstallPrompt() {
             <div>
               <p className="text-sm font-semibold">Install App</p>
               <p className="text-xs text-muted-foreground leading-tight mt-0.5">
-                Install TamOptiX CMMS for a better mobile experience and offline access.
+                Install {APP_NAME} for a better mobile experience and offline access.
               </p>
             </div>
           </div>

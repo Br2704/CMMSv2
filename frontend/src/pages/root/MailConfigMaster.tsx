@@ -11,6 +11,7 @@ import { httpRequest, ApiError } from '@/api/http';
 import { useToast } from '@/hooks/use-toast';
 import { Settings, Send, RefreshCw, MailCheck, MailWarning, Loader2, Inbox, Save, CheckCircle2, XCircle, AlertTriangle, HelpCircle, BarChart3, ExternalLink, Eye, EyeOff, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { APP_TAGLINE } from '@/config/branding';
 
 interface MailConfig {
   configured: boolean;
@@ -43,7 +44,7 @@ export default function MailConfigMaster() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [config, setConfig] = useState<MailConfig>({ configured: false, host: '', port: 587, from: '', fromName: 'CMMS Notification', user: '', pass: '' });
+  const [config, setConfig] = useState<MailConfig>({ configured: false, host: '', port: 587, from: '', fromName: APP_TAGLINE, user: '', pass: '' });
   const [testEmail, setTestEmail] = useState('');
   const [testLoading, setTestLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
@@ -344,7 +345,7 @@ export default function MailConfigMaster() {
                 </div>
                 <div className="space-y-2">
                   <Label>From Name</Label>
-                  <Input value={safeConfig.fromName} onChange={(e) => setConfig({ ...safeConfig, fromName: e.target.value })} placeholder="CMMS Notification" />
+                  <Input value={safeConfig.fromName} onChange={(e) => setConfig({ ...safeConfig, fromName: e.target.value })} placeholder={APP_TAGLINE} />
                 </div>
               </div>
 

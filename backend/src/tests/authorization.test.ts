@@ -5,8 +5,8 @@ function authContext(overrides: Partial<AuthContext> = {}): AuthContext {
   return {
     userId: 'user-1',
     email: 'user@example.com',
-    roles: ['USER'],
-    roleKey: 'USER',
+    roles: ['MAINTENANCE_USER'],
+    roleKey: 'MAINTENANCE_USER',
     rolePrecedence: 0,
     scopeType: 'PLANT',
     organizationId: 'org-1',
@@ -35,7 +35,7 @@ describe('enterprise authorization engine', () => {
 
   it('blocks governance mutations even when broad permissions are present', () => {
     const decision = authorizePermission(
-      authContext({ roles: ['USER'], roleKey: 'USER', permissions: { ORGANIZATIONS: ['READ', 'UPDATE'] } }),
+      authContext({ roles: ['MAINTENANCE_USER'], roleKey: 'MAINTENANCE_USER', permissions: { ORGANIZATIONS: ['READ', 'UPDATE'] } }),
       'ORGANIZATIONS',
       'UPDATE',
     );

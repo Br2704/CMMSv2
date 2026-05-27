@@ -36,7 +36,8 @@ import { listDepartments, type Department } from "@/api/departments";
 import { listMaintenanceTeams, type MaintenanceTeam } from "@/api/maintenanceTeams";
 import { listPlants, type Plant } from "@/api/plants";
 import { listUsers, type UserProfile } from "@/api/users";
-import { isAdmin, isSuperAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isSuperAdmin } from "@/lib/permission-engine";
 import { CalendarClock, Edit, Link2, Plus, Search, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -130,8 +131,8 @@ function formatDisciplineLabel(value: string | null | undefined) {
 
 export default function PMConfigMaster() {
   const { user } = useAuthStore();
-  const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user);
+  const canManage = isAdminLevel(user?.roles ?? []);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
 
   const [plants, setPlants] = useState<Plant[]>([]);
@@ -184,8 +185,8 @@ export default function PMConfigMaster() {
         const [templatesRes, linksRes, departmentsRes, assetsRes, teamsRes, usersRes] = await Promise.all([
           listPMTemplates({ page: 1, limit: 300, plantId: resolvedPlantId || undefined, includeInactive: true, search: searchQuery || undefined }),
           listPMAssetLinks({ page: 1, limit: 500, plantId: resolvedPlantId || undefined, includeInactive: true, search: searchQuery || undefined }),
-          listDepartments({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: false }),
-          listAssets({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: false }),
+          listDepartments({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: true }),
+          listAssets({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: true }),
           listMaintenanceTeams({ page: 1, limit: 200, plantId: resolvedPlantId || undefined, includeInactive: true }),
           listUsers({ page: 1, limit: 500, plantId: resolvedPlantId || undefined }),
         ]);

@@ -97,14 +97,9 @@ export function SearchableSelect({
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-[var(--radix-popover-trigger-width)] min-w-[200px] p-0"
+          className="w-[var(--radix-popover-trigger-width)] min-w-[200px] max-w-[calc(100vw-1rem)] p-0"
           align="start"
           onCloseAutoFocus={(e) => {
-            // Prevent Radix from restoring focus to trigger when inside a modal
-            // dialog with aria-hidden on the app container. Focus will naturally
-            // go back to the trigger button on next tab, avoiding the
-            // "Blocked aria-hidden on an element because its descendant retained focus" error.
-            e.preventDefault();
           }}
           onEscapeKeyDown={(e) => {
             e.preventDefault();

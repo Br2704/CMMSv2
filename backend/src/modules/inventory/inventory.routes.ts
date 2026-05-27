@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { AssetEntity, SpareItemEntity, StockRequestEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { buildPagination, listQuerySchema, parseListQuery } from '../../utils/pagination';
 import { resolveScopedPlantId } from '../../utils/plantScope';
@@ -31,7 +31,7 @@ const inventoryListQuerySchema = listQuerySchema.extend({
 });
 
 const spareSchema = z.object({
-  code: z.string().min(1),
+  code: z.string().trim().min(1).optional(),
   name: z.string().min(1),
   category: z.string().nullable().optional(),
   currentStock: z.number().int().nonnegative().default(0),

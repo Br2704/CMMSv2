@@ -48,7 +48,7 @@ function permissionActions(auth: AuthContext, moduleKey: string): string[] {
 
 function allowedMastersForRole(role: string): string[] {
   const normalized = role.trim().toUpperCase();
-  if (normalized === 'ROOT_ADMIN' || normalized === 'SUPERADMIN' || normalized === 'ADMIN') {
+  if (normalized === 'ROOT_ADMIN' || normalized === 'SUPER_ADMIN' || normalized === 'PLANT_ADMIN') {
     return ['*'];
   }
   if (normalized === 'MAINTENANCE_MANAGER') {
@@ -72,13 +72,13 @@ function allowedMastersForRole(role: string): string[] {
   if (normalized === 'HR_USER') {
     return ['USERS', 'GATES'];
   }
-  if (normalized === 'CALIBRATION_USER' || normalized === 'CALIBRATION_INCHARGE') {
+  if (normalized === 'CALIBRATION_USER') {
     return ['CALIBRATION'];
   }
-  if (normalized === 'STORE_USER' || normalized === 'INVENTORY_MANAGER') {
+  if (normalized === 'SCM_USER' || normalized === 'SCM_MANAGER') {
     return ['DEPARTMENTS', 'VENDORS', 'AMC'];
   }
-  if (normalized === 'SAFETY_OFFICER') {
+  if (normalized === 'SAFETY_USER' || normalized === 'SAFETY_MANAGER') {
     return ['SAFETY'];
   }
   return [];
@@ -110,11 +110,11 @@ function masterMutationDenied(auth: AuthContext, moduleKey: string, action: stri
   }
 
   const roles = normalizedRoles(auth);
-  if (roles.includes('ROOT_ADMIN') || roles.includes('SUPERADMIN') || roles.includes('ADMIN')) {
-    if (roles.includes('SUPERADMIN') && moduleKey === 'PLANTS') {
+  if (roles.includes('ROOT_ADMIN') || roles.includes('SUPER_ADMIN') || roles.includes('PLANT_ADMIN')) {
+    if (roles.includes('SUPER_ADMIN') && moduleKey === 'PLANTS') {
       return true;
     }
-    if (roles.includes('ADMIN') && moduleKey === 'PLANTS') {
+    if (roles.includes('PLANT_ADMIN') && moduleKey === 'PLANTS') {
       return true;
     }
     return false;
@@ -131,8 +131,8 @@ function governanceMutationDenied(auth: AuthContext, moduleKey: string, action: 
   const isRootAdmin = roles.includes('ROOT_ADMIN');
   if (isRootAdmin) return false;
 
-  const isSuperAdmin = roles.includes('SUPERADMIN');
-  const isAdmin = roles.includes('ADMIN');
+  const isSuperAdmin = roles.includes('SUPER_ADMIN');
+  const isAdmin = roles.includes('PLANT_ADMIN');
 
   if (moduleKey === 'ORGANIZATIONS' && action !== 'READ') return true;
   if (moduleKey === 'ROLE_ACCESS' && !(isSuperAdmin || isAdmin)) return true;
@@ -219,7 +219,7 @@ export function canAccessWorkOrder(
   },
 ): boolean {
   const roles = normalizedRoles(auth);
-  if (roles.some((role) => ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'MAINTENANCE_MANAGER'].includes(role))) {
+  if (roles.some((role) => ['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER'].includes(role))) {
     return true;
   }
 

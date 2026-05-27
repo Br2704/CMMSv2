@@ -11,7 +11,7 @@ import {
   PlantEntity,
 } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { HttpError } from '../../utils/httpError';
 import { resolvePlantFilter, resolveScopedPlantId } from '../../utils/plantScope';
@@ -96,7 +96,7 @@ function isHigherBetter(metricCode: string) {
 
 async function ensureWorkbookCategoryAccess(req: Parameters<typeof ensurePlantAccess>[0], plantId: string, categories: WorkbookCategory[]) {
   const normalizedRoles = req.auth?.roles.map((role) => role.toUpperCase()) ?? [];
-  if (normalizedRoles.includes('SUPERADMIN')) return;
+  if (normalizedRoles.includes('SUPER_ADMIN')) return;
   ensurePlantAccess(req, plantId);
   const authRepo = AppDataSource.getRepository(EsgAuthorizedUserEntity);
   const authorizedRows = await authRepo.find({
@@ -453,7 +453,7 @@ esgWorkbookRouter.get('/esg/workbook/organization-summary', requirePermission('E
   }
 });
 
-esgWorkbookRouter.get('/esg/master/workbook-targets/plants', requireRole(['SUPERADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
+esgWorkbookRouter.get('/esg/master/workbook-targets/plants', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
   try {
     const query = workbookSummaryQuerySchema.partial({ month: true }).parse(req.query);
     const where = {
@@ -470,7 +470,7 @@ esgWorkbookRouter.get('/esg/master/workbook-targets/plants', requireRole(['SUPER
   }
 });
 
-esgWorkbookRouter.post('/esg/master/workbook-targets/plants', requireRole(['SUPERADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
+esgWorkbookRouter.post('/esg/master/workbook-targets/plants', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
   try {
     const body = workbookPlantTargetSchema.parse(req.body);
     const metric = ESG_WORKBOOK_METRIC_MAP.get(body.metricCode);
@@ -499,7 +499,7 @@ esgWorkbookRouter.post('/esg/master/workbook-targets/plants', requireRole(['SUPE
   }
 });
 
-esgWorkbookRouter.get('/esg/master/workbook-targets/organization', requireRole(['SUPERADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
+esgWorkbookRouter.get('/esg/master/workbook-targets/organization', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
   try {
     const query = z.object({ organizationId: optionalUuidQuery, year: z.coerce.number().int().min(2000).max(2200).optional() }).parse(req.query);
     const organizationId = query.organizationId ?? req.auth?.organizationId ?? null;
@@ -520,7 +520,7 @@ esgWorkbookRouter.get('/esg/master/workbook-targets/organization', requireRole([
   }
 });
 
-esgWorkbookRouter.post('/esg/master/workbook-targets/organization', requireRole(['SUPERADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
+esgWorkbookRouter.post('/esg/master/workbook-targets/organization', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
   try {
     const body = workbookOrganizationTargetSchema.parse(req.body);
     const organizationId = body.organizationId ?? req.auth?.organizationId ?? null;

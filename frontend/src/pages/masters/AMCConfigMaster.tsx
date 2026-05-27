@@ -9,14 +9,17 @@ import { AppSwitch } from "@/components/ui/app-switch";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { FormDialog } from "@/components/shared/FormDialog";
 import { InputField, SelectField, TextareaField } from "@/components/shared/FormField";
+import { AsyncSelect } from "@/components/ui/async-select";
+import { listPlants } from "@/api/plants";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { DetailRow, DetailSection, ViewDialog } from "@/components/shared/ViewDialog";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import BackButton from "@/components/masters/BackButton";
+import { DataTableShell } from "@/components/layout/DataTableShell";
+import { Toolbar } from "@/components/layout/Toolbar";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PageShell } from "@/components/layout/PageShell";
-import { FilterToolbar } from "@/components/layout/FilterToolbar";
 import { Input } from "@/components/ui/input";
 import {
   createAmcContract,
@@ -33,7 +36,8 @@ import { listUsers, type UserProfile } from "@/api/users";
 import { listVendors, type Vendor } from "@/api/vendors";
 import { ChevronDown, Eye, Layers3, Loader2, Mail, Plus, Search, Send, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { isAdmin, isSuperAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isSuperAdmin } from "@/lib/permission-engine";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 
 const CONTRACT_TYPE_OPTIONS = [
@@ -227,8 +231,8 @@ function getStatusVariant(status: string) {
 
 export default function AMCConfigMaster() {
   const { user } = useAuthStore();
-  const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user);
+  const canManage = isAdminLevel(user?.roles ?? []);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, modulesOptions, fetchPlants, fetchModules } = useMastersOptions();
 
@@ -247,6 +251,18 @@ export default function AMCConfigMaster() {
   const [formData, setFormData] = useState<ContractFormState>({ ...emptyForm, plantId: defaultPlantId });
   const [groupDraft, setGroupDraft] = useState<MachineGroupDraft>({ ...emptyGroupDraft });
 
+  const refreshSelectedContract = useCallback(
+    async (contractId?: string | null) => {
+      if (!contractId) return;
+      const latestContracts = await loadData();
+      const latest = latestContracts.find((contract) => contract.id === contractId) || null;
+      if (latest) {
+        setSelectedContract(latest);
+      }
+    },
+    [loadData],
+  );
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -261,17 +277,41 @@ export default function AMCConfigMaster() {
       setAssets(assetsResponse.data);
       setVendors(vendorsResponse.data);
       setUsers(usersResponse.data);
+      return contractsResponse.data;
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, "Failed to load AMC master data"));
     } finally {
       setLoading(false);
     }
+    return [] as AmcContract[];
   }, [canSelectPlant, defaultPlantId]);
 
   useEffect(() => {
     void fetchPlants();
     void loadData();
   }, [fetchPlants, loadData]);
+
+  useEffect(() => {
+    if (!isViewOpen || !selectedContract?.id) return;
+    void refreshSelectedContract(selectedContract.id);
+  }, [isViewOpen, refreshSelectedContract, selectedContract?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isViewOpen || !selectedContract?.id) return;
+
+    const handleFocus = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshSelectedContract(selectedContract.id);
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [isViewOpen, refreshSelectedContract, selectedContract?.id]);
 
   useEffect(() => {
     const scopedPlantId = formData.plantId || (canSelectPlant ? undefined : defaultPlantId || undefined);
@@ -565,7 +605,7 @@ export default function AMCConfigMaster() {
       className: "text-right",
       render: (contract: AmcContract) => (
         <div className="flex justify-end gap-1">
-          <Button variant="ghost" size="icon" onClick={() => { setSelectedContract(contract); setIsViewOpen(true); }}>
+          <Button variant="ghost" size="icon" onClick={() => { setSelectedContract(contract); setIsViewOpen(true); void refreshSelectedContract(contract.id); }}>
             <Eye className="h-4 w-4" />
           </Button>
           {canManage ? (
@@ -607,16 +647,22 @@ export default function AMCConfigMaster() {
         <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Email Automation</p><p className="mt-2 text-2xl font-semibold">{stats.emailAutomation}</p></CardContent></Card>
       </div>
 
-      <Card>
-        <CardContent className="p-4">
-          <FilterToolbar
-            search={
+      <DataTableShell
+        title={
+          <span className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-primary" />
+            AMC Contracts ({filteredContracts.length})
+          </span>
+        }
+        toolbar={
+          <Toolbar
+            left={
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input id="amc-config-search" name="amcConfigSearch" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search contract, vendor, code..." className="pl-9" />
               </div>
             }
-            filters={
+            right={
               <SelectField
                 label=""
                 value={statusFilter}
@@ -626,17 +672,8 @@ export default function AMCConfigMaster() {
               />
             }
           />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <ShieldCheck className="h-5 w-5 text-primary" />
-            AMC Contracts ({filteredContracts.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+        }
+      >
           {loading ? (
             <TableSkeleton />
           ) : (
@@ -645,7 +682,7 @@ export default function AMCConfigMaster() {
               columns={columns}
               keyExtractor={(contract: AmcContract) => contract.id}
               mobileCard={(contract: AmcContract) => (
-                <MobileCard onView={() => { setSelectedContract(contract); setIsViewOpen(true); }} onEdit={canManage ? () => openEdit(contract) : undefined}>
+                <MobileCard onView={() => { setSelectedContract(contract); setIsViewOpen(true); void refreshSelectedContract(contract.id); }} onEdit={canManage ? () => openEdit(contract) : undefined}>
                   <MobileCardHeader
                     title={contract.contractName}
                     subtitle={contract.vendor?.name || "-"}
@@ -658,8 +695,7 @@ export default function AMCConfigMaster() {
               )}
             />
           )}
-        </CardContent>
-      </Card>
+      </DataTableShell>
 
       <FormDialog
         open={isFormOpen}
@@ -680,19 +716,31 @@ export default function AMCConfigMaster() {
           <InputField label="Contract Name *" value={formData.contractName} onChange={(value) => setFormData((current) => ({ ...current, contractName: value }))} required />
           <InputField label="Contract Code" value={formData.contractNumber} onChange={(value) => setFormData((current) => ({ ...current, contractNumber: value }))} placeholder="AMC-2026-001" />
           {canSelectPlant ? (
-            <SelectField
+            <AsyncSelect
               label="Plant *"
               value={formData.plantId}
               onChange={(value) => {
                 setFormData((current) => ({ ...current, plantId: value, manualMachineIds: [], machineGroups: [] }));
                 setGroupDraft({ ...emptyGroupDraft });
               }}
-              options={plantsOptions}
+              fetchFn={listPlants}
+              labelExtractor={(plant) => plant.plantCode ? `${plant.plantCode} - ${plant.plantName}` : plant.plantName}
+              valueExtractor={(plant) => plant.id}
+              placeholder="Select plant"
             />
           ) : (
             <InputField label="Plant" value={plantLabel(defaultPlantId)} onChange={() => {}} disabled />
           )}
-          <SelectField label="Vendor *" value={formData.vendorId} onChange={(value) => setFormData((current) => ({ ...current, vendorId: value }))} options={vendorOptions} required />
+          <AsyncSelect
+            label="Vendor *"
+            value={formData.vendorId}
+            onChange={(value) => setFormData((current) => ({ ...current, vendorId: value }))}
+            fetchFn={listVendors}
+            labelExtractor={(vendor) => `${vendor.code} - ${vendor.name}`}
+            valueExtractor={(vendor) => vendor.id}
+            placeholder="Select vendor"
+            required
+          />
           <SelectField label="Contract Type *" value={formData.contractType} onChange={(value) => setFormData((current) => ({ ...current, contractType: value }))} options={CONTRACT_TYPE_OPTIONS} required />
           <SelectField label="Visit Frequency *" value={formData.visitFrequency} onChange={(value) => setFormData((current) => ({ ...current, visitFrequency: value }))} options={VISIT_FREQUENCY_OPTIONS} required />
           <InputField label="Start Date *" type="date" value={formData.startDate} onChange={(value) => setFormData((current) => ({ ...current, startDate: value }))} required />
@@ -819,7 +867,7 @@ export default function AMCConfigMaster() {
                 checked={formData.notificationSettings.notifyInApp}
                 onCheckedChange={(checked) => setFormData((current) => ({ ...current, notificationSettings: { ...current.notificationSettings, notifyInApp: checked } }))}
                 label="In-App Notifications"
-                description="Push alerts into the CMMS notification center."
+                description="Push alerts into the notification center."
               />
               <AppSwitch
                 checked={formData.notificationSettings.notifyOnVisitScheduled}

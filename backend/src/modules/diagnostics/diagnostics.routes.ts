@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { AppDataSource } from '../../database/data-source';
 import { AssetEntity, AssetPerformanceLogEntity, DepartmentEntity, MachineModuleEntity, WorkOrderEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requirePermission, requireRole } from '../../middlewares/permissions';
+import { requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { safeNumber } from '../../utils/advancedAnalytics';
 
@@ -71,7 +71,7 @@ async function queryInconsistencies() {
 }
 
 export const diagnosticsRouter = Router();
-diagnosticsRouter.use('/diagnostics', requireAuth, requireRole(['SUPERADMIN']), requirePermission('REPORTS', 'READ'));
+diagnosticsRouter.use('/diagnostics', requireAuth, requireRole(['SUPER_ADMIN']), requirePermission('REPORTS', 'READ'));
 
 diagnosticsRouter.get('/diagnostics/system-health', async (_req, res, next) => {
   try {

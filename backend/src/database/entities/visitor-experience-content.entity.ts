@@ -2,13 +2,14 @@ import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
 import { LARGE_TEXT_COLUMN_TYPE, TimestampedUuidEntity } from './common';
 import { PlantEntity } from './plant.entity';
 import { UserEntity } from './user.entity';
+import { APP_NAME } from '../../config/branding';
 
 @Entity('visitor_experience_content')
 export class VisitorExperienceContentEntity extends TimestampedUuidEntity {
   @Column({ name: 'plant_id', type: 'uuid', nullable: true })
   plantId!: string | null;
 
-  @Column({ name: 'page_title', type: 'varchar', default: 'Welcome to TamOptiX CMMS' })
+  @Column({ name: 'page_title', type: 'varchar', default: `Welcome to ${APP_NAME}` })
   pageTitle!: string;
 
   @Column({ name: 'company_overview', type: LARGE_TEXT_COLUMN_TYPE, nullable: true })

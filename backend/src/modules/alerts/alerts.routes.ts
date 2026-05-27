@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { AlertLogEntity } from '../../database/entities';
-import { ensurePlantAccess, requirePermission } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission } from '../../middlewares/permissionGuard';
 import { fail, ok } from '../../utils/apiResponse';
 import { toCsv } from '../../utils/csvExport';
 import { buildPagination, parseListQuery } from '../../utils/pagination';

@@ -14,6 +14,7 @@ interface ViewDialogProps {
   subtitle?: string;
   contentClassName?: string;
   children: ReactNode;
+  modal?: boolean;
 }
 
 export function ViewDialog({
@@ -23,26 +24,32 @@ export function ViewDialog({
   subtitle,
   contentClassName,
   children,
+  modal = true,
 }: ViewDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} modal={modal}>
       <DialogContent 
-        className={`sm:max-w-[600px] max-h-[90vh] overflow-y-auto ${contentClassName || ""}`}
-        onCloseAutoFocus={(e) => e.preventDefault()}
+        className={`sm:max-w-[600px] w-full p-0 flex flex-col ${contentClassName || ""}`}
       >
-        <DialogHeader>
-          <div className="flex items-start justify-between">
-            <div>
-              <DialogTitle className="text-xl">{title}</DialogTitle>
-              {subtitle ? (
-                <DialogDescription className="mt-1">{subtitle}</DialogDescription>
-              ) : (
-                <DialogDescription className="sr-only">Details for {title}</DialogDescription>
-              )}
+        <div className="flex flex-col flex-1 min-h-0">
+          <DialogHeader className="px-4 sm:px-6 py-4 border-b shrink-0">
+            <div className="flex items-start justify-between">
+              <div>
+                <DialogTitle className="text-xl">{title}</DialogTitle>
+                {subtitle ? (
+                  <DialogDescription className="mt-1">{subtitle}</DialogDescription>
+                ) : (
+                  <DialogDescription className="sr-only">Details for {title}</DialogDescription>
+                )}
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="p-4 sm:p-6 pb-6">
+              {children}
             </div>
           </div>
-        </DialogHeader>
-        <div className="mt-4">{children}</div>
+        </div>
       </DialogContent>
     </Dialog>
   );

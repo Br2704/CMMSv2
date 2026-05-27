@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { AssetEntity, AssetPerformanceLogEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { evaluatePerformanceLogAlerts } from '../../utils/alerts';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
@@ -55,7 +55,7 @@ function validatePerformanceInput(body: z.infer<typeof basePerformanceLogSchema>
 export const performanceLogsRouter = Router();
 performanceLogsRouter.use(requireAuth);
 
-performanceLogsRouter.post('/performance-logs', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+performanceLogsRouter.post('/performance-logs', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), async (req, res, next) => {
   try {
     const body = createPerformanceLogSchema.parse(req.body);
     const validationError = validatePerformanceInput(body);
@@ -99,7 +99,7 @@ performanceLogsRouter.post('/performance-logs', requireRole(['SUPERADMIN', 'ADMI
   }
 });
 
-performanceLogsRouter.get('/performance-logs', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+performanceLogsRouter.get('/performance-logs', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), async (req, res, next) => {
   try {
     const query = parseListQuery(req.query as Record<string, unknown>);
     const filters = z
@@ -150,7 +150,7 @@ performanceLogsRouter.get('/performance-logs', requireRole(['SUPERADMIN', 'ADMIN
   }
 });
 
-performanceLogsRouter.patch('/performance-logs/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+performanceLogsRouter.patch('/performance-logs/:id', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = patchPerformanceLogSchema.parse(req.body);
@@ -215,7 +215,7 @@ performanceLogsRouter.patch('/performance-logs/:id', requireRole(['SUPERADMIN', 
   }
 });
 
-performanceLogsRouter.delete('/performance-logs/:id', requireRole(['SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+performanceLogsRouter.delete('/performance-logs/:id', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const repo = AppDataSource.getRepository(AssetPerformanceLogEntity);

@@ -65,8 +65,8 @@ export function KPICard({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-[2rem] border p-6",
-        "border-border/80 bg-card/80 backdrop-blur-xl shadow-industrial-sm dark:bg-card/70",
+        "group relative overflow-hidden rounded-[2rem] border p-4 sm:p-5 lg:p-6",
+        "border-border/80 bg-card/80 backdrop-blur-xl shadow-industrial-sm dark:bg-card/70 min-w-0",
         variant === "primary" ? "border-primary/30 bg-gradient-to-br from-primary/10 to-transparent dark:from-primary/20" :
         variant === "success" ? "border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 to-transparent dark:from-emerald-500/20" :
         variant === "warning" ? "border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-transparent dark:from-amber-500/20" :
@@ -76,28 +76,28 @@ export function KPICard({
         className
       )}
     >
-      <div className="relative z-10 flex items-start justify-between">
-        <div className="space-y-4">
-          <div className="space-y-1">
-             <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">
+      <div className="relative z-10 flex flex-row items-start justify-between gap-3 min-w-0">
+        <div className="flex-1 min-w-0 space-y-3 sm:space-y-4">
+          <div className="space-y-1 min-w-0">
+             <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground truncate w-full pr-2">
                {title}
              </p>
-             <h3 className="text-3xl font-black tracking-tight text-foreground sm:text-4xl">
+             <h3 className="text-2xl font-black tracking-tight text-foreground sm:text-3xl lg:text-4xl truncate w-full">
                {value}
              </h3>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
              {trend && (
                <div className={cn(
-                 "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase",
+                 "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase shrink-0",
                  trend.isPositive ? "bg-emerald-500/15 text-emerald-500" : "bg-rose-500/15 text-rose-500"
                )}>
                  {trend.isPositive ? "+" : ""}{trend.value}%
                </div>
              )}
              {subtitle && (
-               <p className="text-[11px] font-bold text-muted-foreground">
+               <p className="text-[10px] sm:text-[11px] font-bold text-muted-foreground truncate max-w-full">
                  {subtitle}
                </p>
              )}

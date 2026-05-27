@@ -34,13 +34,13 @@ interface ChartCardProps {
 
 function ChartCard({ title, subtitle, children }: ChartCardProps) {
   return (
-    <Card className="shadow-card">
+    <Card className="shadow-card flex flex-col min-w-0 overflow-hidden">
       <CardHeader className="pb-2">
-        <CardTitle className="text-lg font-semibold">{title}</CardTitle>
-        <p className="text-sm text-muted-foreground">{subtitle}</p>
+        <CardTitle className="text-lg font-semibold truncate">{title}</CardTitle>
+        <p className="text-sm text-muted-foreground truncate">{subtitle}</p>
       </CardHeader>
-      <CardContent>
-        <div className="h-[320px] w-full">{children}</div>
+      <CardContent className="flex-1 min-h-0 min-w-0 overflow-hidden">
+        <div className="h-[280px] sm:h-[320px] w-full min-w-0 overflow-hidden">{children}</div>
       </CardContent>
     </Card>
   );

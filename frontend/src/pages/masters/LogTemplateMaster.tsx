@@ -15,6 +15,11 @@ import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { InputField, SelectField } from "@/components/shared/FormField";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
+import { PageShell } from "@/components/layout/PageShell";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { DataTableShell } from "@/components/layout/DataTableShell";
+import { Toolbar } from "@/components/layout/Toolbar";
+import { FormGrid } from "@/components/layout/FormGrid";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   createLogTemplate,
@@ -32,7 +37,8 @@ import { listWorkOrderMasters } from "@/api/workOrderMasters";
 import { listUsers } from "@/api/users";
 import { humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
 import { subscribeWorkOrderSync } from "@/lib/work-order-sync";
-import { useAuthStore, isAdmin, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isSuperAdmin } from "@/lib/permission-engine";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 
 const fallbackCategoryOptions = [
@@ -128,8 +134,8 @@ const emptyField: FieldRow = {
 
 export default function LogTemplateMaster() {
   const { user } = useAuthStore();
-  const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user);
+  const canManage = isAdminLevel(user?.roles ?? []);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
   const {
     plantsOptions,
@@ -161,7 +167,7 @@ export default function LogTemplateMaster() {
   const [viewFields, setViewFields] = useState<FieldRow[]>([]);
   const [workOrderCategoryOptions, setWorkOrderCategoryOptions] = useState<Array<{ value: string; label: string }>>([]);
 
-  const fetchTemplates = async () => {
+  const fetchTemplates = useCallback(async () => {
     setLoading(true);
     try {
       const templateResponse = await listLogTemplates({
@@ -203,7 +209,7 @@ export default function LogTemplateMaster() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [canSelectPlant, defaultPlantId, searchQuery]);
 
   const fetchUsers = async (plantId?: string) => {
     try {
@@ -236,7 +242,7 @@ export default function LogTemplateMaster() {
       page: 1,
       limit: 500,
       plantId,
-      includeInactive: false,
+      includeInactive: true,
       optionType: "CATEGORY",
     });
 
@@ -287,7 +293,7 @@ export default function LogTemplateMaster() {
 
   useEffect(() => {
     void fetchTemplates();
-  }, [searchQuery, defaultPlantId, canSelectPlant]);
+  }, [fetchTemplates]);
 
   useEffect(() => {
     const plantId = canSelectPlant ? formData.plantId || undefined : defaultPlantId || undefined;
@@ -641,38 +647,41 @@ export default function LogTemplateMaster() {
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <PageShell>
       <BackButton />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight lg:text-3xl">Log Template Management</h1>
-          <p className="text-sm text-muted-foreground">Configure data logging templates, fields, and user assignments</p>
-        </div>
-        {canManage && (
-          <Button onClick={() => { setFormData({ ...emptyForm, plantId: canSelectPlant ? "" : defaultPlantId }); setSelected(null); setIsFormOpen(true); }} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
-            <Plus className="h-4 w-4" />
-            Add Template
-          </Button>
-        )}
-      </div>
-
-      <Card className="shadow-card">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-base sm:text-lg font-semibold flex items-center gap-2">
-              <ClipboardList className="h-5 w-5 text-primary" />
-              Templates ({filtered.length})
-            </CardTitle>
-            <div className="flex flex-col sm:flex-row gap-3">
+      <PageHeader
+        title="Log Template Management"
+        description="Configure data logging templates, fields, and user assignments"
+        actions={
+          canManage && (
+            <Button onClick={() => { setFormData({ ...emptyForm, plantId: canSelectPlant ? "" : defaultPlantId }); setSelected(null); setIsFormOpen(true); }} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
+              <Plus className="h-4 w-4" />
+              Add Template
+            </Button>
+          )
+        }
+      />
+      <DataTableShell
+        title={
+          <span className="flex items-center gap-2">
+            <ClipboardList className="h-5 w-5 text-primary" />
+            Templates ({filtered.length})
+          </span>
+        }
+        toolbar={
+          <Toolbar
+            left={
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input id="log-template-search" name="logTemplateSearch" placeholder="Search..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
               </div>
+            }
+            right={
               <SelectField label="" value={catFilter} onChange={setCatFilter} options={[{ value: "all", label: "All Categories" }, ...categoryOptions]} className="min-w-[150px]" />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
+            }
+          />
+        }
+      >
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -715,11 +724,10 @@ export default function LogTemplateMaster() {
               )}
             />
           )}
-        </CardContent>
-      </Card>
+      </DataTableShell>
 
       <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title={selected ? "Edit Template" : "Add Template"} description="Configure log template settings" onSubmit={handleSubmitTemplate} submitLabel={submitting ? "Saving..." : selected ? "Update" : "Create"} size="lg">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <FormGrid>
           <InputField label="Template Name" value={formData.templateName} onChange={(value) => setFormData({ ...formData, templateName: value })} placeholder="Boiler Daily Log" required />
           <SelectField label="Category" value={formData.category} onChange={(value) => setFormData({ ...formData, category: value })} options={categoryOptions} required disabled={categoryOptions.length === 0} />
           <InputField label="Description" value={formData.description} onChange={(value) => setFormData({ ...formData, description: value })} placeholder="Daily boiler parameters log" />
@@ -765,11 +773,11 @@ export default function LogTemplateMaster() {
             <Checkbox id="notifyShift" checked={formData.notifyAtShiftStart} onCheckedChange={(value) => setFormData({ ...formData, notifyAtShiftStart: !!value })} />
             <Label htmlFor="notifyShift">Notify at shift start</Label>
           </div>
-        </div>
+        </FormGrid>
       </FormDialog>
 
       <Dialog open={isFieldsOpen} onOpenChange={setIsFieldsOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Configure Fields - {selected?.templateName}</DialogTitle>
           </DialogHeader>
@@ -883,7 +891,7 @@ export default function LogTemplateMaster() {
         )}
       </ViewDialog>
 
-      <DeleteConfirmDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} onConfirm={confirmDelete} title="Delete Template" description={`Are you sure you want to delete "${selected?.templateName}"?`} isLoading={submitting} />
-    </div>
+      <DeleteConfirmDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} title="Delete Template" itemName={selected?.templateName} onConfirm={confirmDelete} isLoading={submitting} />
+    </PageShell>
   );
 }

@@ -226,7 +226,7 @@ async function ensureProtectedRootUser(manager: EntityManager, organizationId: s
       phone: null,
       profileImageUrl: PROTECTED_ROOT_ADMIN.profileImageUrl,
       plantId: null,
-      department: null,
+      departmentId: null,
       isActive: true,
     });
   } else {

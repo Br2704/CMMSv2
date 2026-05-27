@@ -1,4 +1,29 @@
-export const APP_ROLES = ['SUPERADMIN', 'ROOT_ADMIN', 'ADMIN', 'USER'] as const;
+export const APP_ROLES = [
+  'ROOT_ADMIN',
+  'SUPER_ADMIN',
+  'PLANT_ADMIN',
+  'ESG_ADMIN',
+  'HR_ADMIN',
+  'MAINTENANCE_MANAGER',
+  'PRODUCTION_MANAGER',
+  'SCM_MANAGER',
+  'HR_MANAGER',
+  'CALIBRATION_MANAGER',
+  'ACCOUNTS_MANAGER',
+  'SAFETY_MANAGER',
+  'ESG_MANAGER',
+  'MAINTENANCE_USER',
+  'PRODUCTION_USER',
+  'SCM_USER',
+  'HR_USER',
+  'CALIBRATION_USER',
+  'ACCOUNTS_USER',
+  'SAFETY_USER',
+  'ESG_USER',
+  'VENDOR',
+  'SECURITY',
+  'VISITOR',
+] as const;
 
 export const MODULES = {
   plants: 'plants',

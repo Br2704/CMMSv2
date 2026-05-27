@@ -1,3 +1,5 @@
+import { APP_NAME, APP_TAGLINE } from '../config/branding';
+
 function escapeXml(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -63,8 +65,8 @@ function worksheetXmlForSheet(title: string, sheet: Sheet, branding: WorkbookBra
   const columnCount = Math.max(safeHeaders.length, ...safeRows.map((row) => row.length), 1);
   const mergeAcross = Math.max(0, columnCount - 1);
   const generatedAt = branding.generatedAt ?? new Date().toISOString();
-  const organizationName = branding.organizationName?.trim() || "CMMS Organization";
-  const footerBranding = branding.footerBranding?.trim() || "Powered by TamOptiX Technologies";
+  const organizationName = branding.organizationName?.trim() || APP_NAME;
+  const footerBranding = branding.footerBranding?.trim() || APP_TAGLINE;
 
   const headerRows: string[] = [];
   if (isFirstSheet) {
@@ -84,7 +86,7 @@ function worksheetXmlForSheet(title: string, sheet: Sheet, branding: WorkbookBra
   const footerRows = [
     rowXml([`<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sBody\"><Data ss:Type=\"String\"></Data></Cell>`]),
     rowXml([
-      `<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sTamOptix\"><Data ss:Type=\"String\">TamOptiX Technologies | Intelligent CMMS Platform</Data></Cell>`,
+      `<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sTamOptix\"><Data ss:Type=\"String\">${APP_NAME} | Intelligent CMMS Platform</Data></Cell>`,
     ]),
     rowXml([
       `<Cell ss:MergeAcross=\"${mergeAcross}\" ss:StyleID=\"sFooter\"><Data ss:Type=\"String\">${escapeXml(footerBranding)}</Data></Cell>`,

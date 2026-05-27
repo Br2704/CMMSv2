@@ -8,7 +8,7 @@ const optionalNullableUuid = z.preprocess((value) => {
 }, z.string().uuid().optional());
 
 export const createCostCenterSchema = z.object({
-  code: z.string().min(1),
+  code: z.string().trim().min(1).optional(),
   name: z.string().min(1),
   departmentId: optionalNullableUuid,
   plantId: optionalNullableUuid,

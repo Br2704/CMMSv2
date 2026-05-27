@@ -1,6 +1,6 @@
 import { Brackets } from 'typeorm';
 import { AppDataSource } from '../../database/data-source';
-import { AssetEntity, DepartmentEntity, MachineModuleEntity } from '../../database/entities';
+import { DepartmentEntity, MachineModuleEntity } from '../../database/entities';
 import type { AuthContext } from '../../types/auth';
 import { ok } from '../../utils/apiResponse';
 import { buildPagination, type ListQuery } from '../../utils/pagination';
@@ -8,6 +8,9 @@ import { enforcePlantScope, resolveScopedPlantId } from '../../utils/plantScope'
 import { applyPlantScope, applySearch } from '../../utils/query';
 import { conflict, forbidden, notFound } from '../../utils/httpError';
 import type { CreateModuleInput, UpdateModuleInput } from './modules.validators';
+import { generateEntityCode } from '../../utils/codeGenerator';
+import { audit } from '../../utils/audit';
+import { cascadeDeleteRelatedRecords } from '../../utils/cascadeDelete';
 
 function enforceAuthPlantScope(auth: AuthContext, plantId: string | null | undefined) {
   try {
@@ -24,7 +27,6 @@ function normalizeDuplicateValue(value: string | null | undefined) {
 export class ModulesService {
   private modulesRepo = AppDataSource.getRepository(MachineModuleEntity);
   private departmentsRepo = AppDataSource.getRepository(DepartmentEntity);
-  private assetsRepo = AppDataSource.getRepository(AssetEntity);
 
   async list(query: ListQuery, auth: AuthContext) {
     const qb = this.modulesRepo.createQueryBuilder('module');
@@ -62,37 +64,32 @@ export class ModulesService {
   }) {
     const normalizedCode = normalizeDuplicateValue(params.code);
     const normalizedName = normalizeDuplicateValue(params.name);
-    const qb = this.modulesRepo
-      .createQueryBuilder('module')
-      .where('module.plant_id = :plantId', { plantId: params.plantId })
-      .andWhere('module.department_id = :departmentId', { departmentId: params.departmentId });
 
-    if (params.excludeId) {
-      qb.andWhere('module.id <> :excludeId', { excludeId: params.excludeId });
+    if (normalizedCode) {
+      const qbCode = this.modulesRepo
+        .createQueryBuilder('module')
+        .where('module.plant_id = :plantId', { plantId: params.plantId })
+        .andWhere('LOWER(TRIM(COALESCE(module.code, \'\'))) = :normalizedCode', { normalizedCode });
+      if (params.excludeId) {
+        qbCode.andWhere('module.id <> :excludeId', { excludeId: params.excludeId });
+      }
+      if (await qbCode.getOne()) {
+        conflict('Module code already exists in this plant');
+      }
     }
 
-    qb.andWhere(
-      new Brackets((where) => {
-        let hasClause = false;
-
-        if (normalizedCode) {
-          where.where('LOWER(TRIM(COALESCE(module.code, \'\'))) = :normalizedCode', { normalizedCode });
-          hasClause = true;
-        }
-
-        if (normalizedName) {
-          if (hasClause) {
-            where.orWhere('LOWER(TRIM(module.name)) = :normalizedName', { normalizedName });
-          } else {
-            where.where('LOWER(TRIM(module.name)) = :normalizedName', { normalizedName });
-          }
-        }
-      }),
-    );
-
-    const duplicate = await qb.getOne();
-    if (duplicate) {
-      conflict('Module code or name already exists in this department');
+    if (normalizedName) {
+      const qbName = this.modulesRepo
+        .createQueryBuilder('module')
+        .where('module.plant_id = :plantId', { plantId: params.plantId })
+        .andWhere('module.department_id = :departmentId', { departmentId: params.departmentId })
+        .andWhere('LOWER(TRIM(module.name)) = :normalizedName', { normalizedName });
+      if (params.excludeId) {
+        qbName.andWhere('module.id <> :excludeId', { excludeId: params.excludeId });
+      }
+      if (await qbName.getOne()) {
+        conflict('Module name already exists in this department');
+      }
     }
   }
 
@@ -102,11 +99,22 @@ export class ModulesService {
       conflict('plantId is required');
     }
     enforceAuthPlantScope(auth, scopedPlantId);
+    const resolvedCode = input.code?.trim() || await generateEntityCode({
+      tableName: 'machine_modules',
+      codeColumn: 'code',
+      typeCode: 'MOD',
+      plantId: scopedPlantId,
+      organizationId: auth.organizationId ?? null,
+      scope: {
+        plantColumn: 'plant_id',
+        plantId: scopedPlantId,
+      },
+    });
     await this.validateDepartmentPlant(scopedPlantId, input.departmentId);
     await this.ensureUniqueModule({
       plantId: scopedPlantId,
       departmentId: input.departmentId,
-      code: input.code,
+      code: resolvedCode,
       name: input.name,
     });
 
@@ -114,7 +122,7 @@ export class ModulesService {
       plantId: scopedPlantId,
       departmentId: input.departmentId,
       name: input.name.trim(),
-      code: input.code?.trim() || null,
+      code: resolvedCode,
       description: input.description ?? null,
       isActive: input.isActive ?? true,
     });
@@ -136,7 +144,7 @@ export class ModulesService {
 
     enforceAuthPlantScope(auth, nextPlantId);
     await this.validateDepartmentPlant(nextPlantId, nextDepartmentId);
-    const nextCode = input.code === undefined ? row.code : input.code?.trim() || null;
+    const nextCode = input.code === undefined ? row.code : input.code?.trim() || row.code;
     const nextName = input.name === undefined ? row.name : input.name.trim();
     await this.ensureUniqueModule({
       plantId: nextPlantId,
@@ -165,14 +173,29 @@ export class ModulesService {
     }
     enforceAuthPlantScope(auth, row.plantId);
 
-    const linkedAssets = await this.assetsRepo.count({ where: { moduleId: row.id, isActive: true } });
-    if (linkedAssets > 0) {
-      conflict('Module cannot be deleted because active machines exist. Disable machines or reassign first.');
-    }
-
-    const isAdminDeleter = auth.roles.some((role) => role === 'ROOT_ADMIN' || role === 'SUPERADMIN' || role === 'ADMIN');
+    const isAdminDeleter = auth.roles.some((role) => role === 'ROOT_ADMIN' || role === 'SUPER_ADMIN' || role === 'PLANT_ADMIN');
     if (isAdminDeleter) {
+      await cascadeDeleteRelatedRecords({
+        tableName: 'machine_modules',
+        moduleName: 'modules',
+        entityId: row.id,
+        authUserId: auth.userId ?? null,
+        authRoles: auth.roles,
+        path: `/api/modules/${row.id}`,
+        plantId: row.plantId,
+      });
       await this.modulesRepo.delete({ id: row.id });
+      await audit('modules.delete', {
+        module: 'MODULES',
+        actorUserId: auth.userId ?? null,
+        entityName: 'machine_modules',
+        entityId: row.id,
+        method: 'DELETE',
+        path: `/api/modules/${row.id}`,
+        plantId: row.plantId,
+        statusCode: 200,
+        metadata: { hardDelete: true, cascade: true },
+      });
       return ok({ id: row.id, deleted: true }, 'Module deleted permanently');
     }
 

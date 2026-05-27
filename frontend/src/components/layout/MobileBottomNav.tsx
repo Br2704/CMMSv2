@@ -1,8 +1,9 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
-import { useIsMobilePwaMode } from "@/hooks/use-mobile-pwa";
-import { isRootAdmin, useAuthStore } from "@/store/auth.store";
+import { useAccessibleRoutes } from "@/hooks/useAccessibleRoutes";
+import { useAuthStore } from "@/store/auth.store";
+import { isRootAdmin } from "@/lib/permission-engine";
 import {
   LayoutDashboard,
   ClipboardList,
@@ -20,7 +21,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const mainNavItems = [
   { title: "Home", href: "/", icon: LayoutDashboard, moduleId: "dashboard" },
@@ -55,10 +56,28 @@ interface MobileBottomNavProps {
 export function MobileBottomNav({ isSidebarOpen = false }: MobileBottomNavProps) {
   const location = useLocation();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const [isHiddenOnScroll, setIsHiddenOnScroll] = useState(false);
+  const [isHiddenForInput, setIsHiddenForInput] = useState(false);
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
   const { user } = useAuthStore();
-  const isRootUser = isRootAdmin(user);
+  const isRootUser = isRootAdmin(user?.roles ?? []);
   const { hasModuleAccess, loading } = usePermissions();
-  const isMobilePwaMode = useIsMobilePwaMode();
+  const { canAccessPath } = useAccessibleRoutes();
+  const lastScrollYRef = useRef(0);
+  const keyboardBaselineRef = useRef<number | null>(null);
+  const tickingRef = useRef(false);
+
+  const isEditableElement = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false;
+    const tagName = target.tagName.toLowerCase();
+    return (
+      tagName === "input" ||
+      tagName === "textarea" ||
+      tagName === "select" ||
+      target.isContentEditable ||
+      target.getAttribute("role") === "textbox"
+    );
+  };
 
   const isActive = (href: string) => {
     if (href === "/") return location.pathname === "/";
@@ -68,26 +87,116 @@ export function MobileBottomNav({ isSidebarOpen = false }: MobileBottomNavProps)
   const filteredMain = useMemo(() => {
     if (isRootUser) return rootMainNavItems;
     if (loading) return [];
-    return mainNavItems.filter((item) => hasModuleAccess(item.moduleId, "view"));
-  }, [isRootUser, loading, hasModuleAccess]);
+    return mainNavItems.filter((item) => canAccessPath(item.href) && hasModuleAccess(item.moduleId, "view"));
+  }, [isRootUser, loading, hasModuleAccess, canAccessPath]);
 
   const filteredMore = useMemo(() => {
     if (isRootUser) return [
       { title: "Role Access", href: "/root/role-access", moduleId: "root.role_access" },
+      { title: "Secret Rotation", href: "/root/secret-rotation", moduleId: "root.secret-rotation" },
+      { title: "Backup & Restore", href: "/root/backup", moduleId: "BACKUP" },
       { title: "Report Format", href: "/root/report-format", moduleId: "root.report-format" },
       { title: "Mail Config", href: "/root/mail-config", moduleId: "root.mail-config" },
     ];
     if (loading) return [];
-    return moreNavItems.filter((item) => hasModuleAccess(item.moduleId, "view"));
-  }, [isRootUser, loading, hasModuleAccess]);
+    return moreNavItems.filter((item) => canAccessPath(item.href) && hasModuleAccess(item.moduleId, "view"));
+  }, [isRootUser, loading, hasModuleAccess, canAccessPath]);
 
   const isMoreActive = filteredMore.some((item) => isActive(item.href));
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isCompactViewport = window.matchMedia("(max-width: 1023px)").matches;
+
+    if (!isCompactViewport) {
+      setIsHiddenOnScroll(false);
+      setIsHiddenForInput(false);
+      return;
+    }
+
+    lastScrollYRef.current = window.scrollY;
+
+    const updateVisibility = () => {
+      const currentScrollY = window.scrollY;
+      const scrollDelta = currentScrollY - lastScrollYRef.current;
+      const nearTop = currentScrollY < 80;
+
+      if (nearTop) {
+        setIsHiddenOnScroll(false);
+      } else if (scrollDelta > 8) {
+        setIsHiddenOnScroll(true);
+      } else if (scrollDelta < -8) {
+        setIsHiddenOnScroll(false);
+      }
+
+      lastScrollYRef.current = currentScrollY;
+      tickingRef.current = false;
+    };
+
+    const onScroll = () => {
+      if (tickingRef.current) return;
+      tickingRef.current = true;
+      window.requestAnimationFrame(updateVisibility);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    const updateKeyboardVisibility = () => {
+      const activeElement = document.activeElement;
+      const focusedEditable = isEditableElement(activeElement);
+
+      if (focusedEditable) {
+        keyboardBaselineRef.current ??= window.innerHeight;
+      } else {
+        keyboardBaselineRef.current = null;
+      }
+
+      const visualViewport = window.visualViewport;
+      const viewportShrunk = Boolean(
+        focusedEditable &&
+          visualViewport &&
+          keyboardBaselineRef.current &&
+          keyboardBaselineRef.current - visualViewport.height > 140,
+      );
+
+      setIsHiddenForInput(focusedEditable || viewportShrunk);
+    };
+
+    const onFocusChange = () => {
+      updateKeyboardVisibility();
+    };
+
+    const onViewportResize = () => {
+      updateKeyboardVisibility();
+    };
+
+    document.addEventListener("focusin", onFocusChange);
+    document.addEventListener("focusout", onFocusChange);
+    window.addEventListener("resize", onViewportResize);
+    window.visualViewport?.addEventListener("resize", onViewportResize);
+
+    const checkPopup = () => {
+      setIsPopupOpen(document.body.hasAttribute("data-scroll-locked"));
+    };
+    checkPopup();
+    const popupObserver = new MutationObserver(checkPopup);
+    popupObserver.observe(document.body, { attributes: true, attributeFilter: ["data-scroll-locked"] });
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      document.removeEventListener("focusin", onFocusChange);
+      document.removeEventListener("focusout", onFocusChange);
+      window.removeEventListener("resize", onViewportResize);
+      window.visualViewport?.removeEventListener("resize", onViewportResize);
+      popupObserver.disconnect();
+    };
+  }, [location.pathname]);
 
   return (
     <nav
       className={cn(
-        "fixed bottom-0 left-0 right-0 z-[60] border-t border-border/40 bg-card/80 backdrop-blur-xl  lg:hidden safe-area-inset",
-        isSidebarOpen && "pointer-events-none translate-y-full opacity-0",
+        "fixed bottom-0 left-0 right-0 z-[60] border-t border-border/40 bg-card/80 backdrop-blur-xl transition-all duration-200 ease-out lg:hidden safe-area-inset",
+        (isSidebarOpen || isHiddenOnScroll || isHiddenForInput || isPopupOpen) && "pointer-events-none translate-y-full opacity-0",
       )}
     >
       <div className="flex h-16 items-center justify-around px-2">

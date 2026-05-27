@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { AssetDowntimeEventEntity, AssetEntity, AssetReliabilityKpiEntity, WorkOrderEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { fail, ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { toCsv } from '../../utils/csvExport';
@@ -187,7 +187,7 @@ function formatMetricValue(key: string, value: number) {
 export const reliabilityRouter = Router();
 reliabilityRouter.use(requireAuth);
 
-reliabilityRouter.get('/assets/:id/reliability', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ASSETS', 'READ'), async (req, res, next) => {
+reliabilityRouter.get('/assets/:id/reliability', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ASSETS', 'READ'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const query = windowSchema.parse(req.query);
@@ -226,7 +226,7 @@ reliabilityRouter.get('/assets/:id/reliability', requireRole(['SUPERADMIN', 'ADM
 
 reliabilityRouter.get(
   '/assets/reliability/leaderboard',
-  requireRole(['SUPERADMIN', 'ADMIN']),
+  requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']),
   requirePermission('ASSETS', 'READ'),
   async (req, res, next) => {
     try {
@@ -303,7 +303,7 @@ reliabilityRouter.get(
   },
 );
 
-reliabilityRouter.post('/downtime-events', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('WORK_ORDERS', 'UPDATE'), async (req, res, next) => {
+reliabilityRouter.post('/downtime-events', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('WORK_ORDERS', 'UPDATE'), async (req, res, next) => {
   try {
     const body = createDowntimeSchema.parse(req.body);
     ensurePlantAccess(req, body.plantId);
@@ -349,7 +349,7 @@ reliabilityRouter.post('/downtime-events', requireRole(['SUPERADMIN', 'ADMIN']),
 
 reliabilityRouter.patch(
   '/downtime-events/:id',
-  requireRole(['SUPERADMIN', 'ADMIN']),
+  requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']),
   requirePermission('WORK_ORDERS', 'UPDATE'),
   async (req, res, next) => {
     try {
@@ -408,7 +408,7 @@ reliabilityRouter.patch(
 
 reliabilityRouter.post(
   '/reliability/recompute',
-  requireRole(['SUPERADMIN']),
+  requireRole(['SUPER_ADMIN']),
   requirePermission('REPORTS', 'CREATE'),
   async (req, res, next) => {
     try {
@@ -463,14 +463,14 @@ reliabilityRouter.post(
 
 reliabilityRouter.get(
   '/exports/reliability',
-  requireRole(['SUPERADMIN', 'ADMIN']),
+  requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']),
   requirePermission('REPORTS', 'EXPORT'),
   async (req, res, next) => {
     try {
       const query = exportQuerySchema.parse(req.query);
       const range = resolveWindow(query.window, query.from, query.to);
       const actorRoles = req.auth?.roles ?? [];
-      const isGlobalExporter = actorRoles.includes('ROOT_ADMIN') || actorRoles.includes('SUPERADMIN');
+      const isGlobalExporter = actorRoles.includes('ROOT_ADMIN') || actorRoles.includes('SUPER_ADMIN');
 
       if (query.scope === 'all' && !isGlobalExporter) {
         res.status(403).json(fail('No permission'));

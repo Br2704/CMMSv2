@@ -1,3 +1,5 @@
+import { APP_NAME, APP_TAGLINE } from '../config/branding';
+
 function escapePdfText(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 }
@@ -16,10 +18,10 @@ function textLineCommand(text: string, x: number, y: number, size: number) {
 
 export function createSimplePdf(lines: string[], options: SimplePdfOptions = {}) {
   const safeLines = lines.length > 0 ? lines : ['No data'];
-  const title = options.title?.trim() || 'CMMS Report';
+  const title = options.title?.trim() || APP_NAME;
   const subtitle = options.subtitle?.trim() || '';
   const generatedAt = options.generatedAt?.trim() || new Date().toISOString();
-  const footerBranding = options.footerBranding?.trim() || 'Powered by TamOptiX Technologies';
+  const footerBranding = options.footerBranding?.trim() || APP_TAGLINE;
 
   const commands: string[] = [];
 
@@ -53,7 +55,7 @@ export function createSimplePdf(lines: string[], options: SimplePdfOptions = {})
   
   // Footer text
   commands.push('0.3 0.3 0.3 rg'); // Dark gray
-  commands.push(textLineCommand('TamOptiX Technologies | Intelligent CMMS Platform', 50, 48, 7));
+  commands.push(textLineCommand(`${APP_NAME} | Intelligent CMMS Platform`, 50, 48, 7));
   commands.push(textLineCommand(footerBranding, 50, 38, 6));
   commands.push(textLineCommand('CONFIDENTIAL', 280, 48, 6));
   commands.push(textLineCommand('Page 1', 520, 48, 7));

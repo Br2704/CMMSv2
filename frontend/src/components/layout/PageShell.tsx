@@ -38,8 +38,8 @@ export function PageShell({ children, className, compact = false }: PageShellPro
       animate="animate"
       exit="exit"
       className={cn(
-        "mx-auto w-full min-w-0 max-w-[1680px] overflow-x-hidden",
-        compact ? "space-y-4" : "space-y-4 sm:space-y-6",
+        "container-responsive pb-safe flex-1",
+        compact ? "space-y-4" : "space-y-4 sm:space-y-6 lg:space-y-8",
         className,
       )}
     >

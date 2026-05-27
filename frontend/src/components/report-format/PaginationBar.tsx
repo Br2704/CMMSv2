@@ -29,15 +29,7 @@ export function PaginationBar({
   variant = "load-more",
   loadProgress = 0,
 }: PaginationBarProps) {
-  // Don't show pagination at all if there's only one page worth of data
-  if (!hasMore && displayedCount === 0) return null;
-
-  const hasKnownTotal = total > 0;
-  const hasKnownPages = totalPages > 1;
-  const isCompact = variant === "compact";
-  const showLoadProgress = loadProgress > 0 && loadProgress < 1;
-
-  // Page-jump input state
+  // Page-jump input state (must be before early return to satisfy Rules of Hooks)
   const [jumpValue, setJumpValue] = useState(String(currentPage));
   const [showJump, setShowJump] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -53,6 +45,14 @@ export function PaginationBar({
       inputRef.current.select();
     }
   }, [showJump]);
+
+  // Don't show pagination at all if there's only one page worth of data
+  if (!hasMore && displayedCount === 0) return null;
+
+  const hasKnownTotal = total > 0;
+  const hasKnownPages = totalPages > 1;
+  const isCompact = variant === "compact";
+  const showLoadProgress = loadProgress > 0 && loadProgress < 1;
 
   const handleJumpSubmit = () => {
     const parsed = parseInt(jumpValue, 10);

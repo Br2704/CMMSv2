@@ -26,7 +26,8 @@ import { DataTableShell } from "@/components/layout/DataTableShell";
 import { FormGrid } from "@/components/layout/FormGrid";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import { EmptyState } from "@/components/app-shell/EmptyState";
-import { isRootAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isRootAdmin } from "@/lib/permission-engine";
 import { useBrandingStore } from "@/store/branding.store";
 
 interface OrganizationFormState {
@@ -213,7 +214,7 @@ function isAcceptedImageFile(file: File, allowedExtensions: string[] = []) {
 
 function getOrganizationSuperadminIds(users: RootOrgUser[], organizationId: string) {
   return users
-    .filter((userItem) => userItem.organizationId === organizationId && userItem.roleKey === "SUPERADMIN" && userItem.isActive)
+    .filter((userItem) => userItem.organizationId === organizationId && userItem.roleKey === "SUPER_ADMIN" && userItem.isActive)
     .map((userItem) => userItem.id);
 }
 
@@ -312,7 +313,7 @@ export default function RootOrganizationMaster() {
   const brandingOrganizationId = useBrandingStore((state) => state.organizationId);
   const brandingOrganizationName = useBrandingStore((state) => state.organizationName);
   const brandingLogoUrl = useBrandingStore((state) => state.logoUrl);
-  const isRootUser = isRootAdmin(user);
+  const isRootUser = isRootAdmin(user?.roles ?? []);
   const canManageOrganizations = isRootUser;
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
@@ -347,16 +348,8 @@ export default function RootOrganizationMaster() {
       const response = await listOrganizations({
         page: 1,
         limit: 200,
-        includeInactive: false,
       });
-      let listData = response.data;
-      if (listData.length === 0) {
-        const fallbackResponse = await listOrganizations({
-          page: 1,
-          limit: 200,
-        });
-        listData = fallbackResponse.data;
-      }
+      const listData = response.data;
       if (listData.length > 0 || !isRootUser) {
         setOrganizations(sortOrganizations(listData));
         return;
@@ -383,7 +376,7 @@ export default function RootOrganizationMaster() {
     setSuperadminsLoading(true);
     try {
       const response = await listRootUsers({
-        roleKey: "SUPERADMIN",
+        roleKey: "SUPER_ADMIN",
         page: 1,
         limit: 500,
         includeInactive: true,
@@ -428,7 +421,7 @@ export default function RootOrganizationMaster() {
       try {
         const response = await listRootUsers({
           organizationId: selectedOrganization.id,
-          roleKey: "SUPERADMIN",
+          roleKey: "SUPER_ADMIN",
           page: 1,
           limit: 200,
           includeInactive: true,
@@ -476,13 +469,13 @@ export default function RootOrganizationMaster() {
   const selectedOrganizationSuperadmins = useMemo(
     () =>
       (isViewOpen ? viewSuperadmins : superadminUsers)
-        .filter((userItem) => userItem.organizationId === selectedOrganization?.id && userItem.roleKey === "SUPERADMIN" && userItem.isActive),
+        .filter((userItem) => userItem.organizationId === selectedOrganization?.id && userItem.roleKey === "SUPER_ADMIN" && userItem.isActive),
     [isViewOpen, selectedOrganization?.id, superadminUsers, viewSuperadmins],
   );
   const sortedSuperadminUsers = useMemo(
     () =>
       [...superadminUsers]
-        .filter((userItem) => userItem.roleKey === "SUPERADMIN" && userItem.isActive)
+        .filter((userItem) => userItem.roleKey === "SUPER_ADMIN" && userItem.isActive)
         .sort((left, right) => left.fullName.localeCompare(right.fullName)),
     [superadminUsers],
   );

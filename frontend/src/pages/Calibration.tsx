@@ -20,7 +20,8 @@ import {
   type CalibrationChecklistResult,
   type CalibrationTask,
 } from "@/api/calibration";
-import { isSuperAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isSuperAdmin } from "@/lib/permission-engine";
 import { toast } from "sonner";
 
 type TaskFormState = {
@@ -56,7 +57,7 @@ function statusVariant(status: string) {
 export default function Calibration() {
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
-  const canSelectPlant = isSuperAdmin(user);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
 
   const [plants, setPlants] = useState<Plant[]>([]);

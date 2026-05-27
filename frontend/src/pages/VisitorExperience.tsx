@@ -52,7 +52,8 @@ import {
     type VisitorRequestRecord,
     type VisitorTrackingResponse,
 } from "@/api/visitorExperience";
-import { isSuperAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isSuperAdmin } from "@/lib/permission-engine";
 
 type VisitorTab = "profile" | "navigation" | "approval" | "pass" | "safety" | "access-pass" | "visitors-list";
 
@@ -69,11 +70,11 @@ function resolveErrorMessage(error: unknown, fallback: string) {
 function isApprovalRole(role: string | null | undefined) {
     if (!role) return false;
     const normalized = String(role).trim().toUpperCase();
-    return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "SECURITY", "SECURITY_USER"].includes(normalized);
+    return ["ROOT_ADMIN", "SUPER_ADMIN", "PLANT_ADMIN", "SECURITY", "SECURITY"].includes(normalized);
 }
 
 function normalizeRoleValue(role: string | null | undefined) {
-    if (!role) return "USER";
+    if (!role) return "MAINTENANCE_USER";
     return String(role)
         .trim()
         .toUpperCase()
@@ -157,7 +158,7 @@ async function captureCurrentPosition() {
 
 export default function VisitorExperience() {
     const user = useAuthStore((state) => state.user);
-    const userIsSuperAdmin = isSuperAdmin(user);
+    const userIsSuperAdmin = isSuperAdmin(user?.roles ?? []);
     const [activeTab, setActiveTab] = useState<VisitorTab>("profile");
 
     const [plants, setPlants] = useState<Plant[]>([]);
@@ -214,13 +215,14 @@ export default function VisitorExperience() {
     const [sosNote, setSosNote] = useState("");
 
     const normalizedRoles = useMemo(() => (user?.roles ?? []).map((role) => normalizeRoleValue(role)), [user?.roles]);
-    const isUserRole = useMemo(() => normalizedRoles.includes("USER"), [normalizedRoles]);
+    const isUserRole = useMemo(() => normalizedRoles.includes("MAINTENANCE_USER"), [normalizedRoles]);
+    const isVendorUser = useMemo(() => normalizedRoles.includes("VENDOR"), [normalizedRoles]);
     const isVisitorOnlyUser = useMemo(
         () => normalizedRoles.length > 0 && normalizedRoles.every((role) => isVisitorRole(role)),
         [normalizedRoles],
     );
     const canApproveRequests = useMemo(() => (user?.roles ?? []).some((role) => isApprovalRole(role)) || isUserRole, [user?.roles, isUserRole]);
-    const canSeeApprovalTab = !isVisitorOnlyUser;
+    const canSeeApprovalTab = !isVisitorOnlyUser && !isVendorUser;
     const canSeeVisitorsList = isUserRole;
     const canSeeAccessPassTab = isUserRole || isVisitorOnlyUser;
     const canUseApprovalActions = canApproveRequests && canSeeApprovalTab;
@@ -629,7 +631,7 @@ export default function VisitorExperience() {
                 </TabsList>
 
                 <TabsContent value="profile" className="space-y-4">
-                    <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
+                    <div className="grid gap-6 lg:grid-cols-[1fr_minmax(300px,400px)]">
                         <div className="space-y-6">
                             <Card className="rounded-[1.5rem] border-none shadow-card">
                                 <CardHeader>
@@ -642,7 +644,7 @@ export default function VisitorExperience() {
                                             alt="Industrial Plant"
                                             className="w-full h-full object-cover"
                                         />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-end p-6">
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-6">
                                             <div className="text-white">
                                                 <h3 className="text-xl font-bold">Main Production Facility</h3>
                                                 <p className="text-sm opacity-80">Industrial Zone A, South Sector</p>
@@ -711,8 +713,8 @@ export default function VisitorExperience() {
                 </TabsContent>
 
                 <TabsContent value="pass" className="space-y-4">
-                    <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
-                        <Card className="overflow-hidden rounded-[2.5rem] border-none shadow-[0_30px_60px_-15px_rgba(0,0,0,0.3)]">
+                    <div className="grid gap-6 lg:grid-cols-[minmax(300px,400px)_1fr]">
+                        <Card className="overflow-hidden rounded-3xl sm:rounded-[2.5rem] border-none shadow-[0_30px_60px_-15px_rgba(0,0,0,0.3)]">
                             <div className="bg-gradient-to-br from-indigo-600 via-blue-700 to-slate-900 px-8 py-10 text-white relative">
                                 <div className="absolute top-0 right-0 p-8 opacity-10">
                                     <ShieldCheck className="h-32 w-32" />
@@ -779,8 +781,8 @@ export default function VisitorExperience() {
                                             )}
                                             <div className="absolute left-0 top-[6px] h-4 w-4 rounded-full border-4 border-background bg-primary shadow-sm" />
                                             <div className="rounded-xl border bg-card p-4 shadow-sm transition-all hover:shadow-md">
-                                                <div className="flex items-start justify-between gap-4">
-                                                    <div>
+                                                <div className="flex items-start justify-between gap-4 flex-wrap">
+                                                    <div className="min-w-0 flex-1">
                                                         <p className="text-sm font-bold">{item.nodeLabel || "Zone Arrival"}</p>
                                                         <p className="mt-1 text-xs text-muted-foreground">{item.alertType || "Movement captured by security sensor"}</p>
                                                     </div>
@@ -884,7 +886,7 @@ export default function VisitorExperience() {
                 </TabsContent>
 
                 <TabsContent value="visitors-list" className="space-y-4">
-                    <div className="grid gap-6 md:grid-cols-[1fr_400px]">
+                    <div className="grid gap-6 md:grid-cols-[1fr_minmax(300px,400px)]">
                         <div className="space-y-6">
                             <Card className="rounded-[1.5rem] border-none shadow-card">
                                 <CardHeader>
@@ -896,8 +898,8 @@ export default function VisitorExperience() {
                                 <CardContent>
                                     <div className="space-y-4">
                                         {requests.filter(r => r.personToMeetUserId === user?.id || r.personToMeet === user?.fullName).map(request => (
-                                            <div key={request.id} className="flex items-center justify-between p-6 border rounded-[1.25rem] bg-muted/10 hover:bg-muted/20 transition-all">
-                                                <div className="flex items-center gap-4">
+                                            <div key={request.id} className="flex items-center justify-between p-6 border rounded-[1.25rem] bg-muted/10 hover:bg-muted/20 transition-all flex-wrap gap-3">
+                                                <div className="flex items-center gap-4 flex-wrap">
                                                     <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center font-black text-primary">
                                                         {request.visitorName.charAt(0)}
                                                     </div>
@@ -909,7 +911,7 @@ export default function VisitorExperience() {
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="flex gap-2">
+                                                <div className="flex gap-2 flex-wrap">
                                                     {request.approvalStatus === "PENDING" ? (
                                                         <>
                                                             <Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10" onClick={() => handleRequestReview(request.id, "REJECT")}>Reject</Button>
@@ -985,7 +987,7 @@ export default function VisitorExperience() {
                             <CardDescription>Scan digital pass or review pending industrial entries for plant authorization.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-8">
-                            <div className="grid gap-10 md:grid-cols-[1fr_350px]">
+                            <div className="grid gap-10 md:grid-cols-[1fr_minmax(280px,350px)]">
                                 <div className="space-y-8">
                                     <div className="group relative overflow-hidden rounded-[2rem] border-2 border-dashed border-primary/20 p-12 text-center transition-all hover:border-primary/40 hover:bg-primary/[0.02]">
                                         <div className="mx-auto max-w-sm space-y-6">
@@ -1006,8 +1008,8 @@ export default function VisitorExperience() {
                                         <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground px-2">Pending Field Approvals</h3>
                                         <div className="grid gap-3">
                                             {requests.filter(r => r.approvalStatus === "PENDING").map((request) => (
-                                                <div key={request.id} className="group relative flex items-center justify-between rounded-[1.5rem] border border-border/50 bg-card/40 p-5 transition-all hover:border-primary/30 hover:bg-card hover:shadow-xl">
-                                                    <div className="flex items-center gap-5">
+                                                <div key={request.id} className="group relative flex items-center justify-between rounded-[1.5rem] border border-border/50 bg-card/40 p-5 transition-all hover:border-primary/30 hover:bg-card hover:shadow-xl flex-wrap gap-3">
+                                                    <div className="flex items-center gap-5 flex-wrap">
                                                         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 font-black text-primary">
                                                             {request.visitorName.charAt(0)}
                                                         </div>
@@ -1019,7 +1021,7 @@ export default function VisitorExperience() {
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <Button size="sm" variant="secondary" className="rounded-xl opacity-0 group-hover:opacity-100 transition-all px-4" onClick={() => setSelectedRequestId(request.id)}>
+                                                    <Button size="sm" variant="secondary" className="rounded-xl opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all px-4" onClick={() => setSelectedRequestId(request.id)}>
                                                         Review <ArrowRight className="ml-2 h-4 w-4" />
                                                     </Button>
                                                 </div>

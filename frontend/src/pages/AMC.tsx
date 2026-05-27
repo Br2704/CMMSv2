@@ -25,7 +25,8 @@ import {
   type AmcServiceReport,
   type AmcVisit,
 } from "@/api/amc";
-import { isAdmin, isIncharge, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { can, hasRole } from "@/lib/permission-engine";
 import { AlertTriangle, CheckCircle2, ClipboardCheck, Search, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { hoursToMinutes } from "@/lib/time";
@@ -97,8 +98,8 @@ function getStatusVariant(status: string) {
 export default function AMC() {
   const { user } = useAuthStore();
   const isVendorPortal = user?.roles.includes("VENDOR") ?? false;
-  const canManage = isAdmin(user);
-  const canVerify = canManage || isIncharge(user);
+  const canManage = can(user, 'AMC', 'UPDATE');
+  const canVerify = canManage || hasRole(user?.roles ?? [], "MAINTENANCE_MANAGER") || hasRole(user?.roles ?? [], "MAINTENANCE_USER") || hasRole(user?.roles ?? [], "CALIBRATION_USER");
 
   const [dashboard, setDashboard] = useState<AmcDashboard | null>(null);
   const [portal, setPortal] = useState<AmcPortalData | null>(null);

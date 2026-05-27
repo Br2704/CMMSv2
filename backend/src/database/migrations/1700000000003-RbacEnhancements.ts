@@ -18,7 +18,7 @@ export class RbacEnhancements1700000000003 implements MigrationInterface {
       await queryRunner.query("ALTER TABLE roles ADD COLUMN is_system boolean NOT NULL DEFAULT false");
     }
 
-    await queryRunner.query("UPDATE roles SET is_system = true WHERE UPPER(name) IN ('SUPERADMIN', 'ADMIN', 'USER')");
+    await queryRunner.query("UPDATE roles SET is_system = true WHERE UPPER(name) IN ('SUPER_ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_USER')");
 
     const hasRolePermissionsRoleId = await queryRunner.hasColumn('role_permissions', 'role_id');
     if (!hasRolePermissionsRoleId) {

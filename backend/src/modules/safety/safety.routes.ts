@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { SafetyIncidentEntity, SafetyMetricEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { resolveScopedPlantId } from '../../utils/plantScope';

@@ -5,7 +5,7 @@ import { AppDataSource } from '../../database/data-source';
 import { PmTemplateEntity, PmTemplateLinkEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { validateRequest } from '../../middlewares/validate';
-import { ensurePlantAccess, requirePermission } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission } from '../../middlewares/permissionGuard';
 import { fail, ok } from '../../utils/apiResponse';
 import { buildPagination, listQuerySchema, parseListQuery } from '../../utils/pagination';
 import { resolveScopedPlantId } from '../../utils/plantScope';
@@ -20,7 +20,7 @@ const templateSchema = z.object({
   maintenanceType: z.enum(['PM', 'PD']).default('PM'),
   discipline: z.string().nullable().optional(),
   frequencyType: z.enum(['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']).default('MONTH'),
-  frequencyValue: z.number().int().positive().default(1),
+  frequencyValue: z.number().int().min(1).max(1000000000).default(1),
   estimatedDuration: z.number().int().positive().default(60),
   checklistTasks: z.array(z.string().min(1)).default([]),
   isActive: z.boolean().default(true),
@@ -138,6 +138,15 @@ pmTemplatesRouter.post('/pm-templates', requirePermission('MASTERS', 'CREATE'), 
     const plantId = resolveScopedPlantId(req.auth!, body.plantId ?? null);
     ensurePlantAccess(req, plantId);
     const repo = AppDataSource.getRepository(PmTemplateEntity);
+
+    if (plantId) {
+      const existing = await repo.findOne({ where: { plantId, templateName: body.templateName.trim() } });
+      if (existing) {
+        res.status(409).json(fail('Template name already exists in this plant'));
+        return;
+      }
+    }
+
     const created = repo.create({
       plantId,
       templateName: body.templateName,
@@ -168,9 +177,21 @@ pmTemplatesRouter.patch('/pm-templates/:id', requirePermission('MASTERS', 'UPDAT
     }
     const plantId = resolveScopedPlantId(req.auth!, body.plantId === undefined ? entity.plantId : body.plantId);
     ensurePlantAccess(req, plantId);
+
+    if (body.templateName !== undefined) {
+      const incomingName = body.templateName.trim();
+      if (plantId) {
+        const existing = await repo.findOne({ where: { plantId, templateName: incomingName } });
+        if (existing && existing.id !== entity.id) {
+          res.status(409).json(fail('Template name already exists in this plant'));
+          return;
+        }
+      }
+      entity.templateName = incomingName;
+    }
+
     Object.assign(entity, {
       plantId,
-      templateName: body.templateName ?? entity.templateName,
       maintenanceType: body.maintenanceType ?? entity.maintenanceType,
       discipline: body.discipline === undefined ? entity.discipline : body.discipline ?? null,
       frequencyType: body.frequencyType ?? entity.frequencyType,

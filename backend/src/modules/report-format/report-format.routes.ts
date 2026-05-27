@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { ReportFormatConfigEntity } from '../../database/entities/report-format-config.entity';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requireRole } from '../../middlewares/permissions';
+import { requireRole } from '../../middlewares/permissionGuard';
 import { ok, fail } from '../../utils/apiResponse';
 import { updateReportFormatSchema } from './report-format.validators';
 import { bumpBrandingVersion } from '../../utils/brandingVersion';
@@ -58,7 +58,7 @@ reportFormatRouter.get('/report-format/config', async (_req, res, next) => {
   }
 });
 
-reportFormatRouter.put('/report-format/config', requireRole(['ROOT_ADMIN', 'SUPERADMIN']), async (req, res, next) => {
+reportFormatRouter.put('/report-format/config', requireRole(['ROOT_ADMIN', 'SUPER_ADMIN']), async (req, res, next) => {
   try {
     const body = updateReportFormatSchema.parse(req.body);
     const repo = AppDataSource.getRepository(ReportFormatConfigEntity);

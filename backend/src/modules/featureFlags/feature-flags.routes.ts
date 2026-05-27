@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { FeatureFlagEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requireRole } from '../../middlewares/permissions';
+import { requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { buildPagination, parseListQuery } from '../../utils/pagination';

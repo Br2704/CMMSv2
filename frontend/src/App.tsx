@@ -5,7 +5,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { initializeAuthState, isRootAdmin, isSuperAdmin, hasRole, useAuthStore } from "@/store/auth.store";
+import { initializeAuthState, useAuthStore } from "@/store/auth.store";
+import { isRootAdmin, isSuperAdmin, hasRole } from "@/lib/permission-engine";
 import { ModuleGuard } from "@/components/guards/ModuleGuard";
 import { AppErrorBoundary } from "@/components/guards/AppErrorBoundary";
 import { RouteErrorBoundary } from "@/components/guards/RouteErrorBoundary";
@@ -13,6 +14,9 @@ import { SafeRoute } from "@/components/guards/SafeRoute";
 import { SuspenseLoader } from "@/components/guards/SuspenseLoader";
 import { getStoredAccessToken } from "@/api/token";
 import { queueWebappLog } from "@/api/logs";
+import { useAccessibleRoutes } from "@/hooks/useAccessibleRoutes";
+import { useIdleTimeout } from "@/hooks/useIdleTimeout";
+import { IdleTimeoutDialog } from "@/components/shared/IdleTimeoutDialog";
 
 // Lazy-loaded page components for code splitting
 const Login = lazy(() => import("@/pages/Login"));
@@ -62,6 +66,7 @@ const RootOrganizationMaster = lazy(() => import("@/pages/root/RootOrganizationM
 const RootPlantMaster = lazy(() => import("@/pages/root/RootPlantMaster"));
 const RootRoleAccessMaster = lazy(() => import("@/pages/root/RootRoleAccessMaster"));
 const RootUsersMaster = lazy(() => import("@/pages/root/RootUsersMaster"));
+const RootBackupPage = lazy(() => import("@/pages/root/RootBackupPage"));
 const SecretRotationStatus = lazy(() => import("@/pages/root/SecretRotationStatus"));
 
 // Lazy-loaded Mobile Pages
@@ -199,51 +204,25 @@ function WebappErrorLogger() {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, user } = useAuthStore();
+  const { isAuthenticated, isLoading, user, isFallbackMode } = useAuthStore();
   const accessToken = getStoredAccessToken();
   const location = useLocation();
-  const rootAllowedPaths = [
-    "/root/dashboard",
-    "/root/organizations",
-    "/root/plant",
-    "/root/users",
-    "/root/role-access",
-    "/root/mail-config",
-    "/root/sla-config",
-    "/root/secret-rotation",
-    "/work-orders"
-  ];
-  const isAllowedForRoot = rootAllowedPaths.some((path) =>
-    location.pathname === path || location.pathname.startsWith(`${path}/`)
-  );
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
+          <p className="text-sm text-muted-foreground">{"Loading..."}</p>
         </div>
       </div>
     );
   }
-  if (!isAuthenticated || !accessToken) {
+  if (!isAuthenticated || (!accessToken && !isFallbackMode)) {
     const returnTo = `${location.pathname}${location.search}${location.hash}`;
     return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
   }
-  if (isRootAdmin(user) && location.pathname.startsWith("/masters/users")) {
-    return <Navigate to="/root/users" replace />;
-  }
-  if (isRootAdmin(user) && location.pathname.startsWith("/masters/role-access")) {
-    return <Navigate to="/root/role-access" replace />;
-  }
-  if (isRootAdmin(user) && location.pathname.startsWith("/masters/organizations")) {
-    return <Navigate to="/root/organizations" replace />;
-  }
-  if (isRootAdmin(user) && location.pathname.startsWith("/masters/plant")) {
-    return <Navigate to="/root/plant" replace />;
-  }
-  if (isRootAdmin(user) && !isAllowedForRoot) {
+  if (isRootAdmin(user?.roles ?? []) && !location.pathname.startsWith("/root/")) {
     return <Navigate to="/root/dashboard" replace />;
   }
   return <>{children}</>;
@@ -256,12 +235,12 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
+          <p className="text-sm text-muted-foreground">{"Loading..."}</p>
         </div>
       </div>
     );
   }
-  if (isAuthenticated) return <Navigate to={isRootAdmin(user) ? "/root/dashboard" : "/"} replace />;
+  if (isAuthenticated) return <Navigate to={isRootAdmin(user?.roles ?? []) ? "/root/dashboard" : "/"} replace />;
   return <>{children}</>;
 }
 
@@ -284,54 +263,43 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
 function HomeRoute() {
   const { user } = useAuthStore();
-  const normalizedRoles = (user?.roles ?? []).map((role) => (role || "").toUpperCase());
-  
-  if (isRootAdmin(user)) {
+  const { canAccessPath, resolveLandingPath } = useAccessibleRoutes();
+  if (isRootAdmin(user?.roles ?? [])) {
     return <Navigate to="/root/dashboard" replace />;
   }
-
-  if (normalizedRoles.includes("SECURITY") || normalizedRoles.includes("SECURITY_USER")) {
-    return <Navigate to="/security-gate" replace />;
+  if (canAccessPath("/")) {
+    return (
+      <ModuleGuard moduleId="dashboard">
+        <SuspenseLoader><Dashboard /></SuspenseLoader>
+      </ModuleGuard>
+    );
   }
 
-  if (normalizedRoles.includes("VENDOR")) {
-    return <Navigate to="/work-orders" replace />;
-  }
-
-  if (normalizedRoles.includes("VISITOR") || normalizedRoles.includes("TEMPORARY_VISITOR")) {
-    return <Navigate to="/visitor-experience" replace />;
-  }
-
-  if (normalizedRoles.includes("USER")) {
-    return <Navigate to="/work-orders" replace />;
-  }
-
-  return (
-    <ModuleGuard moduleId="dashboard">
-      <SuspenseLoader><Dashboard /></SuspenseLoader>
-    </ModuleGuard>
-  );
+  return <Navigate to={resolveLandingPath()} replace />;
 }
 
 function RootOnlyRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuthStore();
-  if (!isRootAdmin(user)) {
-    return <Navigate to="/403" replace />;
+  const { resolveLandingPath } = useAccessibleRoutes();
+  if (!isRootAdmin(user?.roles ?? [])) {
+    return <Navigate to={resolveLandingPath()} replace />;
   }
   return <>{children}</>;
 }
 
 function SLAConfigRoute() {
   const { user } = useAuthStore();
-  if (isRootAdmin(user) || isSuperAdmin(user) || hasRole(user, ["ADMIN"])) {
+  const { resolveLandingPath } = useAccessibleRoutes();
+  if (isRootAdmin(user?.roles ?? []) || isSuperAdmin(user?.roles ?? []) || hasRole(user?.roles ?? [], "PLANT_ADMIN")) {
     return <SuspenseLoader><SLAConfigMaster /></SuspenseLoader>;
   }
-  return <Navigate to="/403" replace />;
+  return <Navigate to={resolveLandingPath()} replace />;
 }
 
 function PlantMasterRoute() {
   const { user } = useAuthStore();
-  if (isRootAdmin(user)) {
+  if (isRootAdmin(user?.roles ?? []))
+ {
     return <Navigate to="/root/plant" replace />;
   }
   return (
@@ -343,7 +311,8 @@ function PlantMasterRoute() {
 
 function UsersMasterRoute() {
   const { user } = useAuthStore();
-  if (isRootAdmin(user)) {
+  if (isRootAdmin(user?.roles ?? []))
+ {
     return <Navigate to="/root/users" replace />;
   }
   return (
@@ -355,39 +324,20 @@ function UsersMasterRoute() {
 
 function RoleAccessRoute() {
   const { user } = useAuthStore();
-  if (isRootAdmin(user)) {
+  const { resolveLandingPath } = useAccessibleRoutes();
+  if (isRootAdmin(user?.roles ?? []))
+ {
     return <Navigate to="/root/role-access" replace />;
   }
-  return <Navigate to="/403" replace />;
-}
-
-function normalizeSecurityCenterRole(role: string): string {
-  const normalized = role
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-
-  if (normalized === "SUPER_ADMIN") return "SUPERADMIN";
-  if (normalized === "PLANT_ADMIN") return "ADMIN";
-  return normalized;
-}
-
-function normalizeSecurityGateRole(role: string): string {
-  return role
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+  return <Navigate to={resolveLandingPath()} replace />;
 }
 
 function SecurityGateRoute() {
-  const { user } = useAuthStore();
-  const roleCandidates = [user?.roleKey ?? "", ...(user?.roles ?? [])].map(normalizeSecurityGateRole);
-  const canAccess = roleCandidates.some((role) => role === "SECURITY" || role === "SECURITY_USER");
+  const { canAccessPath, resolveLandingPath } = useAccessibleRoutes();
+  const canAccess = canAccessPath("/security-gate");
 
   if (!canAccess) {
-    return <Navigate to="/403" replace />;
+    return <Navigate to={resolveLandingPath()} replace />;
   }
 
   return (
@@ -398,12 +348,11 @@ function SecurityGateRoute() {
 }
 
 function SecurityCenterRoute() {
-  const { user } = useAuthStore();
-  const roleCandidates = [user?.roleKey ?? "", ...(user?.roles ?? [])].map(normalizeSecurityCenterRole);
-  const canAccess = roleCandidates.some((role) => role === "ROOT_ADMIN" || role === "SUPERADMIN" || role === "ADMIN");
+  const { canAccessPath, resolveLandingPath } = useAccessibleRoutes();
+  const canAccess = canAccessPath("/security-center");
 
   if (!canAccess) {
-    return <Navigate to="/403" replace />;
+    return <Navigate to={resolveLandingPath()} replace />;
   }
 
   return (
@@ -415,7 +364,8 @@ function SecurityCenterRoute() {
 
 function CatchAllRoute() {
   const { isAuthenticated, user } = useAuthStore();
-  if (isAuthenticated && isRootAdmin(user)) {
+  if (isAuthenticated && isRootAdmin(user?.roles ?? []))
+ {
     return <Navigate to="/root/dashboard" replace />;
   }
   return <SuspenseLoader><NotFound /></SuspenseLoader>;
@@ -439,6 +389,7 @@ function App() {
             <RouteFlowManager />
             <DevRouteLogger />
             <WebappErrorLogger />
+            <IdleTimeoutDialog />
             <AuthProvider>
               <Routes>
                 <Route path="/login" element={<SafeRoute><PublicRoute><SuspenseLoader><Login /></SuspenseLoader></PublicRoute></SafeRoute>} />
@@ -473,6 +424,7 @@ function App() {
                   <Route path="/root/organizations" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootOrganizationMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
                   <Route path="/root/mail-config" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><MailConfigMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
                   <Route path="/root/secret-rotation" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><SecretRotationStatus /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                  <Route path="/root/backup" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootBackupPage /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
                   <Route path="/root/sla-config" element={<SafeRoute><Navigate to="/masters/sla-config" replace /></SafeRoute>} />
                   <Route path="/masters/organizations" element={<SafeRoute><Navigate to="/root/organizations" replace /></SafeRoute>} />
                   <Route path="/masters/mail-config" element={<SafeRoute><Navigate to="/root/mail-config" replace /></SafeRoute>} />

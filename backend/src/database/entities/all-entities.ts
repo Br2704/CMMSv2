@@ -108,6 +108,9 @@ import {
   MaintenanceReportEntity,
   SystemConfigEntity,
   ReportFormatConfigEntity,
+  BackupHistoryEntity,
+  RestoreHistoryEntity,
+  BackupAuditLogEntity,
 } from './index';
 
 export const ALL_ENTITIES = [
@@ -220,4 +223,7 @@ export const ALL_ENTITIES = [
   MaintenanceReportEntity,
   SystemConfigEntity,
   ReportFormatConfigEntity,
+  BackupHistoryEntity,
+  RestoreHistoryEntity,
+  BackupAuditLogEntity,
 ];

@@ -139,10 +139,12 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* Touch-friendly button sizing */
-  button, a, [role="button"] {
-    min-height: 44px;
-    min-width: 44px;
+  /* Touch-friendly button sizing - only for large/touch targets */
+  button:not([data-size="icon"]):not([data-size="sm"]):not([data-size="xs"]),
+  a:not([data-size="icon"]):not([data-size="sm"]),
+  [role="button"]:not([data-size="icon"]):not([data-size="sm"]) {
+    min-height: 40px;
+    min-width: 40px;
   }
 
   /* Smaller buttons override */
@@ -313,5 +315,98 @@
   /* Stack elements on mobile, row on desktop */
   .stack-mobile {
     @apply flex flex-col gap-2 sm:flex-row sm:items-center;
+  }
+
+  /* Responsive text utilities */
+  .text-responsive-sm {
+    @apply text-xs sm:text-sm;
+  }
+
+  .text-responsive-base {
+    @apply text-sm sm:text-base;
+  }
+
+  .text-responsive-lg {
+    @apply text-base sm:text-lg;
+  }
+
+  /* Multi-line text clamp */
+  .line-clamp-1 {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Smooth layout transitions */
+  .layout-transition {
+    @apply transition-all duration-300 ease-in-out;
+  }
+
+  /* Responsive padding container */
+  .container-responsive {
+    @apply w-full px-4 sm:px-6 lg:px-8 mx-auto max-w-7xl 2xl:max-w-[1440px] 3xl:max-w-[1920px];
+  }
+
+  /* Sidebar transition helper */
+  .sidebar-transition {
+    transition: width 300ms ease-in-out, transform 300ms ease-in-out, opacity 200ms ease-in-out;
+  }
+
+  /* Better focus-visible for accessibility */
+  *:focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary/60;
+  }
+
+  /* Prevent text selection on interactive elements */
+  button, a, [role="button"], select, option {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Hide Scrollbars */
+  .hide-scrollbars {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .hide-scrollbars::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Table responsive wrappers */
+  .table-responsive-wrapper {
+    @apply block w-full overflow-x-auto whitespace-nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Touch panning */
+  .touch-pan-y {
+    touch-action: pan-y;
+  }
+
+  /* Responsive modal on mobile */
+  @media (max-width: 640px) {
+    .mobile-modal-full {
+      width: 100vw !important;
+      max-width: 100vw !important;
+      height: 100dvh !important;
+      max-height: 100dvh !important;
+      margin: 0 !important;
+      border-radius: 0 !important;
+    }
   }
 }

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requirePermission } from '../../middlewares/permissions';
+import { requirePermission } from '../../middlewares/permissionGuard';
 import { webappLogsRateLimiter } from '../../middlewares/rateLimiter';
 import { ok, fail } from '../../utils/apiResponse';
 import { buildPagination, parseListQuery } from '../../utils/pagination';

@@ -6,6 +6,7 @@ const IMAGE_MIME_TYPES = new Set([
   'image/jpg',
   'image/webp',
   'image/gif',
+  'image/svg+xml',
   'image/x-icon',
   'image/vnd.microsoft.icon',
 ]);

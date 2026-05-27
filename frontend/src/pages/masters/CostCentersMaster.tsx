@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { useAuthStore, isAdmin, isSuperAdmin } from "@/store/auth.store";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isSuperAdmin } from "@/lib/permission-engine";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Plus, Edit, Trash2, Wallet, Eye, Search } from "lucide-react";
@@ -9,15 +10,19 @@ import BackButton from "@/components/masters/BackButton";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { DataTableShell } from "@/components/layout/DataTableShell";
+import { Toolbar } from "@/components/layout/Toolbar";
+import { FormGrid } from "@/components/layout/FormGrid";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import { EmptyState } from "@/components/app-shell/EmptyState";
 import { FormDialog } from "@/components/shared/FormDialog";
 import { ViewDialog, DetailRow, DetailSection } from "@/components/shared/ViewDialog";
 import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { InputField, SelectField } from "@/components/shared/FormField";
+import { AsyncSelect } from "@/components/ui/async-select";
+import { listPlants } from "@/api/plants";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
-import { createCostCenter, deleteCostCenter, listCostCenters, type CostCenter, updateCostCenter } from "@/api/costCenters";
+import { createCostCenter, deleteCostCenter, listCostCenters, type CostCenter, type CostCenterPayload, updateCostCenter } from "@/api/costCenters";
 import { listDepartments, type Department } from "@/api/departments";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { getErrorMessage } from "@/lib/utils";
@@ -34,8 +39,8 @@ const emptyForm: CostCenterFormState = { code: "", name: "", departmentId: "", p
 
 export default function CostCentersMaster() {
   const { user } = useAuthStore();
-  const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user);
+  const canManage = isAdminLevel(user?.roles ?? []);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants, invalidateOptions } = useMastersOptions();
 
@@ -52,7 +57,7 @@ export default function CostCentersMaster() {
   const [formData, setFormData] = useState<CostCenterFormState>({ ...emptyForm, plantId: defaultPlantId });
   const [isEditing, setIsEditing] = useState(false);
 
-  const fetchCostCentersList = async (plantIdOverride?: string) => {
+  const fetchCostCentersList = useCallback(async (plantIdOverride?: string) => {
     setLoading(true);
     try {
       const effectivePlantId = canSelectPlant ? (plantIdOverride ?? selectedPlant) || undefined : defaultPlantId || undefined;
@@ -72,9 +77,9 @@ export default function CostCentersMaster() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [canSelectPlant, defaultPlantId, searchQuery, selectedPlant]);
 
-  const fetchDepartmentsList = async (plantId?: string) => {
+  const fetchDepartmentsList = useCallback(async (plantId?: string) => {
     try {
       const effectivePlantId = plantId || (canSelectPlant ? selectedPlant || undefined : defaultPlantId || undefined);
       if (canSelectPlant && !effectivePlantId) {
@@ -90,11 +95,11 @@ export default function CostCentersMaster() {
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to load departments"));
     }
-  };
+  }, [canSelectPlant, defaultPlantId, selectedPlant]);
 
   useEffect(() => {
     fetchCostCentersList();
-  }, [searchQuery, selectedPlant, defaultPlantId, canSelectPlant]);
+  }, [fetchCostCentersList]);
 
   useEffect(() => {
     fetchPlants();
@@ -143,8 +148,8 @@ export default function CostCentersMaster() {
   };
 
   const handleSubmit = async () => {
-    if (!formData.code.trim() || !formData.name.trim()) {
-      toast.error("Code and name are required");
+    if (!formData.name.trim()) {
+      toast.error("Name is required");
       return;
     }
 
@@ -156,8 +161,9 @@ export default function CostCentersMaster() {
 
     setSaving(true);
     try {
-      const payload = {
-        code: formData.code.trim(),
+      const code = formData.code.trim();
+      const payload: CostCenterPayload = {
+        code: code || 'N/A',
         name: formData.name.trim(),
         departmentId: formData.departmentId || null,
         plantId: resolvedPlantId,
@@ -245,25 +251,29 @@ export default function CostCentersMaster() {
       <DataTableShell
         title={<><Wallet className="h-5 w-5 text-primary" /> Cost Centers ({filtered.length})</>}
         toolbar={
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-            {canSelectPlant && (
-              <SelectField
-                label=""
-                value={selectedPlant}
-                onChange={(value) => {
-                  setSelectedPlant(value);
-                  setFormData((prev) => ({ ...prev, plantId: value, departmentId: "" }));
-                  void fetchDepartmentsList(value);
-                }}
-                options={plantsOptions}
-                placeholder="All Plants"
-              />
-            )}
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="cost-center-search" name="costCenterSearch" placeholder="Search..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
-            </div>
-          </div>
+          <Toolbar
+            left={
+              canSelectPlant && (
+                <SelectField
+                  label=""
+                  value={selectedPlant}
+                  onChange={(value) => {
+                    setSelectedPlant(value);
+                    setFormData((prev) => ({ ...prev, plantId: value, departmentId: "" }));
+                    void fetchDepartmentsList(value);
+                  }}
+                  options={plantsOptions}
+                  placeholder="All Plants"
+                />
+              )
+            }
+            right={
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input id="cost-center-search" name="costCenterSearch" placeholder="Search..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
+              </div>
+            }
+          />
         }
       >
         {loading ? (
@@ -294,17 +304,38 @@ export default function CostCentersMaster() {
       </DataTableShell>
 
       <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title={isEditing ? "Edit Cost Center" : "Add New Cost Center"} description="Manage cost center" onSubmit={handleSubmit} submitLabel={saving ? "Saving..." : isEditing ? "Update" : "Add"} size="lg">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <InputField label="Code" value={formData.code} onChange={(value) => setFormData({ ...formData, code: value })} placeholder="CC-001" required />
+        <FormGrid>
+          <InputField label="Code" value={formData.code} onChange={(value) => setFormData({ ...formData, code: value })} placeholder="Leave empty to auto-generate" hint="Optional - auto-generated if left blank" />
           <InputField label="Name" value={formData.name} onChange={(value) => setFormData({ ...formData, name: value })} placeholder="Production Line A" required />
           {canSelectPlant ? (
-            <SelectField label="Plant" value={formData.plantId} onChange={handlePlantChange} options={plantsOptions} placeholder="Select plant" />
+            <AsyncSelect
+              label="Plant"
+              value={formData.plantId}
+              onChange={async (value) => {
+                 const plantId = (value as string | null) || "";
+                 setFormData((prev) => ({ ...prev, plantId, departmentId: "" }));
+                 await fetchDepartmentsList(plantId);
+              }}
+              fetchFn={listPlants}
+              labelExtractor={(plant) => `${plant.plantCode || "-"} - ${plant.plantName}`}
+              valueExtractor={(plant) => plant.id}
+              placeholder="Select plant"
+            />
           ) : (
             <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => { }} disabled />
           )}
-          <SelectField label="Department" value={formData.departmentId} onChange={(value) => setFormData({ ...formData, departmentId: value })} options={deptOptions} placeholder="Select" hint={deptOptions.length === 0 ? "No departments for selected plant." : undefined} />
+          <AsyncSelect
+            label="Department"
+            value={formData.departmentId}
+            onChange={(value) => setFormData({ ...formData, departmentId: (value as string | null) || "" })}
+            fetchFn={async (params) => listDepartments({ ...params, plantId: formData.plantId })}
+            labelExtractor={(dept) => `${dept.code} - ${dept.name}`}
+            valueExtractor={(dept) => dept.id}
+            placeholder="Select"
+            disabled={!formData.plantId}
+          />
           <SelectField label="Status" value={formData.isActive ? "Active" : "Inactive"} onChange={(value) => setFormData({ ...formData, isActive: value === "Active" })} options={[{ value: "Active", label: "Active" }, { value: "Inactive", label: "Inactive" }]} />
-        </div>
+        </FormGrid>
       </FormDialog>
       <ViewDialog open={isViewOpen} onOpenChange={setIsViewOpen} title={selectedCC?.name || ""} subtitle={selectedCC?.code}>
         {selectedCC && (

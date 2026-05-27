@@ -22,7 +22,7 @@ import {
   MaintenanceTeamEntity,
 } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission } from '../../middlewares/permissionGuard';
 import { fail, ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { validateMasterHierarchy } from '../../utils/hierarchy';
@@ -33,6 +33,7 @@ import { applyPlantScope, applySearch } from '../../utils/query';
 import { generateQrCodeId } from '../../utils/qr';
 import { isSafeImageValue } from '../../utils/fileValidation';
 import { createSimpleExcelWorkbook } from '../../utils/excel';
+import { generateEntityCode } from '../../utils/codeGenerator';
 import { generateAssetLogbook } from '../../services/asset-logbook.service';
 
 const ASSET_TYPE_OPTIONS = [
@@ -66,7 +67,7 @@ const ASSET_BULK_TEMPLATE_OPTIONS = {
 };
 
 const assetSchema = z.object({
-  code: z.string().min(1),
+  code: z.string().trim().min(1).optional(),
   name: z.string().min(1),
   type: z.string().default(ASSET_BULK_TEMPLATE_OPTIONS.defaults.type),
   assetType: z.enum(ASSET_TYPE_OPTIONS).default(ASSET_BULK_TEMPLATE_OPTIONS.defaults.assetType),
@@ -85,7 +86,7 @@ const assetSchema = z.object({
   capacityUnit: z.string().max(20).nullable().optional(),
   serialNumber: z.string().nullable().optional(),
   refrigerantGasType: z.string().max(100).nullable().optional(),
-  machineImageUrl: z.string().trim().refine((value) => isSafeImageValue(value), 'machineImageUrl must be a valid secure image').nullable().optional(),
+  machineImageUrl: z.string().trim().refine((value) => !value || isSafeImageValue(value), 'machineImageUrl must be a valid secure image').nullable().optional(),
   location: z.string().nullable().optional(),
   vendorId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().default(true),
@@ -571,6 +572,7 @@ assetsRouter.post('/assets', requirePermission('ASSETS', 'CREATE'), async (req, 
     }
     ensurePlantAccess(req, resolvedPlantId);
 
+    const repo = AppDataSource.getRepository(AssetEntity);
     const departmentRepo = AppDataSource.getRepository(DepartmentEntity);
     const moduleRepo = AppDataSource.getRepository(MachineModuleEntity);
     const department = await departmentRepo.findOneBy({ id: body.departmentId });
@@ -602,9 +604,33 @@ assetsRouter.post('/assets', requirePermission('ASSETS', 'CREATE'), async (req, 
       return;
     }
 
-    const repo = AppDataSource.getRepository(AssetEntity);
+    let resolvedCode = body.code?.trim() || null;
+    if (resolvedCode) {
+      const existingAsset = await repo.findOneBy({
+        code: resolvedCode,
+        moduleId: body.moduleId,
+      });
+      if (existingAsset) {
+        res.status(409).json(fail('Machine code already exists in this module'));
+        return;
+      }
+    } else {
+      resolvedCode = await generateEntityCode({
+        tableName: 'assets',
+        codeColumn: 'code',
+        typeCode: 'AST',
+        plantId: resolvedPlantId ?? null,
+        organizationId: null,
+        scope: {
+          plantColumn: 'plant_id',
+          plantId: resolvedPlantId ?? null,
+        },
+      });
+    }
+
     const created = repo.create({
       ...body,
+      code: resolvedCode,
       plantId: resolvedPlantId,
       qrCodeId: generateQrCodeId(),
       ratedCapacity: body.ratedCapacity == null ? null : String(body.ratedCapacity),
@@ -674,6 +700,21 @@ assetsRouter.patch('/assets/:id', requirePermission('ASSETS', 'UPDATE'), async (
     } catch (error) {
       res.status(400).json(fail(error instanceof Error ? error.message : 'Invalid machine hierarchy'));
       return;
+    }
+
+    if (body.code !== undefined) {
+      const incomingCode = body.code.trim();
+      if (incomingCode) {
+        const existingAsset = await repo.findOneBy({
+          code: incomingCode,
+          moduleId: nextModuleId,
+        });
+        if (existingAsset && existingAsset.id !== entity.id) {
+          res.status(409).json(fail('Machine code already exists in this module'));
+          return;
+        }
+        entity.code = incomingCode;
+      }
     }
 
     Object.assign(entity, { ...body, plantId: nextPlantId, departmentId: nextDepartmentId, moduleId: nextModuleId });

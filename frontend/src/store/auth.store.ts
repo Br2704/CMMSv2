@@ -3,36 +3,11 @@ import { ensureAccessToken, isCurrentlyRateLimited, resetUnauthorizedMode } from
 import { setUnauthorizedCallback } from "@/api/token";
 import { mastersOptionsStore } from "@/store/mastersOptions.store";
 import { create } from "zustand";
+import {
+  isSuperAdmin as engineIsSuperAdmin,
+} from "@/lib/permission-engine";
 
-export type AppRole =
-  | "SUPERADMIN"
-  | "SUPER_ADMIN"
-  | "ROOT_ADMIN"
-  | "ADMIN"
-  | "PLANT_ADMIN"
-  | "DEPARTMENT_INCHARGE"
-  | "MAINTENANCE_MANAGER"
-  | "ENGINEER"
-  | "STORE_USER"
-  | "VIEWER"
-  | "VENDOR"
-  | "VISITOR"
-  | "TEMPORARY_VISITOR"
-  | "SECURITY"
-  | "USER"
-  | "MECHANICAL_INCHARGE"
-  | "ELECTRICAL_INCHARGE"
-  | "UTILITY_INCHARGE"
-  | "TOOLCHANGE_INCHARGE"
-  | "CALIBRATION_INCHARGE"
-  | "TECHNICIAN"
-  | "OPERATOR"
-  | "SECURITY_USER"
-  | "MAINTENANCE_USER"
-  | "HR_USER"
-  | "SAFETY_OFFICER"
-  | "INVENTORY_MANAGER"
-  | "PRODUCTION_USER";
+export type AppRole = string;
 
 interface SessionUser {
   id: string;
@@ -67,6 +42,11 @@ export interface AppUser {
   mfaEnabled?: boolean;
   lastLoginAt?: string | null;
   lastLoginIp?: string | null;
+  /**
+   * Permission map (record of moduleKey -> actions[]) for the user's roles.
+   * Set by the permissions store after loading from the backend.
+   */
+  permissionMap?: Record<string, string[]>;
 }
 
 interface AuthState {
@@ -96,7 +76,7 @@ function debugAuth(...args: unknown[]) {
 
 function mapMeToUser(me: MeResponse): AppUser | null {
   if (!me.user || !me.profile) return null;
-  const normalizedRoles = (me.roles || []).map((role) => (role === "SUPERADMIN" ? "SUPER_ADMIN" : role)) as AppRole[];
+  const normalizedRoles = (me.roles || []) as AppRole[];
 
   return {
     id: me.profile.id,
@@ -220,15 +200,9 @@ setUnauthorizedCallback(() => {
   s.setActivePlant(null, null, null);
   s.setLoading(false); // Stop loading spinner
 
-  // Force redirect to login if not already there or on a public page
-  if (typeof window !== "undefined") {
-    const path = window.location.pathname;
-    const isPublic = path === "/login" || path.startsWith("/qr/") || path.startsWith("/assets/");
-    if (!isPublic) {
-      const returnTo = encodeURIComponent(`${window.location.pathname}${window.location.search}${window.location.hash}`);
-      window.location.href = `/login?returnTo=${returnTo}`;
-    }
-  }
+  // Note: We deliberately DO NOT use window.location.href here.
+  // Setting user to null triggers ProtectedRoute to re-evaluate,
+  // which will smoothly <Navigate> to /login via React Router.
 });
 
 export function trackActivity(): void {
@@ -306,7 +280,7 @@ export async function initializeAuthState(): Promise<void> {
           accessToken: null,
           user: { id: me.user.id },
         });
-        if (isSuperAdmin(user)) {
+        if (engineIsSuperAdmin(user.roles)) {
           store.setActivePlant(null, null, null);
         } else {
           store.setActivePlant(user.plantId, user.plantCode, user.plantName);
@@ -351,55 +325,3 @@ export async function initializeAuthState(): Promise<void> {
 
   return initializeAuthStateInFlight;
 }
-
-export const hasRole = (user: AppUser | null, roles: AppRole[]): boolean => {
-  if (!user) return false;
-  return user.roles.some((r) => roles.includes(r));
-};
-
-export const isAdmin = (user: AppUser | null): boolean => {
-  return hasRole(user, ["ROOT_ADMIN", "SUPERADMIN", "SUPER_ADMIN", "ADMIN", "PLANT_ADMIN", "MAINTENANCE_MANAGER"]);
-};
-
-export const isSuperAdmin = (user: AppUser | null): boolean => {
-  return hasRole(user, ["ROOT_ADMIN", "SUPERADMIN", "SUPER_ADMIN"]);
-};
-
-export const isRootAdmin = (user: AppUser | null): boolean => {
-  return hasRole(user, ["ROOT_ADMIN"]);
-};
-
-export const isIncharge = (user: AppUser | null): boolean => {
-  return hasRole(user, [
-    "MECHANICAL_INCHARGE",
-    "ELECTRICAL_INCHARGE",
-    "UTILITY_INCHARGE",
-    "TOOLCHANGE_INCHARGE",
-    "CALIBRATION_INCHARGE",
-    "MAINTENANCE_MANAGER",
-  ]);
-};
-
-export const isMaintenanceManager = (user: AppUser | null): boolean => {
-  return hasRole(user, ["MAINTENANCE_MANAGER"]);
-};
-
-export const isMaintenanceUser = (user: AppUser | null): boolean => {
-  return hasRole(user, ["MAINTENANCE_USER", "MAINTENANCE_MANAGER", "TECHNICIAN"]);
-};
-
-export const isHRUser = (user: AppUser | null): boolean => {
-  return hasRole(user, ["HR_USER"]);
-};
-
-export const isSafetyOfficer = (user: AppUser | null): boolean => {
-  return hasRole(user, ["SAFETY_OFFICER"]);
-};
-
-export const isInventoryManager = (user: AppUser | null): boolean => {
-  return hasRole(user, ["INVENTORY_MANAGER", "STORE_USER"]);
-};
-
-export const isProductionUser = (user: AppUser | null): boolean => {
-  return hasRole(user, ["PRODUCTION_USER", "OPERATOR"]);
-};

@@ -26,7 +26,8 @@ import { createWorkOrderMaster, deleteWorkOrderMaster, listWorkOrderMasters, typ
 import { createWorkOrderTeamMapping, deleteWorkOrderTeamMapping, listWorkOrderTeamMappings, type WorkOrderTeamMapping, updateWorkOrderTeamMapping } from "@/api/workOrderTeamMappings";
 import { humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
 import { broadcastWorkOrderSync } from "@/lib/work-order-sync";
-import { isAdmin, isSuperAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isSuperAdmin } from "@/lib/permission-engine";
 
 type ConfigTab = "categories" | "types" | "failure-codes" | "routing";
 
@@ -78,8 +79,8 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 export default function WorkOrderConfigMaster() {
   const { user } = useAuthStore();
-  const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user);
+  const canManage = isAdminLevel(user?.roles ?? []);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
 
   const [plants, setPlants] = useState<Plant[]>([]);

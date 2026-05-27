@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { AssetDowntimeEventEntity, AssetEntity, AssetPerformanceLogEntity, WorkOrderEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { clamp, mean, resolveDateRange, safeNumber } from '../../utils/advancedAnalytics';
 
@@ -142,7 +142,7 @@ const highRiskQuerySchema = z.object({
 export const predictiveRouter = Router();
 predictiveRouter.use(requireAuth);
 
-predictiveRouter.get('/predictive/asset-risk', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ASSETS', 'READ'), async (req, res, next) => {
+predictiveRouter.get('/predictive/asset-risk', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ASSETS', 'READ'), async (req, res, next) => {
   try {
     const query = assetRiskQuerySchema.parse(req.query);
     const range = resolveDateRange(query.from, query.to, 90);
@@ -168,7 +168,7 @@ predictiveRouter.get('/predictive/asset-risk', requireRole(['SUPERADMIN', 'ADMIN
   }
 });
 
-predictiveRouter.get('/predictive/high-risk', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ASSETS', 'READ'), async (req, res, next) => {
+predictiveRouter.get('/predictive/high-risk', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ASSETS', 'READ'), async (req, res, next) => {
   try {
     const query = highRiskQuerySchema.parse(req.query);
     const range = resolveDateRange(query.from, query.to, 90);

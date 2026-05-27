@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { OrgRoleEntity, RoleEntity, UserRoleEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requireRole } from '../../middlewares/permissionGuard';
 import { fail, ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
@@ -19,18 +19,29 @@ const userRoleSchema = z.object({
 });
 
 const SYSTEM_ORG_ROLE_DEFINITIONS = [
-  { key: 'SUPERADMIN', name: 'SUPERADMIN', isSystem: true },
-  { key: 'ADMIN', name: 'ADMIN', isSystem: true },
-  { key: 'MAINTENANCE_MANAGER', name: 'MAINTENANCE_MANAGER', isSystem: true },
-  { key: 'MAINTENANCE_USER', name: 'MAINTENANCE_USER', isSystem: true },
-  { key: 'HR_USER', name: 'HR_USER', isSystem: true },
-  { key: 'SAFETY_OFFICER', name: 'SAFETY_OFFICER', isSystem: true },
-  { key: 'INVENTORY_MANAGER', name: 'INVENTORY_MANAGER', isSystem: true },
-  { key: 'PRODUCTION_USER', name: 'PRODUCTION_USER', isSystem: true },
-  { key: 'SECURITY', name: 'SECURITY', isSystem: true },
-  { key: 'VENDOR', name: 'VENDOR', isSystem: true },
-  { key: 'VISITOR', name: 'VISITOR', isSystem: true },
-  { key: 'USER', name: 'USER', isSystem: true },
+  { key: 'SUPER_ADMIN', name: 'Super Admin', isSystem: true },
+  { key: 'PLANT_ADMIN', name: 'Plant Admin', isSystem: true },
+  { key: 'ESG_ADMIN', name: 'ESG Admin', isSystem: true },
+  { key: 'HR_ADMIN', name: 'HR Admin', isSystem: true },
+  { key: 'MAINTENANCE_MANAGER', name: 'Maintenance Manager', isSystem: true },
+  { key: 'PRODUCTION_MANAGER', name: 'Production Manager', isSystem: true },
+  { key: 'SCM_MANAGER', name: 'SCM Manager', isSystem: true },
+  { key: 'HR_MANAGER', name: 'HR Manager', isSystem: true },
+  { key: 'CALIBRATION_MANAGER', name: 'Calibration Manager', isSystem: true },
+  { key: 'ACCOUNTS_MANAGER', name: 'Accounts Manager', isSystem: true },
+  { key: 'SAFETY_MANAGER', name: 'Safety Manager', isSystem: true },
+  { key: 'ESG_MANAGER', name: 'ESG Manager', isSystem: true },
+  { key: 'MAINTENANCE_USER', name: 'Maintenance User', isSystem: true },
+  { key: 'PRODUCTION_USER', name: 'Production User', isSystem: true },
+  { key: 'SCM_USER', name: 'SCM User', isSystem: true },
+  { key: 'HR_USER', name: 'HR User', isSystem: true },
+  { key: 'CALIBRATION_USER', name: 'Calibration User', isSystem: true },
+  { key: 'ACCOUNTS_USER', name: 'Accounts User', isSystem: true },
+  { key: 'SAFETY_USER', name: 'Safety User', isSystem: true },
+  { key: 'ESG_USER', name: 'ESG User', isSystem: true },
+  { key: 'SECURITY', name: 'Security', isSystem: true },
+  { key: 'VENDOR', name: 'Vendor', isSystem: true },
+  { key: 'VISITOR', name: 'Visitor', isSystem: true },
 ] as const;
 
 async function ensureSystemOrgRoles(organizationId: string) {
@@ -62,7 +73,7 @@ async function ensureSystemOrgRoles(organizationId: string) {
 export const rolesRouter = Router();
 rolesRouter.use(requireAuth);
 
-rolesRouter.get('/roles/catalog', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), async (req, res, next) => {
+rolesRouter.get('/roles/catalog', requireRole(['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN']), async (req, res, next) => {
   try {
     const actorRoles = req.auth?.roles.map((role) => normalizeRoleName(role)) ?? [];
     const actorRoleKey = getPrimaryRoleKey(actorRoles);
@@ -100,7 +111,7 @@ rolesRouter.get('/roles/catalog', requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMI
   }
 });
 
-rolesRouter.get('/user-roles', requireRole(['SUPERADMIN', 'ROOT_ADMIN', 'ADMIN']), async (req, res, next) => {
+rolesRouter.get('/user-roles', requireRole(['SUPER_ADMIN', 'ROOT_ADMIN', 'PLANT_ADMIN']), async (req, res, next) => {
   try {
     const query = parseListQuery(req.query as Record<string, unknown>);
     const roleFilter = typeof req.query.role === 'string' ? req.query.role : undefined;
@@ -127,7 +138,7 @@ rolesRouter.get('/user-roles', requireRole(['SUPERADMIN', 'ROOT_ADMIN', 'ADMIN']
   }
 });
 
-rolesRouter.post('/user-roles', requireRole(['SUPERADMIN', 'ROOT_ADMIN', 'ADMIN']), async (req, res, next) => {
+rolesRouter.post('/user-roles', requireRole(['SUPER_ADMIN', 'ROOT_ADMIN', 'PLANT_ADMIN']), async (req, res, next) => {
   try {
     const body = userRoleSchema.parse(req.body);
     const requestedRole = normalizeRoleName(body.role);
@@ -164,7 +175,7 @@ rolesRouter.post('/user-roles', requireRole(['SUPERADMIN', 'ROOT_ADMIN', 'ADMIN'
   }
 });
 
-rolesRouter.delete('/user-roles/:userId', requireRole(['SUPERADMIN', 'ROOT_ADMIN', 'ADMIN']), async (req, res, next) => {
+rolesRouter.delete('/user-roles/:userId', requireRole(['SUPER_ADMIN', 'ROOT_ADMIN', 'PLANT_ADMIN']), async (req, res, next) => {
   try {
     const params = z.object({ userId: z.string().uuid() }).parse(req.params);
     const repo = AppDataSource.getRepository(UserRoleEntity);

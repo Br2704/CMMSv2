@@ -151,7 +151,7 @@ const workOrderBodyBaseSchema = z.object({
     remarks: nullableTrimmedString.optional(),
     plant_id: optionalUuidOrNull.optional(),
     wo_type: optionalTrimmedString.default('BREAKDOWN'),
-    reported_location: nullableTrimmedString.optional(),
+    reporter_name_type: nullableTrimmedString.optional(),
     failure_code: nullableTrimmedString.optional(),
     sub_category: nullableTrimmedString.optional(),
     labor_hours: z.coerce.number().min(0).optional(),
@@ -223,7 +223,7 @@ const startWorkOrderBodySchema = z
     verification_method: z.enum(['QR_SCAN', 'MANUAL_ENTRY']),
     scanned_asset_id: optionalUuidOrNull.optional(),
     manual_machine_code: nullableTrimmedString.optional(),
-    initial_assessment: requiredTrimmedString,
+    initial_assessment: nullableTrimmedString.optional(),
     category: optionalTrimmedString,
     assigned_to: optionalUuidOrNull.optional(),
     assigned_to_notes: nullableTrimmedString.optional(),
@@ -278,7 +278,7 @@ const submitWorkOrderForApprovalBodySchema = z
     remarks: requiredTrimmedString,
     failure_code: nullableTrimmedString.optional(),
     actual_failure_category: nullableTrimmedString.optional(),
-    why_why_analysis: z.preprocess(normalizeObjectKeys, whyWhyAnalysisSchema).optional(),
+    why_why_analysis: z.preprocess(normalizeObjectKeys, whyWhyAnalysisSchema).nullable().optional(),
     preventive_recommendation: nullableTrimmedString.optional(),
     manpower_used: nullableTrimmedString.optional(),
     actual_cost: z.coerce.number().min(0).optional(),
@@ -300,14 +300,6 @@ const submitWorkOrderForApprovalBodySchema = z
         code: z.ZodIssueCode.custom,
         path: ['spare_consumption'],
         message: 'spare_consumption or materials_used is required when spare_used is true',
-      });
-    }
-
-    if (!spareUsed && !materialsUsed && spareRows.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['materials_used'],
-        message: 'Confirm no spares were used or provide spare/material details',
       });
     }
 

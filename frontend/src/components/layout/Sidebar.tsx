@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useAccessibleRoutes } from "@/hooks/useAccessibleRoutes";
 import { useIsMobilePwaMode } from "@/hooks/use-mobile-pwa";
-import { isRootAdmin, isSuperAdmin, hasRole, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isRootAdmin, isSuperAdmin, hasRole } from "@/lib/permission-engine";
 import { useBrandingStore } from "@/store/branding.store";
+import { APP_NAME } from "@/config/branding";
 import {
   BarChart3,
   Building2,
@@ -90,6 +93,8 @@ const rootNavigation: NavItem[] = [
   { title: "Plant Master", href: "/root/plant", icon: Factory, moduleId: "root.plants" },
   { title: "User Management", href: "/root/users", icon: Users, moduleId: "root.users" },
   { title: "Role & Access Master", href: "/root/role-access", icon: Settings, moduleId: "root.role_access" },
+  { title: "Secret Rotation", href: "/root/secret-rotation", icon: ShieldAlert, moduleId: "root.secret-rotation" },
+  { title: "Backup & Restore", href: "/root/backup", icon: FileText, moduleId: "BACKUP" },
   { title: "Mail Config", href: "/root/mail-config", icon: Mail, moduleId: "root.mail-config" },
   { title: "Report Format", href: "/root/report-format", icon: FileText, moduleId: "root.report-format" },
 ];
@@ -103,12 +108,14 @@ interface SidebarProps {
 export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
   const location = useLocation();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
   const { user } = useAuthStore();
-  const isRootUser = isRootAdmin(user);
+  const isRootUser = isRootAdmin(user?.roles ?? []);
   const brandingOrganizationName = useBrandingStore((state) => state.organizationName);
   const brandingLogoUrl = useBrandingStore((state) => state.logoUrl);
   const brandingLogoAssetUrl = useBrandingStore((state) => state.logoAssetUrl);
   const { hasModuleAccess, loading } = usePermissions();
+  const { canAccessPath } = useAccessibleRoutes();
   const isMobilePwaMode = useIsMobilePwaMode();
   const organizationName = user?.organizationName || brandingOrganizationName || null;
 
@@ -124,7 +131,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
 
   const showNavSkeleton = !isRootUser && loading;
 
-  const isAdminOrSuper = (isSuperAdmin(user) || hasRole(user, ["ADMIN"])) && !isRootAdmin(user);
+  const isAdminOrSuper = (isSuperAdmin(user?.roles ?? []) || hasRole(user?.roles ?? [], "PLANT_ADMIN")) && !isRootAdmin(user?.roles ?? []);
 
   const filteredNavigation = useMemo(
     () =>
@@ -134,11 +141,17 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
           ? []
           : (navigation
               .map((item) => {
+                if (!canAccessPath(item.href || "")) {
+                  return null;
+                }
                 if (!item.children) {
                   return hasModuleAccess(item.moduleId, "view") ? item : null;
                 }
 
                 const filteredChildren = item.children.filter((child) => {
+                  if (!canAccessPath(child.href)) {
+                    return false;
+                  }
                   if (child.href === "/masters/sla-config") {
                     return isAdminOrSuper;
                   }
@@ -155,7 +168,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
                 return { ...item, children: filteredChildren };
               })
               .filter(Boolean) as NavItem[]),
-    [hasModuleAccess, isMobilePwaMode, isRootUser, showNavSkeleton, isAdminOrSuper],
+    [hasModuleAccess, canAccessPath, isMobilePwaMode, isRootUser, showNavSkeleton, isAdminOrSuper],
   );
 
   useEffect(() => {
@@ -166,12 +179,23 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
     if (activeParents.length === 0) return;
     setExpandedItems((prev) => {
       const next = Array.from(new Set([...prev, ...activeParents]));
-      return next.length === prev.length && next.every((item, index) => item === prev[index]) ? prev : next;
+      return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
     });
   }, [filteredNavigation, location.pathname]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const checkPopup = () => {
+      setIsPopupOpen(document.body.hasAttribute("data-scroll-locked"));
+    };
+    checkPopup();
+    const observer = new MutationObserver(checkPopup);
+    observer.observe(document.body, { attributes: true, attributeFilter: ["data-scroll-locked"] });
+    return () => observer.disconnect();
+  }, []);
+
   const resolvedLogo = user?.organizationLogoUrl || brandingLogoUrl || brandingLogoAssetUrl || "/tamoptix/tamoptix-logo.svg";
-  const resolvedTitle = organizationName || "Organization";
+  const resolvedTitle = organizationName || APP_NAME;
   const homeHref = isRootUser ? "/root/dashboard" : "/";
   const collapseNavItems = isCollapsed && typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches;
   const handleNavItemClick = () => {
@@ -184,21 +208,23 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
     <>
       {isOpen && (
         <div
+          className="fixed inset-0 z-sidebar bg-black/50 backdrop-blur-sm lg:hidden transition-opacity"
           onClick={onToggleMobile}
-          className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm lg:hidden"
         />
       )}
 
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-card shadow-lg ",
-          "w-[min(88vw,320px)] sm:w-[300px] lg:w-[280px]",
+          "fixed left-0 top-0 flex h-dvh max-h-dvh flex-col overflow-hidden border-r border-border bg-card shadow-industrial sidebar-transition",
+          isPopupOpen ? "z-40" : "z-sidebar",
+          "w-[min(85vw,320px)] sm:w-[300px] lg:w-[280px]",
           isOpen ? "translate-x-0" : "-translate-x-full",
           "lg:translate-x-0",
           isCollapsed ? "lg:w-24" : "lg:w-[280px]",
+          isPopupOpen && "opacity-0 pointer-events-none lg:opacity-100 lg:pointer-events-auto"
         )}
       >
-        <div className="relative flex h-16 items-center border-b border-border px-4">
+        <div className="relative flex h-16 min-h-16 items-center border-b border-border px-4">
           <Link
             to={homeHref}
             className={cn(
@@ -215,8 +241,9 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
             >
               <img
                 src={resolvedLogo}
-                alt={organizationName ? `${organizationName} logo` : "Organization logo"}
+                alt={organizationName ? `${organizationName} logo` : `${APP_NAME} logo`}
                 className="h-full w-full object-contain"
+                decoding="async"
                 onError={(event) => {
                   event.currentTarget.onerror = null;
                   event.currentTarget.src = "/tamoptix/tamoptix-logo.svg";
@@ -235,7 +262,7 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
 
         </div>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-24 pt-3 sm:pb-28 lg:pb-6">
+        <nav className="flex-1 min-h-0 space-y-1 overflow-y-auto px-3 pb-24 pt-3 sm:pb-28 lg:pb-6">
           {showNavSkeleton
             ? Array.from({ length: 8 }).map((_, index) => (
                 <div key={`sidebar-skeleton-${index}`} className="animate-pulse rounded-lg border border-border/50 bg-muted/40 px-3 py-3">

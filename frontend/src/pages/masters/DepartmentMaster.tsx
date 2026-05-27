@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
-import { createDepartment, deleteDepartment, listDepartments, type Department, updateDepartment } from "@/api/departments";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuthStore } from "@/store/auth.store";
+import { isSuperAdmin } from "@/lib/permission-engine";
+import { createDepartment, deleteDepartment, listDepartments, type Department, type DepartmentPayload, updateDepartment } from "@/api/departments";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,8 @@ import { FormDialog } from "@/components/shared/FormDialog";
 import { ViewDialog, DetailRow, DetailSection } from "@/components/shared/ViewDialog";
 import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { InputField, SelectField } from "@/components/shared/FormField";
+import { AsyncSelect } from "@/components/ui/async-select";
+import { listPlants } from "@/api/plants";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { AuditInfo } from "@/components/shared/AuditInfo";
@@ -40,7 +43,7 @@ const emptyForm: DepartmentFormState = { code: "", name: "", plantId: "", isActi
 
 export default function DepartmentMaster() {
   const { user } = useAuthStore();
-  const canSelectPlant = isSuperAdmin(user);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const { can } = usePermissions();
   const canCreateDepartment = can("DEPARTMENTS", "create");
   const canUpdateDepartment = can("DEPARTMENTS", "update");
@@ -62,7 +65,7 @@ export default function DepartmentMaster() {
   const [isEditing, setIsEditing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const fetchDepartments = async (plantIdOverride?: string) => {
+  const fetchDepartments = useCallback(async (plantIdOverride?: string) => {
     setLoading(true);
     try {
       const scopedPlantId = canSelectPlant ? (plantIdOverride ?? selectedPlant) || undefined : defaultPlantId || undefined;
@@ -82,7 +85,7 @@ export default function DepartmentMaster() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [canSelectPlant, defaultPlantId, searchQuery, selectedPlant]);
 
   useEffect(() => {
     fetchPlants();
@@ -90,7 +93,7 @@ export default function DepartmentMaster() {
 
   useEffect(() => {
     fetchDepartments();
-  }, [searchQuery, selectedPlant, defaultPlantId, canSelectPlant]);
+  }, [fetchDepartments]);
 
   const plantOptions = useMemo(() => plantsOptions, [plantsOptions]);
 
@@ -109,7 +112,6 @@ export default function DepartmentMaster() {
   const filtered = useMemo(() => departments, [departments]);
 
   const canSubmitDepartmentForm =
-    formData.code.trim().length > 0 &&
     formData.name.trim().length > 0 &&
     (canSelectPlant ? Boolean(formData.plantId) : Boolean(defaultPlantId));
 
@@ -146,31 +148,31 @@ export default function DepartmentMaster() {
   const handleBulkToggle = async (active: boolean) => {
     const ids = Array.from(selectedIds);
     setSaving(true);
-    try {
-      await Promise.all(ids.map((id) => updateDepartment(id, { isActive: active })));
+    const results = await Promise.allSettled(ids.map((id) => updateDepartment(id, { isActive: active })));
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      toast.error(`${failed}/${ids.length} departments failed to ${active ? "activate" : "deactivate"}`);
+    } else {
       toast.success(`${ids.length} departments ${active ? "activated" : "deactivated"}`);
-      setSelectedIds(new Set());
-      await fetchDepartments();
-    } catch (error) {
-      toast.error(getErrorMessage(error, `Failed to ${active ? "activate" : "deactivate"} departments`));
-    } finally {
-      setSaving(false);
     }
+    setSelectedIds(new Set());
+    await fetchDepartments();
+    setSaving(false);
   };
 
   const handleBulkDelete = async () => {
     const ids = Array.from(selectedIds);
     setSaving(true);
-    try {
-      await Promise.all(ids.map((id) => deleteDepartment(id)));
+    const results = await Promise.allSettled(ids.map((id) => deleteDepartment(id)));
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      toast.error(`${failed}/${ids.length} departments failed to delete`);
+    } else {
       toast.success(`${ids.length} departments deleted`);
-      setSelectedIds(new Set());
-      await fetchDepartments();
-    } catch (error) {
-      toast.error(getErrorMessage(error, "Failed to delete departments"));
-    } finally {
-      setSaving(false);
     }
+    setSelectedIds(new Set());
+    await fetchDepartments();
+    setSaving(false);
   };
 
   const handleExportCsv = () => {
@@ -192,8 +194,8 @@ export default function DepartmentMaster() {
   };
 
   const handleSubmit = async () => {
-    if (!formData.code.trim() || !formData.name.trim()) {
-      toast.error("Code and name are required");
+    if (!formData.name.trim()) {
+      toast.error("Name is required");
       return;
     }
     const resolvedPlantId = canSelectPlant ? formData.plantId || null : defaultPlantId || null;
@@ -203,7 +205,8 @@ export default function DepartmentMaster() {
     }
     setSaving(true);
     try {
-      const payload = { code: formData.code.trim(), name: formData.name.trim(), plantId: resolvedPlantId, isActive: formData.isActive };
+      const code = formData.code.trim();
+      const payload: DepartmentPayload = { code: code || 'N/A', name: formData.name.trim(), plantId: resolvedPlantId, isActive: formData.isActive };
       if (isEditing && selectedDept) {
         await updateDepartment(selectedDept.id, payload);
         toast.success("Department updated");
@@ -312,19 +315,16 @@ export default function DepartmentMaster() {
         }
       />
 
-      <Card className="shadow-card">
-        <CardContent className="py-4">
-          <HierarchyBreadcrumb currentLevel="department" />
-        </CardContent>
-      </Card>
-
       <DataTableShell
         title={
-          <span className="flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-primary" />
-            Departments ({filtered.length})
-            {selectedIds.size > 0 && <span className="text-xs text-muted-foreground">({selectedIds.size} selected)</span>}
-          </span>
+          <div className="flex flex-col gap-2">
+            <HierarchyBreadcrumb currentLevel="department" />
+            <span className="flex items-center gap-2 mt-2">
+              <Building2 className="h-5 w-5 text-primary" />
+              Departments ({filtered.length})
+              {selectedIds.size > 0 && <span className="text-xs text-muted-foreground">({selectedIds.size} selected)</span>}
+            </span>
+          </div>
         }
         toolbar={
           <Toolbar
@@ -412,10 +412,19 @@ export default function DepartmentMaster() {
         size="lg"
       >
         <FormGrid>
-          <InputField label="Code" value={formData.code} onChange={(v) => setFormData({ ...formData, code: v })} placeholder="DEPT-001" required />
+          <InputField label="Code" value={formData.code} onChange={(v) => setFormData({ ...formData, code: v })} placeholder="Leave empty to auto-generate" hint="Optional - auto-generated if left blank" />
           <InputField label="Name" value={formData.name} onChange={(v) => setFormData({ ...formData, name: v })} placeholder="Production" required />
           {canSelectPlant ? (
-            <SelectField label="Plant" value={formData.plantId} onChange={(v) => setFormData({ ...formData, plantId: v })} options={plantOptions} placeholder="Select plant" required />
+            <AsyncSelect
+              label="Plant"
+              value={formData.plantId}
+              onChange={(v) => setFormData({ ...formData, plantId: (v as string | null) || "" })}
+              fetchFn={listPlants}
+              labelExtractor={(plant) => `${plant.plantCode || "-"} - ${plant.plantName}`}
+              valueExtractor={(plant) => plant.id}
+              placeholder="Select plant"
+              required
+            />
           ) : (
             <InputField label="Plant" value={getPlantName(defaultPlantId)} onChange={() => { }} disabled />
           )}

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { AppDataSource } from '../../database/data-source';
 import { MaintenanceReportEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { resolvePlantFilter } from '../../utils/plantScope';

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,10 +16,13 @@ import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared
 import { createModule, deleteModule, listModules, type MachineModule, updateModule } from "@/api/modules";
 import { listDepartments, type Department } from "@/api/departments";
 import { listAssets } from "@/api/assets";
-import { useAuthStore, isAdmin, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isRootAdmin, isSuperAdmin } from "@/lib/permission-engine";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { DataTableShell } from "@/components/layout/DataTableShell";
+import { Toolbar } from "@/components/layout/Toolbar";
 import { FormGrid } from "@/components/layout/FormGrid";
 
 interface ModuleRow extends MachineModule {
@@ -46,8 +49,8 @@ const emptyForm: ModuleFormState = {
 
 export default function ModulesMaster() {
   const { user } = useAuthStore();
-  const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user) || isRootAdmin(user);
+  const canManage = isAdminLevel(user?.roles ?? []);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []) || isRootAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants, invalidateOptions } = useMastersOptions();
 
@@ -65,7 +68,7 @@ export default function ModulesMaster() {
   const [formData, setFormData] = useState<ModuleFormState>({ ...emptyForm, plantId: defaultPlantId });
   const [isEditing, setIsEditing] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       if (canSelectPlant && !selectedPlant) {
@@ -106,7 +109,7 @@ export default function ModulesMaster() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchQuery, selectedPlant, selectedDepartment, defaultPlantId, canSelectPlant]);
 
   useEffect(() => {
     fetchPlants();
@@ -114,7 +117,7 @@ export default function ModulesMaster() {
 
   useEffect(() => {
     fetchData();
-  }, [searchQuery, selectedPlant, selectedDepartment, defaultPlantId, canSelectPlant]);
+  }, [fetchData]);
 
   useEffect(() => {
     if (!canSelectPlant || selectedPlant || plantsOptions.length === 0) {
@@ -313,53 +316,54 @@ export default function ModulesMaster() {
         }
       />
 
-      <Card className="shadow-card">
-        <CardContent className="py-4">
-          <HierarchyBreadcrumb currentLevel="module" />
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-card">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-base sm:text-lg font-semibold flex items-center gap-2">
+      <DataTableShell
+        title={
+          <div className="flex flex-col gap-2">
+            <HierarchyBreadcrumb currentLevel="module" />
+            <span className="flex items-center gap-2 mt-2">
               <Boxes className="h-5 w-5 text-primary" />
               Modules ({modules.length})
-            </CardTitle>
-            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-              {canSelectPlant && (
+            </span>
+          </div>
+        }
+        toolbar={
+          <Toolbar
+            right={
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                {canSelectPlant && (
+                  <SelectField
+                    label=""
+                    value={selectedPlant}
+                    onChange={(value) => {
+                      setSelectedPlant(value);
+                      setSelectedDepartment("all");
+                    }}
+                    options={plantsOptions}
+                    placeholder="Select plant"
+                    className="min-w-[170px]"
+                  />
+                )}
                 <SelectField
                   label=""
-                  value={selectedPlant}
-                  onChange={(value) => {
-                    setSelectedPlant(value);
-                    setSelectedDepartment("all");
-                  }}
-                  options={plantsOptions}
-                  placeholder="Select plant"
-                  className="min-w-[170px]"
+                  value={selectedDepartment}
+                  onChange={setSelectedDepartment}
+                  options={[{ value: "all", label: "All Departments" }, ...departmentFilterOptions]}
+                  className="min-w-[190px]"
                 />
-              )}
-              <SelectField
-                label=""
-                value={selectedDepartment}
-                onChange={setSelectedDepartment}
-                options={[{ value: "all", label: "All Departments" }, ...departmentFilterOptions]}
-                className="min-w-[190px]"
-              />
-              <div className="relative w-full sm:w-64">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search modules..."
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  className="h-10 pl-9"
-                />
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search modules..."
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    className="h-10 pl-9"
+                  />
+                </div>
               </div>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
+            }
+          />
+        }
+      >
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -404,8 +408,7 @@ export default function ModulesMaster() {
               )}
             />
           )}
-        </CardContent>
-      </Card>
+      </DataTableShell>
 
       <FormDialog
         open={isFormOpen}
@@ -418,7 +421,7 @@ export default function ModulesMaster() {
         size="lg"
       >
         <FormGrid>
-          <InputField label="Module Code" value={formData.code} onChange={(value) => setFormData({ ...formData, code: value })} placeholder="MOD-001" />
+          <InputField label="Module Code" value={formData.code} onChange={(value) => setFormData({ ...formData, code: value })} placeholder="Leave empty to auto-generate" hint="Optional - auto-generated if left blank" />
           <InputField label="Module Name" value={formData.name} onChange={(value) => setFormData({ ...formData, name: value })} placeholder="Grinding Line" required />
           <TextareaField
             label="Description"

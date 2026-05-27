@@ -1,8 +1,10 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useAccessibleRoutes } from "@/hooks/useAccessibleRoutes";
 import { useIsMobilePwaMode } from "@/hooks/use-mobile-pwa";
-import { isRootAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isRootAdmin } from "@/lib/permission-engine";
 import {
   LayoutDashboard,
   ClipboardList,
@@ -67,6 +69,8 @@ const rootMainNavItems = [
 
 const rootMoreNavItems: Array<{ title: string; href: string; moduleId: string }> = [
   { title: "Role Access", href: "/root/role-access", moduleId: "root.role_access" },
+  { title: "Secret Rotation", href: "/root/secret-rotation", moduleId: "root.secret-rotation" },
+  { title: "Backup & Restore", href: "/root/backup", moduleId: "BACKUP" },
   { title: "Report Format", href: "/root/report-format", moduleId: "root.report-format" },
   { title: "Mail Config", href: "/root/mail-config", moduleId: "root.mail-config" },
 ];
@@ -79,8 +83,9 @@ export function BottomNav({ isSidebarOpen = false }: BottomNavProps) {
   const location = useLocation();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const { user } = useAuthStore();
-  const isRootUser = isRootAdmin(user);
+  const isRootUser = isRootAdmin(user?.roles ?? []);
   const { hasModuleAccess, loading } = usePermissions();
+  const { canAccessPath } = useAccessibleRoutes();
   const isMobilePwaMode = useIsMobilePwaMode();
   const showNavSkeleton = !isRootUser && loading;
 
@@ -93,12 +98,12 @@ export function BottomNav({ isSidebarOpen = false }: BottomNavProps) {
     ? rootMainNavItems
     : showNavSkeleton
       ? []
-      : mainNavItems.filter((item) => hasModuleAccess(item.moduleId, "view"));
+      : mainNavItems.filter((item) => canAccessPath(item.href) && hasModuleAccess(item.moduleId, "view"));
   const filteredMoreBase = isRootUser
     ? rootMoreNavItems
     : showNavSkeleton
       ? []
-      : moreNavItems.filter((item) => hasModuleAccess(item.moduleId, "view"));
+      : moreNavItems.filter((item) => canAccessPath(item.href) && hasModuleAccess(item.moduleId, "view"));
 
   const filteredMore = useMemo(
     () =>

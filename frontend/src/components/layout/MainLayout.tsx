@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
-import { MobileBottomNav } from "./MobileBottomNav";
 import { OfflineIndicator } from "./OfflineIndicator";
-import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
+import CommandPalette from "@/components/CommandPalette";
+import Skeleton from "@/components/Skeleton";
 import { buildBrandingManifestUrl } from "@/api/branding";
 import { useAuthStore, trackActivity } from "@/store/auth.store";
 import { useBrandingStore } from "@/store/branding.store";
@@ -12,9 +12,10 @@ import { useFeaturesStore } from "@/store/features.store";
 import { UnifiedOnboardingBanner } from "@/components/UnifiedOnboardingBanner";
 import { cn } from "@/lib/utils";
 import { AlertTriangle } from "lucide-react";
+import { APP_LOGO_SVG, APP_NAME, APP_TAGLINE, APP_DEFAULT_THEME_COLOR, APP_BROWSER_TITLE, APP_COMPANY } from "@/config/branding";
 
 const TAMOPTIX_FAVICON = "/tamoptix/tamoptix-favicon.svg";
-const TAMOPTIX_LOGO = "/tamoptix/tamoptix-logo.svg";
+const TAMOPTIX_LOGO = APP_LOGO_SVG;
 
 export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -118,13 +119,17 @@ export function MainLayout() {
   useEffect(() => {
     if (typeof document === "undefined") return;
 
-    const resolvedTitle =
+    const baseTitle =
       browserTitle ||
       (organizationName
-        ? `${organizationName} CMMS`
+        ? organizationName
         : sidebarTitle
-          ? `${sidebarTitle} CMMS`
-          : "TamOptiX CMMS");
+          ? sidebarTitle
+          : APP_NAME);
+    const resolvedTitle =
+      baseTitle && !baseTitle.includes(APP_COMPANY) && baseTitle !== APP_BROWSER_TITLE
+        ? `${baseTitle} | ${APP_BROWSER_TITLE}`
+        : APP_BROWSER_TITLE;
     document.title = resolvedTitle;
 
     const updateMetaContent = (selector: string, value: string) => {
@@ -137,8 +142,8 @@ export function MainLayout() {
     updateMetaContent('meta[name="application-name"]', resolvedTitle);
     updateMetaContent('meta[name="apple-mobile-web-app-title"]', resolvedTitle);
     updateMetaContent('meta[name="title"]', resolvedTitle);
-    updateMetaContent('meta[name="theme-color"]', brandColor || "#0f172a");
-    updateMetaContent('meta[name="msapplication-TileColor"]', brandColor || "#0f172a");
+    updateMetaContent('meta[name="theme-color"]', brandColor || APP_DEFAULT_THEME_COLOR);
+    updateMetaContent('meta[name="msapplication-TileColor"]', brandColor || APP_DEFAULT_THEME_COLOR);
 
     const resolvedFavicon = TAMOPTIX_FAVICON;
     const ensureLink = (rel: string, id?: string) => {
@@ -165,7 +170,7 @@ export function MainLayout() {
   }, [brandColor, brandingVersion, browserTitle, organizationId, organizationName, sidebarTitle]);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen overflow-x-clip bg-background">
       <OfflineIndicator />
       {isFallbackMode && (
         <div className="fixed left-0 right-0 top-14 z-[100] flex items-center gap-2 bg-amber-500 px-4 py-2 text-sm font-medium text-white shadow-lg sm:top-16">
@@ -177,35 +182,35 @@ export function MainLayout() {
         isOpen={sidebarOpen}
         isCollapsed={sidebarCollapsed}
         onToggleMobile={() => setSidebarOpen((prev) => !prev)}
-      />        <div
-          className={cn(
-            "flex min-h-screen min-w-0 flex-col overflow-x-hidden",
-            sidebarCollapsed ? "lg:pl-24" : "lg:pl-[280px]",
-          )}
-        >
+      />
+      <div
+        className={cn(
+          "flex min-h-screen min-w-0 flex-col layout-transition",
+          sidebarCollapsed ? "lg:pl-24" : "lg:pl-[280px]",
+        )}
+      >
           <Topbar onMenuClick={handleSidebarToggle} sidebarCollapsed={sidebarCollapsed} />
           
-          <main className={cn(
-            "min-w-0 flex-1 overflow-x-hidden px-3 py-4 pb-28 sm:px-6 sm:py-5 sm:pb-28 lg:px-8 lg:py-6 lg:pb-8",
+          <main id="main-content" role="main" className={cn(
+            "min-w-0 flex-1 overflow-x-clip px-3 py-4 pb-6 sm:px-6 sm:py-5 sm:pb-8 lg:px-8 lg:py-6 lg:pb-8",
             isFallbackMode && "pt-14 sm:pt-16",
           )}>
-            <div className="mx-auto w-full min-w-0 max-w-[1720px]">
-              <Outlet />
+            <div className="mx-auto w-full min-w-0 max-w-[1680px]">
+              <Suspense fallback={<Skeleton />}> 
+                <Outlet />
+              </Suspense>
             </div>
           </main>
 
-          <footer className="hidden border-t border-border/70 bg-card/80 px-4 py-3 backdrop-blur-sm sm:px-6 lg:px-8 sm:block">
+          <footer className="border-t border-border/70 bg-card/80 px-4 py-2 backdrop-blur-sm sm:px-6 lg:px-8">
             <div className="mx-auto flex w-full max-w-[1720px] items-center justify-center gap-2 text-center">
-              <img src={TAMOPTIX_LOGO} alt="TamOptiX" className="h-5 w-auto object-contain" />
-              <span className="text-xs font-medium tracking-wide text-muted-foreground">TamOptiX Technologies</span>
+              <img src={TAMOPTIX_LOGO} alt="TamOptiX" className="h-4 w-auto object-contain sm:h-5" decoding="async" />
+              <span className="text-[10px] font-medium tracking-wide text-muted-foreground sm:text-xs">{APP_TAGLINE}</span>
             </div>
           </footer>
         </div>
 
-      {/* Mobile Bottom Navigation */}
-      <MobileBottomNav isSidebarOpen={sidebarOpen} />
-      {/* PWA Install Experience */}
-      <PwaInstallPrompt />
+      <CommandPalette />
       {/* Unified Setup Experience */}
       <UnifiedOnboardingBanner />
     </div>

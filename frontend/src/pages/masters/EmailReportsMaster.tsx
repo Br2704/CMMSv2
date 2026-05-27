@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,9 +15,16 @@ import { httpRequest } from "@/api/http";
 import { useNavigate } from "react-router-dom";
 import { format, formatDistanceToNow } from "date-fns";
 import { createReportSchedule, deleteReportSchedule, listReportHistory, listReportSchedules, sendReportNow, updateReportSchedule, type ReportSchedule, type ReportLog } from "@/api/reports";
-import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isSuperAdmin } from "@/lib/permission-engine";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { getErrorMessage } from "@/lib/utils";
+import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
+import { PageShell } from "@/components/layout/PageShell";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { DataTableShell } from "@/components/layout/DataTableShell";
+import { Toolbar } from "@/components/layout/Toolbar";
+import { FormGrid } from "@/components/layout/FormGrid";
 
 const REPORT_SECTIONS = [
   { value: "work_orders", label: "Work Orders" },
@@ -53,7 +60,7 @@ const emptyForm = {
 
 export default function EmailReportsMaster() {
   const { user } = useAuthStore();
-  const canSelectPlant = isSuperAdmin(user);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants } = useMastersOptions();
   const navigate = useNavigate();
@@ -90,6 +97,7 @@ export default function EmailReportsMaster() {
   const [selectedSchedule, setSelectedSchedule] = useState<ReportSchedule | null>(null);
   const [formData, setFormData] = useState({ ...emptyForm, plantId: defaultPlantId });
   const [isEditing, setIsEditing] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const fetchSchedules = async () => {
     setLoading(true);
@@ -185,11 +193,16 @@ export default function EmailReportsMaster() {
   };
 
   const handleDelete = async (scheduleId: string) => {
-    if (!confirm("Delete this report schedule? This action cannot be undone.")) return;
+    setDeleteTarget(scheduleId);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
     setSubmitting(true);
     try {
-      await deleteReportSchedule(scheduleId);
+      await deleteReportSchedule(deleteTarget);
       toast.success("Report schedule deleted");
+      setDeleteTarget(null);
       await fetchSchedules();
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to delete report schedule"));
@@ -267,7 +280,7 @@ export default function EmailReportsMaster() {
   const mailHealthColor = mailConfigured === true ? 'bg-green-50 border-green-200 text-green-800' : mailConfigured === false ? 'bg-red-50 border-red-200 text-red-800' : 'bg-gray-50 border-gray-200 text-gray-600';
 
   return (
-    <div className="space-y-6">
+    <PageShell>
       <BackButton />
 
       {/* SMTP / Mail Health Status */}
@@ -326,16 +339,16 @@ export default function EmailReportsMaster() {
         </div>
       )}
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">Email Report Configuration</h1>
-          <p className="text-muted-foreground">Configure automated email reports with schedule history</p>
-        </div>
-        <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow">
-          <Plus className="h-4 w-4" />
-          Add Report Schedule
-        </Button>
-      </div>
+      <PageHeader
+        title="Email Report Configuration"
+        description="Configure automated email reports with schedule history"
+        actions={
+          <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
+            <Plus className="h-4 w-4" />
+            Add Report Schedule
+          </Button>
+        }
+      />
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <Card className="shadow-card"><CardContent className="p-4"><div className="text-2xl font-bold text-primary">{stats.total}</div><p className="text-sm text-muted-foreground">Total Schedules</p></CardContent></Card>
@@ -344,14 +357,14 @@ export default function EmailReportsMaster() {
         <Card className="shadow-card"><CardContent className="p-4"><div className="text-2xl font-bold text-muted-foreground">{stats.disabled}</div><p className="text-sm text-muted-foreground">Disabled</p></CardContent></Card>
       </div>
 
-      <Card className="shadow-card">
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold flex items-center gap-2">
+      <DataTableShell
+        title={
+          <span className="flex items-center gap-2">
             <Mail className="h-5 w-5 text-primary" />
             Scheduled Reports ({schedules.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+          </span>
+        }
+      >
           {loading ? (
             <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
           ) : schedules.length === 0 ? (
@@ -392,8 +405,7 @@ export default function EmailReportsMaster() {
               </div>
             ))
           )}
-        </CardContent>
-      </Card>
+      </DataTableShell>
 
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -402,7 +414,7 @@ export default function EmailReportsMaster() {
             <DialogDescription>Configure what data is included, recipients, and frequency</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormGrid>
               <div className="space-y-2">
                 <Label>Report Name *</Label>
                 <Input value={formData.reportName} onChange={(event) => setFormData({ ...formData, reportName: event.target.value })} placeholder="Daily Work Order Summary" />
@@ -414,7 +426,7 @@ export default function EmailReportsMaster() {
                   <SelectContent>{FREQUENCIES.map((frequency) => <SelectItem key={frequency.value} value={frequency.value}>{frequency.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-            </div>
+            </FormGrid>
 
             {canSelectPlant ? (
               <div className="space-y-2">
@@ -440,7 +452,7 @@ export default function EmailReportsMaster() {
               <Input value={formData.description} onChange={(event) => setFormData({ ...formData, description: event.target.value })} placeholder="Brief description of this report" />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormGrid>
               <div className="space-y-2">
                 <Label>Send Time</Label>
                 <Input type="time" value={formData.sendTime} onChange={(event) => setFormData({ ...formData, sendTime: event.target.value })} />
@@ -449,7 +461,7 @@ export default function EmailReportsMaster() {
                 <Label>Recipients (comma-separated emails)</Label>
                 <Input value={formData.recipients} onChange={(event) => setFormData({ ...formData, recipients: event.target.value })} placeholder="user@example.com, admin@example.com" />
               </div>
-            </div>
+            </FormGrid>
 
             <div className="space-y-2">
               <Label>Report Data Sections</Label>
@@ -571,6 +583,15 @@ export default function EmailReportsMaster() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Delete Report Schedule"
+        itemName={schedules.find((s) => s.id === deleteTarget)?.reportName}
+        onConfirm={confirmDelete}
+        isLoading={submitting}
+      />
+    </PageShell>
   );
 }

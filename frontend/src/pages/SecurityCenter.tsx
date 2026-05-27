@@ -35,7 +35,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { PageShell } from "@/components/layout/PageShell";
-import { isSuperAdmin, useAuthStore } from "@/store/auth.store";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { DataTableShell } from "@/components/layout/DataTableShell";
+import { Toolbar } from "@/components/layout/Toolbar";
+import { FormGrid } from "@/components/layout/FormGrid";
+import { InputField, SelectField } from "@/components/shared/FormField";
+import { useAuthStore } from "@/store/auth.store";
+import { isSuperAdmin } from "@/lib/permission-engine";
+import { Navigate } from "react-router-dom";
+import { useAccessibleRoutes } from "@/hooks/useAccessibleRoutes";
 
 function severityVariant(severity: string): "default" | "secondary" | "destructive" | "outline" {
   if (severity === "CRITICAL" || severity === "HIGH") return "destructive";
@@ -167,14 +175,21 @@ export default function SecurityCenter() {
     notes: "",
   });
   const user = useAuthStore((state) => state.user);
-  const userIsSuperAdmin = isSuperAdmin(user);
-  const canViewCompliance = true;
+  const userIsSuperAdmin = isSuperAdmin(user?.roles ?? []);
+  const userIsPlantAdmin = (user?.roles ?? []).some((role) => role === "PLANT_ADMIN");
+  const canAccessSecurityCenter = userIsSuperAdmin || userIsPlantAdmin || (user?.roleKey ?? "") === "ROOT_ADMIN";
+  const canViewCompliance = canAccessSecurityCenter;
   const scopeLabel = user?.scopeType === "ROOT_ADMIN"
     ? "Global scope"
     : user?.scopeType === "ORGANIZATION"
       ? "Organization scope"
       : "Plant scope";
   const { toast } = useToast();
+  const { resolveLandingPath } = useAccessibleRoutes();
+
+  if (!canAccessSecurityCenter) {
+    return <Navigate to={resolveLandingPath()} replace />;
+  }
 
   const load = useCallback(async (severity = severityFilter) => {
     setIsLoading(true);
@@ -487,33 +502,31 @@ export default function SecurityCenter() {
 
   return (
     <PageShell>
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Security Center</h1>
-          <p className="text-sm text-muted-foreground">
-            Security events, audit logs, and ISO 27001 control intelligence for your authorized scope.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary">{scopeLabel}</Badge>
-          <Select value={severityFilter} onValueChange={setSeverityFilter}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Filter severity" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All severities</SelectItem>
-              <SelectItem value="LOW">Low</SelectItem>
-              <SelectItem value="MEDIUM">Medium</SelectItem>
-              <SelectItem value="HIGH">High</SelectItem>
-              <SelectItem value="CRITICAL">Critical</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" onClick={() => void load()} disabled={isLoading}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Security Center"
+        description="Security events, audit logs, and ISO 27001 control intelligence for your authorized scope."
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="secondary">{scopeLabel}</Badge>
+            <Select value={severityFilter} onValueChange={setSeverityFilter}>
+              <SelectTrigger className="w-full sm:w-[160px]">
+                <SelectValue placeholder="Filter severity" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All severities</SelectItem>
+                <SelectItem value="LOW">Low</SelectItem>
+                <SelectItem value="MEDIUM">Medium</SelectItem>
+                <SelectItem value="HIGH">High</SelectItem>
+                <SelectItem value="CRITICAL">Critical</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" onClick={() => void load()} disabled={isLoading}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
@@ -562,15 +575,19 @@ export default function SecurityCenter() {
         </TabsList>
 
         <TabsContent value="events">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle>Live Security Events</CardTitle>
-              <Button variant="outline" size="sm" onClick={() => void handleDownloadEvents()} disabled={isDownloadingEvents}>
-                <Download className="mr-2 h-4 w-4" />
-                {isDownloadingEvents ? "Exporting..." : "Download CSV"}
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <DataTableShell
+            title="Live Security Events"
+            toolbar={
+              <Toolbar
+                right={
+                  <Button variant="outline" size="sm" onClick={() => void handleDownloadEvents()} disabled={isDownloadingEvents}>
+                    <Download className="mr-2 h-4 w-4" />
+                    {isDownloadingEvents ? "Exporting..." : "Download CSV"}
+                  </Button>
+                }
+              />
+            }
+          >
               {dashboard?.suspiciousIps?.length ? (
                 <div className="flex flex-wrap gap-2">
                   {dashboard.suspiciousIps.map((row) => (
@@ -580,98 +597,104 @@ export default function SecurityCenter() {
                   ))}
                 </div>
               ) : null}
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Event</TableHead>
-                    <TableHead>Severity</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>IP</TableHead>
-                    <TableHead>Detected</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {events.map((event) => (
-                    <TableRow key={event.id}>
-                      <TableCell>
-                        <div className="font-medium">{event.eventType}</div>
-                        <div className="text-xs text-muted-foreground">{event.message}</div>
-                      </TableCell>
-                      <TableCell><Badge variant={severityVariant(event.severity)}>{event.severity}</Badge></TableCell>
-                      <TableCell><Badge variant="outline">{event.status}</Badge></TableCell>
-                      <TableCell className="font-mono text-xs">{event.ipAddress ?? "n/a"}</TableCell>
-                      <TableCell>{format(new Date(event.detectedAt), "dd MMM yyyy HH:mm")}</TableCell>
-                      <TableCell className="text-right">
-                        {event.status === "OPEN" ? (
-                          <Button size="sm" variant="outline" onClick={() => void handleAcknowledge(event.id)}>
-                            Acknowledge
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Handled</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {events.length === 0 ? (
+              <div className="overflow-x-auto">
+                <Table className="min-w-[1000px]">
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground">
-                        No security events matched the current filter.
-                      </TableCell>
+                      <TableHead>Event</TableHead>
+                      <TableHead>Severity</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>IP</TableHead>
+                      <TableHead>Detected</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
-                  ) : null}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {events.map((event) => (
+                      <TableRow key={event.id}>
+                        <TableCell>
+                          <div className="font-medium">{event.eventType}</div>
+                          <div className="text-xs text-muted-foreground">{event.message}</div>
+                        </TableCell>
+                        <TableCell><Badge variant={severityVariant(event.severity)}>{event.severity}</Badge></TableCell>
+                        <TableCell><Badge variant="outline">{event.status}</Badge></TableCell>
+                        <TableCell className="font-mono text-xs">{event.ipAddress ?? "n/a"}</TableCell>
+                        <TableCell>{format(new Date(event.detectedAt), "dd MMM yyyy HH:mm")}</TableCell>
+                        <TableCell className="text-right">
+                          {event.status === "OPEN" ? (
+                            <Button size="sm" variant="outline" onClick={() => void handleAcknowledge(event.id)}>
+                              Acknowledge
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Handled</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {events.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">
+                          No security events matched the current filter.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              </div>
+          </DataTableShell>
         </TabsContent>
 
         <TabsContent value="audit">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle>Audit Trail</CardTitle>
-              <Button variant="outline" size="sm" onClick={() => void handleDownloadAudit()} disabled={isDownloadingAudit}>
-                <Download className="mr-2 h-4 w-4" />
-                {isDownloadingAudit ? "Exporting..." : "Download CSV"}
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Module</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>IP</TableHead>
-                    <TableHead>Timestamp</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {auditLogs.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell>
-                        <div className="font-medium">{row.action}</div>
-                        <div className="text-xs text-muted-foreground">{row.path ?? "n/a"}</div>
-                      </TableCell>
-                      <TableCell>{row.module ?? "n/a"}</TableCell>
-                      <TableCell>{row.method ?? "n/a"}</TableCell>
-                      <TableCell>{row.statusCode ?? "n/a"}</TableCell>
-                      <TableCell className="font-mono text-xs">{row.ipAddress ?? "n/a"}</TableCell>
-                      <TableCell>{format(new Date(row.createdAt), "dd MMM yyyy HH:mm")}</TableCell>
-                    </TableRow>
-                  ))}
-                  {auditLogs.length === 0 ? (
+          <DataTableShell
+            title="Audit Trail"
+            toolbar={
+              <Toolbar
+                right={
+                  <Button variant="outline" size="sm" onClick={() => void handleDownloadAudit()} disabled={isDownloadingAudit}>
+                    <Download className="mr-2 h-4 w-4" />
+                    {isDownloadingAudit ? "Exporting..." : "Download CSV"}
+                  </Button>
+                }
+              />
+            }
+          >
+              <div className="overflow-x-auto">
+                <Table className="min-w-[1000px]">
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground">
-                        No audit records available.
-                      </TableCell>
+                      <TableHead>Action</TableHead>
+                      <TableHead>Module</TableHead>
+                      <TableHead>Method</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>IP</TableHead>
+                      <TableHead>Timestamp</TableHead>
                     </TableRow>
-                  ) : null}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {auditLogs.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell>
+                          <div className="font-medium">{row.action}</div>
+                          <div className="text-xs text-muted-foreground">{row.path ?? "n/a"}</div>
+                        </TableCell>
+                        <TableCell>{row.module ?? "n/a"}</TableCell>
+                        <TableCell>{row.method ?? "n/a"}</TableCell>
+                        <TableCell>{row.statusCode ?? "n/a"}</TableCell>
+                        <TableCell className="font-mono text-xs">{row.ipAddress ?? "n/a"}</TableCell>
+                        <TableCell>{format(new Date(row.createdAt), "dd MMM yyyy HH:mm")}</TableCell>
+                      </TableRow>
+                    ))}
+                    {auditLogs.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">
+                          No audit records available.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              </div>
+          </DataTableShell>
         </TabsContent>
 
         {canViewCompliance ? (
@@ -767,40 +790,42 @@ export default function SecurityCenter() {
 
                 <div className="rounded-lg border border-border p-3">
                   <p className="mb-2 text-sm font-medium">Recent Operational Records</p>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Control</TableHead>
-                        <TableHead>Plant</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Summary</TableHead>
-                        <TableHead>Timestamp</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(controlOperations?.recent || []).map((row) => (
-                        <TableRow key={row.id}>
-                          <TableCell>{controlLabel(row.controlKey)}</TableCell>
-                          <TableCell className="font-mono text-xs">{row.plantId || "n/a"}</TableCell>
-                          <TableCell><Badge variant={operationStatusVariant(row.status)}>{row.status}</Badge></TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{row.summary}</TableCell>
-                          <TableCell>{format(new Date(row.performedAt), "dd MMM yyyy HH:mm")}</TableCell>
-                        </TableRow>
-                      ))}
-                      {!(controlOperations?.recent || []).length ? (
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[1000px]">
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center text-muted-foreground">
-                            No operational records captured yet.
-                          </TableCell>
+                          <TableHead>Control</TableHead>
+                          <TableHead>Plant</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Summary</TableHead>
+                          <TableHead>Timestamp</TableHead>
                         </TableRow>
-                      ) : null}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {(controlOperations?.recent || []).map((row) => (
+                          <TableRow key={row.id}>
+                            <TableCell>{controlLabel(row.controlKey)}</TableCell>
+                            <TableCell className="font-mono text-xs">{row.plantId || "n/a"}</TableCell>
+                            <TableCell><Badge variant={operationStatusVariant(row.status)}>{row.status}</Badge></TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{row.summary}</TableCell>
+                            <TableCell>{format(new Date(row.performedAt), "dd MMM yyyy HH:mm")}</TableCell>
+                          </TableRow>
+                        ))}
+                        {!(controlOperations?.recent || []).length ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-muted-foreground">
+                              No operational records captured yet.
+                            </TableCell>
+                          </TableRow>
+                        ) : null}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            <div className="grid gap-4 xl:grid-cols-[1.2fr,0.8fr]">
+            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[1.2fr,0.8fr]">
               <Card>
                 <CardHeader>
                   <CardTitle>ISO 27001 Control Coverage</CardTitle>
@@ -891,70 +916,47 @@ export default function SecurityCenter() {
       </Tabs>
 
       <Dialog open={backupDialogOpen} onOpenChange={setBackupDialogOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Record Backup Recovery Drill</DialogTitle>
             <DialogDescription>Capture restore evidence for ISO 27001 A.8.13.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Plant</p>
-              <select
-                aria-label="Backup recovery drill plant"
-                title="Backup recovery drill plant"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={allowPlantSelection ? backupForm.plantId : resolveOperationPlantId(backupForm.plantId)}
-                onChange={(event) => setBackupForm((current) => ({ ...current, plantId: event.target.value }))}
-                disabled={!allowPlantSelection}
-              >
-                <option value="">{allowPlantSelection ? "Select Plant" : "Scoped Plant"}</option>
-                {plantSelectOptions.map((plant) => (
-                  <option key={plant.value} value={plant.value}>{plant.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Performed At</p>
-              <Input
-                type="datetime-local"
-                value={backupForm.performedAt}
-                onChange={(event) => setBackupForm((current) => ({ ...current, performedAt: event.target.value }))}
-              />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="mb-1 text-xs text-muted-foreground">RTO (minutes)</p>
-                <Input
-                  type="number"
-                  min={0}
-                  value={backupForm.rtoMinutes}
-                  onChange={(event) => setBackupForm((current) => ({ ...current, rtoMinutes: event.target.value }))}
-                />
-              </div>
-              <div>
-                <p className="mb-1 text-xs text-muted-foreground">RPO (minutes)</p>
-                <Input
-                  type="number"
-                  min={0}
-                  value={backupForm.rpoMinutes}
-                  onChange={(event) => setBackupForm((current) => ({ ...current, rpoMinutes: event.target.value }))}
-                />
-              </div>
-            </div>
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Result</p>
-              <select
-                aria-label="Backup recovery drill result"
-                title="Backup recovery drill result"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={backupForm.result}
-                onChange={(event) => setBackupForm((current) => ({ ...current, result: event.target.value as SecurityReviewResult }))}
-              >
-                <option value="PASS">PASS</option>
-                <option value="FAIL">FAIL</option>
-              </select>
-            </div>
-            <div>
+          <FormGrid>
+            <SelectField
+              label="Plant"
+              value={allowPlantSelection ? backupForm.plantId : resolveOperationPlantId(backupForm.plantId)}
+              onChange={(value) => setBackupForm((current) => ({ ...current, plantId: value }))}
+              options={plantSelectOptions}
+              disabled={!allowPlantSelection}
+            />
+            <InputField
+              label="Performed At"
+              type="datetime-local"
+              value={backupForm.performedAt}
+              onChange={(value) => setBackupForm((current) => ({ ...current, performedAt: value }))}
+            />
+            <InputField
+              label="RTO (minutes)"
+              type="number"
+              value={backupForm.rtoMinutes}
+              onChange={(value) => setBackupForm((current) => ({ ...current, rtoMinutes: value }))}
+            />
+            <InputField
+              label="RPO (minutes)"
+              type="number"
+              value={backupForm.rpoMinutes}
+              onChange={(value) => setBackupForm((current) => ({ ...current, rpoMinutes: value }))}
+            />
+            <SelectField
+              label="Result"
+              value={backupForm.result}
+              onChange={(value) => setBackupForm((current) => ({ ...current, result: value as SecurityReviewResult }))}
+              options={[
+                { value: "PASS", label: "PASS" },
+                { value: "FAIL", label: "FAIL" }
+              ]}
+            />
+            <div className="sm:col-span-2">
               <p className="mb-1 text-xs text-muted-foreground">Notes</p>
               <Textarea
                 value={backupForm.notes}
@@ -962,7 +964,7 @@ export default function SecurityCenter() {
                 placeholder="Optional restore drill notes"
               />
             </div>
-          </div>
+          </FormGrid>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBackupDialogOpen(false)} disabled={isSubmittingOperation}>Cancel</Button>
             <Button onClick={() => void handleRecordBackupRecovery()} disabled={isSubmittingOperation}>
@@ -973,58 +975,41 @@ export default function SecurityCenter() {
       </Dialog>
 
       <Dialog open={fileDialogOpen} onOpenChange={setFileDialogOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Record File Security Review</DialogTitle>
             <DialogDescription>Capture secure file handling validation for ISO 27001 A.8.12.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Plant</p>
-              <select
-                aria-label="File security review plant"
-                title="File security review plant"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={allowPlantSelection ? fileForm.plantId : resolveOperationPlantId(fileForm.plantId)}
-                onChange={(event) => setFileForm((current) => ({ ...current, plantId: event.target.value }))}
-                disabled={!allowPlantSelection}
-              >
-                <option value="">{allowPlantSelection ? "Select Plant" : "Scoped Plant"}</option>
-                {plantSelectOptions.map((plant) => (
-                  <option key={plant.value} value={plant.value}>{plant.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Performed At</p>
-              <Input
-                type="datetime-local"
-                value={fileForm.performedAt}
-                onChange={(event) => setFileForm((current) => ({ ...current, performedAt: event.target.value }))}
-              />
-            </div>
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Module Name</p>
-              <Input
-                value={fileForm.moduleName}
-                onChange={(event) => setFileForm((current) => ({ ...current, moduleName: event.target.value }))}
-                placeholder="e.g. QR, Assets, Workorders"
-              />
-            </div>
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Result</p>
-              <select
-                aria-label="File security review result"
-                title="File security review result"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={fileForm.result}
-                onChange={(event) => setFileForm((current) => ({ ...current, result: event.target.value as SecurityReviewResult }))}
-              >
-                <option value="PASS">PASS</option>
-                <option value="FAIL">FAIL</option>
-              </select>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
+          <FormGrid>
+            <SelectField
+              label="Plant"
+              value={allowPlantSelection ? fileForm.plantId : resolveOperationPlantId(fileForm.plantId)}
+              onChange={(value) => setFileForm((current) => ({ ...current, plantId: value }))}
+              options={plantSelectOptions}
+              disabled={!allowPlantSelection}
+            />
+            <InputField
+              label="Performed At"
+              type="datetime-local"
+              value={fileForm.performedAt}
+              onChange={(value) => setFileForm((current) => ({ ...current, performedAt: value }))}
+            />
+            <InputField
+              label="Module Name"
+              value={fileForm.moduleName}
+              onChange={(value) => setFileForm((current) => ({ ...current, moduleName: value }))}
+              placeholder="e.g. QR, Assets, Workorders"
+            />
+            <SelectField
+              label="Result"
+              value={fileForm.result}
+              onChange={(value) => setFileForm((current) => ({ ...current, result: value as SecurityReviewResult }))}
+              options={[
+                { value: "PASS", label: "PASS" },
+                { value: "FAIL", label: "FAIL" }
+              ]}
+            />
+            <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox checked={fileForm.mimeValidation} onCheckedChange={(value) => setFileForm((current) => ({ ...current, mimeValidation: boolFromCheckbox(value) }))} />
                 MIME validation
@@ -1042,7 +1027,7 @@ export default function SecurityCenter() {
                 Malware scanning
               </label>
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <p className="mb-1 text-xs text-muted-foreground">Notes</p>
               <Textarea
                 value={fileForm.notes}
@@ -1050,7 +1035,7 @@ export default function SecurityCenter() {
                 placeholder="Optional validation notes"
               />
             </div>
-          </div>
+          </FormGrid>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFileDialogOpen(false)} disabled={isSubmittingOperation}>Cancel</Button>
             <Button onClick={() => void handleRecordFileSecurity()} disabled={isSubmittingOperation}>
@@ -1061,70 +1046,49 @@ export default function SecurityCenter() {
       </Dialog>
 
       <Dialog open={supplierDialogOpen} onOpenChange={setSupplierDialogOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Record Supplier Security Attestation</DialogTitle>
             <DialogDescription>Capture third-party attestation status for ISO 27001 A.5.19 and A.5.20.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Plant</p>
-              <select
-                aria-label="Supplier attestation plant"
-                title="Supplier attestation plant"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={allowPlantSelection ? supplierForm.plantId : resolveOperationPlantId(supplierForm.plantId)}
-                onChange={(event) => setSupplierForm((current) => ({ ...current, plantId: event.target.value }))}
-                disabled={!allowPlantSelection}
-              >
-                <option value="">{allowPlantSelection ? "Select Plant" : "Scoped Plant"}</option>
-                {plantSelectOptions.map((plant) => (
-                  <option key={plant.value} value={plant.value}>{plant.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Performed At</p>
-              <Input
-                type="datetime-local"
-                value={supplierForm.performedAt}
-                onChange={(event) => setSupplierForm((current) => ({ ...current, performedAt: event.target.value }))}
-              />
-            </div>
-            <div>
-              <p className="mb-1 text-xs text-muted-foreground">Supplier Name</p>
-              <Input
-                value={supplierForm.vendorName}
-                onChange={(event) => setSupplierForm((current) => ({ ...current, vendorName: event.target.value }))}
-                placeholder="Supplier / vendor name"
-              />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="mb-1 text-xs text-muted-foreground">Attestation Status</p>
-                <select
-                  aria-label="Supplier attestation status"
-                  title="Supplier attestation status"
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={supplierForm.attestationStatus}
-                  onChange={(event) => setSupplierForm((current) => ({ ...current, attestationStatus: event.target.value as SupplierAttestationStatus }))}
-                >
-                  <option value="VALID">VALID</option>
-                  <option value="PENDING">PENDING</option>
-                  <option value="EXPIRED">EXPIRED</option>
-                  <option value="REJECTED">REJECTED</option>
-                </select>
-              </div>
-              <div>
-                <p className="mb-1 text-xs text-muted-foreground">Valid Until (optional)</p>
-                <Input
-                  type="datetime-local"
-                  value={supplierForm.validUntil}
-                  onChange={(event) => setSupplierForm((current) => ({ ...current, validUntil: event.target.value }))}
-                />
-              </div>
-            </div>
-            <div>
+          <FormGrid>
+            <SelectField
+              label="Plant"
+              value={allowPlantSelection ? supplierForm.plantId : resolveOperationPlantId(supplierForm.plantId)}
+              onChange={(value) => setSupplierForm((current) => ({ ...current, plantId: value }))}
+              options={plantSelectOptions}
+              disabled={!allowPlantSelection}
+            />
+            <InputField
+              label="Performed At"
+              type="datetime-local"
+              value={supplierForm.performedAt}
+              onChange={(value) => setSupplierForm((current) => ({ ...current, performedAt: value }))}
+            />
+            <InputField
+              label="Supplier Name"
+              value={supplierForm.vendorName}
+              onChange={(value) => setSupplierForm((current) => ({ ...current, vendorName: value }))}
+              placeholder="Supplier / vendor name"
+            />
+            <SelectField
+              label="Attestation Status"
+              value={supplierForm.attestationStatus}
+              onChange={(value) => setSupplierForm((current) => ({ ...current, attestationStatus: value as SupplierAttestationStatus }))}
+              options={[
+                { value: "VALID", label: "VALID" },
+                { value: "PENDING", label: "PENDING" },
+                { value: "EXPIRED", label: "EXPIRED" },
+                { value: "REJECTED", label: "REJECTED" }
+              ]}
+            />
+            <InputField
+              label="Valid Until (optional)"
+              type="datetime-local"
+              value={supplierForm.validUntil}
+              onChange={(value) => setSupplierForm((current) => ({ ...current, validUntil: value }))}
+            />
+            <div className="sm:col-span-2">
               <p className="mb-1 text-xs text-muted-foreground">Notes</p>
               <Textarea
                 value={supplierForm.notes}
@@ -1132,7 +1096,7 @@ export default function SecurityCenter() {
                 placeholder="Optional attestation notes"
               />
             </div>
-          </div>
+          </FormGrid>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSupplierDialogOpen(false)} disabled={isSubmittingOperation}>Cancel</Button>
             <Button onClick={() => void handleRecordSupplierSecurity()} disabled={isSubmittingOperation}>

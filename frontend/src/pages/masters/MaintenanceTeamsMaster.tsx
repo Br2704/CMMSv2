@@ -23,7 +23,8 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { createMaintenanceTeam, deleteMaintenanceTeam, listMaintenanceTeams, type MaintenanceTeam, updateMaintenanceTeam } from "@/api/maintenanceTeams";
 import { listPlants, type Plant } from "@/api/plants";
 import { listUsers, type UserProfile } from "@/api/users";
-import { isAdmin, isSuperAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isSuperAdmin } from "@/lib/permission-engine";
 import { ChevronDown, Edit, Eye, Plus, Search, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 
@@ -109,8 +110,8 @@ function UsersMultiSelect({
 
 export default function MaintenanceTeamsMaster() {
   const { user } = useAuthStore();
-  const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user);
+  const canManage = isAdminLevel(user?.roles ?? []);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
 
   const [plants, setPlants] = useState<Plant[]>([]);
@@ -350,28 +351,29 @@ export default function MaintenanceTeamsMaster() {
         }
       />
 
-      <Card className="shadow-card">
-        <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-end sm:justify-between">
-          {canSelectPlant ? (
-            <div className="w-full sm:max-w-sm">
-              <SelectField label="Plant" value={selectedPlantId} onChange={setSelectedPlantId} options={plantOptions} placeholder="Select plant" />
-            </div>
-          ) : (
-            <div>
-              <p className="text-sm font-medium">Plant</p>
-              <p className="text-sm text-muted-foreground">{user?.plantCode || "Plant"} - {user?.plantName || "Assigned Plant"}</p>
-            </div>
-          )}
-          <div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            Keep teams simple: one leader, multiple members, one plant scope.
-          </div>
-        </CardContent>
-      </Card>
-
       <DataTableShell
-        title={<span className="flex items-center gap-2"><Users className="h-5 w-5 text-primary" />Maintenance Teams ({teams.length})</span>}
+        title={
+          <div className="flex flex-col gap-2">
+            <span className="flex items-center gap-2"><Users className="h-5 w-5 text-primary" />Maintenance Teams ({teams.length})</span>
+            <div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground w-fit">
+              Keep teams simple: one leader, multiple members, one plant scope.
+            </div>
+          </div>
+        }
         toolbar={
           <Toolbar
+            left={
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                {canSelectPlant ? (
+                  <SelectField label="" value={selectedPlantId} onChange={setSelectedPlantId} options={plantOptions} placeholder="Select plant" className="w-full sm:w-[160px]" />
+                ) : (
+                  <div className="text-sm">
+                    <span className="font-medium mr-2">Plant:</span>
+                    <span className="text-muted-foreground">{user?.plantCode || "Plant"} - {user?.plantName || "Assigned Plant"}</span>
+                  </div>
+                )}
+              </div>
+            }
             right={
               <div className="relative w-full sm:w-72">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

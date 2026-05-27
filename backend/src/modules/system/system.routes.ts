@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { AuditLogEntity, RefreshTokenEntity, SecurityEventEntity, SystemConfigEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requireRole } from '../../middlewares/permissions';
+import { requireRole } from '../../middlewares/permissionGuard';
 import { validateRequest } from '../../middlewares/validate';
 import { ok, fail } from '../../utils/apiResponse';
 import { getHierarchyConsistencyBreakdown } from '../../utils/hierarchy';
@@ -67,7 +67,7 @@ systemRouter.get('/system/health', async (_req, res) => {
   );
 });
 
-systemRouter.use('/system', requireAuth, requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']));
+systemRouter.use('/system', requireAuth, requireRole(['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN']));
 
 systemRouter.get('/system/health/details', async (_req, res, next) => {
   try {

@@ -108,3 +108,6 @@ export * from './notification-settings.entity';
 export * from './maintenance-report.entity';
 export * from './system-config.entity';
 export * from './report-format-config.entity';
+export * from './BackupHistoryEntity';
+export * from './RestoreHistoryEntity';
+export * from './BackupAuditLogEntity';

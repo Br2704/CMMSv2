@@ -15,7 +15,7 @@ import {
   WorkOrderEntity,
 } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { fail, ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { badRequest } from '../../utils/httpError';
@@ -54,15 +54,12 @@ function isVendorUser(roles: string[]) {
 function isInternalVerifier(roles: string[]) {
   return roles.some((role) =>
     [
-      'SUPERADMIN',
-      'ADMIN',
+      'SUPER_ADMIN',
+      'PLANT_ADMIN',
       'PLANT_ADMIN',
       'MAINTENANCE_MANAGER',
-      'MECHANICAL_INCHARGE',
-      'ELECTRICAL_INCHARGE',
-      'UTILITY_INCHARGE',
-      'TOOLCHANGE_INCHARGE',
-      'CALIBRATION_INCHARGE',
+      'MAINTENANCE_USER',
+      'CALIBRATION_USER',
     ].includes(role.toUpperCase()),
   );
 }
@@ -574,7 +571,7 @@ amcRouter.get('/amc/service-reports', requirePermission('AMC', 'READ'), async (r
   }
 });
 
-amcRouter.post('/amc/service-reports', requireRole(['VENDOR', 'SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER']), requirePermission('AMC', 'CREATE'), async (req, res, next) => {
+amcRouter.post('/amc/service-reports', requireRole(['VENDOR', 'SUPER_ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER']), requirePermission('AMC', 'CREATE'), async (req, res, next) => {
   try {
     const body = serviceReportSchema.parse(req.body);
     const vendorScopedIds = await resolveVendorScope(req.auth!);
@@ -1079,7 +1076,7 @@ amcRouter.delete('/amc/:id', requirePermission('AMC', 'DELETE'), async (req, res
   }
 });
 
-amcRouter.post('/amc/notify-vendor', requireRole(['SUPERADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER']), requirePermission('AMC', 'UPDATE'), async (req, res, next) => {
+amcRouter.post('/amc/notify-vendor', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER']), requirePermission('AMC', 'UPDATE'), async (req, res, next) => {
   try {
     const payload = notifySchema.parse(req.body);
     if (payload.to && payload.subject && payload.message) {

@@ -119,8 +119,8 @@ function normalizeRoleKeyForPolicy(roleKey: string) {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
-  if (normalized === "SUPER_ADMIN") return "SUPERADMIN";
-  if (normalized === "SECURITY_USER") return "SECURITY";
+  if (normalized === "SUPER_ADMIN") return "SUPER_ADMIN";
+  if (normalized === "SECURITY") return "SECURITY";
   return normalized;
 }
 
@@ -138,7 +138,7 @@ function applySystemRolePolicy(roleKey: string, input: OrgRolePermissionMap) {
 
   const isInputEmpty = Object.keys(normalized).length === 0;
 
-  if (normalizedRoleKey === "SUPERADMIN") {
+  if (normalizedRoleKey === "SUPER_ADMIN") {
     const next = buildFullAccessMapFromCatalog(normalized);
     next.ORGANIZATIONS = ["READ"];
     next.PLANTS = ["READ", "UPDATE"];
@@ -169,7 +169,7 @@ function applySystemRolePolicy(roleKey: string, input: OrgRolePermissionMap) {
       });
       return map;
     }
-    if (normalizedRoleKey === "SAFETY_OFFICER") {
+    if (normalizedRoleKey === "SAFETY_USER") {
       const map: OrgRolePermissionMap = {};
       ["GATES", "ESG", "SAFETY", "ALERTS"].forEach(mod => {
         map[mod] = ["READ", "UPDATE", "EXPORT"];
@@ -190,11 +190,11 @@ function applySystemRolePolicy(roleKey: string, input: OrgRolePermissionMap) {
 
 function getSystemRolePolicyHint(roleKey: string): string | null {
   const normalizedRoleKey = normalizeRoleKeyForPolicy(roleKey);
-  if (normalizedRoleKey === "SUPERADMIN") return "SUPERADMIN policy is fixed: full organization access across modules, with Plant Master limited to view and edit.";
+  if (normalizedRoleKey === "SUPER_ADMIN") return "Super Admin policy is fixed: full organization access across modules, with Plant Master limited to view and edit.";
   if (normalizedRoleKey === "MAINTENANCE_MANAGER") return "Maintenance Manager baseline: full access to maintenance, assets, and inventory modules.";
   if (normalizedRoleKey === "MAINTENANCE_USER") return "Maintenance User baseline: operational access to work orders, PMs, and assets.";
   if (normalizedRoleKey === "HR_USER") return "HR User baseline: focus on user management, departments, and shift configuration.";
-  if (normalizedRoleKey === "SAFETY_OFFICER") return "Safety Officer baseline: access to gate logs, safety tracking, and ESG reporting.";
+  if (normalizedRoleKey === "SAFETY_USER") return "Safety User baseline: access to gate logs, safety tracking, and ESG reporting.";
   return null;
 }
 
@@ -603,7 +603,7 @@ export default function RootRoleAccessMaster() {
   }> = {
     READ_ONLY: { label: "Read Only", actions: ["READ"] },
     READ_WRITE: { label: "Read/Write", actions: ["READ", "CREATE", "UPDATE"] },
-    OPERATOR: { label: "Operator", actions: ["READ", "CREATE"] },
+    PRODUCTION_USER: { label: "Production User", actions: ["READ", "CREATE"] },
     FULL_ACCESS: { label: "Full Access", actions: ["READ", "CREATE", "UPDATE", "DELETE", "EXPORT"] },
     MANAGER: { label: "Manager", actions: ["READ", "CREATE", "UPDATE", "DELETE", "EXPORT", "APPROVE", "ASSIGN", "REJECT"] },
     INSPECTOR: { label: "Inspector", actions: ["READ", "APPROVE", "REJECT"] },
@@ -772,7 +772,7 @@ export default function RootRoleAccessMaster() {
                   size="sm"
                   variant="destructive"
                   onClick={() => setIsDeleteRoleOpen(true)}
-                  disabled={!selectedRole || selectedRole.key === "SUPERADMIN"}
+                  disabled={!selectedRole || selectedRole.key === "SUPER_ADMIN"}
                   className="w-full justify-start text-[11px] h-8 px-2 col-span-2"
                 >
                   <Trash2 className="mr-1.5 h-3.5 w-3.5" />
@@ -964,7 +964,7 @@ export default function RootRoleAccessMaster() {
                     ))}
                   </div>
 
-                  {selectedRole?.key === "SUPERADMIN" ? (
+                  {selectedRole?.key === "SUPER_ADMIN" ? (
                     <div className="rounded-2xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-xs text-amber-900">
                       {getSystemRolePolicyHint(selectedRole.key) || "System role policy is enforced for this role."}
                     </div>
@@ -975,7 +975,7 @@ export default function RootRoleAccessMaster() {
                     <div className="flex flex-wrap gap-2">
                       <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("READ_ONLY"); } }} title="View only access to the selected page">Read Only</Button>
                       <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("FULL_ACCESS"); } }} title="Full CRUD + approve access">Full Access</Button>
-                      <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("OPERATOR"); } }} title="Read + create, no edit or delete">Operator</Button>
+                      <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("PRODUCTION_USER"); } }} title="Read + create, no edit or delete">Production User</Button>
                       <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("READ_WRITE"); } }} title="Read + create + update, no delete">Read/Write</Button>
                       <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("MANAGER"); } }} title="Full access + approve + assign">Manager</Button>
                       <Button size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => { if (selectedPage) { applyPermissionTemplate("INSPECTOR"); } }} title="Read + approve/reject, no create">Inspector</Button>

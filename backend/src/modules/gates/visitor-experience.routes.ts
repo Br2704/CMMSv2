@@ -21,8 +21,9 @@ import {
   VisitorTrackingEntity,
 } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { fail, ok } from '../../utils/apiResponse';
+import { APP_NAME } from '../../config/branding';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { resolveScopedPlantId } from '../../utils/plantScope';
 import { publishNotificationChange } from '../notifications/notification-stream';
@@ -97,7 +98,7 @@ const experienceMetaSchema = z.object({
 
 const contentSchema = z.object({
   plantId: optionalUuid,
-  pageTitle: z.string().min(1).max(200).default('Welcome to TamOptiX CMMS'),
+  pageTitle: z.string().min(1).max(200).default(`Welcome to ${APP_NAME}`),
   companyOverview: optionalString,
   contactName: optionalString,
   contactEmail: optionalString,
@@ -250,9 +251,10 @@ function normalizeString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function isPrivilegedApprover(roles: string[]): boolean {
+function isPrivilegedApprover(roles: string[] = []): boolean {
+  if (!roles) return false;
   const normalizedRoles = roles.map((role) => role.toUpperCase());
-  return normalizedRoles.some((role) => ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'SECURITY', 'SECURITY_USER'].includes(role));
+  return normalizedRoles.some((role) => ['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'SECURITY', 'SECURITY'].includes(role));
 }
 
 function parseLayoutData(input: unknown): { nodes: LayoutNode[]; edges: LayoutEdge[] } {
@@ -642,7 +644,7 @@ visitorExperienceRouter.get('/visitor-experience/content', requirePermission('GA
         {
           id: content?.id ?? null,
           plantId: resolvedPlantId,
-          pageTitle: content?.pageTitle ?? (plant?.plantName ? `Welcome to ${plant.plantName}` : 'Welcome to TamOptiX CMMS'),
+          pageTitle: content?.pageTitle ?? (plant?.plantName ? `Welcome to ${plant.plantName}` : `Welcome to ${APP_NAME}`),
           companyOverview:
             content?.companyOverview ??
             'TamOptiX combines industrial excellence with modern digital operations for safer, faster, and smarter maintenance.',
@@ -674,7 +676,7 @@ visitorExperienceRouter.get('/visitor-experience/content', requirePermission('GA
   }
 });
 
-visitorExperienceRouter.put('/visitor-experience/content', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
+visitorExperienceRouter.put('/visitor-experience/content', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const body = contentSchema.parse(req.body);
     const resolvedPlantId = resolveScopedPlantId(req.auth!, body.plantId ?? null);
@@ -910,7 +912,7 @@ visitorExperienceRouter.get('/visitor-experience/layout', requirePermission('GAT
   }
 });
 
-visitorExperienceRouter.put('/visitor-experience/layout', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
+visitorExperienceRouter.put('/visitor-experience/layout', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const body = layoutSchema.parse(req.body);
     const resolvedPlantId = resolveScopedPlantId(req.auth!, body.plantId);
@@ -1104,37 +1106,37 @@ visitorExperienceRouter.get('/visitor-requests', requirePermission('GATES', 'REA
       .leftJoinAndSelect('entry.personToMeetUser', 'personToMeetUser')
       .leftJoinAndSelect('entry.approvalByUser', 'approvalByUser')
       .where(new Brackets((where) => {
-        where.where('entry.approval_status <> :notRequired', { notRequired: 'NOT_REQUIRED' });
-        where.orWhere('entry.visitor_type LIKE :visitorType', { visitorType: 'VISITOR%' });
+        where.where('entry.approvalStatus <> :notRequired', { notRequired: 'NOT_REQUIRED' });
+        where.orWhere('entry.visitorType LIKE :visitorType', { visitorType: 'VISITOR%' });
       }));
 
     if (resolvedPlantId) {
-      qb.andWhere('entry.plant_id = :plantId', { plantId: resolvedPlantId });
+      qb.andWhere('entry.plantId = :plantId', { plantId: resolvedPlantId });
     } else if (!req.auth?.accessAllPlants) {
       const plantIds = req.auth?.plantIds ?? [];
       if (plantIds.length === 0) {
         res.json(ok([], 'Visitor requests fetched', buildPagination(query.page, query.limit, 0)));
         return;
       }
-      qb.andWhere('entry.plant_id IN (:...plantIds)', { plantIds });
+      qb.andWhere('entry.plantId IN (:...plantIds)', { plantIds });
     }
 
-    const roleRestrictedAllScope = !isPrivilegedApprover(req.auth!.roles) && filters.scope === 'all';
+    const roleRestrictedAllScope = !isPrivilegedApprover(req.auth!.roles ?? []) && filters.scope === 'all';
 
     if (filters.scope === 'my-requests' || roleRestrictedAllScope) {
-      qb.andWhere('entry.recorded_by = :actorUserId', { actorUserId: req.auth!.userId });
+      qb.andWhere('entry.recordedBy = :actorUserId', { actorUserId: req.auth!.userId });
     }
 
     if (filters.scope === 'approvals') {
-      qb.andWhere('entry.person_to_meet_user_id = :actorUserId', { actorUserId: req.auth!.userId });
+      qb.andWhere('entry.personToMeetUserId = :actorUserId', { actorUserId: req.auth!.userId });
     }
 
     if (filters.personToMeetUserId) {
-      qb.andWhere('entry.person_to_meet_user_id = :personToMeetUserId', { personToMeetUserId: filters.personToMeetUserId });
+      qb.andWhere('entry.personToMeetUserId = :personToMeetUserId', { personToMeetUserId: filters.personToMeetUserId });
     }
 
     if (filters.approvalStatus) {
-      qb.andWhere('LOWER(entry.approval_status) = :approvalStatus', { approvalStatus: filters.approvalStatus.toLowerCase() });
+      qb.andWhere('LOWER(entry.approvalStatus) = :approvalStatus', { approvalStatus: filters.approvalStatus.toLowerCase() });
     }
 
     if (filters.status) {
@@ -1145,10 +1147,10 @@ visitorExperienceRouter.get('/visitor-requests', requirePermission('GATES', 'REA
       const searchTerm = `%${query.search.toLowerCase()}%`;
       qb.andWhere(
         new Brackets((search) => {
-          search.where('LOWER(entry.visitor_name) LIKE :search', { search: searchTerm });
-          search.orWhere("LOWER(COALESCE(entry.visitor_company, '')) LIKE :search", { search: searchTerm });
+          search.where('LOWER(entry.visitorName) LIKE :search', { search: searchTerm });
+          search.orWhere("LOWER(COALESCE(entry.visitorCompany, '')) LIKE :search", { search: searchTerm });
           search.orWhere("LOWER(COALESCE(entry.purpose, '')) LIKE :search", { search: searchTerm });
-          search.orWhere("LOWER(COALESCE(entry.person_to_meet, '')) LIKE :search", { search: searchTerm });
+          search.orWhere("LOWER(COALESCE(entry.personToMeet, '')) LIKE :search", { search: searchTerm });
         }),
       );
     }
@@ -1190,7 +1192,7 @@ visitorExperienceRouter.patch('/visitor-requests/:id/approval', requirePermissio
     }
 
     const actorIsAssignedEmployee = entry.personToMeetUserId === req.auth!.userId;
-    const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles);
+    const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles ?? []);
 
     if (!actorIsAssignedEmployee && !actorIsPrivileged) {
       res.status(403).json(fail('Only the assigned employee or admin/security roles can review this request'));
@@ -1252,7 +1254,7 @@ visitorExperienceRouter.patch('/visitor-requests/:id/approval', requirePermissio
     if (isApprove && body.escortUserId) notificationTargets.add(body.escortUserId);
 
     if (entry.plantId && isApprove) {
-      const securityRoles = await roleRepo.find({ where: [{ role: 'SECURITY' }, { role: 'SECURITY_USER' }] });
+      const securityRoles = await roleRepo.find({ where: [{ role: 'SECURITY' }, { role: 'SECURITY' }] });
       const securityUserIds = securityRoles.map((role) => role.userId);
       if (securityUserIds.length > 0) {
         const securityProfiles = await profileRepo.find({ where: securityUserIds.map((userId) => ({ userId })) });
@@ -1317,7 +1319,7 @@ visitorExperienceRouter.post('/visitor-requests/:id/navigation-checkins', requir
 
     const actorIsRequester = entry.recordedBy === req.auth!.userId;
     const actorIsAssignee = entry.personToMeetUserId === req.auth!.userId;
-    const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles);
+    const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles ?? []);
     if (!actorIsRequester && !actorIsAssignee && !actorIsPrivileged) {
       res.status(403).json(fail('No permission to update visitor navigation for this request'));
       return;
@@ -1376,7 +1378,7 @@ visitorExperienceRouter.get('/visitor-requests/:id/navigation', requirePermissio
 
     const actorIsRequester = entry.recordedBy === req.auth!.userId;
     const actorIsAssignee = entry.personToMeetUserId === req.auth!.userId;
-    const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles);
+    const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles ?? []);
     if (!actorIsRequester && !actorIsAssignee && !actorIsPrivileged) {
       res.status(403).json(fail('No permission to view navigation for this request'));
       return;
@@ -1766,7 +1768,7 @@ visitorExperienceRouter.post('/visitor/sos', async (req, res, next) => {
     const notificationRepo = AppDataSource.getRepository(NotificationEntity);
 
     const roleRows = await roleRepo.find({
-      where: [{ role: 'SECURITY' }, { role: 'SECURITY_USER' }, { role: 'ADMIN' }, { role: 'SUPERADMIN' }],
+      where: [{ role: 'SECURITY' }, { role: 'SECURITY' }, { role: 'PLANT_ADMIN' }, { role: 'SUPER_ADMIN' }],
     });
 
     const uniqueUserIds = Array.from(new Set(roleRows.map((row) => row.userId).filter(Boolean)));
@@ -1843,12 +1845,12 @@ visitorExperienceRouter.get('/gate-dashboard/visitor-insights', requirePermissio
     const baseQb = repo
       .createQueryBuilder('entry')
       .where(new Brackets((where) => {
-        where.where('entry.approval_status <> :notRequired', { notRequired: 'NOT_REQUIRED' });
-        where.orWhere('entry.visitor_type LIKE :visitorType', { visitorType: 'VISITOR%' });
+        where.where('entry.approvalStatus <> :notRequired', { notRequired: 'NOT_REQUIRED' });
+        where.orWhere('entry.visitorType LIKE :visitorType', { visitorType: 'VISITOR%' });
       }));
 
     if (resolvedPlantId) {
-      baseQb.andWhere('entry.plant_id = :plantId', { plantId: resolvedPlantId });
+      baseQb.andWhere('entry.plantId = :plantId', { plantId: resolvedPlantId });
     } else if (!req.auth?.accessAllPlants) {
       const plantIds = req.auth?.plantIds ?? [];
       if (plantIds.length === 0) {
@@ -1869,7 +1871,7 @@ visitorExperienceRouter.get('/gate-dashboard/visitor-insights', requirePermissio
         );
         return;
       }
-      baseQb.andWhere('entry.plant_id IN (:...plantIds)', { plantIds });
+      baseQb.andWhere('entry.plantId IN (:...plantIds)', { plantIds });
     }
 
     const [
@@ -1882,27 +1884,27 @@ visitorExperienceRouter.get('/gate-dashboard/visitor-insights', requirePermissio
       liveTracked,
       perEmployeeRaw,
     ] = await Promise.all([
-      baseQb.clone().andWhere('entry.approval_status = :status', { status: 'PENDING' }).getCount(),
+      baseQb.clone().andWhere('entry.approvalStatus = :status', { status: 'PENDING' }).getCount(),
       baseQb
         .clone()
-        .andWhere('entry.approval_status = :status', { status: 'APPROVED' })
-        .andWhere('entry.approval_responded_at >= :dayStart', { dayStart })
+        .andWhere('entry.approvalStatus = :status', { status: 'APPROVED' })
+        .andWhere('entry.approvalRespondedAt >= :dayStart', { dayStart })
         .getCount(),
       baseQb
         .clone()
-        .andWhere('entry.approval_status = :status', { status: 'REJECTED' })
-        .andWhere('entry.approval_responded_at >= :dayStart', { dayStart })
+        .andWhere('entry.approvalStatus = :status', { status: 'REJECTED' })
+        .andWhere('entry.approvalRespondedAt >= :dayStart', { dayStart })
         .getCount(),
       baseQb.clone().andWhere('entry.status = :status', { status: 'IN' }).getCount(),
-      baseQb.clone().andWhere('entry.navigation_enabled = :enabled', { enabled: true }).getCount(),
-      baseQb.clone().andWhere('entry.created_at >= :dayStart', { dayStart }).getCount(),
-      baseQb.clone().andWhere('entry.current_location_node_id IS NOT NULL').getCount(),
+      baseQb.clone().andWhere('entry.navigationEnabled = :enabled', { enabled: true }).getCount(),
+      baseQb.clone().andWhere('entry.createdAt >= :dayStart', { dayStart }).getCount(),
+      baseQb.clone().andWhere('entry.currentLocationNodeId IS NOT NULL').getCount(),
       baseQb
         .clone()
-        .select('entry.person_to_meet_user_id', 'userId')
+        .select('entry.personToMeetUserId', 'userId')
         .addSelect('COUNT(1)', 'total')
-        .andWhere('entry.person_to_meet_user_id IS NOT NULL')
-        .groupBy('entry.person_to_meet_user_id')
+        .andWhere('entry.personToMeetUserId IS NOT NULL')
+        .groupBy('entry.personToMeetUserId')
         .orderBy('COUNT(1)', 'DESC')
         .limit(10)
         .getRawMany<{ userId: string; total: string }>(),

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { AppDataSource } from '../../database/data-source';
 import { OrganizationEntity, OrgRoleEntity, PlantEntity, ProfileEntity, UserEntity, UserRoleEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requirePermission } from '../../middlewares/permissions';
+import { requirePermission } from '../../middlewares/permissionGuard';
 import { validateRequest } from '../../middlewares/validate';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { fail, ok } from '../../utils/apiResponse';
@@ -53,9 +53,9 @@ async function loadOrganizationCounts(organizationIds: string[]) {
     .leftJoin(UserRoleEntity, 'ur', 'ur.user_id = usr.id')
     .select(orgScopeExpression, 'organizationId')
     .addSelect('COUNT(DISTINCT usr.id)', 'usersCount')
-    .addSelect("COUNT(DISTINCT CASE WHEN UPPER(COALESCE(org_role.key, ur.role, '')) = 'ADMIN' THEN usr.id END)", 'adminsCount')
+    .addSelect("COUNT(DISTINCT CASE WHEN UPPER(COALESCE(org_role.key, ur.role, '')) = 'PLANT_ADMIN' THEN usr.id END)", 'adminsCount')
     .addSelect(
-      "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(org_role.key, ur.role, '')) IN ('SUPERADMIN', 'SUPER_ADMIN') THEN usr.id END)",
+      "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(org_role.key, ur.role, '')) IN ('SUPER_ADMIN', 'SUPER_ADMIN') THEN usr.id END)",
       'superadminsCount',
     )
     .where('usr.is_active = :active', { active: true })

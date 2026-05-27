@@ -2,7 +2,7 @@ import { RBAC_ACTIONS, RBAC_MODULE_KEYS, normalizeActions, normalizeModuleKey, n
 
 export type PermissionMap = Record<string, string[]>;
 
-const SYSTEM_MANAGED_ORG_ROLE_KEYS = new Set(['SUPERADMIN']);
+const SYSTEM_MANAGED_ORG_ROLE_KEYS = new Set(['SUPER_ADMIN']);
 const USER_BLOCKED_MODULES = new Set(['MASTERS', 'PLANTS', 'ORGANIZATIONS', 'ROLE_ACCESS', 'MODULES', 'DEPARTMENTS', 'USERS', 'VENDORS', 'SHIFTS']);
 const ADMIN_BLOCKED_MODULES = new Set([] as string[]);
 const VENDOR_ALLOWED_MODULES = new Set(['AMC']);
@@ -17,7 +17,7 @@ const PRODUCTION_USER_ALLOWED_MODULES = new Set(['DASHBOARD', 'WORK_ORDERS', 'AS
 
 function normalizeSystemRoleKey(roleKey: string): string {
   const normalized = normalizeRoleName(roleKey);
-  if (normalized === 'SECURITY_USER') return 'SECURITY';
+  if (normalized === 'SECURITY') return 'SECURITY';
   return normalized;
 }
 
@@ -75,8 +75,8 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
   const normalizedInput = normalizePermissionMap(input);
   const isInputEmpty = Object.keys(normalizedInput).length === 0;
 
-  // SUPERADMIN policy is always strictly enforced to ensure org recovery.
-  if (normalizedRole === 'SUPERADMIN') {
+  // SUPER_ADMIN policy is always strictly enforced to ensure org recovery.
+  if (normalizedRole === 'SUPER_ADMIN') {
     const map = buildAllModulesPermissionMap();
     map.ORGANIZATIONS = ['READ'];
     map.PLANTS = ['READ', 'UPDATE'];
@@ -90,7 +90,7 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
   }
 
   // Baseline defaults for newly created or unconfigured system roles:
-  if (normalizedRole === 'ADMIN') {
+  if (normalizedRole === 'PLANT_ADMIN') {
     const map = buildAllModulesPermissionMap(ADMIN_BLOCKED_MODULES);
     map.ORGANIZATIONS = ['READ'];
     map.PLANTS = ['READ'];
@@ -133,7 +133,7 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
     return map;
   }
 
-  if (normalizedRole === 'SAFETY_OFFICER') {
+  if (normalizedRole === 'SAFETY_USER') {
     const map = pickAllowedModules(normalizedInput, SAFETY_ALLOWED_MODULES);
     for (const mod of SAFETY_ALLOWED_MODULES) {
       if (['PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'MASTERS', 'NOTIFICATIONS', 'DASHBOARD'].includes(mod)) {
@@ -145,7 +145,7 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
     return map;
   }
 
-  if (normalizedRole === 'INVENTORY_MANAGER') {
+  if (normalizedRole === 'SCM_MANAGER') {
     const map = pickAllowedModules(normalizedInput, INVENTORY_ALLOWED_MODULES);
     for (const mod of INVENTORY_ALLOWED_MODULES) {
       if (['PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS', 'NOTIFICATIONS', 'DASHBOARD'].includes(mod)) {
@@ -181,14 +181,7 @@ export function applySystemRolePermissionPolicy(roleKey: string, input: Permissi
     return { GATES: ['READ', 'CREATE', 'UPDATE', 'EXPORT'] };
   }
 
-  if (normalizedRole === 'USER') {
-    const filtered: PermissionMap = {};
-    for (const [moduleKey, actions] of Object.entries(normalizedInput)) {
-      if (USER_BLOCKED_MODULES.has(moduleKey)) continue;
-      filtered[moduleKey] = actions;
-    }
-    return filtered;
-  }
+
 
   return normalizedInput;
 }

@@ -14,7 +14,13 @@ import { InputField, SelectField } from "@/components/shared/FormField";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { broadcastGateSync, subscribeGateSync } from "@/lib/gate-sync";
-import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isSuperAdmin } from "@/lib/permission-engine";
+import { PageShell } from "@/components/layout/PageShell";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { DataTableShell } from "@/components/layout/DataTableShell";
+import { Toolbar } from "@/components/layout/Toolbar";
+import { FormGrid } from "@/components/layout/FormGrid";
 import {
   getPlantVisitorLayout,
   savePlantVisitorLayout,
@@ -105,7 +111,7 @@ function formatVisitorType(visitorType: string) {
 
 export default function GateMaster() {
   const { user } = useAuthStore();
-  const canSelectPlant = isSuperAdmin(user);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants } = useMastersOptions();
   const syncVersionRef = useRef<string | null>(null);
@@ -649,12 +655,12 @@ export default function GateMaster() {
   }, [templateForm.gateId, templateForm.visitorTypes]);
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <PageShell>
       <BackButton />
-      <div>
-        <h1 className="text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl">Gate Master</h1>
-        <p className="text-sm text-muted-foreground">Create gates with location details and configure allowed entry types for each gate.</p>
-      </div>
+      <PageHeader
+        title="Gate Master"
+        description="Create gates with location details and configure allowed entry types for each gate."
+      />
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ActiveTab)} className="space-y-4">
         <TabsList className="grid h-auto w-full grid-cols-3">
@@ -664,23 +670,28 @@ export default function GateMaster() {
         </TabsList>
 
         <TabsContent value="gates" className="space-y-4">
-          <Card className="shadow-card">
-            <CardHeader className="pb-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="flex items-center gap-2"><DoorOpen className="h-5 w-5 text-primary" /> Gates ({filteredGates.length})</CardTitle>
-                <div className="flex flex-wrap gap-2">
+          <DataTableShell
+            title={
+              <span className="flex items-center gap-2">
+                <DoorOpen className="h-5 w-5 text-primary" /> Gates ({filteredGates.length})
+              </span>
+            }
+            toolbar={
+              <Toolbar
+                left={
                   <div className="relative min-w-[220px]">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input className="pl-9" value={searchGate} onChange={(event) => setSearchGate(event.target.value)} placeholder="Search gates..." />
                   </div>
+                }
+                right={
                   <Button onClick={openCreateGateDialog}>
                     <Plus className="mr-2 h-4 w-4" /> Add Gate
                   </Button>
-                </div>
-              </div>
-            </CardHeader>
-
-            <CardContent>
+                }
+              />
+            }
+          >
               {gatesLoading ? (
                 <div className="flex justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
               ) : filteredGates.length === 0 ? (
@@ -729,8 +740,7 @@ export default function GateMaster() {
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </DataTableShell>
 
           <FormDialog
             open={gateDialog}
@@ -781,23 +791,28 @@ export default function GateMaster() {
         </TabsContent>
 
         <TabsContent value="templates" className="space-y-4">
-          <Card className="shadow-card">
-            <CardHeader className="pb-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="flex items-center gap-2"><Settings2 className="h-5 w-5 text-primary" /> Template Configuration ({filteredTemplates.length})</CardTitle>
-                <div className="flex flex-wrap gap-2">
+          <DataTableShell
+            title={
+              <span className="flex items-center gap-2">
+                <Settings2 className="h-5 w-5 text-primary" /> Template Configuration ({filteredTemplates.length})
+              </span>
+            }
+            toolbar={
+              <Toolbar
+                left={
                   <div className="relative min-w-[220px]">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input className="pl-9" value={searchTemplate} onChange={(event) => setSearchTemplate(event.target.value)} placeholder="Search configurations..." />
                   </div>
+                }
+                right={
                   <Button onClick={openCreateTemplateDialog}>
                     <Plus className="mr-2 h-4 w-4" /> Add Configuration
                   </Button>
-                </div>
-              </div>
-            </CardHeader>
-
-            <CardContent>
+                }
+              />
+            }
+          >
               {templatesLoading ? (
                 <div className="flex justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
               ) : filteredTemplates.length === 0 ? (
@@ -852,8 +867,7 @@ export default function GateMaster() {
                   })}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </DataTableShell>
 
           <FormDialog
             open={templateDialog}
@@ -911,42 +925,47 @@ export default function GateMaster() {
         </TabsContent>
 
         <TabsContent value="plant-layout" className="space-y-4">
-          <Card className="shadow-card">
-            <CardHeader className="pb-3">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <CardTitle className="flex items-center gap-2"><MapPinned className="h-5 w-5 text-primary" /> Plant Layout GPS Mapping</CardTitle>
-                <div className="flex flex-wrap items-end gap-2">
-                  {canSelectPlant ? (
-                    <SelectField
-                      label="Plant"
-                      value={layoutPlantId}
-                      onChange={(value) => setLayoutPlantId(value)}
-                      options={plantsOptions}
-                    />
-                  ) : (
-                    <InputField label="Plant" value={plantName(defaultPlantId)} onChange={() => {}} disabled />
-                  )}
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      if (!layoutPlantId) {
-                        toast.error("Select a plant first");
-                        return;
-                      }
-                      void loadPlantLayout(layoutPlantId);
-                    }}
-                    disabled={layoutLoading || !layoutPlantId}
-                  >
-                    Reload
-                  </Button>
-                  <Button onClick={() => void saveLayout()} disabled={layoutSaving || layoutLoading || !layoutPlantId}>
-                    {layoutSaving ? "Saving..." : "Save Layout"}
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-
-            <CardContent className="space-y-4">
+          <DataTableShell
+            title={
+              <span className="flex items-center gap-2">
+                <MapPinned className="h-5 w-5 text-primary" /> Plant Layout GPS Mapping
+              </span>
+            }
+            toolbar={
+              <Toolbar
+                right={
+                  <div className="flex flex-wrap items-end gap-2">
+                    {canSelectPlant ? (
+                      <SelectField
+                        label="Plant"
+                        value={layoutPlantId}
+                        onChange={(value) => setLayoutPlantId(value)}
+                        options={plantsOptions}
+                      />
+                    ) : (
+                      <InputField label="Plant" value={plantName(defaultPlantId)} onChange={() => {}} disabled />
+                    )}
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (!layoutPlantId) {
+                          toast.error("Select a plant first");
+                          return;
+                        }
+                        void loadPlantLayout(layoutPlantId);
+                      }}
+                      disabled={layoutLoading || !layoutPlantId}
+                    >
+                      Reload
+                    </Button>
+                    <Button onClick={() => void saveLayout()} disabled={layoutSaving || layoutLoading || !layoutPlantId}>
+                      {layoutSaving ? "Saving..." : "Save Layout"}
+                    </Button>
+                  </div>
+                }
+              />
+            }
+          >
               {layoutLoading ? (
                 <div className="flex justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
               ) : !layoutPlantId ? (
@@ -1103,10 +1122,9 @@ export default function GateMaster() {
                   </div>
                 </>
               )}
-            </CardContent>
-          </Card>
+          </DataTableShell>
         </TabsContent>
       </Tabs>
-    </div>
+    </PageShell>
   );
 }

@@ -1,4 +1,5 @@
 import { type ReportFormatConfigPayload } from "@/api/reportFormat";
+import { APP_NAME, APP_TAGLINE } from "@/config/branding";
 import { FileSpreadsheet, Info, Loader2, Grid3X3 } from "lucide-react";
 import { ImageCell } from "./ImageCell";
 import { PaginationBar } from "./PaginationBar";
@@ -36,7 +37,7 @@ export function ExcelPreview({
 }) {
   const locale = config.reportLocale ?? "en";
   const now = new Date().toLocaleString(locale);
-  const title = config.headerTitle || "CMMS Report";
+  const title = config.headerTitle || APP_NAME;
   const headerWeight = config.headerBold ? "bold" : "normal";
   const headerDecor = config.headerUnderline ? "underline" : "none";
   const align = config.logoAlignment ?? "left";
@@ -291,7 +292,7 @@ export function ExcelPreview({
                 fontWeight: config.footerBold ? "bold" : "normal",
               }}
             >
-              {config.footerSubtext || "TamOptiX Technologies | Intelligent CMMS Platform"}
+              {config.footerSubtext || `${APP_NAME} | Intelligent CMMS Platform`}
             </div>
           )}
           <div
@@ -301,7 +302,7 @@ export function ExcelPreview({
               fontWeight: config.footerBold ? "bold" : "normal",
             }}
           >
-            {config.footerText || "Powered by TamOptiX Technologies"}
+            {config.footerText || APP_TAGLINE}
           </div>
         </div>
 

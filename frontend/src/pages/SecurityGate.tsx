@@ -69,7 +69,7 @@ function isSecurityRole(role: string | null | undefined) {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
-  return normalized === "SECURITY" || normalized === "SECURITY_USER";
+  return normalized === "SECURITY" || normalized === "SECURITY";
 }
 
 function defaultSummary(): GateDashboardSummary {
@@ -1032,7 +1032,7 @@ export default function SecurityGate() {
         </TabsList>
 
         <TabsContent value="desk" className="space-y-4">
-          <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[1.15fr_0.85fr]">
             <Card className="shadow-card">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
@@ -1437,7 +1437,7 @@ export default function SecurityGate() {
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
             {[
               { title: "Visitors Today", value: summary.visitorsToday, icon: Users, tone: "text-sky-600 bg-sky-500/10" },
               { title: "Active Visitors", value: summary.activeVisitors, icon: UserCheck, tone: "text-emerald-600 bg-emerald-500/10" },
@@ -1460,7 +1460,7 @@ export default function SecurityGate() {
             ))}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
               { title: "Pending Visitor Approvals", value: visitorInsights.pendingApprovals, icon: AlertTriangle, tone: "text-amber-600 bg-amber-500/10" },
               { title: "Visitor Approvals Today", value: visitorInsights.approvedToday, icon: UserCheck, tone: "text-emerald-600 bg-emerald-500/10" },
@@ -1491,7 +1491,7 @@ export default function SecurityGate() {
               <CardTitle className="text-lg">Gate Reports & Logs</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
                 <div className="space-y-2">
                   <Label htmlFor="report-date-from">Date From</Label>
                   <Input id="report-date-from" name="report-date-from" type="date" value={reportDateFrom} onChange={(event) => setReportDateFrom(event.target.value)} />
@@ -1622,7 +1622,7 @@ export default function SecurityGate() {
       />
 
       <Dialog open={cameraCaptureOpen} onOpenChange={setCameraCaptureOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {cameraCaptureMode === "DOCUMENT" ? <FileScan className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
@@ -1635,7 +1635,7 @@ export default function SecurityGate() {
 
           <div className="space-y-3">
             <div className="overflow-hidden rounded-xl border border-border bg-black/90">
-              <video ref={cameraVideoRef} className="min-h-72 w-full object-cover" autoPlay muted playsInline />
+              <video ref={cameraVideoRef} className="min-h-48 sm:min-h-72 w-full object-cover" autoPlay muted playsInline />
             </div>
 
             {cameraCaptureStatus === "starting" ? <p className="text-xs text-muted-foreground">Starting secure camera stream...</p> : null}
@@ -1655,7 +1655,7 @@ export default function SecurityGate() {
       </Dialog>
 
       <Dialog open={!!createdEntry} onOpenChange={(open) => { if (!open) setCreatedEntry(null); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Gate Pass Generated</DialogTitle>
             <DialogDescription>
@@ -1665,7 +1665,7 @@ export default function SecurityGate() {
           {createdEntry ? (
             <div className="space-y-4">
               <div className="rounded-2xl border border-border p-4 text-center">
-                {qrImage ? <img src={qrImage} alt="Gate pass QR" className="mx-auto h-52 w-52 rounded-xl border border-border" /> : null}
+                {qrImage ? <img src={qrImage} alt="Gate pass QR" className="mx-auto h-52 w-52 max-w-full rounded-xl border border-border" /> : null}
                 <p className="mt-3 font-semibold">{createdEntry.visitorName}</p>
                 <p className="text-sm text-muted-foreground">{createdEntry.gate?.gateName || "-"}</p>
                 <p className="mt-2 text-xs text-muted-foreground">{createdEntry.qrCodeValue}</p>

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { env } from '../config/env';
 import { healthRouter } from './health.routes';
 import { authRouter } from '../modules/auth/auth.routes';
+import { backupRouter } from '../modules/backup/backup.routes';
 import { usersRouter } from '../modules/users/users.routes';
 import { plantsRouter } from '../modules/plants/plants.routes';
 import { departmentsRouter } from '../modules/departments/departments.routes';
@@ -61,6 +62,7 @@ export const router = Router();
 
 router.use(healthRouter);
 router.use(systemRouter);
+router.use(backupRouter);
 router.use(authRouter);
 router.use(brandingRouter);
 router.use(pushRouter);

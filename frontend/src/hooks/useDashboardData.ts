@@ -2,7 +2,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { dbClient } from "@/api/dbClient";
 import { getGateDashboardSummary } from "@/api/gates";
 import { getStoredAccessToken } from "@/api/http";
-import { useAuthStore, isAdmin, isIncharge, isSuperAdmin, isMaintenanceUser, isProductionUser, isSafetyOfficer, isHRUser } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isSuperAdmin, hasRole } from "@/lib/permission-engine";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useMemo, useRef } from "react";
 import { useDashboardRealtime } from "@/hooks/useDashboardRealtime";
@@ -10,17 +11,17 @@ import { useApiHealth } from "@/hooks/useApiHealth";
 import { subDays, subHours, format, startOfDay } from "date-fns";
 import { getDashboardKPIs } from "@/api/reports";
 
-// Map incharge roles → WO categories
-const INCHARGE_CATEGORY_MAP: Record<string, string> = {
-  MECHANICAL_INCHARGE: "MECHANICAL",
-  ELECTRICAL_INCHARGE: "ELECTRICAL",
-  UTILITY_INCHARGE: "UTILITY",
-  TOOLCHANGE_INCHARGE: "TOOL_CHANGE",
-  CALIBRATION_INCHARGE: "CALIBRATION",
+// Map manager roles → WO categories
+const MANAGER_CATEGORY_MAP: Record<string, string> = {
+  MAINTENANCE_MANAGER: "MECHANICAL",
+  PRODUCTION_MANAGER: "PRODUCTION",
+  SCM_MANAGER: "SUPPLY_CHAIN",
+  HR_MANAGER: "PEOPLE",
+  CALIBRATION_MANAGER: "CALIBRATION",
 };
 
-function getInchargeCategories(roles: string[]): string[] {
-  return roles.filter((r) => INCHARGE_CATEGORY_MAP[r]).map((r) => INCHARGE_CATEGORY_MAP[r]);
+function getManagerCategories(roles: string[]): string[] {
+  return roles.filter((r) => MANAGER_CATEGORY_MAP[r]).map((r) => MANAGER_CATEGORY_MAP[r]);
 }
 
 function getAssetIdFromWo(wo: any): string | null {
@@ -91,15 +92,16 @@ export function useDashboardData(selectedPlantId?: string | null) {
   const { hasModuleAccess, loading: permissionsLoading } = usePermissions();
   const authEnabled = !authLoading && isAuthenticated && Boolean(getStoredAccessToken());
   const permissionsReady = !permissionsLoading;
-  const userIsAdmin = isAdmin(user);
-  const userIsSuperAdmin = isSuperAdmin(user);
-  const userIsIncharge = isIncharge(user);
-  const userIsMaintenance = isMaintenanceUser(user);
-  const userIsProduction = isProductionUser(user);
-  const userIsSafety = isSafetyOfficer(user);
-  const userIsHR = isHRUser(user);
+  const userRoles = user?.roles ?? [];
+  const userIsAdmin = isAdminLevel(userRoles);
+  const userIsSuperAdmin = isSuperAdmin(userRoles);
+  const userIsIncharge = hasRole(userRoles, "MAINTENANCE_MANAGER") || hasRole(userRoles, "CALIBRATION_MANAGER");
+  const userIsMaintenance = hasRole(userRoles, "MAINTENANCE_USER") || hasRole(userRoles, "MAINTENANCE_MANAGER");
+  const userIsProduction = hasRole(userRoles, "PRODUCTION_USER");
+  const userIsSafety = hasRole(userRoles, "SAFETY_USER");
+  const userIsHR = hasRole(userRoles, "HR_USER");
   
-  const inchargeCategories = useMemo(() => getInchargeCategories(user?.roles || []), [user?.roles]);
+  const inchargeCategories = useMemo(() => getManagerCategories(user?.roles || []), [user?.roles]);
   const canReadWorkOrders = hasModuleAccess("workorders", "view");
   const canReadAssets = hasModuleAccess("assets", "view");
   const canReadPm = hasModuleAccess("pmpd", "view");

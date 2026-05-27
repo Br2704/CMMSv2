@@ -189,6 +189,10 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
 
   for (const workOrder of candidates) {
     const matchedSla = findSlaConfig(workOrder, slaConfigs);
+    if (!matchedSla) {
+      continue;
+    }
+
     const escalationMin1 = matchedSla?.escalation1Minutes ?? 30;
     const escalationMin2 = matchedSla?.escalation2Minutes ?? 60;
     const escalationMin3 = matchedSla?.escalation3Minutes ?? 120;

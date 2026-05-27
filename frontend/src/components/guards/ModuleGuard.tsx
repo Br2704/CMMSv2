@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { usePermissions } from "@/hooks/usePermissions";
 import { queueWebappLog } from "@/api/logs";
+import { useAccessibleRoutes } from "@/hooks/useAccessibleRoutes";
 
 interface ModuleGuardProps {
   moduleId: string;
@@ -14,6 +15,7 @@ export function ModuleGuard({ moduleId, action = "view", children }: ModuleGuard
   const location = useLocation();
   const navigate = useNavigate();
   const { hasModuleAccess, loading } = usePermissions();
+  const { resolveLandingPath } = useAccessibleRoutes();
   const wasAllowedRef = useRef<boolean | null>(null);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [resolved, setResolved] = useState(false);
@@ -58,7 +60,7 @@ export function ModuleGuard({ moduleId, action = "view", children }: ModuleGuard
       },
     });
 
-    const redirectPath = wasAllowedRef.current === true ? "/" : "/403";
+    const redirectPath = resolveLandingPath();
     redirectTimerRef.current = setTimeout(() => {
       navigate(redirectPath, { replace: true, state: { from: location.pathname } });
     }, 300);
@@ -69,7 +71,7 @@ export function ModuleGuard({ moduleId, action = "view", children }: ModuleGuard
         redirectTimerRef.current = null;
       }
     };
-  }, [loading, resolved, allowed, navigate, location.pathname, moduleId, action]);
+  }, [loading, resolved, allowed, navigate, location.pathname, moduleId, action, resolveLandingPath]);
 
   // Show loading state while fetching permissions to prevent flashes
   if (loading || !resolved) {
@@ -89,7 +91,7 @@ export function ModuleGuard({ moduleId, action = "view", children }: ModuleGuard
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
-          <p className="text-sm text-muted-foreground">Redirecting...</p>
+          <p className="text-sm text-muted-foreground">Redirecting to your accessible page...</p>
         </div>
       </div>
     );

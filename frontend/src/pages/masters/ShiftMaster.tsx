@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Download, Edit, Eye, Plus, Trash2 } from "lucide-react";
@@ -7,17 +7,22 @@ import BackButton from "@/components/masters/BackButton";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { DataTableShell } from "@/components/layout/DataTableShell";
+import { Toolbar } from "@/components/layout/Toolbar";
+import { FormGrid } from "@/components/layout/FormGrid";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import { EmptyState } from "@/components/app-shell/EmptyState";
 import { FormDialog } from "@/components/shared/FormDialog";
 import { ViewDialog, DetailRow, DetailSection } from "@/components/shared/ViewDialog";
 import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { InputField, SelectField } from "@/components/shared/FormField";
+import { AsyncSelect } from "@/components/ui/async-select";
+import { listPlants } from "@/api/plants";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { AuditInfo } from "@/components/shared/AuditInfo";
 import { BulkActionsBar } from "@/components/shared/BulkActionsBar";
-import { useAuthStore, isAdmin, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isSuperAdmin } from "@/lib/permission-engine";
 import { createShift, deleteShift, listShifts, type Shift, updateShift } from "@/api/shifts";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { useCsvExport } from "@/hooks/useCsvExport";
@@ -35,8 +40,8 @@ const emptyForm: ShiftFormState = { shiftName: "", startTime: "06:00", endTime: 
 
 export default function ShiftMaster() {
   const { user } = useAuthStore();
-  const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user);
+  const canManage = isAdminLevel(user?.roles ?? []);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
   const { plantsOptions, fetchPlants } = useMastersOptions();
   const { exportCsv } = useCsvExport<Shift>();
@@ -52,7 +57,7 @@ export default function ShiftMaster() {
   const [formData, setFormData] = useState<ShiftFormState>({ ...emptyForm, plantId: defaultPlantId });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const fetchShiftRows = async () => {
+  const fetchShiftRows = useCallback(async () => {
     setLoading(true);
     try {
       const response = await listShifts({
@@ -67,11 +72,11 @@ export default function ShiftMaster() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchQuery, canSelectPlant, defaultPlantId]);
 
   useEffect(() => {
     fetchShiftRows();
-  }, [searchQuery, defaultPlantId, canSelectPlant]);
+  }, [fetchShiftRows]);
 
   useEffect(() => {
     fetchPlants();
@@ -254,6 +259,16 @@ export default function ShiftMaster() {
             {selectedIds.size > 0 && <span className="text-xs text-muted-foreground">({selectedIds.size} selected)</span>}
           </span>
         }
+        toolbar={
+          <Toolbar
+            right={
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search shifts..." className="h-10 pl-9" />
+              </div>
+            }
+          />
+        }
       >
         {loading ? (
           <TableSkeleton rows={5} />
@@ -308,14 +323,21 @@ export default function ShiftMaster() {
         onSubmit={handleSubmit}
         submitLabel={saving ? "Saving..." : selected ? "Update" : "Create"}
       >
-        <div className="grid grid-cols-1 gap-4">
-          <InputField label="Shift Name" value={formData.shiftName} onChange={(value) => setFormData({ ...formData, shiftName: value })} placeholder="Morning Shift" required />
-          <div className="grid grid-cols-2 gap-4">
-            <InputField label="Start Time" value={formData.startTime} onChange={(value) => setFormData({ ...formData, startTime: value })} type="time" required />
-            <InputField label="End Time" value={formData.endTime} onChange={(value) => setFormData({ ...formData, endTime: value })} type="time" required />
-          </div>
+        <FormGrid>
+          <InputField label="Shift Name" value={formData.shiftName} onChange={(value) => setFormData({ ...formData, shiftName: value })} placeholder="Morning Shift" required className="sm:col-span-2" />
+          <InputField label="Start Time" value={formData.startTime} onChange={(value) => setFormData({ ...formData, startTime: value })} type="time" required />
+          <InputField label="End Time" value={formData.endTime} onChange={(value) => setFormData({ ...formData, endTime: value })} type="time" required />
           {canSelectPlant ? (
-            <SelectField label="Plant" value={formData.plantId} onChange={(value) => setFormData({ ...formData, plantId: value })} options={plantsOptions} placeholder="Select plant" required />
+            <AsyncSelect
+              label="Plant"
+              value={formData.plantId}
+              onChange={(value) => setFormData({ ...formData, plantId: (value as string | null) || "" })}
+              fetchFn={listPlants}
+              labelExtractor={(plant) => `${plant.plantCode || "-"} - ${plant.plantName}`}
+              valueExtractor={(plant) => plant.id}
+              placeholder="Select plant"
+              required
+            />
           ) : (
             <InputField label="Plant" value={getPlantLabel(defaultPlantId)} onChange={() => {}} disabled />
           )}
@@ -328,7 +350,7 @@ export default function ShiftMaster() {
               { value: "Inactive", label: "Inactive" },
             ]}
           />
-        </div>
+        </FormGrid>
       </FormDialog>
 
       <ViewDialog open={isViewOpen} onOpenChange={setIsViewOpen} title={selected?.shiftName || ""}>

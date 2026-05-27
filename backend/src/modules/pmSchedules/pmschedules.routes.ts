@@ -6,7 +6,7 @@ import { AppDataSource } from '../../database/data-source';
 import { MaintenanceTeamEntity, PmScheduleEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { validateRequest } from '../../middlewares/validate';
-import { ensurePlantAccess, requirePermission } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { buildPagination, listQuerySchema, parseListQuery } from '../../utils/pagination';
 import { applyPlantScope, applySearch } from '../../utils/query';

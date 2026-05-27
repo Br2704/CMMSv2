@@ -1,5 +1,6 @@
 import { AppDataSource } from '../database/data-source';
 import { ReportFormatConfigEntity } from '../database/entities/report-format-config.entity';
+import { APP_NAME, APP_TAGLINE } from '../config/branding';
 
 const CONFIG_ID = 1;
 
@@ -31,14 +32,14 @@ export async function getReportBranding(options?: {
   locale?: string;
 }) {
   const config = await getConfig();
-  const orgName = options?.organizationName ?? 'CMMS Organization';
+  const orgName = options?.organizationName ?? APP_NAME;
   const now = options?.generatedAt ?? new Date().toISOString();
   const generatedDate = new Date().toLocaleString();
 
-  const headerTitle = config?.headerTitle ?? 'CMMS Report';
+  const headerTitle = config?.headerTitle ?? APP_NAME;
   const headerSubtitle = config?.headerSubtitle ?? '';
-  const footerText = config?.footerText ?? 'Powered by TamOptiX Technologies';
-  const footerSubtext = config?.footerSubtext ?? 'TamOptiX Technologies | Intelligent CMMS Platform';
+  const footerText = config?.footerText ?? APP_TAGLINE;
+  const footerSubtext = config?.footerSubtext ?? `${APP_NAME} | Intelligent CMMS Platform`;
   const showTamOptix = config?.showTamOptixBranding ?? true;
   const showDate = config?.showGeneratedDate ?? true;
 

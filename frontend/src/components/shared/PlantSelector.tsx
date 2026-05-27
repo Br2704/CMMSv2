@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { usePlants } from "@/hooks/use-db";
-import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isSuperAdmin } from "@/lib/permission-engine";
 import {
   Dialog,
   DialogContent,
@@ -74,7 +75,7 @@ export function PlantSelector({ open, onOpenChange, onSelect, title }: PlantSele
  */
 export function usePlantIdForInsert() {
   const { user, activePlantId } = useAuthStore();
-  const isSA = isSuperAdmin(user);
+  const isSA = isSuperAdmin(user?.roles ?? []);
 
   if (isSA) {
     // SuperAdmin must explicitly pick a plant

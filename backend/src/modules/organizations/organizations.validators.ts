@@ -5,7 +5,7 @@ const imageValueSchema = z
   .string()
   .trim()
   .max(2_500_000)
-  .refine((value) => isSafeImageValue(value), 'Must be a valid secure image URL or supported data URL');
+  .refine((value) => !value || isSafeImageValue(value), 'Must be a valid secure image URL or supported data URL');
 
 const nullableTrimmedString = z.string().trim().min(1).max(255).nullable().optional();
 const nullableTextString = z.string().trim().max(10_000).nullable().optional();

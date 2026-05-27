@@ -83,7 +83,7 @@ export class RootAdminBenchmarking1700000000004 implements MigrationInterface {
       );
     }
 
-    await queryRunner.query("UPDATE roles SET is_system = true WHERE UPPER(name) IN ('SUPERADMIN', 'ROOT_ADMIN', 'ADMIN', 'USER')");
+    await queryRunner.query("UPDATE roles SET is_system = true WHERE UPPER(name) IN ('SUPER_ADMIN', 'ROOT_ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_USER')");
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

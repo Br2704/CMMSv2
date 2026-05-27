@@ -76,7 +76,7 @@ export const listQuerySchema = z.object({
       }
       return undefined;
     }, z.boolean().optional())
-    .default(false),
+    .default(true),
   sort: z.preprocess((value) => {
     const scalar = toScalar(value);
     return typeof scalar === 'string' ? scalar.trim() : undefined;
@@ -88,7 +88,7 @@ export const listQuerySchema = z.object({
     return normalized === 'ASC' || normalized === 'DESC' ? normalized : undefined;
   }, z.enum(['ASC', 'DESC']).optional()),
   dateRange: dateRangeSchema,
-}).strict();
+}).passthrough();
 
 export type ListQuery = z.infer<typeof listQuerySchema>;
 
@@ -113,7 +113,7 @@ export function parseListQuery(query: Record<string, unknown>): z.infer<typeof l
       departmentId: undefined,
       moduleId: undefined,
       isActive: undefined,
-      includeInactive: false,
+      includeInactive: true,
       sort: undefined,
       dateRange: undefined,
     };

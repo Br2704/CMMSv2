@@ -1,10 +1,10 @@
 import { Button } from "@/components/ui/button";
-import { Icon } from "lucide-react";
+import { Settings } from "lucide-react";
 
 export function Test() {
   return (
     <Button asChild>
-      Something <Icon />
+      <Settings /> Something
     </Button>
   );
 }

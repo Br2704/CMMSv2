@@ -23,7 +23,7 @@ import {
   VisitorTrackingEntity,
 } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { fail, ok } from '../../utils/apiResponse';
 import { hashPassword } from '../../utils/password';
 import { resolveScopedPlantId } from '../../utils/plantScope';
@@ -269,9 +269,10 @@ function haversineMeters(a: GeoPoint, b: GeoPoint) {
   return earthRadius * c;
 }
 
-function isPrivilegedApprover(roles: string[]) {
-  const normalized = roles.map((role) => role.toUpperCase());
-  return normalized.some((role) => ['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'SECURITY', 'SECURITY_USER'].includes(role));
+function isPrivilegedApprover(roles: string[] = []): boolean {
+  if (!roles) return false;
+  const normalizedRoles = roles.map((role) => role.toUpperCase());
+  return normalizedRoles.some((role) => ['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'SECURITY', 'SECURITY'].includes(role));
 }
 
 function toIso(value: Date | null) {
@@ -674,9 +675,9 @@ async function notifySecurityAndAdmins(input: {
   const roleRows = await roleRepo.find({
     where: [
       { role: 'SECURITY', plantId: input.plantId },
-      { role: 'SECURITY_USER', plantId: input.plantId },
-      { role: 'ADMIN', plantId: input.plantId },
-      { role: 'SUPERADMIN', plantId: IsNull() },
+      { role: 'SECURITY', plantId: input.plantId },
+      { role: 'PLANT_ADMIN', plantId: input.plantId },
+      { role: 'SUPER_ADMIN', plantId: IsNull() },
     ],
   });
 
@@ -702,7 +703,7 @@ async function notifySecurityAndAdmins(input: {
 export const smartVisitorRouter = Router();
 smartVisitorRouter.use(requireAuth);
 
-smartVisitorRouter.get('/admin/plant-layout', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'READ'), async (req, res, next) => {
+smartVisitorRouter.get('/admin/plant-layout', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('GATES', 'READ'), async (req, res, next) => {
   try {
     const requestedPlantId = optionalUuid.parse(req.query.plantId);
     const plantId = await resolvePlant(req, requestedPlantId);
@@ -746,7 +747,7 @@ smartVisitorRouter.get('/admin/plant-layout', requireRole(['SUPERADMIN', 'ADMIN'
   }
 });
 
-smartVisitorRouter.post('/admin/plant-layout', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
+smartVisitorRouter.post('/admin/plant-layout', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const body = adminLayoutSchema.parse(req.body);
     const plantId = await resolvePlant(req, body.plantId);
@@ -810,7 +811,7 @@ smartVisitorRouter.get('/admin/plant-coordinates', requirePermission('GATES', 'R
   }
 });
 
-smartVisitorRouter.post('/admin/plant-coordinates', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
+smartVisitorRouter.post('/admin/plant-coordinates', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const body = coordinateSchema.parse(req.body);
     const plantId = await resolvePlant(req, body.plantId);
@@ -873,7 +874,7 @@ smartVisitorRouter.get('/admin/pathways', requirePermission('GATES', 'READ'), as
   }
 });
 
-smartVisitorRouter.post('/admin/pathways', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
+smartVisitorRouter.post('/admin/pathways', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const body = pathwaySchema.parse(req.body);
     const plantId = await resolvePlant(req, body.plantId);
@@ -944,7 +945,7 @@ smartVisitorRouter.get('/admin/geo-fences', requirePermission('GATES', 'READ'), 
   }
 });
 
-smartVisitorRouter.post('/admin/geo-fences', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
+smartVisitorRouter.post('/admin/geo-fences', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('GATES', 'UPDATE'), async (req, res, next) => {
   try {
     const body = geoFenceSchema.parse(req.body);
     const plantId = await resolvePlant(req, body.plantId);
@@ -984,7 +985,7 @@ smartVisitorRouter.post('/admin/geo-fences', requireRole(['SUPERADMIN', 'ADMIN']
   }
 });
 
-smartVisitorRouter.post('/visitor/create', requireRole(['SECURITY', 'SECURITY_USER']), requirePermission('GATES', 'CREATE'), async (req, res, next) => {
+smartVisitorRouter.post('/visitor/create', requireRole(['SECURITY', 'SECURITY']), requirePermission('GATES', 'CREATE'), async (req, res, next) => {
   try {
     const body = visitorCreateSchema.parse(req.body);
     const plantId = await resolvePlant(req, body.plantId);
@@ -1203,7 +1204,7 @@ smartVisitorRouter.post(['/visitor/approve', '/visitor/approval'], requirePermis
 
       ensurePlantAccess(req, entry.plantId);
 
-      const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles);
+      const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles ?? []);
       const actorIsAssignedEmployee = entry.personToMeetUserId === req.auth!.userId;
       if (!actorIsPrivileged && !actorIsAssignedEmployee) {
         return { status: 403 as const, body: fail('Only assigned employee or admin/security can approve visitor') };
@@ -1343,7 +1344,7 @@ smartVisitorRouter.get('/visitor/session-status', async (req, res, next) => {
         return { status: 404 as const, body: fail('Visitor entry not found') };
       }
 
-      const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles);
+      const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles ?? []);
       const actorIsOwner = session.visitorUserId === req.auth!.userId;
       const actorIsRequester = entry.recordedBy === req.auth!.userId;
       const actorIsAssignee = entry.personToMeetUserId === req.auth!.userId;
@@ -1420,7 +1421,7 @@ smartVisitorRouter.post('/visitor/update-location', async (req, res, next) => {
 
       ensurePlantAccess(req, session.plantId);
 
-      const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles);
+      const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles ?? []);
       const actorIsVisitor = session.visitorUserId === req.auth!.userId;
       const actorIsRequester = entry.recordedBy === req.auth!.userId;
       const actorIsAssignee = entry.personToMeetUserId === req.auth!.userId;
@@ -1564,7 +1565,7 @@ smartVisitorRouter.get('/navigation/route', async (req, res, next) => {
 
       ensurePlantAccess(req, session.plantId);
 
-      const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles);
+      const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles ?? []);
       const actorIsVisitor = session.visitorUserId === req.auth!.userId;
       const actorIsRequester = entry.recordedBy === req.auth!.userId;
       const actorIsAssignee = entry.personToMeetUserId === req.auth!.userId;
@@ -1707,7 +1708,7 @@ smartVisitorRouter.get('/visitor/tracking/stream', async (req, res, next) => {
       return;
     }
 
-    const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles);
+    const actorIsPrivileged = isPrivilegedApprover(req.auth!.roles ?? []);
     const actorIsVisitor = session.visitorUserId === req.auth!.userId;
     const actorIsRequester = entry.recordedBy === req.auth!.userId;
     const actorIsAssignee = entry.personToMeetUserId === req.auth!.userId;

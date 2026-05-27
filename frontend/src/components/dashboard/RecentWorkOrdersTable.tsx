@@ -72,8 +72,8 @@ export function RecentWorkOrdersTable({ workOrders, isLoading }: RecentWOsProps)
               <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
+            <div className="table-responsive-wrapper">
+              <table className="w-full text-left min-w-[800px]">
                 <thead className="bg-muted/40 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                   <tr>
                     <th className="px-8 py-6">WO ID</th>

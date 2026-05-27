@@ -1,7 +1,7 @@
 import type { Response } from 'express';
 import { randomUUID } from 'crypto';
 
-type NotificationStreamEvent = 'connected' | 'notifications.changed';
+type NotificationStreamEvent = 'connected' | 'notifications.changed' | 'notification.received';
 
 type StreamClient = {
   id: string;
@@ -62,6 +62,29 @@ class NotificationStreamBroker {
       this.clientsByUserId.delete(userId);
     }
   }
+
+  publishNewNotification(userId: string, notification: unknown, silent: boolean) {
+    const bucket = this.clientsByUserId.get(userId);
+    if (!bucket || bucket.size === 0) return;
+
+    const payload = formatEvent('notification.received', {
+      notification,
+      silent,
+      receivedAt: new Date().toISOString(),
+    });
+
+    for (const [clientId, client] of bucket.entries()) {
+      try {
+        client.res.write(payload);
+      } catch {
+        bucket.delete(clientId);
+      }
+    }
+
+    if (bucket.size === 0) {
+      this.clientsByUserId.delete(userId);
+    }
+  }
 }
 
 const notificationStreamBroker = new NotificationStreamBroker();
@@ -73,4 +96,9 @@ export function subscribeNotificationStream(userId: string, res: Response) {
 export function publishNotificationChange(userId: string | null | undefined) {
   if (!userId) return;
   notificationStreamBroker.publishChange(userId);
+}
+
+export function publishNewNotification(userId: string | null | undefined, notification: unknown, silent: boolean) {
+  if (!userId) return;
+  notificationStreamBroker.publishNewNotification(userId, notification, silent);
 }

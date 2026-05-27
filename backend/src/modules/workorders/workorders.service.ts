@@ -4,6 +4,7 @@ import {
   AssetEntity,
   MaintenanceTeamEntity,
   NotificationEntity,
+  UserEntity,
   WorkOrderActivityLogEntity,
   WorkOrderEntity,
   WorkOrderMasterEntity,
@@ -23,7 +24,7 @@ import { ensureDefaultWorkOrderMasters } from '../workOrderMasters/work-order-ma
 import { normalizeWorkOrderMasterCode, type WorkOrderMasterOptionType } from '../workOrderMasters/work-order-master.defaults';
 import { workordersRepository } from './workorders.repository';
 import { AnalyticsService } from './analytics.service';
-import { IsNull } from 'typeorm';
+import { In, IsNull, QueryFailedError } from 'typeorm';
 import type { ListQuery } from '../../utils/pagination';
 
 function toSnakeKey(input: string): string {
@@ -151,11 +152,11 @@ const WORKFLOW_MANAGED_FIELDS = new Set([
 ]);
 
 const INCHARGE_CATEGORY_MAP: Record<string, string> = {
-  MECHANICAL_INCHARGE: 'MECHANICAL',
-  ELECTRICAL_INCHARGE: 'ELECTRICAL',
-  UTILITY_INCHARGE: 'UTILITY',
-  TOOLCHANGE_INCHARGE: 'TOOL_CHANGE',
-  CALIBRATION_INCHARGE: 'CALIBRATION',
+  MAINTENANCE_MANAGER: 'MECHANICAL',
+  PRODUCTION_MANAGER: 'PRODUCTION',
+  SCM_MANAGER: 'SUPPLY_CHAIN',
+  HR_MANAGER: 'PEOPLE',
+  CALIBRATION_MANAGER: 'CALIBRATION',
 };
 
 function normalizeText(value: unknown): string | null {
@@ -669,7 +670,7 @@ class WorkOrdersService extends CrudService {
 
   private isAdminActor(auth: AuthContext): boolean {
     const roles = auth.roles.map((role) => String(role).toUpperCase());
-    return roles.some((role) => ['ROOT_ADMIN', 'SUPERADMIN', 'SUPER_ADMIN', 'ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER'].includes(role));
+    return roles.some((role) => ['ROOT_ADMIN', 'SUPER_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER'].includes(role));
   }
 
   private async isUserInAssignedTeam(workOrder: GenericRecord, userId: string, manager = AppDataSource.manager): Promise<boolean> {
@@ -805,9 +806,19 @@ class WorkOrdersService extends CrudService {
     if (notifications.length === 0) {
       return;
     }
+    const userIds = [...new Set(notifications.map((n) => n.userId))];
+    const existingUsers = await manager.getRepository(UserEntity).find({
+      where: { id: In(userIds) },
+      select: ['id'],
+    });
+    const existingUserIds = new Set(existingUsers.map((u) => u.id));
+    const validNotifications = notifications.filter((n) => existingUserIds.has(n.userId));
+    if (validNotifications.length === 0) {
+      return;
+    }
     const repo = manager.getRepository(NotificationEntity);
     await repo.save(
-      notifications.map((notification) =>
+      validNotifications.map((notification) =>
         repo.create({
           userId: notification.userId,
           title: notification.title,
@@ -929,21 +940,35 @@ class WorkOrdersService extends CrudService {
 
     const createdWorkOrder = await super.create(payload, auth);
 
-    if (assignedTeam) {
-      const recipientIds = uniqueIds([assignedTeam.teamLeaderId, ...(assignedTeam.teamMemberIds ?? [])]);
-      if (recipientIds.length > 0) {
-        const notifications = recipientIds.map((userId) =>
-          this.notificationsRepo.create({
-            userId,
-            title: 'New Work Order Assigned',
-            message: `${String(createdWorkOrder.wo_number ?? payload.wo_number)} has been assigned to ${assignedTeam.teamName}.`,
-            type: 'warning',
-            link: '/work-orders',
-            woId: String(createdWorkOrder.id),
-          }),
-        );
-        await this.notificationsRepo.save(notifications);
-      }
+    const manuallyAssigned: (string | null)[] = createdWorkOrder.assigned_to ? [String(createdWorkOrder.assigned_to)] : [];
+    const teamAssigned: (string | null)[] = assignedTeam ? [assignedTeam.teamLeaderId, ...(assignedTeam.teamMemberIds ?? [])] : [];
+    const recipientIds = uniqueIds([...manuallyAssigned, ...teamAssigned]);
+
+    if (recipientIds.length > 0) {
+      const machineCode = String(asset.code ?? '').trim();
+      const machineName = String(asset.name ?? '').trim();
+      const hasAttachments = parseJsonArray(payload.attachments).length > 0;
+      const assignedName = assignedTeam ? assignedTeam.teamName : 'an engineer';
+
+      const notificationMessage = [
+        `${String(createdWorkOrder.wo_number ?? payload.wo_number)} assigned to ${assignedName}.`,
+        `Priority: ${String(payload.priority ?? 'MEDIUM')}.`,
+        machineCode || machineName ? `Machine: ${[machineCode, machineName].filter(Boolean).join(' - ')}.` : null,
+        hasAttachments ? 'Attachments: Yes.' : null,
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+      const notifications = recipientIds.map((userId) => ({
+        userId,
+        title: 'New Work Order Assigned',
+        message: notificationMessage,
+        type: 'warning',
+        link: '/work-orders',
+        woId: String(createdWorkOrder.id),
+      }));
+      
+      await this.createNotifications(notifications);
     }
 
     await this.writeActivityLog(
@@ -968,7 +993,7 @@ class WorkOrdersService extends CrudService {
         plantId: typeof payload.plant_id === 'string' ? payload.plant_id : undefined,
         priority: String(payload.priority ?? 'MEDIUM'),
         problemDescription: String(payload.problem_description ?? ''),
-        location: String(payload.reported_location ?? ''),
+        location: String(asset.location ?? ''),
         assignedTeamId: assignedTeam?.id,
         createdTime: new Date().toLocaleString(),
       };

@@ -1,6 +1,7 @@
 import { Column, Entity, JoinColumn, ManyToOne, OneToOne, Unique } from 'typeorm';
 import { TimestampedUuidEntity } from './common';
 import { PlantEntity } from './plant.entity';
+import { DepartmentEntity } from './department.entity';
 import { UserEntity } from './user.entity';
 
 @Entity('profiles')
@@ -27,8 +28,8 @@ export class ProfileEntity extends TimestampedUuidEntity {
   @Column({ name: 'plant_id', type: 'uuid', nullable: true })
   plantId!: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
-  department!: string | null;
+  @Column({ name: 'department_id', type: 'uuid', nullable: true })
+  departmentId!: string | null;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
@@ -40,4 +41,8 @@ export class ProfileEntity extends TimestampedUuidEntity {
   @ManyToOne(() => PlantEntity, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'plant_id' })
   plant!: PlantEntity | null;
+
+  @ManyToOne(() => DepartmentEntity, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'department_id' })
+  department!: DepartmentEntity | null;
 }

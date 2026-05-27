@@ -2,11 +2,14 @@ import { z } from 'zod';
 import { Router } from 'express';
 import { createCrudRouter } from '../_core/crud.routes';
 import { idParamSchema, listQuerySchema } from '../_core/crud.validators';
+import { AppDataSource } from '../../database/data-source';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requirePermission } from '../../middlewares/permissions';
+import { requirePermission } from '../../middlewares/permissionGuard';
 import { validateRequest } from '../../middlewares/validate';
+import { authorizePermission } from '../../utils/authorization';
 import { ok } from '../../utils/apiResponse';
 import { toPagination } from '../../utils/pagination';
+import { fail } from '../../utils/apiResponse';
 import type { ListQuery } from '../../utils/pagination';
 import { workordersService } from './workorders.service';
 import {
@@ -159,9 +162,34 @@ workordersRouter.post(
   },
 );
 
+async function requireApprovalOrRaiser(req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) {
+  if (!req.auth) {
+    res.status(401).json(fail('Unauthorized'));
+    return;
+  }
+  const decision = authorizePermission(req.auth, 'WORK_ORDERS', 'APPROVE');
+  if (decision.allowed) {
+    next();
+    return;
+  }
+  try {
+    const existing = await AppDataSource.manager
+      .createQueryBuilder()
+      .select('raised_by')
+      .from('work_orders', 't')
+      .where('t.id = :id', { id: req.params.id })
+      .getRawOne<{ raised_by: string | null }>();
+    if (existing && existing.raised_by === req.auth.userId) {
+      next();
+      return;
+    }
+  } catch {}
+  res.status(403).json(fail('Access denied. You do not have permission to view this resource.'));
+}
+
 workordersRouter.post(
   '/work-orders/:id/approve',
-  requirePermission('WORK_ORDERS', 'APPROVE'),
+  requireApprovalOrRaiser,
   validateRequest({ params: idParamSchema, body: reviewWorkOrderSchema }),
   async (req, res, next) => {
     try {
@@ -207,7 +235,7 @@ workordersRouter.get(
 
 workordersRouter.post(
   '/work-orders/:id/reject',
-  requirePermission('WORK_ORDERS', 'APPROVE'),
+  requireApprovalOrRaiser,
   validateRequest({ params: idParamSchema, body: reviewWorkOrderSchema }),
   async (req, res, next) => {
     try {

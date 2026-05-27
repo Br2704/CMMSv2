@@ -1,4 +1,5 @@
 import { type ReportFormatConfigPayload } from "@/api/reportFormat";
+import { APP_NAME } from "@/config/branding";
 import { Table, Info, Loader2 } from "lucide-react";
 import { PaginationBar } from "./PaginationBar";
 import { getCsvDelimiter, escapeCsvCell } from "./types";
@@ -31,7 +32,7 @@ export function CsvPreview({
   const locale = config.reportLocale ?? "en";
   const delimiter = getCsvDelimiter(locale);
   const now = new Date().toLocaleString(locale);
-  const title = config.headerTitle || "CMMS Report";
+  const title = config.headerTitle || APP_NAME;
 
   const columns =
     (config.sheetsConfig?.[0]?.columns ?? []).filter((c) => c.visible !== false) ?? [];

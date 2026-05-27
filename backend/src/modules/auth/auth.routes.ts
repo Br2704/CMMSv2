@@ -17,13 +17,15 @@ import {
   OrgRoleEntity,
   OrgRolePermissionEntity,
 } from '../../database/entities';
-import { requireAuth, buildFallbackPermissionsForRole } from '../../middlewares/authMiddleware';
+import { requireAuth } from '../../middlewares/authMiddleware';
+import { buildEnterprisePermissionMap } from '../../services/permission-engine';
 import { authLoginRateLimiter, authLogoutRateLimiter, authRefreshRateLimiter, authPasswordResetRateLimiter } from '../../middlewares/rateLimiter';
 import { validateRequest } from '../../middlewares/validate';
 import { fail, ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { decryptSensitiveValue, encryptSensitiveValue } from '../../utils/crypto';
-import { signAccessToken, signChallengeToken, signRefreshToken, verifyChallengeToken, verifyRefreshToken } from '../../utils/jwt';
+import { signAccessToken, signChallengeToken, signRefreshToken, verifyChallengeToken, verifyRefreshToken } from '../../utils/jwtEnhanced';
+import { requireReauthentication, generateReauthToken } from '../../middlewares/requireReauth';
 import { comparePassword, hashPassword } from '../../utils/password';
 import {
   allowedRoleTargetsForCreate,
@@ -80,7 +82,7 @@ const updateProfileSchema = z.object({
     .string()
     .trim()
     .max(2_500_000)
-    .refine((value) => isSafeImageValue(value), 'profileImageUrl must be a valid secure image URL or supported data URL')
+    .refine((value) => value === '' || isSafeImageValue(value), 'profileImageUrl must be a valid secure image URL or supported data URL')
     .optional()
     .nullable(),
 });
@@ -119,8 +121,8 @@ function issueCsrfToken() {
 function getRefreshCookieOptions() {
   return {
     httpOnly: true as const,
-    secure: env.NODE_ENV === 'production',
-    sameSite: (env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'lax' | 'strict',
+    secure: env.NODE_ENV === 'production' || true,
+    sameSite: (env.NODE_ENV === 'production' ? 'strict' : 'none') as 'lax' | 'strict' | 'none',
     maxAge: env.JWT_REFRESH_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000,
     path: `${env.API_PREFIX}/auth`,
   };
@@ -129,8 +131,8 @@ function getRefreshCookieOptions() {
 function getCsrfCookieOptions() {
   return {
     httpOnly: false as const, // Must be readable by JS to send as header in refresh requests
-    secure: env.NODE_ENV === 'production',
-    sameSite: (env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'lax' | 'strict',
+    secure: env.NODE_ENV === 'production' || true,
+    sameSite: (env.NODE_ENV === 'production' ? 'strict' : 'none') as 'lax' | 'strict' | 'none',
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     path: '/',
   };
@@ -139,8 +141,8 @@ function getCsrfCookieOptions() {
 function getSessionCookieOptions() {
   return {
     httpOnly: true as const,
-    secure: env.NODE_ENV === 'production',
-    sameSite: (env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'lax' | 'strict',
+    secure: env.NODE_ENV === 'production' || true,
+    sameSite: (env.NODE_ENV === 'production' ? 'strict' : 'none') as 'lax' | 'strict' | 'none',
     maxAge: env.JWT_REFRESH_EXPIRES_IN_DAYS * 24 * 60 * 60 * 1000,
     path: '/',
   };
@@ -389,8 +391,8 @@ async function buildMePayload(userId: string) {
       profile: null,
       security: null,
       roles: [],
-      roleKey: 'USER',
-      rolePrecedence: rolePrecedence('USER'),
+      roleKey: 'MAINTENANCE_USER',
+      rolePrecedence: rolePrecedence('MAINTENANCE_USER'),
       allowedModules: [],
       allowedActionsByModule: {},
       allowedRoleTargetsForCreate: [],
@@ -407,8 +409,8 @@ async function buildMePayload(userId: string) {
   const normalizedSuperAdminEmail = env.SUPERADMIN_EMAIL.trim().toLowerCase();
   const normalizedUserEmail = user.email.trim().toLowerCase();
   const normalizedRootAdminEmail = env.ROOT_ADMIN_EMAIL.trim().toLowerCase();
-  if (normalizedSuperAdminEmail && normalizedUserEmail === normalizedSuperAdminEmail && !normalizedRoles.includes('SUPERADMIN')) {
-    normalizedRoles.unshift('SUPERADMIN');
+  if (normalizedSuperAdminEmail && normalizedUserEmail === normalizedSuperAdminEmail && !normalizedRoles.includes('SUPER_ADMIN')) {
+    normalizedRoles.unshift('SUPER_ADMIN');
   }
   if (normalizedRootAdminEmail && normalizedUserEmail === normalizedRootAdminEmail && !normalizedRoles.includes('ROOT_ADMIN')) {
     normalizedRoles.unshift('ROOT_ADMIN');
@@ -418,7 +420,7 @@ async function buildMePayload(userId: string) {
   const hasRootAdminRole = normalizedRoles.some((role) => isRootAdminRole(role));
   let effectiveRoles = hasRootAdminRole ? ['ROOT_ADMIN'] : [...normalizedRoles];
   if (effectiveRoles.length === 0) {
-    effectiveRoles = ['USER'];
+    effectiveRoles = ['MAINTENANCE_USER'];
   }
 
   const rolePlantIds = Array.from(new Set(userRoles.map((role) => role.plantId).filter((value): value is string => Boolean(value))));
@@ -544,7 +546,7 @@ async function buildMePayload(userId: string) {
     RBAC_MODULE_KEYS.forEach((moduleKey) => {
       permissionMap[moduleKey] = [...RBAC_ACTIONS];
     });
-  } else if (effectiveRoles.includes('SUPERADMIN')) {
+  } else if (effectiveRoles.includes('SUPER_ADMIN')) {
     RBAC_MODULE_KEYS.forEach((moduleKey) => {
       permissionMap[moduleKey] = [...RBAC_ACTIONS];
     });
@@ -552,8 +554,8 @@ async function buildMePayload(userId: string) {
   }
 
   if (Object.keys(permissionMap).length === 0) {
-    const fallbackRole = roleKey ?? (normalizedRoles[0] ? normalizeRole(normalizedRoles[0]) : 'USER');
-    permissionMap = buildFallbackPermissionsForRole(fallbackRole);
+    const fallbackRole = roleKey ?? (normalizedRoles[0] ? normalizeRole(normalizedRoles[0]) : 'MAINTENANCE_USER');
+    permissionMap = buildEnterprisePermissionMap(fallbackRole);
   }
 
   const roleKpis = roleIds.length
@@ -577,7 +579,7 @@ async function buildMePayload(userId: string) {
   )
     .map(([, value]) => value)
     .sort((a, b) => a.displayOrder - b.displayOrder);
-  if (hasRootAdminRole || effectiveRoles.includes('SUPERADMIN')) {
+  if (hasRootAdminRole || effectiveRoles.includes('SUPER_ADMIN')) {
     kpiVisibility.length = 0;
     DASHBOARD_KPI_KEYS.forEach((kpiKey, index) => {
       kpiVisibility.push({
@@ -747,8 +749,8 @@ async function issueTokens(
   const normalizedSuperAdminEmail = env.SUPERADMIN_EMAIL.trim().toLowerCase();
   const normalizedRootAdminEmail = env.ROOT_ADMIN_EMAIL.trim().toLowerCase();
   const normalizedUserEmail = user.email.trim().toLowerCase();
-  if (normalizedSuperAdminEmail && normalizedUserEmail === normalizedSuperAdminEmail && !roleNames.includes('SUPERADMIN')) {
-    roleNames.unshift('SUPERADMIN');
+  if (normalizedSuperAdminEmail && normalizedUserEmail === normalizedSuperAdminEmail && !roleNames.includes('SUPER_ADMIN')) {
+    roleNames.unshift('SUPER_ADMIN');
   }
   if (normalizedRootAdminEmail && normalizedUserEmail === normalizedRootAdminEmail && !roleNames.includes('ROOT_ADMIN')) {
     roleNames.unshift('ROOT_ADMIN');
@@ -909,9 +911,9 @@ authRouter.post('/auth/login', authLoginRateLimiter, validateRequest({ body: log
           lastLoginAt: user.lastLoginAt,
           lastLoginIp: user.lastLoginIp,
         },
-        roleKey: 'USER',
+        roleKey: 'MAINTENANCE_USER',
         scopeType: 'PLANT',
-        rolePrecedence: rolePrecedence('USER'),
+        rolePrecedence: rolePrecedence('MAINTENANCE_USER'),
         allowedModules: [],
         allowedActionsByModule: {},
         permissionKeys: [],
@@ -1317,7 +1319,7 @@ authRouter.post('/auth/mfa/enable', requireAuth, validateRequest({ body: mfaEnab
   }
 });
 
-authRouter.post('/auth/mfa/disable', requireAuth, validateRequest({ body: mfaDisableSchema }), async (req, res, next) => {
+authRouter.post('/auth/mfa/disable', requireAuth, requireReauthentication, validateRequest({ body: mfaDisableSchema }), async (req, res, next) => {
   try {
     const body = mfaDisableSchema.parse(req.body);
     const userRepo = AppDataSource.getRepository(UserEntity);
@@ -1397,7 +1399,7 @@ authRouter.patch('/auth/profile', requireAuth, validateRequest({ body: updatePro
   }
 });
 
-authRouter.post('/auth/change-password', requireAuth, validateRequest({ body: changePasswordSchema }), async (req, res, next) => {
+authRouter.post('/auth/change-password', requireAuth, requireReauthentication, validateRequest({ body: changePasswordSchema }), async (req, res, next) => {
   try {
     const body = changePasswordSchema.parse(req.body);
     const userRepo = AppDataSource.getRepository(UserEntity);

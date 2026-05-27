@@ -22,16 +22,20 @@ export function DataTableShell({
   footer,
 }: DataTableShellProps) {
   return (
-    <Card className={cn("shadow-card", className)}>
-      <CardHeader className={cn("space-y-3 pb-3", headerClassName)}>
-        <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
-          {title ? <CardTitle className="text-base font-semibold">{title}</CardTitle> : <div />}
-          {toolbar ? <div className="w-full lg:w-auto">{toolbar}</div> : null}
+    <Card className={cn("overflow-hidden shadow-card", className)}>
+      <CardHeader className={cn("space-y-3 pb-3 px-4 pt-4 sm:px-6 sm:pt-6", headerClassName)}>
+        <div className="flex min-w-0 flex-col gap-3 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
+          {title ? <CardTitle className="min-w-0 text-base font-semibold sm:text-lg">{title}</CardTitle> : <div className="min-w-0" />}
+          {toolbar ? <div className="w-full min-w-0 lg:w-auto">{toolbar}</div> : null}
         </div>
       </CardHeader>
-      <CardContent className={cn("space-y-4", contentClassName)}>
-        <div className="overflow-x-auto">{children}</div>
-        {footer ? <div>{footer}</div> : null}
+      <CardContent className={cn("space-y-4 p-0 sm:p-6", contentClassName)}>
+        <div className="overflow-x-auto overscroll-x-contain">
+          <div className="min-w-full align-middle">
+            {children}
+          </div>
+        </div>
+        {footer ? <div className="px-4 sm:px-0 pb-4 sm:pb-0">{footer}</div> : null}
       </CardContent>
     </Card>
   );

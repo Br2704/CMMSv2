@@ -151,30 +151,6 @@ export class GateEntryEntity extends TimestampedUuidEntity {
   @Column({ name: 'exit_remarks', type: 'text', nullable: true })
   exitRemarks!: string | null;
 
-  @Column({ name: 'visitor_category', type: 'varchar', nullable: true })
-  visitorCategory!: string | null; // e.g. "OFFICIAL", "VENDOR", "AUDITOR"
-
-  @Column({ name: 'travel_origin', type: 'varchar', nullable: true })
-  travelOrigin!: string | null;
-
-  @Column({ name: 'travel_mode', type: 'varchar', nullable: true })
-  travelMode!: string | null; // e.g. "PRIVATE_VEHICLE", "PUBLIC_TRANSPORT", "COMPANY_CAB"
-
-  @Column({ name: 'transport_emissions_data', type: 'simple-json', nullable: true })
-  transportEmissionsData!: Record<string, unknown> | null;
-
-  @Column({ name: 'materials_carried', type: 'text', nullable: true })
-  materialsCarried!: string | null;
-
-  @Column({ name: 'ppe_confirmed', type: 'boolean', default: false })
-  ppeConfirmed!: boolean;
-
-  @Column({ name: 'safety_induction_completed', type: 'boolean', default: false })
-  safetyInductionCompleted!: boolean;
-
-  @Column({ name: 'emergency_contact_info', type: 'varchar', nullable: true })
-  emergencyContactInfo!: string | null;
-
   @Column({ type: 'varchar', default: 'IN' })
   status!: string;
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAuthStore, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isRootAdmin, isSuperAdmin } from "@/lib/permission-engine";
 import { listUsers } from "@/api/users";
 import { createPlant, deletePlant, listPlants, type Plant, updatePlant } from "@/api/plants";
 import { listOrganizations, type Organization } from "@/api/organizations";
@@ -15,6 +16,7 @@ import { FormDialog } from "@/components/shared/FormDialog";
 import { ViewDialog, DetailRow, DetailSection } from "@/components/shared/ViewDialog";
 import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { InputField, SelectField } from "@/components/shared/FormField";
+import { AsyncSelect } from "@/components/ui/async-select";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
@@ -67,8 +69,8 @@ export default function RootPlantMaster() {
   const { user } = useAuthStore();
   const brandingOrganizationId = useBrandingStore((state) => state.organizationId);
   const brandingOrganizationName = useBrandingStore((state) => state.organizationName);
-  const isRootUser = isRootAdmin(user);
-  const isScopedSuperAdmin = isSuperAdmin(user) && !isRootUser;
+  const isRootUser = isRootAdmin(user?.roles ?? []);
+  const isScopedSuperAdmin = isSuperAdmin(user?.roles ?? []) && !isRootUser;
   const { can } = usePermissions();
   const canEditPlant = isRootUser || isScopedSuperAdmin || can("PLANTS", "update");
   const canAddPlant = isRootUser || can("PLANTS", "create");
@@ -112,10 +114,10 @@ export default function RootPlantMaster() {
         .filter(
           (item) =>
             item.isActive &&
-            (item.roles || []).some((role) => role.toUpperCase() === "ADMIN") &&
+            (item.roles || []).some((role) => role.toUpperCase() === "PLANT_ADMIN") &&
             !(item.roles || []).some((role) => {
               const normalized = role.toUpperCase();
-              return normalized === "SUPERADMIN" || normalized === "SUPER_ADMIN" || normalized === "ROOT_ADMIN";
+              return normalized === "SUPER_ADMIN" || normalized === "SUPER_ADMIN" || normalized === "ROOT_ADMIN";
             }),
         )
         .map((item) => ({ value: item.userId, label: `${item.userCode} - ${item.fullName}` }));
@@ -127,7 +129,7 @@ export default function RootPlantMaster() {
 
   const fetchOrganizations = async () => {
     try {
-      const response = await listOrganizations({ page: 1, limit: 200, includeInactive: false });
+      const response = await listOrganizations({ page: 1, limit: 200 });
       setOrganizations(response.data);
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, "Failed to load organizations"));
@@ -262,13 +264,14 @@ export default function RootPlantMaster() {
       return;
     }
 
-    if (!formData.plantCode.trim() || !formData.plantName.trim() || !formData.organizationId) {
-      toast.error("Plant code, name and organization are required");
+    if (!formData.plantName.trim() || !formData.organizationId) {
+      toast.error("Plant name and organization are required");
       return;
     }
 
     setSaving(true);
     try {
+      const plantCode = formData.plantCode.trim();
       const payload: {
         plantCode: string;
         plantName: string;
@@ -276,7 +279,7 @@ export default function RootPlantMaster() {
         location?: string;
         plantAdminId?: string;
       } = {
-        plantCode: formData.plantCode.trim(),
+        plantCode: plantCode || 'N/A',
         plantName: formData.plantName.trim(),
         isActive: formData.isActive,
       };
@@ -510,20 +513,38 @@ export default function RootPlantMaster() {
         size="lg"
       >
         <FormGrid>
-          <InputField label="Plant Code" value={formData.plantCode} onChange={(value) => setFormData({ ...formData, plantCode: value })} placeholder="PLT-001" required />
+          <InputField label="Plant Code" value={formData.plantCode} onChange={(value) => setFormData({ ...formData, plantCode: value })} placeholder="Leave empty to auto-generate" hint="Optional - auto-generated if left blank" />
           <InputField label="Plant Name" value={formData.plantName} onChange={(value) => setFormData({ ...formData, plantName: value })} placeholder="Plant Name - City" required />
-          <SelectField
+          <AsyncSelect
             label="Organization"
             value={formData.organizationId}
-            onChange={(value) => setFormData({ ...formData, organizationId: value })}
-            options={organizationOptions}
+            onChange={(val) => setFormData({ ...formData, organizationId: (val as string | null) || "" })}
+            fetchFn={listOrganizations}
+            labelExtractor={(org) => `${org.code || "-"} - ${org.name}`}
+            valueExtractor={(org) => org.id}
             placeholder="Select organization"
-            required
             disabled={!isRootUser && isEditing}
-            hint={!isRootUser && isEditing ? "Only ROOT_ADMIN can change organization assignment." : undefined}
           />
           <InputField label="Location" value={formData.location} onChange={(value) => setFormData({ ...formData, location: value })} placeholder="Chennai, TN" />
-          <SelectField label="Plant Admin" value={formData.plantAdminId} onChange={(value) => setFormData({ ...formData, plantAdminId: value })} options={users} placeholder="Select plant admin" />
+          <AsyncSelect
+            label="Plant Admin"
+            value={formData.plantAdminId}
+            onChange={(val) => setFormData({ ...formData, plantAdminId: (val as string | null) || "" })}
+            fetchFn={async (params) => {
+              const res = await listUsers({ ...params, limit: 100 });
+              // Client-side filtering for demo; normally backend should filter by role
+              const admins = res.data.filter(
+                (item) =>
+                  item.isActive &&
+                  (item.roles || []).some((role) => role.toUpperCase() === "PLANT_ADMIN") &&
+                  !(item.roles || []).some((role) => ["SUPER_ADMIN", "SUPER_ADMIN", "ROOT_ADMIN"].includes(role.toUpperCase()))
+              );
+              return { data: admins, total: admins.length };
+            }}
+            labelExtractor={(user) => `${user.userCode} - ${user.fullName}`}
+            valueExtractor={(user) => user.userId}
+            placeholder="Select plant admin"
+          />
           <SelectField
             label="Status"
             value={formData.isActive ? "Active" : "Inactive"}

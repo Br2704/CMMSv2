@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { AssetPerformanceLogEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requirePermission, requireRole } from '../../middlewares/permissions';
+import { requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { clamp, mean, percentileRank, resolveDateRange, stdDeviation } from '../../utils/advancedAnalytics';
 
@@ -14,7 +14,7 @@ const performanceQuerySchema = z.object({
 });
 
 export const insightsRouter = Router();
-insightsRouter.use('/insights', requireAuth, requireRole(['SUPERADMIN']), requirePermission('BENCHMARKING', 'READ'));
+insightsRouter.use('/insights', requireAuth, requireRole(['SUPER_ADMIN']), requirePermission('BENCHMARKING', 'READ'));
 
 insightsRouter.get('/insights/plant-performance', async (req, res, next) => {
   try {

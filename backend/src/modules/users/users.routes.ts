@@ -5,7 +5,7 @@ import { AppDataSource } from '../../database/data-source';
 import { OrgRoleEntity, PlantEntity, ProfileEntity, RefreshTokenEntity, RoleEntity, UserEntity, UserRoleEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { forbidFieldsByRole } from '../../middlewares/fieldAuthorization';
-import { ensurePlantAccess, requirePermission } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission } from '../../middlewares/permissionGuard';
 import { fail, ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { isProtectedRootAdminEmail } from '../../config/protectedRootAdmin';
@@ -29,12 +29,13 @@ import { normalizeRoleName } from '../../utils/rbac';
 import { conflict } from '../../utils/httpError';
 import { isSafeImageValue } from '../../utils/fileValidation';
 import { sendUserInvitationEmail } from '../../services/notification-helper';
+import { ensureUniqueCode, generateEntityCode } from '../../utils/codeGenerator';
 
 const profileImageSchema = z
   .string()
   .trim()
   .max(2_500_000)
-  .refine((value) => isSafeImageValue(value), 'profileImageUrl must be a valid secure image URL or supported data URL');
+  .refine((value) => !value || isSafeImageValue(value), 'profileImageUrl must be a valid secure image URL or supported data URL');
 
 const createUserSchema = z.object({
   email: z.string().email(),
@@ -46,11 +47,11 @@ const createUserSchema = z.object({
   fullName: z.string().min(1),
   phone: z.string().optional().nullable(),
   profileImageUrl: profileImageSchema.optional().nullable(),
-  userCode: z.string().min(1),
-  department: z.string().optional().nullable(),
+  userCode: z.string().trim().min(1).optional(),
+  departmentId: z.string().uuid().optional().nullable(),
   plantId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().default(true),
-  roles: z.array(z.string().min(1)).min(1).default(['USER']),
+  roles: z.array(z.string().min(1)).min(1).default(['MAINTENANCE_USER']),
 });
 
 const patchUserSchema = z.object({
@@ -58,7 +59,7 @@ const patchUserSchema = z.object({
   fullName: z.string().min(1).optional(),
   phone: z.string().nullable().optional(),
   profileImageUrl: profileImageSchema.optional().nullable(),
-  department: z.string().nullable().optional(),
+  departmentId: z.string().uuid().nullable().optional(),
   plantId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().optional(),
 });
@@ -80,15 +81,32 @@ export const usersRouter = Router();
 usersRouter.use(requireAuth);
 
 const SYSTEM_ORG_ROLE_DEFINITIONS = [
-  { key: 'SUPERADMIN', name: 'SUPERADMIN', isSystem: true },
-  { key: 'ADMIN', name: 'ADMIN', isSystem: true },
-  { key: 'SECURITY', name: 'SECURITY', isSystem: true },
-  { key: 'VENDOR', name: 'VENDOR', isSystem: true },
-  { key: 'VISITOR', name: 'VISITOR', isSystem: true },
-  { key: 'USER', name: 'USER', isSystem: true },
+  { key: 'SUPER_ADMIN', name: 'Super Admin', isSystem: true },
+  { key: 'PLANT_ADMIN', name: 'Plant Admin', isSystem: true },
+  { key: 'ESG_ADMIN', name: 'ESG Admin', isSystem: true },
+  { key: 'HR_ADMIN', name: 'HR Admin', isSystem: true },
+  { key: 'MAINTENANCE_MANAGER', name: 'Maintenance Manager', isSystem: true },
+  { key: 'PRODUCTION_MANAGER', name: 'Production Manager', isSystem: true },
+  { key: 'SCM_MANAGER', name: 'SCM Manager', isSystem: true },
+  { key: 'HR_MANAGER', name: 'HR Manager', isSystem: true },
+  { key: 'CALIBRATION_MANAGER', name: 'Calibration Manager', isSystem: true },
+  { key: 'ACCOUNTS_MANAGER', name: 'Accounts Manager', isSystem: true },
+  { key: 'SAFETY_MANAGER', name: 'Safety Manager', isSystem: true },
+  { key: 'ESG_MANAGER', name: 'ESG Manager', isSystem: true },
+  { key: 'MAINTENANCE_USER', name: 'Maintenance User', isSystem: true },
+  { key: 'PRODUCTION_USER', name: 'Production User', isSystem: true },
+  { key: 'SCM_USER', name: 'SCM User', isSystem: true },
+  { key: 'HR_USER', name: 'HR User', isSystem: true },
+  { key: 'CALIBRATION_USER', name: 'Calibration User', isSystem: true },
+  { key: 'ACCOUNTS_USER', name: 'Accounts User', isSystem: true },
+  { key: 'SAFETY_USER', name: 'Safety User', isSystem: true },
+  { key: 'ESG_USER', name: 'ESG User', isSystem: true },
+  { key: 'SECURITY', name: 'Security', isSystem: true },
+  { key: 'VENDOR', name: 'Vendor', isSystem: true },
+  { key: 'VISITOR', name: 'Visitor', isSystem: true },
 ] as const;
 
-const SYSTEM_CATALOG_ROLE_KEYS = new Set(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'USER', 'SECURITY', 'VENDOR', 'VISITOR']);
+const SYSTEM_CATALOG_ROLE_KEYS = new Set(['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'ESG_ADMIN', 'HR_ADMIN', 'MAINTENANCE_MANAGER', 'PRODUCTION_MANAGER', 'SCM_MANAGER', 'HR_MANAGER', 'CALIBRATION_MANAGER', 'ACCOUNTS_MANAGER', 'SAFETY_MANAGER', 'ESG_MANAGER', 'MAINTENANCE_USER', 'PRODUCTION_USER', 'SCM_USER', 'HR_USER', 'CALIBRATION_USER', 'ACCOUNTS_USER', 'SAFETY_USER', 'ESG_USER', 'SECURITY', 'VENDOR', 'VISITOR']);
 
 function normalizeRoleInput(role: string) {
   return normalizeRoleName(role.trim());
@@ -96,7 +114,33 @@ function normalizeRoleInput(role: string) {
 
 function isSystemGlobalRole(role: string) {
   const normalized = normalizeRoleInput(role);
-  return normalized === 'ROOT_ADMIN' || normalized === 'SUPERADMIN';
+  return normalized === 'ROOT_ADMIN' || normalized === 'SUPER_ADMIN';
+}
+
+function roleShortCode(role: string): string {
+  const normalized = normalizeRoleInput(role);
+  const mapping: Record<string, string> = {
+    ROOT_ADMIN: 'RTA',
+    SUPER_ADMIN: 'SUP',
+    PLANT_ADMIN: 'PLT',
+    MAINTENANCE_MANAGER: 'MMG',
+    MAINTENANCE_USER: 'MMU',
+    HR_USER: 'HRU',
+    CALIBRATION_USER: 'CAL',
+    ACCOUNTS_USER: 'ACC',
+    SAFETY_USER: 'SFT',
+    SCM_MANAGER: 'SCM',
+    SCM_USER: 'SCU',
+    PRODUCTION_USER: 'PRO',
+    SECURITY: 'SEC',
+    VENDOR: 'VND',
+    VISITOR: 'VIS',
+    USER: 'USR',
+  };
+  const direct = mapping[normalized];
+  if (direct) return direct;
+  const compact = normalized.replace(/[^A-Z0-9]/g, '').slice(0, 3);
+  return compact || 'USR';
 }
 
 async function resolveOrganizationIdForPlant(plantId: string | null): Promise<string | null> {
@@ -203,7 +247,7 @@ usersRouter.get('/users', requirePermission('USERS', 'READ'), async (req, res, n
     const roleRepo = AppDataSource.getRepository(UserRoleEntity);
 
     const qb = profileRepo.createQueryBuilder('profile');
-    applySearch(qb, 'profile', query.search, ['full_name', 'email', 'user_code', 'department']);
+    applySearch(qb, 'profile', query.search, ['full_name', 'email', 'user_code']);
     applyPlantScope(qb, 'profile', 'plant_id', req.auth!, query.plantId);
     if (!query.includeInactive) {
       qb.andWhere('profile.is_active = :active', { active: true });
@@ -342,12 +386,25 @@ usersRouter.post('/users', requirePermission('USERS', 'CREATE'), async (req, res
         conflict('Email already exists');
       }
 
-      const existingProfileByCode = await profileRepo.findOne({ where: { userCode: body.userCode.trim() } });
-      if (existingProfileByCode) {
+      const primaryRoleKey = getPrimaryRoleKey(requestedRoles);
+      const generatedUserCode = body.userCode?.trim()
+        || await generateEntityCode({
+          tableName: 'profiles',
+          codeColumn: 'userCode',
+          typeCode: roleShortCode(primaryRoleKey),
+          plantId: resolvedPlantId ?? null,
+          organizationId: resolvedOrganizationId ?? null,
+        });
+
+      const userCodeExists = await ensureUniqueCode({
+        tableName: 'profiles',
+        codeColumn: 'userCode',
+        code: generatedUserCode,
+      });
+      if (userCodeExists) {
         conflict('User code already exists');
       }
 
-      const primaryRoleKey = getPrimaryRoleKey(requestedRoles);
       const resolvedOrgRole = resolvedOrganizationId
         ? await orgRoleRepo.findOneBy({ organizationId: resolvedOrganizationId, key: primaryRoleKey, isActive: true })
         : null;
@@ -365,13 +422,13 @@ usersRouter.post('/users', requirePermission('USERS', 'CREATE'), async (req, res
 
       const profile = profileRepo.create({
         userId: user.id,
-        userCode: body.userCode.trim(),
+        userCode: generatedUserCode,
         fullName: body.fullName,
         email: user.email,
         phone: user.phone,
         profileImageUrl: body.profileImageUrl?.trim() || null,
         plantId: resolvedPlantId,
-        department: body.department ?? null,
+        departmentId: body.departmentId ?? null,
         isActive: body.isActive,
       });
       await profileRepo.save(profile);
@@ -413,7 +470,7 @@ usersRouter.patch('/profiles/:id', requirePermission('USERS', 'UPDATE'), async (
         email: z.string().email().optional(),
         phone: z.string().nullable().optional(),
         profileImageUrl: profileImageSchema.optional().nullable(),
-        department: z.string().nullable().optional(),
+        departmentId: z.string().uuid().nullable().optional(),
         plantId: z.string().uuid().nullable().optional(),
         isActive: z.boolean().optional(),
       })
@@ -476,7 +533,7 @@ usersRouter.patch('/profiles/:id', requirePermission('USERS', 'UPDATE'), async (
     if (body.profileImageUrl !== undefined) {
       profile.profileImageUrl = body.profileImageUrl?.trim() || null;
     }
-    if (body.department !== undefined) profile.department = body.department ?? null;
+    if (body.departmentId !== undefined) profile.departmentId = body.departmentId ?? null;
     if (body.plantId !== undefined) {
       profile.plantId = body.plantId ?? null;
       const targetRoleKeys = targetRoles.map((row) => normalizeRoleInput(row.role));
@@ -560,8 +617,8 @@ usersRouter.patch(
       if (body.profileImageUrl !== undefined) {
         profile.profileImageUrl = body.profileImageUrl?.trim() || null;
       }
-      if (body.department !== undefined) {
-        profile.department = body.department ?? null;
+      if (body.departmentId !== undefined) {
+        profile.departmentId = body.departmentId ?? null;
       }
       if (body.plantId !== undefined) {
         profile.plantId = body.plantId ?? null;

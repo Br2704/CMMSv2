@@ -6,6 +6,9 @@ import type { ListQuery } from '../../utils/pagination';
 import { enforcePlantScope, resolveScopedPlantId } from '../../utils/plantScope';
 import { applyPlantScope, applySearch } from '../../utils/query';
 import { conflict, forbidden, notFound } from '../../utils/httpError';
+import { generateEntityCode } from '../../utils/codeGenerator';
+import { cascadeDeleteRelatedRecords } from '../../utils/cascadeDelete';
+import { audit } from '../../utils/audit';
 
 function enforceAuthPlantScope(auth: AuthContext, plantId: string | null | undefined) {
   try {
@@ -103,23 +106,32 @@ export class DepartmentsService {
     }
   }
 
-  async create(input: { plantId: string; code: string; name: string; parentId?: string | null; isActive?: boolean }, auth: AuthContext) {
+  async create(input: { plantId: string; code?: string; name: string; parentId?: string | null; isActive?: boolean }, auth: AuthContext) {
     const scopedPlantId = resolveScopedPlantId(auth, input.plantId);
     if (!scopedPlantId) {
       conflict('plantId is required');
     }
 
     enforceAuthPlantScope(auth, scopedPlantId);
+    const code = input.code?.trim() || '';
+    const resolvedCode = code || await generateEntityCode({
+      tableName: 'departments',
+      codeColumn: 'code',
+      typeCode: 'DEPT',
+      plantId: scopedPlantId,
+      organizationId: null,
+    });
+
     await this.validateParentDepartment(scopedPlantId, input.parentId ?? null);
     await this.ensureUniqueDepartment({
       plantId: scopedPlantId,
-      code: input.code,
+      code: resolvedCode,
       name: input.name,
     });
 
     const created = this.departmentsRepo.create({
       plantId: scopedPlantId,
-      code: input.code.trim(),
+      code: resolvedCode,
       name: input.name.trim(),
       parentId: input.parentId ?? null,
       isActive: input.isActive ?? true,
@@ -178,8 +190,28 @@ export class DepartmentsService {
     const department = await this.getById(id, auth);
 
     if (auth.scopeType === 'ROOT_ADMIN') {
+      await cascadeDeleteRelatedRecords({
+        tableName: 'departments',
+        moduleName: 'departments',
+        entityId: department.id,
+        authUserId: auth.userId ?? null,
+        authRoles: auth.roles,
+        path: `/api/departments/${department.id}`,
+        plantId: department.plantId,
+      });
       try {
         await this.departmentsRepo.delete({ id: department.id });
+        await audit('departments.delete', {
+          module: 'DEPARTMENTS',
+          actorUserId: auth.userId ?? null,
+          entityName: 'departments',
+          entityId: department.id,
+          method: 'DELETE',
+          path: `/api/departments/${department.id}`,
+          plantId: department.plantId,
+          statusCode: 200,
+          metadata: { hardDelete: true, cascade: true },
+        });
       } catch (error) {
         if (this.isRelationProtectedDeleteError(error)) {
           conflict('Department cannot be deleted because related records still exist.');

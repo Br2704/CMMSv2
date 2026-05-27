@@ -1,18 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Eye, Factory, Gauge, History, Image as ImageIcon, Loader2, QrCode, RotateCcw, ScanLine, Search, ShieldCheck, Wrench } from "lucide-react";
+import { Calendar, Eye, Factory, Gauge, History, Image as ImageIcon, ListChecks, Loader2, QrCode, RotateCcw, ScanLine, Search, ShieldCheck, TrendingUp, Wrench } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getAsset, getAssetOverview, downloadAssetLogbook, type Asset, type AssetOverview } from "@/api/assets";
 import { getMasterDataGraph } from "@/api/master-data";
 import { listWorkOrders } from "@/api/workorders";
 import { getAssetQr, resolveQrMachineCode, resolveQrToken, type AssetQrData } from "@/api/qr";
-import { useAuthStore, isSuperAdmin } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isSuperAdmin } from "@/lib/permission-engine";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
@@ -152,8 +154,8 @@ function AssetOverviewPanel({
                 <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Quick Actions & Identity</h4>
              </div>
              
-             <div className="flex gap-4">
-                <div className="grid grid-cols-1 gap-3 flex-1">
+              <div className="flex gap-4 flex-wrap">
+                <div className="grid grid-cols-1 gap-3 flex-1 min-w-[200px]">
                   <Button className="h-14 rounded-2xl flex-row gap-2 shadow-glow" onClick={onRaiseWorkOrder}>
                     <Wrench className="h-4 w-4" />
                     <span className="text-[10px] font-black uppercase">Raise Incident</span>
@@ -218,12 +220,117 @@ function AssetOverviewPanel({
                       <p className="text-[10px] font-bold text-slate-400 truncate max-w-[200px]">{wo.problemDescription || "Routine maintenance"}</p>
                     </div>
                   </div>
-                  <StatusBadge className="text-[8px]" variant={workOrderStatusVariant(wo.status)}>{wo.status.replace(/_/g, " ")}</StatusBadge>
+                  <StatusBadge className="text-[8px] whitespace-nowrap shrink-0" variant={workOrderStatusVariant(wo.status)}>{wo.status.replace(/_/g, " ")}</StatusBadge>
                </div>
              ))
            )}
          </div>
       </div>
+
+      {/* PM Schedules Section */}
+      {overview.pmSchedules && overview.pmSchedules.length > 0 && (
+        <div className="rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">PM/PD Schedules</h4>
+            <Calendar className="h-4 w-4 text-slate-300" />
+          </div>
+          <div className="space-y-3">
+            {overview.pmSchedules.slice(0, 5).map((pm) => (
+              <div key={pm.id} className="rounded-2xl border border-slate-50 p-4 hover:border-primary/20 hover:bg-primary/5 transition-all">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-[9px] font-bold uppercase tracking-wider border-slate-200">
+                      {pm.maintenanceType || "PM"}
+                    </Badge>
+                    <span className="text-xs font-black text-slate-900">{pm.template?.templateName || "Schedule"}</span>
+                  </div>
+                  <StatusBadge variant={pm.status === "COMPLETED" ? "active" as const : pm.status === "OVERDUE" ? "destructive" as const : "warning" as const} className="h-5 px-1.5 text-[9px] whitespace-nowrap shrink-0">
+                    {pm.status?.replace(/_/g, " ") || "PENDING"}
+                  </StatusBadge>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-[10px]">
+                  <span className="font-bold text-slate-400 uppercase tracking-wider">Next Due: <span className="text-slate-700">{pm.nextDue ? format(new Date(pm.nextDue), "MMM dd, yyyy") : "-"}</span></span>
+                  {pm.frequency && <span className="font-bold text-slate-400 uppercase tracking-wider">Every: <span className="text-slate-700">{pm.frequency}</span></span>}
+                  {pm.assignedTeam && <span className="font-bold text-slate-400 uppercase tracking-wider">Team: <span className="text-slate-700">{pm.assignedTeam.teamName}</span></span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Calibration Tasks Section */}
+      {overview.calibrationTasks && overview.calibrationTasks.length > 0 && (
+        <div className="rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Calibration Tasks</h4>
+            <Gauge className="h-4 w-4 text-slate-300" />
+          </div>
+          <div className="space-y-3">
+            {overview.calibrationTasks.slice(0, 5).map((task) => (
+              <div key={task.id} className="flex items-center justify-between p-4 rounded-2xl border border-slate-50 hover:border-primary/20 hover:bg-primary/5 transition-all">
+                <div className="flex items-center gap-3">
+                  <div className={cn("h-2 w-2 rounded-full", task.status === "COMPLETED" ? "bg-emerald-500" : task.status === "OVERDUE" ? "bg-rose-500" : "bg-amber-500")} />
+                  <div>
+                    <p className="text-xs font-bold text-slate-900">{task.instrument?.instrumentName || "Instrument"}</p>
+                    <p className="text-[10px] text-slate-400">{task.calibrationType || "-"} · Due: {task.dueDate ? format(new Date(task.dueDate), "MMM dd, yyyy") : "-"}</p>
+                  </div>
+                </div>
+                <StatusBadge variant={task.status === "COMPLETED" ? "active" as const : "warning" as const} className="h-5 px-1.5 text-[9px] whitespace-nowrap shrink-0">
+                  {task.status?.replace(/_/g, " ") || "PENDING"}
+                </StatusBadge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Instruments Section */}
+      {overview.instruments && overview.instruments.length > 0 && (
+        <div className="rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Instruments</h4>
+            <ListChecks className="h-4 w-4 text-slate-300" />
+          </div>
+          <div className="space-y-3">
+            {overview.instruments.slice(0, 5).map((inst) => (
+              <div key={inst.id} className="flex items-center justify-between p-4 rounded-2xl border border-slate-50 hover:border-primary/20 hover:bg-primary/5 transition-all">
+                <div>
+                  <p className="text-xs font-bold text-slate-900">{inst.instrumentName}</p>
+                  <p className="text-[10px] text-slate-400">{inst.instrumentType} · {inst.serialNumber || "N/A"}</p>
+                </div>
+                <StatusBadge variant={inst.status === "ACTIVE" ? "active" as const : "inactive" as const} className="h-5 px-1.5 text-[9px] whitespace-nowrap shrink-0">
+                  {inst.status || "UNKNOWN"}
+                </StatusBadge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Performance Analytics Section */}
+      {overview.analytics.performance && overview.analytics.performance.length > 0 && (
+        <div className="rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Performance Analytics</h4>
+            <TrendingUp className="h-4 w-4 text-slate-300" />
+          </div>
+          <div className="space-y-3">
+            {overview.analytics.performance.slice(0, 8).map((sample) => (
+              <div key={sample.id} className="flex items-center justify-between p-3 rounded-2xl border border-slate-50 hover:bg-primary/5 transition-all">
+                <span className="text-[10px] font-bold text-slate-400">
+                  {sample.capturedAt ? format(new Date(sample.capturedAt), "MMM dd, HH:mm") : "-"}
+                </span>
+                <div className="flex items-center gap-4 text-[10px] font-bold text-slate-700">
+                  {sample.runtimeHours && <span>Runtime: {sample.runtimeHours}h</span>}
+                  {sample.energyKwh && <span>Energy: {sample.energyKwh}kWh</span>}
+                  {sample.efficiencyValue && <span>Eff: {sample.efficiencyValue}{sample.efficiencyUnit || "%"}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -232,7 +339,7 @@ export default function Assets() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, activePlantId } = useAuthStore();
-  const userIsSuperAdmin = isSuperAdmin(user);
+  const userIsSuperAdmin = isSuperAdmin(user?.roles ?? []);
   const [search, setSearch] = useState("");
   const [selectedPlantId, setSelectedPlantId] = useState("");
   const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
@@ -244,6 +351,7 @@ export default function Assets() {
   const [resolvingQr, setResolvingQr] = useState(false);
   const assetIdFromQuery = searchParams.get("assetId");
   const queryOpenHandledRef = useRef<string | null>(null);
+  const lastAssetRefreshRef = useRef<{ assetId: string; at: number } | null>(null);
 
   const masterDataQuery = useQuery({
     queryKey: ["assets_hierarchy_graph", userIsSuperAdmin, user?.plantId, activePlantId],
@@ -283,6 +391,30 @@ export default function Assets() {
     queryFn: async () => getAssetQr(selectedAsset!.id),
   });
   const [assetQrImageUrl, setAssetQrImageUrl] = useState<string | null>(null);
+
+  const refreshSelectedAsset = useCallback(
+    async (assetId?: string | null) => {
+      if (!assetId) return;
+      const now = Date.now();
+      const lastRefresh = lastAssetRefreshRef.current;
+      if (lastRefresh && lastRefresh.assetId === assetId && now - lastRefresh.at < 10_000) {
+        return;
+      }
+
+      lastAssetRefreshRef.current = { assetId, at: now };
+
+      try {
+        const assetResponse = await getAsset(assetId);
+        setSelectedAsset(assetResponse.data);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to refresh asset details";
+        if (!message.toLowerCase().includes("rate limit") && !message.toLowerCase().includes("server is busy")) {
+          toast.error(message);
+        }
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -423,6 +555,28 @@ export default function Assets() {
     setSelectedDepartmentId(resolvedAsset.departmentId || "");
     setSelectedModuleId(resolvedAsset.moduleId || "");
   }, [assetIdFromQuery, assets, directAssetQuery.data, visibleAssets]);
+
+  useEffect(() => {
+    if (!isViewOpen || !selectedAsset?.id) return;
+    void refreshSelectedAsset(selectedAsset.id);
+  }, [isViewOpen, refreshSelectedAsset, selectedAsset?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isViewOpen || !selectedAsset?.id) return;
+
+    const handleFocus = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshSelectedAsset(selectedAsset.id);
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [isViewOpen, refreshSelectedAsset, selectedAsset?.id]);
 
   const workOrdersByAsset = useMemo(() => {
     const map = new Map<string, WorkOrderSummary[]>();
@@ -662,23 +816,23 @@ export default function Assets() {
         </div>
 
         <Card className="rounded-[3rem] border-none bg-white shadow-industrial overflow-hidden">
-          <CardContent className="space-y-8 p-10">
+          <CardContent className="space-y-6 sm:space-y-8 p-4 sm:p-10">
             {/* Professional Filter Bar */}
-            <div className="flex flex-wrap items-end gap-6 pb-6 border-b border-slate-50">
-              <div className="flex-1 min-w-[300px] space-y-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-12 pb-6 border-b border-slate-50 items-end">
+              <div className="space-y-2 sm:col-span-2 lg:col-span-4">
                 <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Search Identifier</label>
                 <div className="relative group">
                   <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-primary" />
                   <Input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 pl-11 focus-visible:ring-primary/20 shadow-none hover:bg-slate-50 transition-all text-sm font-medium"
+                    className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 pl-11 focus-visible:ring-primary/20 shadow-none hover:bg-slate-50 transition-all text-sm font-medium w-full"
                     placeholder="Search by code, name or model..."
                   />
                 </div>
               </div>
 
-              <div className="w-full sm:w-[200px] space-y-2">
+              <div className="space-y-2 sm:col-span-1 lg:col-span-2">
                 <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Plant Context</label>
                 {userIsSuperAdmin ? (
                   <select
@@ -694,13 +848,13 @@ export default function Assets() {
                     {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.plantCode}</option>)}
                   </select>
                 ) : (
-                  <div className="flex h-12 w-full items-center rounded-2xl border border-slate-100 bg-slate-50/30 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  <div className="flex h-12 w-full items-center rounded-2xl border border-slate-100 bg-slate-50/30 px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 truncate">
                     {selectedPlant?.plantCode || "Default Unit"}
                   </div>
                 )}
               </div>
 
-              <div className="w-full sm:w-[200px] space-y-2">
+              <div className="space-y-2 sm:col-span-1 lg:col-span-2">
                 <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Workcenter</label>
                 <select
                   className="h-12 w-full rounded-2xl border-slate-100 bg-slate-50/50 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20"
@@ -715,7 +869,7 @@ export default function Assets() {
                 </select>
               </div>
 
-              <div className="w-full sm:w-[180px] space-y-2">
+              <div className="space-y-2 sm:col-span-1 lg:col-span-2">
                 <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Health Filter</label>
                 <select
                   className="h-12 w-full rounded-2xl border-slate-100 bg-slate-50/50 px-4 text-xs font-black uppercase tracking-wider shadow-none focus:ring-primary/20"
@@ -729,19 +883,21 @@ export default function Assets() {
                 </select>
               </div>
 
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-12 w-12 rounded-2xl hover:bg-slate-50 text-slate-400"
-                onClick={() => {
-                  setSearch("");
-                  setSelectedPlantId("");
-                  setSelectedDepartmentId("");
-                  setStatusFilter("all");
-                }}
-              >
-                <RotateCcw className="h-4 w-4" />
-              </Button>
+              <div className="sm:col-span-1 lg:col-span-2 flex justify-start sm:justify-end">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-12 w-12 rounded-2xl hover:bg-slate-50 text-slate-400"
+                  onClick={() => {
+                    setSearch("");
+                    setSelectedPlantId("");
+                    setSelectedDepartmentId("");
+                    setStatusFilter("all");
+                  }}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
             {isLoading ? (
@@ -750,7 +906,7 @@ export default function Assets() {
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Synchronizing Directory</p>
               </div>
             ) : (
-              <div className="rounded-[2rem] border border-slate-50 bg-white shadow-sm overflow-hidden">
+              <div className="rounded-[2rem] border border-slate-50 bg-white shadow-sm overflow-x-auto">
                 <ResponsiveTable
                   data={visibleAssets}
                   columns={columns}
@@ -762,6 +918,7 @@ export default function Assets() {
                     return (
                       <MobileCard
                         onView={() => { setSelectedAsset(asset); setIsViewOpen(true); }}
+                        
                         actions={[
                           {
                             label: "Log History",
@@ -807,7 +964,7 @@ export default function Assets() {
         }}
         title={selectedAsset?.code || "Operational Node"}
         subtitle={selectedAsset?.name}
-        contentClassName="sm:max-w-[860px] rounded-[3.5rem] border-none bg-white/95 backdrop-blur-2xl shadow-2xl"
+        contentClassName="w-[calc(100vw-1rem)] sm:max-w-[860px] rounded-3xl sm:rounded-[3.5rem] border-none bg-white/95 backdrop-blur-2xl shadow-2xl"
       >
         {overviewQuery.isLoading ? (
           <div className="flex items-center justify-center py-32">

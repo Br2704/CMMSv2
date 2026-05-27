@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { OrgRoleEntity, OrganizationEntity, PlantEntity, ProfileEntity, RefreshTokenEntity, RoleEntity, UserEntity, UserRoleEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { requireRole } from '../../middlewares/permissions';
+import { requireRole } from '../../middlewares/permissionGuard';
 import { fail, ok } from '../../utils/apiResponse';
 import { isProtectedRootAdminEmail } from '../../config/protectedRootAdmin';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
@@ -19,7 +19,7 @@ const profileImageSchema = z
   .string()
   .trim()
   .max(2_500_000)
-  .refine((value) => isSafeImageValue(value), 'profileImageUrl must be a valid secure image URL or supported data URL');
+  .refine((value) => !value || isSafeImageValue(value), 'profileImageUrl must be a valid secure image URL or supported data URL');
 
 const rootUserCreateSchema = z.object({
   fullName: z.string().min(1),
@@ -55,38 +55,56 @@ const rootUserPatchSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-function normalizeRoleInput(role: string): 'SUPERADMIN' | 'ADMIN' | 'ROOT_ADMIN' | string {
+function normalizeRoleInput(role: string): 'SUPER_ADMIN' | 'PLANT_ADMIN' | 'ROOT_ADMIN' | string {
   return normalizeRoleName(role.trim());
 }
 
 const SYSTEM_ORG_ROLE_DEFINITIONS = [
-  { key: 'SUPERADMIN', name: 'SUPERADMIN', isSystem: true },
-  { key: 'ADMIN', name: 'ADMIN', isSystem: true },
-  { key: 'SECURITY', name: 'SECURITY', isSystem: true },
-  { key: 'VENDOR', name: 'VENDOR', isSystem: true },
-  { key: 'VISITOR', name: 'VISITOR', isSystem: true },
-  { key: 'USER', name: 'USER', isSystem: true },
+  { key: 'SUPER_ADMIN', name: 'Super Admin', isSystem: true },
+  { key: 'PLANT_ADMIN', name: 'Plant Admin', isSystem: true },
+  { key: 'ESG_ADMIN', name: 'ESG Admin', isSystem: true },
+  { key: 'HR_ADMIN', name: 'HR Admin', isSystem: true },
+  { key: 'MAINTENANCE_MANAGER', name: 'Maintenance Manager', isSystem: true },
+  { key: 'PRODUCTION_MANAGER', name: 'Production Manager', isSystem: true },
+  { key: 'SCM_MANAGER', name: 'SCM Manager', isSystem: true },
+  { key: 'HR_MANAGER', name: 'HR Manager', isSystem: true },
+  { key: 'CALIBRATION_MANAGER', name: 'Calibration Manager', isSystem: true },
+  { key: 'ACCOUNTS_MANAGER', name: 'Accounts Manager', isSystem: true },
+  { key: 'SAFETY_MANAGER', name: 'Safety Manager', isSystem: true },
+  { key: 'ESG_MANAGER', name: 'ESG Manager', isSystem: true },
+  { key: 'MAINTENANCE_USER', name: 'Maintenance User', isSystem: true },
+  { key: 'PRODUCTION_USER', name: 'Production User', isSystem: true },
+  { key: 'SCM_USER', name: 'SCM User', isSystem: true },
+  { key: 'HR_USER', name: 'HR User', isSystem: true },
+  { key: 'CALIBRATION_USER', name: 'Calibration User', isSystem: true },
+  { key: 'ACCOUNTS_USER', name: 'Accounts User', isSystem: true },
+  { key: 'SAFETY_USER', name: 'Safety User', isSystem: true },
+  { key: 'ESG_USER', name: 'ESG User', isSystem: true },
+  { key: 'SECURITY', name: 'Security', isSystem: true },
+  { key: 'VENDOR', name: 'Vendor', isSystem: true },
+  { key: 'VISITOR', name: 'Visitor', isSystem: true },
 ] as const;
 
-const SYSTEM_CATALOG_ROLE_KEYS = new Set(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN', 'USER', 'SECURITY', 'VENDOR', 'VISITOR']);
+const SYSTEM_CATALOG_ROLE_KEYS = new Set(['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'ESG_ADMIN', 'HR_ADMIN', 'MAINTENANCE_MANAGER', 'PRODUCTION_MANAGER', 'SCM_MANAGER', 'HR_MANAGER', 'CALIBRATION_MANAGER', 'ACCOUNTS_MANAGER', 'SAFETY_MANAGER', 'ESG_MANAGER', 'MAINTENANCE_USER', 'PRODUCTION_USER', 'SCM_USER', 'HR_USER', 'CALIBRATION_USER', 'ACCOUNTS_USER', 'SAFETY_USER', 'ESG_USER', 'SECURITY', 'VENDOR', 'VISITOR']);
 
-function getManagedRoleKey(roles: string[]): 'ROOT_ADMIN' | 'SUPERADMIN' | 'ADMIN' | null {
+function getManagedRoleKey(roles: string[]): 'ROOT_ADMIN' | 'SUPER_ADMIN' | 'PLANT_ADMIN' | null {
   const normalized = roles.map((role) => normalizeRoleInput(role));
   if (normalized.includes('ROOT_ADMIN')) return 'ROOT_ADMIN';
-  if (normalized.includes('SUPERADMIN')) return 'SUPERADMIN';
-  if (normalized.includes('ADMIN')) return 'ADMIN';
+  if (normalized.includes('SUPER_ADMIN')) return 'SUPER_ADMIN';
+  if (normalized.includes('PLANT_ADMIN')) return 'PLANT_ADMIN';
   return null;
 }
 
 function roleRequiresPlantScope(roleKey: string): boolean {
   const normalized = normalizeRoleInput(roleKey);
-  return normalized !== 'ROOT_ADMIN' && normalized !== 'SUPERADMIN';
+  return normalized !== 'ROOT_ADMIN' && normalized !== 'SUPER_ADMIN';
 }
 
 function userCodePrefixForRole(roleKey: string): string {
   const normalized = normalizeRoleInput(roleKey);
   if (normalized === 'ROOT_ADMIN') return 'RTA';
-  if (normalized === 'SUPERADMIN') return 'SUP';
+  if (normalized === 'SUPER_ADMIN') return 'SUP';
+  if (normalized === 'PLANT_ADMIN') return 'PLT';
   const compact = normalized.replace(/[^A-Z0-9]/g, '').slice(0, 3);
   return (compact || 'USR').padEnd(3, 'U').slice(0, 3);
 }
@@ -176,7 +194,7 @@ async function repairLegacyManagedUserScopeAssignments() {
     .leftJoin(PlantEntity, 'role_plant', 'role_plant.id = ur.plant_id')
     .where('(usr.organization_id IS NULL OR usr.org_role_id IS NULL)')
     .andWhere('(UPPER(COALESCE(org_role.key, \'\')) IN (:...allowedRoles) OR UPPER(COALESCE(ur.role, \'\')) IN (:...allowedRoles))', {
-      allowedRoles: ['ROOT_ADMIN', 'SUPERADMIN', 'SUPER_ADMIN', 'ADMIN'],
+      allowedRoles: ['ROOT_ADMIN', 'SUPER_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN'],
     })
     .select([
       'usr.id AS "userId"',
@@ -195,7 +213,7 @@ async function repairLegacyManagedUserScopeAssignments() {
   }
 
   const orgRoles = await orgRoleRepo.find({
-    where: [{ key: 'SUPERADMIN', isActive: true }, { key: 'SUPER_ADMIN', isActive: true }, { key: 'ADMIN', isActive: true }],
+    where: [{ key: 'SUPER_ADMIN', isActive: true }, { key: 'SUPER_ADMIN', isActive: true }, { key: 'PLANT_ADMIN', isActive: true }],
     select: ['id', 'organizationId', 'key'],
   });
   const orgRoleIdByOrgAndKey = new Map<string, string>();
@@ -223,7 +241,7 @@ async function repairLegacyManagedUserScopeAssignments() {
       firstRow.orgRoleOrganizationId ??
       userRows.map((row) => row.profilePlantOrganizationId).find((value): value is string => Boolean(value)) ??
       userRows.map((row) => row.rolePlantOrganizationId).find((value): value is string => Boolean(value)) ??
-      (managedRole === 'ROOT_ADMIN' || managedRole === 'SUPERADMIN' ? singleActiveOrganizationId : null);
+      (managedRole === 'ROOT_ADMIN' || managedRole === 'SUPER_ADMIN' || managedRole === 'PLANT_ADMIN' ? singleActiveOrganizationId : null);
 
     if (!inferredOrganizationId) {
       return;
@@ -388,7 +406,7 @@ rootUsersRouter.get('/root/users', async (req, res, next) => {
     const entries = Array.from(byUserId.values())
       .map((entry) => ({
         ...entry,
-        roleKey: getPrimaryRoleKey(entry.roles.size > 0 ? Array.from(entry.roles) : ['USER']),
+        roleKey: getPrimaryRoleKey(entry.roles.size > 0 ? Array.from(entry.roles) : ['MAINTENANCE_USER']),
       }))
       .filter((entry) => !roleKeyFilter || normalizeRoleInput(entry.roleKey) === roleKeyFilter);
     const total = entries.length;
@@ -549,7 +567,7 @@ rootUsersRouter.patch('/root/users/:id', async (req, res, next) => {
         ...(existingOrgRole?.key ? [normalizeRoleInput(existingOrgRole.key)] : []),
       ]),
     );
-    const currentRole = normalizedExistingRoles.length > 0 ? getPrimaryRoleKey(normalizedExistingRoles) : 'USER';
+    const currentRole = normalizedExistingRoles.length > 0 ? getPrimaryRoleKey(normalizedExistingRoles) : 'MAINTENANCE_USER';
     const nextRole = body.roleKey ? normalizeRoleInput(body.roleKey) : currentRole;
 
     const nextOrganizationId = body.organizationId ?? user.organizationId;

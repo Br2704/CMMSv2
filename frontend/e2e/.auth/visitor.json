@@ -2,20 +2,20 @@
   "cookies": [
     {
       "name": "cmms_refresh_token",
-      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxYzZjOGU5My02ZTkwLTQ1ZDMtYmU1Mi1lMzFlNTlmNWMxYjQiLCJ0b2tlbklkIjoiYTAzMzUzNGUtMmNiNi00OWYyLWFjZWYtY2ViMTZkNjBmOWY5IiwiaWF0IjoxNzc5NjAxMzY5LCJleHAiOjE3ODAyMDYxNjksImF1ZCI6ImNtbXMtd2ViIiwiaXNzIjoiY21tcy1iYWNrZW5kIn0.3giT2pAS9BvWtdm3n98kqu3YkOVQ0J08vxns24smrpM",
-      "domain": "127.0.0.1",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5YzZjMmU3Yy02YWVjLTRhMzgtOGU3OC05OTU4MTg3MTM2ZDAiLCJ0b2tlbklkIjoiYzJmMzQ4NTItYzA1ZC00Yzg4LWFhNGUtMDM4ODNkNGQ2NzdjIiwiaWF0IjoxNzc5NjgxMjQxLCJleHAiOjE3ODAyODYwNDEsImF1ZCI6ImNtbXMtd2ViIiwiaXNzIjoiY21tcy1iYWNrZW5kIn0.yMwpSn645F1T0EnWoXWrYoXqk7bfeL7wldmDgwCg5fw",
+      "domain": "localhost",
       "path": "/api/auth",
-      "expires": 1780206169.621209,
+      "expires": 1780286041.896866,
       "httpOnly": true,
       "secure": true,
       "sameSite": "Strict"
     },
     {
       "name": "cmms_csrf_token",
-      "value": "LTmcEux0IdaKYmGdJbzwAtPyNvrf-SK9_UeclMiV5Zo",
-      "domain": "127.0.0.1",
+      "value": "-D3ndgoNNLsmS7IeqyNWmBudckbvHZr9TDZsmzJ9dJU",
+      "domain": "localhost",
       "path": "/",
-      "expires": 1782193369.62139,
+      "expires": 1782273241.896967,
       "httpOnly": false,
       "secure": true,
       "sameSite": "Strict"
@@ -23,9 +23,9 @@
     {
       "name": "cmms_session",
       "value": "1",
-      "domain": "127.0.0.1",
+      "domain": "localhost",
       "path": "/",
-      "expires": 1780206169.621471,
+      "expires": 1780286041.897039,
       "httpOnly": true,
       "secure": true,
       "sameSite": "Strict"
@@ -33,7 +33,7 @@
   ],
   "origins": [
     {
-      "origin": "http://127.0.0.1:8081",
+      "origin": "http://localhost:8081",
       "localStorage": [
         {
           "name": "cmms:sidebar-collapsed",
@@ -41,7 +41,7 @@
         },
         {
           "name": "cmms:device_id",
-          "value": "0a7bda5e-dd02-4787-8197-323e51029501"
+          "value": "f64ac05f-073f-4044-803a-f00943dd82d0"
         },
         {
           "name": "cmms_has_session",

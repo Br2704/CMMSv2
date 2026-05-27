@@ -1,4 +1,5 @@
 import { type ReportFormatConfigPayload, type ChartConfig } from "@/api/reportFormat";
+import { APP_NAME, APP_TAGLINE } from "@/config/branding";
 import {
   AlignLeft,
   AlignCenter,
@@ -98,10 +99,10 @@ export const ALIGNMENT_ICONS: Record<string, typeof AlignLeft> = {
 };
 
 export const DEFAULT_CONFIG: ReportFormatConfigPayload = {
-  headerTitle: "CMMS Report",
+  headerTitle: APP_NAME,
   headerSubtitle: "",
-  footerText: "Powered by TamOptiX Technologies",
-  footerSubtext: "TamOptiX Technologies | Intelligent CMMS Platform",
+  footerText: APP_TAGLINE,
+  footerSubtext: `${APP_NAME} | Intelligent CMMS Platform`,
   showTamOptixBranding: true,
   showOrganizationLogo: true,
   showGeneratedDate: true,
@@ -197,7 +198,7 @@ export function formatCsvValue(value: unknown, locale: string): string {
         month: "short",
         day: "numeric",
       }).format(new Date(value));
-    } catch {}
+    } catch { /* ignore */ }
   }
   if (typeof value === "number") {
     try {
@@ -205,7 +206,7 @@ export function formatCsvValue(value: unknown, locale: string): string {
         minimumFractionDigits: 0,
         maximumFractionDigits: 2,
       }).format(value);
-    } catch {}
+    } catch { /* ignore */ }
   }
   return String(value);
 }

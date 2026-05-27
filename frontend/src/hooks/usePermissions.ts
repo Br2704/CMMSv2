@@ -1,286 +1,50 @@
 import { getStoredAccessToken } from "@/api/http";
-import { NON_ROOT_APP_PAGES } from "@/config/app-page-catalog";
 import { usePermissionsStore } from "@/store/permissions.store";
 import { useAuthStore } from "@/store/auth.store";
 import { useFeaturesStore } from "@/store/features.store";
 import { useEffect } from "react";
+import { NON_ROOT_APP_PAGES } from "@/config/app-page-catalog";
+import {
+  normalizeAction,
+  normalizeRole,
+  normalizeModuleKey,
+  FEATURE_BY_MODULE,
+  buildPermissionMapForRole,
+  mergePermissionMaps,
+  can as engineCan,
+  isAdminLevel,
+  getPrimaryRole,
+} from "@/lib/permission-engine";
 
+/** Catalog-derived alias mapping: page moduleId → canonical permission module key */
 const catalogModuleAlias = Object.fromEntries(
-  NON_ROOT_APP_PAGES.map((page) => {
-    const aliases = Array.from(new Set([page.permissionModuleKey, ...(page.aliases ?? []), "*"]));
-    return [page.moduleId.toLowerCase(), aliases];
-  }),
-) as Record<string, string[]>;
-
-const catalogFeatureByModule = Object.fromEntries(
   NON_ROOT_APP_PAGES
-    .filter((page) => Boolean(page.featureKey))
-    .map((page) => [page.moduleId.toLowerCase(), page.featureKey as string]),
-) as Record<string, string>;
+    .filter(page => page.moduleId)
+    .map(page => [page.moduleId, page.permissionModuleKey]),
+);
 
-const MODULE_ALIAS: Record<string, string[]> = {
-  ...catalogModuleAlias,
-  calibration: ["CALIBRATION", "*"],
-  amc: ["AMC", "*"],
-  esg: ["ESG", "*"],
-  safety: ["SAFETY", "*"],
-  "security-center": ["SECURITY", "AUDIT_LOGS", "*"],
-  "security-gate": ["GATES", "SECURITY_GATE", "*"],
-  "data-logging": ["LOGS", "DATA_LOGGING", "*"],
-  "masters.plant": ["PLANTS", "*"],
-  "masters.departments": ["DEPARTMENTS", "MASTERS", "*"],
-  "masters.modules": ["MODULES", "MASTERS.MODULES", "MASTERS", "*"],
-  "masters.machines": ["ASSETS", "MASTERS", "*"],
-  "masters.cost-centers": ["DEPARTMENTS", "MASTERS", "*"],
-  "masters.vendors": ["VENDORS", "MASTERS", "*"],
-  "masters.users": ["USERS", "*"],
-  "masters.esg-config": ["ESG", "MASTERS", "*"],
-  "masters.safety-config": ["SAFETY", "MASTERS", "*"],
-  "masters.pm-config": ["PM", "PM_SCHEDULES", "MASTERS", "*"],
-  "masters.calibration-config": ["CALIBRATION", "MASTERS", "*"],
-  "masters.amc-config": ["AMC", "MASTERS", "*"],
-  "masters.email-reports": ["REPORTS", "MASTERS", "*"],
-  "masters.gates": ["GATES", "MASTERS", "*"],
-  "masters.shifts": ["SHIFTS", "MASTERS", "*"],
-  "masters.maintenance-teams": ["MASTERS", "*"],
-  "masters.workorder-team-mapping": ["MASTERS", "*"],
-  "masters.log-templates": ["LOGS", "MASTERS", "*"],
-  benchmarking: ["BENCHMARKING", "*"],
-  "performance-logs": ["ANALYTICS", "PERFORMANCE_LOGS", "BENCHMARKING", "*"],
-  insights: ["BENCHMARKING", "INSIGHTS", "ANALYTICS", "*"],
-  "global-operations": ["BENCHMARKING", "GLOBAL_OPERATIONS", "REPORTS", "ANALYTICS", "*"],
-  alerts: ["NOTIFICATIONS", "ALERTS", "*"],
-  diagnostics: ["REPORTS", "DIAGNOSTICS", "ANALYTICS", "*"],
-};
-
-const FEATURE_BY_MODULE: Record<string, string> = {
-  ...catalogFeatureByModule,
-  safety: "SAFETY",
-  "masters.safety-config": "SAFETY",
-  esg: "ESG",
-  "masters.esg-config": "ESG",
-  "security-gate": "GATE_ENTRY",
-  "masters.gates": "GATE_ENTRY",
-  benchmarking: "ADVANCED_ANALYTICS",
-  "performance-logs": "ADVANCED_ANALYTICS",
-  insights: "ADVANCED_ANALYTICS",
-  "global-operations": "ADVANCED_ANALYTICS",
-  diagnostics: "ADVANCED_ANALYTICS",
-};
-
-function normalizeAction(action: string | null | undefined): string {
-  const input = (action || "").toUpperCase();
-  if (input === "VIEW" || input === "READ") return "READ";
-  if (input === "CREATE" || input === "ADD") return "CREATE";
-  if (input === "EDIT" || input === "UPDATE") return "UPDATE";
-  if (input === "DELETE" || input === "REMOVE") return "DELETE";
-  return input;
-}
-
+/**
+ * Resolve a module ID (e.g. "masters.users", "workorders", "security-gate")
+ * to the canonical permission module keys it maps to.
+ * Uses the app-page-catalog mapping first, then falls back to normalizeModuleKey.
+ */
 function normalizeModuleIds(moduleId: string): string[] {
-  if (!moduleId) return ["*"];
-  const key = moduleId.toLowerCase();
-  const aliases = MODULE_ALIAS[key] ?? [moduleId, "*"];
-  return aliases.map((item) => item.toUpperCase());
+  if (!moduleId) return [];
+  // Check catalog for dotted module IDs like "masters.users" → "USERS"
+  const fromCatalog = catalogModuleAlias[moduleId];
+  if (fromCatalog) return [normalizeModuleKey(fromCatalog)];
+  return [normalizeModuleKey(moduleId)];
 }
 
-function normalizeRole(role: string | null | undefined): string {
-  if (!role) return "USER";
-  const normalized = role
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  if (normalized === "SUPER_ADMIN" || normalized === "SUPERADMIN") return "SUPERADMIN";
-  if (normalized === "ROOTADMIN" || normalized === "ROOT_ADMIN") return "ROOT_ADMIN";
-  if (normalized === "PLANT_ADMIN" || normalized === "PLANTADMIN") return "ADMIN";
-  if (normalized === "ORG_ADMIN" || normalized === "ORGANIZATION_ADMIN") return "ADMIN";
-  if (normalized === "SECURITY_USER") return "SECURITY";
-  if (normalized === "MECHANICAL_INCHARGE" || normalized === "ELECTRICAL_INCHARGE" || normalized === "UTILITY_INCHARGE") return "MECHANICAL_INCHARGE";
-  if (normalized === "TOOLCHANGE_INCHARGE") return "TOOLCHANGE_INCHARGE";
-  if (normalized === "CALIBRATION_INCHARGE") return "CALIBRATION_INCHARGE";
-  if (normalized === "DEPARTMENT_INCHARGE") return "MECHANICAL_INCHARGE";
-  if (normalized === "OPERATOR") return "PRODUCTION_USER";
-  return normalized;
-}
-
-function allowedMastersForRole(role: string): string[] {
-  const normalized = normalizeRole(role);
-  if (normalized === "ROOT_ADMIN" || normalized === "SUPERADMIN" || normalized === "ADMIN") {
-    return ["*"];
-  }
-  if (normalized === "MAINTENANCE_MANAGER") {
-    return [
-      "PLANTS", "DEPARTMENTS", "MODULES", "ASSETS", "PM", "CALIBRATION", "AMC",
-      "ESG", "SAFETY", "LOGS", "SHIFTS", "WORK_ORDER_MASTERS", "WORK_ORDER_TEAM_MAPPINGS",
-      "MAINTENANCE_TEAMS", "MASTERS.PLANT", "MASTERS.DEPARTMENTS", "MASTERS.MODULES",
-      "MASTERS.MACHINES", "MASTERS.COST-CENTERS", "MASTERS.VENDORS", "MASTERS.PM-CONFIG",
-      "MASTERS.CALIBRATION-CONFIG", "MASTERS.AMC-CONFIG", "MASTERS.ESG-CONFIG",
-      "MASTERS.SAFETY-CONFIG", "MASTERS.EMAIL-REPORTS", "MASTERS.LOG-TEMPLATES",
-      "MASTERS.MACHINE-INSTRUMENTS", "MASTERS.SHIFTS", "MASTERS.MAINTENANCE-TEAMS",
-      "MASTERS.WORKORDER-TEAM-MAPPING"
-    ];
-  }
-  if (normalized === "HR_USER") {
-    return ["USERS", "GATES", "MASTERS.USERS", "MASTERS.GATES"];
-  }
-  if (normalized === "CALIBRATION_USER" || normalized === "CALIBRATION_INCHARGE") {
-    return ["CALIBRATION", "MASTERS.CALIBRATION-CONFIG", "MASTERS.MACHINE-INSTRUMENTS"];
-  }
-  if (normalized === "STORE_USER" || normalized === "INVENTORY_MANAGER") {
-    return ["DEPARTMENTS", "VENDORS", "AMC", "MASTERS.COST-CENTERS", "MASTERS.VENDORS", "MASTERS.AMC-CONFIG"];
-  }
-  if (normalized === "SAFETY_OFFICER") {
-    return ["SAFETY", "MASTERS.SAFETY-CONFIG"];
-  }
-  return [];
-}
-
-function policyAllowsModule(moduleId: string, roles: string[], action = "view"): boolean {
-  if (!moduleId) return true;
-  const normalizedRoles = roles.map(normalizeRole);
-  const normalizedModuleLower = moduleId.trim().toLowerCase();
-  const upperModuleId = moduleId.trim().toUpperCase();
-  const requestedAction = normalizeAction(action);
-  const rootGovernanceModules = new Set([
-    "DASHBOARD",
-    "ORGANIZATIONS",
-    "PLANTS",
-    "USERS",
-    "ROLE_ACCESS",
-    "MODULES",
-    "MASTERS",
-    "NOTIFICATIONS",
-    "SECURITY",
-    "REPORTS",
-    "WORKORDERS",
-  ]);
-
-  const isRootModule = (): boolean => {
-    const rootPaths = ["root.organizations", "root.plants", "root.users", "root.role-access", "root.role_access", "root.mail-config", "root.dashboard", "root.sla-config", "root.report-format"];
-    return rootPaths.includes(normalizedModuleLower) || rootPaths.includes(upperModuleId.toLowerCase());
-  };
-
-  // 1. Root Admin has exclusive governance-only system access via root/* routes.
-  //    Operational modules, masters, and standard pages are strictly blocked.
-  if (normalizedRoles.includes("ROOT_ADMIN")) {
-    if (isRootModule()) return true;
-    return rootGovernanceModules.has(upperModuleId);
-  }
-
-  // Block non-root, non-super from root modules
-  if (isRootModule()) {
-    return false;
-  }
-
-  // 2. Super Admin has full organizational control within assigned organization scope
-  if (normalizedRoles.includes("SUPERADMIN")) {
-    const isPlantModule = ["PLANTS", "MASTERS.PLANT"].includes(upperModuleId);
-    if (isPlantModule && requestedAction !== "READ") {
-      return false;
-    }
-    return true;
-  }
-
-  // 3. Admin has plant-level control
-  if (normalizedRoles.includes("ADMIN")) {
-    const isPlantModule = ["PLANTS", "MASTERS.PLANT"].includes(upperModuleId);
-    if (isPlantModule && requestedAction !== "READ") {
-      return false;
-    }
-    return true;
-  }
-
-  // Helper to check if a specific master page is allowed for the user's roles
-  const isMasterModule = normalizedModuleLower.startsWith("masters") || ["PLANTS", "DEPARTMENTS", "USERS", "GATES", "SHIFTS", "VENDORS", "ROLE_ACCESS", "MODULES", "CALIBRATION", "AMC", "ESG", "SAFETY", "WORK_ORDER_MASTERS", "WORK_ORDER_TEAM_MAPPINGS", "MAINTENANCE_TEAMS"].includes(upperModuleId);
-  if (isMasterModule) {
-    const allowedMasters = normalizedRoles.flatMap(allowedMastersForRole);
-    if (allowedMasters.length === 0) {
-      return false; // No master access at all
-    }
-    if (normalizedModuleLower === "masters") {
-      return true; // Parent masters menu is visible if at least one child is allowed
-    }
-    const isAllowed = allowedMasters.includes("*") || allowedMasters.includes(upperModuleId);
-    if (!isAllowed) {
-      return false;
-    }
-    return true;
-  }
-
-  // 4. Security role restrictions: Access only to Gate Entry
-  if (normalizedRoles.includes("SECURITY")) {
-    const allowed = ["gates", "security-gate", "notifications", "profile"];
-    return allowed.includes(normalizedModuleLower) || allowed.includes(upperModuleId.toLowerCase());
-  }
-
-  // 5. Visitor role restrictions: Visitor experience page only
-  if (normalizedRoles.includes("VISITOR") || normalizedRoles.includes("TEMPORARY_VISITOR")) {
-    const allowed = ["visitor-experience", "notifications", "profile"];
-    return allowed.includes(normalizedModuleLower) || allowed.includes(upperModuleId.toLowerCase());
-  }
-
-  // 6. User: Work order, assets, visitor experience, logs page only
-  if (normalizedRoles.includes("USER")) {
-    const allowed = ["workorders", "assets", "visitor-experience", "logs", "notifications", "profile"];
-    return allowed.includes(normalizedModuleLower) || allowed.includes(upperModuleId.toLowerCase());
-  }
-
-  // 7. Maintenance Manager: All pages (except gate entry, security logs)
-  if (normalizedRoles.includes("MAINTENANCE_MANAGER")) {
-    const blocked = ["security-gate", "gates", "security-center", "security"];
-    if (blocked.includes(normalizedModuleLower) || blocked.includes(upperModuleId.toLowerCase())) {
-      return false;
-    }
-    return true;
-  }
-
-  // 8. Maintenance User: All pages (except gate entry, security logs, ESG)
-  if (normalizedRoles.includes("MAINTENANCE_USER")) {
-    const blocked = ["security-gate", "gates", "security-center", "security", "esg"];
-    if (blocked.includes(normalizedModuleLower) || blocked.includes(upperModuleId.toLowerCase())) {
-      return false;
-    }
-    return true;
-  }
-
-  // 9. Calibration User: All pages (except gate entry, security logs, ESG)
-  if (normalizedRoles.includes("CALIBRATION_USER") || normalizedRoles.includes("CALIBRATION_INCHARGE")) {
-    const blocked = ["security-gate", "gates", "security-center", "security", "esg"];
-    if (blocked.includes(normalizedModuleLower) || blocked.includes(upperModuleId.toLowerCase())) {
-      return false;
-    }
-    return true;
-  }
-
-  // 10. Store User: All pages (except gate entry, security logs, ESG)
-  if (normalizedRoles.includes("STORE_USER") || normalizedRoles.includes("INVENTORY_MANAGER")) {
-    const blocked = ["security-gate", "gates", "security-center", "security", "esg"];
-    if (blocked.includes(normalizedModuleLower) || blocked.includes(upperModuleId.toLowerCase())) {
-      return false;
-    }
-    return true;
-  }
-
-  // 11. HR User: All pages (except security-center / security logs, esg)
-  if (normalizedRoles.includes("HR_USER")) {
-    const blocked = ["security-center", "security", "esg"];
-    if (blocked.includes(normalizedModuleLower) || blocked.includes(upperModuleId.toLowerCase())) {
-      return false;
-    }
-    return true;
-  }
-
-  // 12. Safety Officer: All pages (except gate entry, security logs, ESG)
-  if (normalizedRoles.includes("SAFETY_OFFICER")) {
-    const blocked = ["security-gate", "gates", "security-center", "security", "esg"];
-    if (blocked.includes(normalizedModuleLower) || blocked.includes(upperModuleId.toLowerCase())) {
-      return false;
-    }
-    return true;
-  }
-
-  return true;
+/**
+ * Check if a role's hardcoded enterprise permission matrix allows access.
+ * This is the frontend fallback for roles that don't yet have DB-stored permissions.
+ */
+function policyAllowsModule(moduleId: string, roles: string[], action: string): boolean {
+  const primaryRole = getPrimaryRole(roles);
+  const permissionMap = buildPermissionMapForRole(primaryRole);
+  const canonicalModules = normalizeModuleIds(moduleId);
+  return canonicalModules.some((mod) => engineCan(permissionMap, mod, action));
 }
 
 export function invalidatePermissionsCache() {
@@ -323,14 +87,14 @@ export function usePermissions() {
   const hasSyncedPermissions = Boolean(permissionsMe);
   const permissionsBootstrapPending = Boolean(user) && Boolean(accessToken) && !hasSyncedPermissions && fetchedAt === null;
   const actualRoles = hasSyncedPermissions ? (permissionsMe?.roles ?? user?.roles ?? []) : (user?.roles ?? []);
-  const actualRoleKey = permissionsMe?.roleKey || actualRoles[0] || "USER";
+  const actualRoleKey = permissionsMe?.roleKey || actualRoles[0] || "MAINTENANCE_USER";
 
   // Role Simulation Mode: allows Root Admins and Super Admins to dynamically preview other role perspectives.
   const simulatedRole = (() => {
     if (typeof window === "undefined") return null;
     try { return localStorage.getItem("cmms:simulated_role"); } catch { return null; }
   })();
-  const isSimulating = Boolean(simulatedRole) && actualRoles.some(r => ["ROOT_ADMIN", "SUPERADMIN"].includes(normalizeRole(r)));
+  const isSimulating = Boolean(simulatedRole) && actualRoles.some(r => ["ROOT_ADMIN", "SUPER_ADMIN"].includes(normalizeRole(r)));
   const userRoles = isSimulating ? [simulatedRole!] : actualRoles;
   const roleKey = isSimulating ? simulatedRole! : actualRoleKey;
 
@@ -350,11 +114,9 @@ export function usePermissions() {
     const requestedAction = normalizeAction(action);
     const acceptableModuleIds = normalizeModuleIds(moduleId);
 
-    // Super admins have full access within their organizational scope.
-    // Root Admin does NOT get unconditional access here — it is delegated to policyAllowsModule
-    // which restricts Root Admin to governance-only modules. Operational access is handled
-    // through root/* routes protected by RootOnlyRoute.
-    if (normalizedRoles.includes("SUPERADMIN")) {
+    // Super Admins have full access within their organizational scope.
+    // Root Admin access is resolved by policyAllowsModule and the root route guards.
+    if (normalizedRoles.includes("SUPER_ADMIN")) {
       const isPlantModule = acceptableModuleIds.some((moduleKey) => moduleKey === "PLANTS" || moduleKey === "MASTERS.PLANT");
       if (isPlantModule && requestedAction !== "READ") {
         return false;
@@ -397,14 +159,14 @@ export function usePermissions() {
     record?: any;
   }): boolean => {
     const normalizedRoles = userRoles.map((role) => normalizeRole(role));
-    if (normalizedRoles.includes("ROOT_ADMIN") || normalizedRoles.includes("SUPERADMIN")) {
+    if (normalizedRoles.includes("ROOT_ADMIN") || normalizedRoles.includes("SUPER_ADMIN")) {
       return true;
     }
 
     const { type, id, record } = params;
 
     // Shift access & time bound restrictions. Technicians are only allowed mutations between 6 AM and 10 PM.
-    if (normalizedRoles.includes("TECHNICIAN") || normalizedRoles.includes("USER")) {
+    if (normalizedRoles.includes("MAINTENANCE_USER")) {
       const currentHour = new Date().getHours();
       if (type === "button" && (currentHour < 6 || currentHour > 22)) {
         return false;
@@ -436,7 +198,7 @@ export function usePermissions() {
     record?: any
   ): boolean => {
     const normalizedRoles = userRoles.map((role) => normalizeRole(role));
-    if (normalizedRoles.includes("ROOT_ADMIN") || normalizedRoles.includes("SUPERADMIN")) {
+    if (normalizedRoles.includes("ROOT_ADMIN") || normalizedRoles.includes("SUPER_ADMIN")) {
       return true;
     }
 
@@ -448,33 +210,33 @@ export function usePermissions() {
       // RAISED: requester can view/edit, admin/manager can assign
       if (upperStatus === "RAISED") {
         const isRequester = record?.raisedBy === user?.id;
-        const isTeamLead = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("ADMIN");
+        const isTeamLead = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("PLANT_ADMIN");
         return isRequester || isTeamLead;
       }
       // OPEN: assignee can accept/start, admin/manager can reassign
       if (upperStatus === "OPEN") {
         const isAssignable = record?.assignedTo === user?.id || record?.assignedTeam?.includes(user?.id);
-        const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("ADMIN");
-        const isIncharge = normalizedRoles.includes("MECHANICAL_INCHARGE") || normalizedRoles.includes("ELECTRICAL_INCHARGE");
-        return isAssignable || isManager || isIncharge;
+        const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("PLANT_ADMIN");
+        const isMaintenanceUser = normalizedRoles.includes("MAINTENANCE_USER");
+        return isAssignable || isManager || isMaintenanceUser;
       }
       // IN_PROGRESS/ACCEPTED: technician updates, manager monitors
       if (upperStatus === "IN_PROGRESS" || upperStatus === "ACCEPTED") {
         const isAssignee = record?.assignedTo === user?.id;
         const isTeamMember = record?.assignedTeam?.includes(user?.id);
-        const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("ADMIN");
+        const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("PLANT_ADMIN");
         return isAssignee || isTeamMember || isManager;
       }
       // VERIFICATION/PENDING_APPROVAL: requester verifies, manager approves
       if (upperStatus === "VERIFICATION" || upperStatus === "APPROVAL_PENDING" || upperStatus === "PENDING_APPROVAL") {
         const isRequester = record?.raisedBy === user?.id;
-        const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("ADMIN");
+        const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("PLANT_ADMIN");
         return isRequester || isManager;
       }
       // REOPENED: assigned team does rework
       if (upperStatus === "REOPENED") {
         const isTeamMember = record?.assignedTo === user?.id || record?.assignedTeam?.includes(user?.id);
-        const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("ADMIN");
+        const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("PLANT_ADMIN");
         return isTeamMember || isManager;
       }
       // CLOSED: readonly for everyone
@@ -490,14 +252,14 @@ export function usePermissions() {
       if (upperStatus === "PENDING" || upperStatus === "PRE_REGISTERED") {
         const isHost = record?.hostId === user?.id || record?.host?.id === user?.id;
         const isSecurity = normalizedRoles.includes("SECURITY");
-        const isManager = normalizedRoles.includes("ADMIN") || normalizedRoles.includes("MAINTENANCE_MANAGER");
+        const isManager = normalizedRoles.includes("PLANT_ADMIN") || normalizedRoles.includes("MAINTENANCE_MANAGER");
         return isHost || isSecurity || isManager;
       }
       if (upperStatus === "CHECKED_IN" || upperStatus === "IN_VISIT") {
-        return normalizedRoles.includes("SECURITY") || normalizedRoles.includes("ADMIN");
+        return normalizedRoles.includes("SECURITY") || normalizedRoles.includes("PLANT_ADMIN");
       }
       if (upperStatus === "CHECKED_OUT" || upperStatus === "COMPLETED") {
-        return normalizedRoles.includes("SECURITY") || normalizedRoles.includes("ADMIN");
+        return normalizedRoles.includes("SECURITY") || normalizedRoles.includes("PLANT_ADMIN");
       }
       return true;
     }
@@ -506,7 +268,7 @@ export function usePermissions() {
     //   ASSIGNED → IN_PROGRESS → PENDING_REVIEW → CLOSED
     if (module === "vendor") {
       const isVendorUser = normalizedRoles.includes("VENDOR") && record?.vendorId === user?.id;
-      const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("ADMIN");
+      const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("PLANT_ADMIN");
       if (upperStatus === "ASSIGNED" || upperStatus === "IN_PROGRESS") {
         return isVendorUser || isManager;
       }
@@ -523,10 +285,10 @@ export function usePermissions() {
     //   SCHEDULED → DUE → OVERDUE → COMPLETED
     if (module === "pm") {
       const isAssignee = record?.assignedTo === user?.id;
-      const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("ADMIN");
-      const isEngineer = normalizedRoles.includes("ENGINEER") || normalizedRoles.includes("TECHNICIAN");
+      const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("PLANT_ADMIN");
+      const isMaintenanceUser = normalizedRoles.includes("MAINTENANCE_USER");
       if (upperStatus === "SCHEDULED" || upperStatus === "DUE" || upperStatus === "OVERDUE") {
-        return isAssignee || isManager || isEngineer;
+        return isAssignee || isManager || isMaintenanceUser;
       }
       if (upperStatus === "COMPLETED") {
         return false;
@@ -537,14 +299,14 @@ export function usePermissions() {
     // Calibration workflow:
     //   SCHEDULED → IN_PROGRESS → PENDING_VERIFICATION → COMPLETED
     if (module === "calibration") {
-      const isCalibrationIncharge = normalizedRoles.includes("CALIBRATION_INCHARGE");
-      const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("ADMIN");
+      const isCalibrationUser = normalizedRoles.includes("CALIBRATION_USER");
+      const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("PLANT_ADMIN");
       const isAssignee = record?.assignedTo === user?.id;
       if (upperStatus === "SCHEDULED" || upperStatus === "IN_PROGRESS") {
-        return isCalibrationIncharge || isManager || isAssignee;
+        return isCalibrationUser || isManager || isAssignee;
       }
       if (upperStatus === "PENDING_VERIFICATION" || upperStatus === "PENDING_APPROVAL") {
-        return isCalibrationIncharge || isManager;
+        return isCalibrationUser || isManager;
       }
       if (upperStatus === "COMPLETED") {
         return false;
@@ -555,7 +317,7 @@ export function usePermissions() {
     // AMC workflow:
     //   ACTIVE → PENDING_RENEWAL → EXPIRED → RENEWED
     if (module === "amc") {
-      const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("ADMIN");
+      const isManager = normalizedRoles.includes("MAINTENANCE_MANAGER") || normalizedRoles.includes("PLANT_ADMIN");
       const isVendorUser = normalizedRoles.includes("VENDOR");
       return isManager || isVendorUser;
     }
@@ -569,10 +331,10 @@ export function usePermissions() {
     if (role === "ROOT_ADMIN") {
       return ["GLOBAL_KPI_SUMMARY", "TENANT_METRICS", "SYSTEM_HEALTH", "AUDIT_STREAM", "GLOBAL_COMPLIANCE"];
     }
-    if (role === "SUPERADMIN" || role === "SUPER_ADMIN") {
+    if (role === "SUPER_ADMIN") {
       return ["ORG_KPI_SUMMARY", "PLANT_PERFORMANCE", "USER_ACTIVITY", "SECURITY_EVENTS"];
     }
-    if (role === "ADMIN" || role === "PLANT_ADMIN" || role === "MAINTENANCE_MANAGER") {
+    if (role === "PLANT_ADMIN" || role === "MAINTENANCE_MANAGER") {
       return ["PLANT_DOWNTIME", "WO_STATUS_BAR", "PM_COMPLIANCE", "TEAM_LOAD", "SAFETY_ALERTS"];
     }
     if (role === "SECURITY") {

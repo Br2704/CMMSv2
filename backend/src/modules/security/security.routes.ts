@@ -5,7 +5,7 @@ import { AppDataSource } from '../../database/data-source';
 import { AuditLogEntity, PlantEntity, SecurityEventEntity, UserEntity } from '../../database/entities';
 import { env } from '../../config/env';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
@@ -22,9 +22,9 @@ const securityAuditFilterSchema = z.object({
   plantId: z.string().uuid().optional(),
 });
 
-type SecurityCenterRole = 'ROOT_ADMIN' | 'SUPERADMIN' | 'ADMIN';
+type SecurityCenterRole = 'ROOT_ADMIN' | 'SUPER_ADMIN' | 'PLANT_ADMIN';
 
-const SECURITY_CENTER_ALLOWED_ROLES = new Set<SecurityCenterRole>(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']);
+const SECURITY_CENTER_ALLOWED_ROLES = new Set<SecurityCenterRole>(['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN']);
 const CSV_EXPORT_ROW_LIMIT = 5000;
 
 const CONTROL_OPERATION_EVENT_TYPES = {
@@ -66,7 +66,7 @@ const supplierSecurityRecordSchema = z.object({
 });
 
 export const securityRouter = Router();
-securityRouter.use('/security', requireAuth, requireRole(['ROOT_ADMIN', 'SUPERADMIN', 'ADMIN']), ensureSecurityCenterRole);
+securityRouter.use('/security', requireAuth, requireRole(['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN']), ensureSecurityCenterRole);
 
 function resolveSecurityCenterRole(req: Request): SecurityCenterRole | null {
   const normalizedRoleCandidates = [req.auth?.roleKey ?? '', ...(req.auth?.roles ?? [])]
@@ -88,7 +88,7 @@ function ensureSecurityCenterRole(req: Request, res: Response, next: NextFunctio
     res.status(403).json({
       success: false,
       code: 'ROLE_DENIED',
-      message: 'Only ROOT_ADMIN, SUPERADMIN, and ADMIN can access Security Center data.',
+      message: 'Only ROOT_ADMIN, SUPER_ADMIN, and PLANT_ADMIN can access Security Center data.',
     });
     return;
   }
@@ -198,7 +198,7 @@ function applyNonRootEventScope(qb: SelectQueryBuilder<SecurityEventEntity>, req
     );
   }
 
-  if (scopeType !== 'ROOT_ADMIN' && securityRole === 'ADMIN') {
+  if (scopeType !== 'ROOT_ADMIN' && securityRole === 'PLANT_ADMIN') {
     if (!plantIds.length) {
       qb.andWhere('1 = 0');
       return;
@@ -230,7 +230,7 @@ function applyNonRootAuditScope(qb: SelectQueryBuilder<AuditLogEntity>, req: Req
     });
   }
 
-  if (scopeType !== 'ROOT_ADMIN' && securityRole === 'ADMIN') {
+  if (scopeType !== 'ROOT_ADMIN' && securityRole === 'PLANT_ADMIN') {
     if (!plantIds.length) {
       qb.andWhere('1 = 0');
       return;

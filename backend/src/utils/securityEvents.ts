@@ -38,10 +38,9 @@ async function resolveAdminRecipients(input: { organizationId?: string | null; p
   const adminRoleRows = await roleRepo.find({
     where: [
       { role: 'ROOT_ADMIN' },
-      { role: 'SUPERADMIN' },
-      { role: 'ADMIN' },
+      { role: 'SUPER_ADMIN' },
       { role: 'PLANT_ADMIN' },
-      { role: 'DEPARTMENT_INCHARGE' },
+      { role: 'MAINTENANCE_MANAGER' },
     ],
     select: ['userId', 'plantId', 'role'],
   });
@@ -86,7 +85,7 @@ async function resolveAdminRecipients(input: { organizationId?: string | null; p
         return false;
       }
 
-      if (role === 'SUPERADMIN') {
+      if (role === 'SUPER_ADMIN') {
         return true;
       }
 

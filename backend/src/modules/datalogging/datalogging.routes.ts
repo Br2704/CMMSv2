@@ -14,7 +14,7 @@ import {
   ShiftEntity,
 } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { badRequest, conflict, forbidden, notFound } from '../../utils/httpError';
 import { buildPagination, parseListQuery } from '../../utils/pagination';

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Factory } from "lucide-react";
-import { isRootAdmin, isSuperAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isRootAdmin, isSuperAdmin } from "@/lib/permission-engine";
 import { SidebarToggle } from "./Sidebar";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -14,6 +15,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { useNotifications } from "@/hooks/useNotifications";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useBrandingStore } from "@/store/branding.store";
+import { APP_TAGLINE } from "@/config/branding";
 import { formatDistanceToNow } from "date-fns";
 import { ViewDialog, DetailRow, DetailSection } from "@/components/shared/ViewDialog";
 import { ProfileEditDialog } from "@/components/shared/ProfileEditDialog";
@@ -26,23 +28,23 @@ interface TopbarProps {
 }
 
 export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
-  const { user, logout, activePlantCode, activePlantName } = useAuthStore();
+  const { user, logout, activePlantCode, activePlantName, isFallbackMode } = useAuthStore();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
-  const isRootUser = isRootAdmin(user);
+  const isRootUser = isRootAdmin(user?.roles ?? []);
   const brandingOrganizationName = useBrandingStore((state) => state.organizationName);
   const organizationName = user?.organizationName || brandingOrganizationName || null;
   const { hasModuleAccess } = usePermissions();
-  const canReadNotifications = true;
+  const canReadNotifications = Boolean(user) && !isFallbackMode && !isRootUser;
   const { notifications, unreadCount, loading: notificationsLoading, markAsRead, markAllAsRead, removeNotification } = useNotifications({ enabled: canReadNotifications });
   const navigate = useNavigate();
-  const showOrganizationBadge = isSuperAdmin(user) && !activePlantCode && Boolean(organizationName);
+  const showOrganizationBadge = isSuperAdmin(user?.roles ?? []) && !activePlantCode && Boolean(organizationName);
   const badgeTitle = showOrganizationBadge ? organizationName : activePlantCode;
   const badgeSubtitle = showOrganizationBadge ? null : activePlantName;
   const notificationsSubtitle =
-    notifications.length === 0 ? "No updates right now" : `${unreadCount} unread of ${notifications.length}`;
+    notifications.length === 0 ? APP_TAGLINE : `${unreadCount} unread of ${notifications.length}`;
 
   const getInitials = (name: string | undefined | null) => {
     if (!name) return "U";
@@ -55,7 +57,7 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
   };
 
   const getRoleBadgeVariant = (role: string) => {
-    if (role.includes("ADMIN")) return "primary" as const;
+    if (role.includes("PLANT_ADMIN")) return "primary" as const;
     if (role.includes("INCHARGE")) return "info" as const;
     return "default" as const;
   };
@@ -106,29 +108,29 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 sm:h-16 items-center gap-2 sm:gap-4 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 px-3 sm:px-4 lg:px-6 safe-area-inset">
+    <header className="sticky top-0 z-30 flex h-14 min-h-14 items-center gap-1 overflow-hidden border-b bg-card/95 px-2 backdrop-blur supports-[backdrop-filter]:bg-card/60 sm:h-16 sm:gap-3 sm:px-4 lg:px-6 safe-area-inset">
       <SidebarToggle onClick={onMenuClick} label="Toggle sidebar" collapsed={sidebarCollapsed} />
 
       {/* Active Plant Badge */}
       {badgeTitle && (
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20">
-          <Factory className="h-4 w-4 text-primary" />
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-primary leading-none">{badgeTitle}</span>
+        <div className="hidden max-w-[18rem] items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 lg:flex shrink-0">
+          <Factory className="h-4 w-4 text-primary shrink-0" />
+          <div className="flex flex-col min-w-0">
+            <span className="text-xs font-bold text-primary leading-none truncate max-w-[120px]">{badgeTitle}</span>
             {badgeSubtitle ? (
-              <span className="text-[10px] text-muted-foreground leading-none mt-0.5">{badgeSubtitle}</span>
+              <span className="text-[10px] text-muted-foreground leading-none mt-0.5 truncate max-w-[120px]">{badgeSubtitle}</span>
             ) : null}
           </div>
         </div>
       )}
 
       {/* Search - Desktop */}
-      <div className="relative hidden sm:flex flex-1 max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <div className="relative hidden min-w-0 flex-1 max-w-md sm:flex">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground shrink-0" />
         <Input
           id="desktop-search"
           placeholder="Search work orders, assets..."
-          className="h-10 w-full pl-9 bg-muted/50 border-0 focus-visible:ring-1"
+          className="h-9 w-full pl-9 bg-muted/50 border-0 focus-visible:ring-1"
         />
       </div>
 
@@ -136,11 +138,11 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
       <Button
         variant="ghost"
         size="icon"
-        className="relative h-11 w-11 sm:hidden"
+        className="h-9 w-9 sm:hidden"
         aria-label="Search"
         onClick={() => setIsMobileSearchOpen(true)}
       >
-        <Search className="h-5 w-5 text-muted-foreground" />
+        <Search className="h-4 w-4 text-muted-foreground" />
       </Button>
 
       <Sheet open={isMobileSearchOpen} onOpenChange={setIsMobileSearchOpen}>
@@ -160,7 +162,7 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
         </SheetContent>
       </Sheet>
 
-      <div className="ml-auto flex items-center gap-1 sm:gap-2">
+      <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
         {/* Theme Toggle */}
         <ThemeToggle />
 

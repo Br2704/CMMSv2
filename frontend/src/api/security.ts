@@ -1,5 +1,9 @@
 import { getApiBaseUrl, getStoredAccessToken, httpRequest } from "@/api/http";
 
+function isForbiddenError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "status" in error && (error as { status?: number }).status === 403;
+}
+
 export interface SecurityEventRecord {
   id: string;
   eventType: string;
@@ -51,7 +55,7 @@ export interface SecurityComplianceResponse {
   score: number;
   maturityLevel: string;
   scope: {
-    role: "ROOT_ADMIN" | "SUPERADMIN" | "ADMIN" | null;
+    role: "ROOT_ADMIN" | "SUPER_ADMIN" | "PLANT_ADMIN" | null;
     scopeType: "ROOT_ADMIN" | "ORGANIZATION" | "PLANT" | null;
     organizationId: string | null;
     plantIds: string[];
@@ -158,18 +162,97 @@ export interface SecurityCsvDownload {
 }
 
 export async function fetchSecurityDashboard(): Promise<SecurityDashboardResponse> {
-  const response = await httpRequest<{ success: true; data: SecurityDashboardResponse }>("/security/dashboard");
-  return response.data;
+  try {
+    const response = await httpRequest<{ success: true; data: SecurityDashboardResponse }>("/security/dashboard");
+    return response.data;
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return {
+        openEvents: 0,
+        criticalEvents: 0,
+        failedLoginEvents: 0,
+        auditChangesLast24Hours: 0,
+        suspiciousIps: [],
+      };
+    }
+    throw error;
+  }
 }
 
 export async function fetchSecurityCompliance(): Promise<SecurityComplianceResponse> {
-  const response = await httpRequest<{ success: true; data: SecurityComplianceResponse }>("/security/compliance");
-  return response.data;
+  try {
+    const response = await httpRequest<{ success: true; data: SecurityComplianceResponse }>("/security/compliance");
+    return response.data;
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return {
+        controls: [],
+        controlSummary: { total: 0, implemented: 0, partial: 0, planned: 0 },
+        score: 0,
+        maturityLevel: "Unknown",
+        scope: { role: null, scopeType: null, organizationId: null, plantIds: [] },
+        metrics: {
+          openCriticalEvents: 0,
+          unresolvedHighRiskEvents: 0,
+          securityEventsLast7Days: 0,
+          auditChangesLast7Days: 0,
+          evaluationWindowDays: { operational: 0, trend: 0 },
+          trendBaselineFrom: new Date().toISOString(),
+        },
+        configuration: {
+          jwtIssuer: "",
+          sessionMaxHours: 0,
+          captchaThreshold: 0,
+          lockoutThreshold: 0,
+          requestSignatureEnabled: false,
+          smtpConfigured: false,
+          securityAlertEmailsConfigured: false,
+        },
+        recommendations: [],
+      };
+    }
+    throw error;
+  }
 }
 
 export async function fetchSecurityControlOperations(): Promise<SecurityControlOperationsResponse> {
-  const response = await httpRequest<{ success: true; data: SecurityControlOperationsResponse }>("/security/control-operations");
-  return response.data;
+  try {
+    const response = await httpRequest<{ success: true; data: SecurityControlOperationsResponse }>("/security/control-operations");
+    return response.data;
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return {
+        backupRecovery: {
+          totalDrills: 0,
+          passedDrills: 0,
+          failedDrills: 0,
+          latestResult: null,
+          lastDrillAt: null,
+          lastRtoMinutes: null,
+          lastRpoMinutes: null,
+        },
+        fileSecurity: {
+          totalReviews: 0,
+          passedReviews: 0,
+          failedReviews: 0,
+          latestResult: null,
+          lastReviewAt: null,
+          lastModuleName: null,
+        },
+        supplierSecurity: {
+          totalAttestations: 0,
+          validAttestations: 0,
+          attentionRequired: 0,
+          latestStatus: null,
+          lastReviewAt: null,
+          upcomingExpiryCount: 0,
+          lastVendorName: null,
+        },
+        recent: [],
+      };
+    }
+    throw error;
+  }
 }
 
 export async function recordBackupRecoveryOperation(payload: BackupRecoveryRecordPayload): Promise<void> {
@@ -252,8 +335,15 @@ export async function fetchSecurityEvents(severity = "ALL"): Promise<SecurityEve
   if (severity !== "ALL") {
     searchParams.set("severity", severity);
   }
-  const response = await httpRequest<{ success: true; data: SecurityEventRecord[] }>(`/security/events?${searchParams.toString()}`);
-  return response.data;
+  try {
+    const response = await httpRequest<{ success: true; data: SecurityEventRecord[] }>(`/security/events?${searchParams.toString()}`);
+    return response.data;
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function acknowledgeSecurityEvent(eventId: string): Promise<void> {
@@ -274,8 +364,15 @@ export async function downloadSecurityEventsCsv(severity = "ALL"): Promise<Secur
 }
 
 export async function fetchAuditLogs(): Promise<AuditLogRecord[]> {
-  const response = await httpRequest<{ success: true; data: AuditLogRecord[] }>("/security/audit-logs?page=1&limit=100");
-  return response.data;
+  try {
+    const response = await httpRequest<{ success: true; data: AuditLogRecord[] }>("/security/audit-logs?page=1&limit=100");
+    return response.data;
+  } catch (error) {
+    if (error instanceof Error && /403/i.test(error.message)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function downloadAuditLogsCsv(): Promise<SecurityCsvDownload> {

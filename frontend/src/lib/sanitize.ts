@@ -76,7 +76,8 @@ export function isValidUuid(input: string): boolean {
  * Sanitize a search/filter query — strip control characters and trim.
  */
 export function sanitizeQuery(input: string): string {
-  return input.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim().slice(0, 500);
+  // eslint-disable-next-line no-control-regex
+  return input.replace(/[\x00-\x1f\x7f-\x9f]/g, "").trim().slice(0, 500);
 }
 
 /**

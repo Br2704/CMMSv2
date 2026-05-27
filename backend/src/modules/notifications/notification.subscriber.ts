@@ -1,8 +1,11 @@
 import { EventSubscriber, EntitySubscriberInterface, InsertEvent } from 'typeorm';
 import { NotificationEntity } from '../../database/entities';
-import { publishNotificationChange } from './notification-stream';
+import { publishNotificationChange, publishNewNotification } from './notification-stream';
 import { sendPushNotification } from '../../services/push.service';
 import { logger } from '../../config/logger';
+import { AppDataSource } from '../../database/data-source';
+import { NotificationSettingsEntity } from '../../database/entities';
+import { isCurrentTimeInQuietHours } from '../../utils/date';
 
 @EventSubscriber()
 export class NotificationSubscriber implements EntitySubscriberInterface<NotificationEntity> {
@@ -14,11 +17,24 @@ export class NotificationSubscriber implements EntitySubscriberInterface<Notific
     const notification = event.entity;
     if (!notification) return;
 
+    // Fetch user settings
+    const settingsRepo = AppDataSource.getRepository(NotificationSettingsEntity);
+    const settings = await settingsRepo.findOne({ where: { userId: notification.userId } });
+
+    let inQuietHours = false;
+    if (settings?.quietHoursStart && settings?.quietHoursEnd) {
+      inQuietHours = isCurrentTimeInQuietHours(settings.quietHoursStart, settings.quietHoursEnd);
+    }
+
+    const showInApp = settings?.inAppNotifications !== false && !inQuietHours;
+    const allowPush = settings?.pushNotifications !== false && !inQuietHours;
+
     // Trigger real-time UI update via SSE
-    publishNotificationChange(notification.userId);
+    // If showInApp is false, we send it as 'silent' so the frontend can update badge/list without interrupting the user.
+    publishNewNotification(notification.userId, notification, !showInApp);
 
     // Trigger Web Push for background delivery
-    if (notification.userId) {
+    if (notification.userId && allowPush) {
       try {
         await sendPushNotification(notification.userId, {
           title: notification.title,

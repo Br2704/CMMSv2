@@ -16,7 +16,7 @@ const optionalNullableUuid = z.preprocess((value) => {
 }, z.string().uuid().optional());
 
 export const createPlantSchema = z.object({
-  plantCode: z.string().min(1),
+  plantCode: z.string().trim().min(1).optional(),
   plantName: z.string().min(1),
   location: optionalNullableString,
   plantAdminId: optionalNullableUuid,

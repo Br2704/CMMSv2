@@ -94,7 +94,10 @@ export function useDashboardRealtime(options: { enabled: boolean; onRefresh: () 
         socket?.close();
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
+        if (event.code === 4001 || event.code === 1008) {
+          return;
+        }
         scheduleReconnect();
       };
     };

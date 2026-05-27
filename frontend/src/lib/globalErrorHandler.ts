@@ -18,7 +18,7 @@ export function installGlobalErrorHandler() {
         credentials: "include",
       }).catch(() => {});
     } catch { /* ignore */ }
-    if (originalOnError) return originalOnError.apply(window, arguments as any);
+    if (originalOnError) return originalOnError.call(window, message, source, lineno, colno, error);
     return false;
   };
 

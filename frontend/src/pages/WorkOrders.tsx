@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
-import { format, formatDistanceToNow, subHours } from "date-fns";
+import { format, subHours } from "date-fns";
 import {
   Plus, Search, Eye, MoreHorizontal, Play, CheckCircle, Loader2, RefreshCw,
   ClipboardList, Clock, CheckSquare, AlertTriangle, Send, Wrench, QrCode,
-  Bell, BellOff, History, MessageCircle, XCircle
+  Bell, BellOff, History, MessageCircle, XCircle, SlidersHorizontal, ChevronLeft, ChevronRight, Layers3, Gauge
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -19,10 +19,12 @@ import {
 import { ViewDialog, DetailRow, DetailSection } from "@/components/shared/ViewDialog";
 import { FormDialog } from "@/components/shared/FormDialog";
 import { InputField, SelectField, TextareaField } from "@/components/shared/FormField";
+import { AsyncSelect } from "@/components/ui/async-select";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { MaterialsUsageEditor, type MaterialDraft } from "@/components/spares/MaterialsUsageEditor";
-import { useAuthStore, isAdmin, isIncharge, isSuperAdmin, isMaintenanceManager, isMaintenanceUser, isProductionUser } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isSuperAdmin, hasRole } from "@/lib/permission-engine";
 import { getStoredAccessToken } from "@/api/http";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -60,13 +62,16 @@ import { compressImage } from "@/mobile/media";
 import { hoursToMinutes } from "@/lib/time";
 import { broadcastWorkOrderSync, subscribeWorkOrderSync } from "@/lib/work-order-sync";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/shared/SearchableSelect";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { TimeAgo } from "@/components/shared/TimeAgo";
 
 const INCHARGE_CATEGORY_MAP: Record<string, string> = {
-  MECHANICAL_INCHARGE: "MECHANICAL",
-  ELECTRICAL_INCHARGE: "ELECTRICAL",
-  UTILITY_INCHARGE: "UTILITY",
-  TOOLCHANGE_INCHARGE: "TOOL_CHANGE",
-  CALIBRATION_INCHARGE: "CALIBRATION",
+  MAINTENANCE_MANAGER: "MECHANICAL",
+  PRODUCTION_MANAGER: "PRODUCTION",
+  SCM_MANAGER: "SUPPLY_CHAIN",
+  HR_MANAGER: "PEOPLE",
+  CALIBRATION_MANAGER: "CALIBRATION",
 };
 
 interface PhotoAttachment {
@@ -105,35 +110,51 @@ function getInchargeCategories(roles: string[]): string[] {
   return roles.filter((r) => INCHARGE_CATEGORY_MAP[r]).map((r) => INCHARGE_CATEGORY_MAP[r]);
 }
 
-const WorkflowTimeline = ({ status, createdAt, openedAt, closedAt }: { status: string, createdAt: string, openedAt?: string | null, closedAt?: string | null }) => {
+const WorkflowTimeline = ({ status, createdAt, openedAt, startedAt, submittedForApprovalAt, rejectedAt, closedAt }: {
+  status: string, createdAt: string, openedAt?: string | null, startedAt?: string | null,
+  submittedForApprovalAt?: string | null, rejectedAt?: string | null, closedAt?: string | null
+}) => {
+  const isActive = (stages: string[]) => stages.includes(status);
+  const label = status === "REJECTED" ? "Rejected" : "Verified";
+  const icon = status === "REJECTED" ? AlertTriangle : CheckCircle;
+  const color = status === "REJECTED" ? "bg-amber-500 text-white shadow-glow" : "bg-primary text-white shadow-glow";
+  const Icon = icon;
+
   const steps = [
-    { label: "Raised", date: createdAt, active: true },
-    { label: "Assigned", date: openedAt, active: !!openedAt || ["IN_PROGRESS", "USER_VERIFICATION", "APPROVAL_PENDING", "CLOSED"].includes(status) },
-    { label: "In Progress", date: openedAt, active: ["IN_PROGRESS", "USER_VERIFICATION", "APPROVAL_PENDING", "CLOSED"].includes(status) },
-    { label: "Resolved", date: closedAt, active: ["USER_VERIFICATION", "APPROVAL_PENDING", "CLOSED"].includes(status) },
-    { label: "Verified", date: closedAt, active: status === "CLOSED" },
+    { label: "Raised", date: createdAt, active: true, color: "bg-primary text-white shadow-glow" },
+    { label: "Opened", date: openedAt, active: !!openedAt || isActive(["OPENED", "ACCEPTED", "IN_PROGRESS", "USER_VERIFICATION", "APPROVAL_PENDING", "REJECTED", "CLOSED"]), color: "bg-primary text-white shadow-glow" },
+    { label: "In Progress", date: startedAt || openedAt, active: isActive(["IN_PROGRESS", "USER_VERIFICATION", "APPROVAL_PENDING", "REJECTED", "CLOSED"]), color: "bg-primary text-white shadow-glow" },
+    { label: "Submitted", date: submittedForApprovalAt, active: isActive(["USER_VERIFICATION", "APPROVAL_PENDING", "REJECTED", "CLOSED"]), color: "bg-primary text-white shadow-glow" },
+    { label, date: status === "REJECTED" ? rejectedAt : closedAt, active: isActive(["REJECTED", "CLOSED"]), color, Icon },
   ];
 
+  if (status === "CANCELLED") {
+    steps.push({ label: "Cancelled", date: null, active: true, color: "bg-slate-400 text-white", Icon: XCircle });
+  }
+
   return (
-    <div className="flex items-center justify-between w-full px-4 py-8">
-      {steps.map((step, idx) => (
-        <div key={step.label} className="flex flex-col items-center relative flex-1">
-          <div className={`h-10 w-10 rounded-2xl flex items-center justify-center z-10 transition-all duration-500 shadow-sm ${
-            step.active ? "bg-primary text-white shadow-glow" : "bg-slate-100 text-slate-400"
-          }`}>
-            {step.active ? <CheckCircle className="h-5 w-5" /> : <div className="h-2 w-2 rounded-full bg-current" />}
+    <div className="flex items-center justify-between w-full gap-0.5 sm:gap-0 px-1 sm:px-4 py-6 sm:py-8">
+      {steps.map((step, idx) => {
+        const StepIcon = step.Icon || (step.active ? CheckCircle : undefined);
+        return (
+          <div key={step.label} className="flex flex-col items-center relative flex-1 min-w-0">
+            <div className={`h-8 w-8 sm:h-10 sm:w-10 rounded-xl sm:rounded-2xl flex items-center justify-center z-10 transition-all duration-500 shadow-sm ${
+              step.active ? step.color : "bg-slate-100 text-slate-400"
+            }`}>
+              {StepIcon ? <StepIcon className="h-4 w-4 sm:h-5 sm:w-5" /> : <div className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-current" />}
+            </div>
+            <span className={`mt-2 sm:mt-3 text-[8px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest ${step.active ? "text-primary" : "text-slate-400"}`}>
+              {step.label}
+            </span>
+            {step.date && <span className="mt-0.5 sm:mt-1 text-[7px] sm:text-[9px] font-bold text-slate-400 truncate max-w-[60px] sm:max-w-none">{format(new Date(step.date), "dd MMM, HH:mm")}</span>}
+            {idx < steps.length - 1 && (
+              <div className={`absolute top-4 sm:top-5 left-1/2 w-full h-[2px] -z-0 ${
+                steps[idx+1].active ? "bg-primary" : "bg-slate-100"
+              }`} />
+            )}
           </div>
-          <span className={`mt-3 text-[10px] font-black uppercase tracking-widest ${step.active ? "text-primary" : "text-slate-400"}`}>
-            {step.label}
-          </span>
-          {step.date && <span className="mt-1 text-[9px] font-bold text-slate-400">{format(new Date(step.date), "dd MMM, HH:mm")}</span>}
-          {idx < steps.length - 1 && (
-            <div className={`absolute top-5 left-1/2 w-full h-[2px] -z-0 ${
-              steps[idx+1].active ? "bg-primary" : "bg-slate-100"
-            }`} />
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
@@ -153,10 +174,8 @@ interface RaiseFormData {
   department_id: string;
   module_id: string;
   asset_id: string;
-  issue_title: string;
   problem_description: string;
   priority: string;
-  reported_location: string;
   remarks: string;
   category: string;
   wo_type: string;
@@ -166,10 +185,8 @@ const getInitialRaiseFormData = (plantId = ""): RaiseFormData => ({
   department_id: "",
   module_id: "",
   asset_id: "",
-  issue_title: "",
   problem_description: "",
   priority: "MEDIUM",
-  reported_location: "",
   remarks: "",
   category: "",
   wo_type: "",
@@ -294,7 +311,7 @@ function buildSpareUsagePayload(rows: MaterialDraft[], availableSpares: SpareIte
         quantity,
         is_manual: false,
         manual_name: null,
-        cost_per_unit: spare.unit_cost || 0,
+        cost_per_unit: (spare as unknown as Record<string, unknown>).unit_cost as number || 0,
       };
     })
     .filter(Boolean);
@@ -343,9 +360,10 @@ export default function WorkOrders() {
   const queryClient = useQueryClient();
   const [raiseDateTime, setRaiseDateTime] = useState(() => new Date());
 
-  const userIsAdmin = isAdmin(user);
-  const userIsSuperAdmin = isSuperAdmin(user);
-  const userIsIncharge = isIncharge(user);
+  const userIsAdmin = isAdminLevel(user?.roles ?? []);
+  const userIsSuperAdmin = isSuperAdmin(user?.roles ?? []);
+  const userIsIncharge = hasRole(user?.roles ?? [], "MAINTENANCE_MANAGER") || hasRole(user?.roles ?? [], "MAINTENANCE_USER") || hasRole(user?.roles ?? [], "CALIBRATION_USER");
+  const userIsVendor = hasRole(user?.roles ?? [], "VENDOR");
   const inchargeCategories = useMemo(() => getInchargeCategories(user?.roles || []), [user?.roles]);
   const assetPrefillApplied = useRef<string | null>(null);
   const activeTabInitializedRef = useRef(false);
@@ -354,6 +372,7 @@ export default function WorkOrders() {
   const workOrderRefetchInterval: number | false = authEnabled ? 15_000 : false;
 
   const activePlantIds = user?.plantId ? [user.plantId] : [];
+  const defaultPlantId = user?.plantId || "";
   const actorIds = useMemo(
     () => new Set([user?.authId, user?.id].filter((value): value is string => Boolean(value))),
     [user?.authId, user?.id],
@@ -408,9 +427,11 @@ export default function WorkOrders() {
 
   const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "incharge" | "team" | "all" | "approval" | "vendor">("assigned");
 
-  const { data: allWorkOrders = [], isLoading, isFetching, refetch, dataUpdatedAt } = useQuery({
+  const { data: allWorkOrders = [], isLoading, isFetching, refetch, dataUpdatedAt, error: workOrdersError } = useQuery({
     queryKey: ["work_orders", ...activePlantIds, activeTab, actorIds],
     enabled: Boolean(authEnabled),
+    refetchInterval: workOrderRefetchInterval,
+    refetchIntervalInBackground: true,
     queryFn: async () => {
       const response = await listWorkOrders({ page: 1, limit: 2000, sort: 'created_at', order: 'DESC' });
       return response.data || [];
@@ -482,16 +503,43 @@ export default function WorkOrders() {
   const activeAssetHistoryId = assetIdFromQuery?.trim() || "";
   const isAssetHistoryMode = Boolean(activeAssetHistoryId);
 
-  const normalizedRoles = useMemo(() => (user?.roles ?? []).map((role) => (role || "").toUpperCase()), [user?.roles]);
+  const isVendorAssignedWorkOrder = useCallback(
+    (wo: any) => {
+      const assignedVendor = wo?.assigned_vendor_id;
+      const linkedVendor = wo?.vendor_id;
+      return isOwnedByCurrentUser(assignedVendor) || isOwnedByCurrentUser(linkedVendor);
+    },
+    [isOwnedByCurrentUser],
+  );
+
+  const isAmcWorkOrder = useCallback((wo: any) => {
+    const type = String(wo?.wo_type ?? "").toUpperCase();
+    const category = String(wo?.category ?? "").toUpperCase();
+    const issueType = String(wo?.issue_type ?? "").toUpperCase();
+    const isAmcFlag = Boolean(wo?.is_amc || wo?.assets?.isAmc || wo?.assets?.is_amc || wo?.assets?.amcCovered);
+
+    return isAmcFlag || type.includes("AMC") || category.includes("AMC") || issueType.includes("AMC");
+  }, []);
+
+  const canVendorCloseWorkOrder = useCallback(
+    (wo: any) => {
+      const status = String(wo?.status ?? "").toUpperCase();
+      return userIsVendor && isVendorAssignedWorkOrder(wo) && isAmcWorkOrder(wo) && ["IN_PROGRESS", "REJECTED"].includes(status);
+    },
+    [isAmcWorkOrder, isVendorAssignedWorkOrder, userIsVendor],
+  );
 
   useEffect(() => {
-    const userIsVendor = normalizedRoles.includes("VENDOR");
     if (!authEnabled || activeTabInitializedRef.current) return;
     setActiveTab(userIsAdmin ? "all" : userIsVendor ? "vendor" : userIsIncharge ? "incharge" : userIsPartOfTeam ? "team" : "assigned");
     activeTabInitializedRef.current = true;
-  }, [authEnabled, userIsAdmin, userIsIncharge, normalizedRoles, userIsPartOfTeam]);
+  }, [authEnabled, userIsAdmin, userIsIncharge, userIsPartOfTeam, userIsVendor]);
 
   useEffect(() => {
+    if (activeTab === "vendor" && !userIsVendor) {
+      setActiveTab(userIsAdmin ? "all" : userIsIncharge ? "incharge" : "assigned");
+      return;
+    }
     if (activeTab === "all" && !userIsAdmin) {
       setActiveTab(userIsIncharge ? "incharge" : "assigned");
       return;
@@ -502,7 +550,7 @@ export default function WorkOrders() {
     if (activeTab === "team" && !userIsPartOfTeam) {
       setActiveTab(userIsAdmin ? "all" : "assigned");
     }
-  }, [activeTab, userIsAdmin, userIsIncharge, userIsPartOfTeam]);
+  }, [activeTab, userIsAdmin, userIsIncharge, userIsPartOfTeam, userIsVendor]);
 
   const displayedOrders = useMemo(() => {
     if (isAssetHistoryMode) {
@@ -515,16 +563,18 @@ export default function WorkOrders() {
     if (activeTab === "team") return teamWorkOrders;
     if (userIsAdmin && activeTab === "all") return allWorkOrders;
     if (activeTab === "vendor") {
-      return allWorkOrders.filter((wo: any) => wo.vendor_id === user?.id || wo.assigned_vendor_id === user?.id);
+      return allWorkOrders.filter((wo: any) => isVendorAssignedWorkOrder(wo));
     }
     return assignedWorkOrders;
-  }, [activeTab, allWorkOrders, approvalQueueWorkOrders, assignedWorkOrders, inchargeWorkOrders, isAssetHistoryMode, raisedWorkOrders, teamWorkOrders, userIsAdmin, userIsIncharge]);
+  }, [activeTab, allWorkOrders, approvalQueueWorkOrders, assignedWorkOrders, inchargeWorkOrders, isAssetHistoryMode, isVendorAssignedWorkOrder, raisedWorkOrders, teamWorkOrders, userIsAdmin, userIsIncharge]);
 
   const kpiSource =
     isAssetHistoryMode
       ? allWorkOrders.filter((wo: any) => wo.asset_id === activeAssetHistoryId)
       : activeTab === "approval"
         ? approvalQueueWorkOrders
+        : activeTab === "vendor"
+          ? displayedOrders
         : activeTab === "incharge"
           ? inchargeWorkOrders
         : activeTab === "team"
@@ -546,12 +596,13 @@ export default function WorkOrders() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const isMobile = useIsMobile();
 
   const myApprovalQueueCount = approvalQueueWorkOrders.length;
 
-  const lastSyncedLabel = dataUpdatedAt
-    ? formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true })
-    : "not synced yet";
+
   const showWorkOrdersLoading = authLoading || (authEnabled && isLoading);
 
   const filtered = displayedOrders.filter((wo: any) => {
@@ -575,6 +626,22 @@ export default function WorkOrders() {
     return matchesAsset && matchesSearch && matchesStatus && matchesCat && matchesType && matchesDateFrom && matchesDateTo;
   });
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, categoryFilter, dateFrom, dateTo, searchQuery, statusFilter, typeFilter, isAssetHistoryMode]);
+
+  const pageSize = isMobile ? 6 : 14;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedWorkOrders = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, pageSize, safePage]);
+  const shouldUseVirtualization = !isMobile && filtered.length >= 120;
+  const visibleWorkOrders = shouldUseVirtualization ? filtered : paginatedWorkOrders;
+  const visibleRangeStart = shouldUseVirtualization ? 1 : (safePage - 1) * pageSize + 1;
+  const visibleRangeEnd = shouldUseVirtualization ? filtered.length : Math.min(safePage * pageSize, filtered.length);
+
   const clearAssetHistoryFilter = () => {
     if (!activeAssetHistoryId) return;
     const nextParams = new URLSearchParams(searchParams);
@@ -587,6 +654,7 @@ export default function WorkOrders() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isRaisingWorkOrder, setIsRaisingWorkOrder] = useState(false);
   const [selectedWO, setSelectedWO] = useState<any>(null);
+  const [activityRefreshToken, setActivityRefreshToken] = useState(0);
   const [isOpenFormOpen, setIsOpenFormOpen] = useState(false);
   const [isStartingWorkOrder, setIsStartingWorkOrder] = useState(false);
   const [openingWOId, setOpeningWOId] = useState<string | null>(null);
@@ -599,6 +667,7 @@ export default function WorkOrders() {
   const [verifiedAssetId, setVerifiedAssetId] = useState<string | null>(null);
   const [isManualVerifyOpen, setIsManualVerifyOpen] = useState(false);
   const [manualMachineCode, setManualMachineCode] = useState("");
+  const [manualMachineAssetId, setManualMachineAssetId] = useState("");
   const [isSafetyOpen, setIsSafetyOpen] = useState(false);
   const [safetyChecklist, setSafetyChecklist] = useState({
     ppe_worn: false,
@@ -623,7 +692,7 @@ export default function WorkOrders() {
   const [cameraTarget, setCameraTarget] = useState<"RAISE" | "CLOSE" | null>(null);
   const [cameraError, setCameraError] = useState("");
   const reviewRequiresComments = useMemo(
-    () => selectedWO !== null && isAdmin(user) && !isOwnedByCurrentUser(selectedWO.raised_by),
+    () => selectedWO !== null && isAdminLevel(user?.roles ?? []) && !isOwnedByCurrentUser(selectedWO.raised_by),
     [selectedWO, user],
   );
   const filterCategoryOptions = useMemo(
@@ -701,6 +770,20 @@ export default function WorkOrders() {
         moduleId: formData.module_id,
         page: 1,
         limit: 500,
+      });
+      return response.data || [];
+    },
+  });
+
+  const { data: manualVerifyAssets = [] } = useQuery({
+    queryKey: ["work_order_manual_verify_assets", verifyTargetWO?.plant_id],
+    enabled: Boolean(verifyTargetWO?.plant_id && isManualVerifyOpen),
+    queryFn: async () => {
+      const response = await listAssets({
+        plantId: verifyTargetWO?.plant_id,
+        page: 1,
+        limit: 1000,
+        includeInactive: false,
       });
       return response.data || [];
     },
@@ -798,6 +881,50 @@ export default function WorkOrders() {
     [session?.user?.id, user?.email, user?.fullName],
   );
   const raisedAtLabel = useMemo(() => format(raiseDateTime, "dd MMM yyyy HH:mm:ss"), [raiseDateTime]);
+
+  const departmentNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    departments.forEach((department) => {
+      map.set(department.id, department.name || department.code || "");
+    });
+    return map;
+  }, [departments]);
+
+  const moduleNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    modules.forEach((module) => {
+      map.set(module.id, module.name || module.code || "");
+    });
+    return map;
+  }, [modules]);
+
+  const manualVerifyMachineOptions = useMemo(() => {
+    return manualVerifyAssets
+      .filter((asset) => asset.isActive !== false)
+      .map((asset) => {
+        const moduleName = asset.moduleId ? moduleNameById.get(asset.moduleId) : "";
+        const departmentName = asset.departmentId ? departmentNameById.get(asset.departmentId) : "";
+        const locationParts = [
+          moduleName ? `Module: ${moduleName}` : "",
+          departmentName ? `Dept: ${departmentName}` : "",
+        ].filter(Boolean);
+        const locationSuffix = locationParts.length > 0 ? ` | ${locationParts.join(" | ")}` : "";
+        return {
+          value: asset.id,
+          label: `${asset.code} - ${asset.name}${locationSuffix}`,
+        };
+      })
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }, [departmentNameById, manualVerifyAssets, moduleNameById]);
+
+  useEffect(() => {
+    if (!manualMachineAssetId) {
+      setManualMachineCode("");
+      return;
+    }
+    const selected = manualVerifyAssets.find((asset) => asset.id === manualMachineAssetId);
+    setManualMachineCode(selected?.code || "");
+  }, [manualMachineAssetId, manualVerifyAssets]);
 
   useEffect(() => {
     if (!isFormOpen) return;
@@ -1031,7 +1158,48 @@ export default function WorkOrders() {
     void queryClient.invalidateQueries({ queryKey: ["work_order_config_options"] });
   };
 
-  const handleView = (wo: any) => { setSelectedWO(wo); setIsViewOpen(true); };
+  const refreshSelectedWorkOrder = useCallback(async () => {
+    await refetch();
+    if (!isViewOpen || !selectedWO?.id) return;
+    const latest = queryClient.getQueryData<any>(["work_orders", ...activePlantIds, activeTab, actorIds]) as Array<any> | undefined;
+    const freshSelected = latest?.find((workOrder) => workOrder.id === selectedWO.id) || null;
+    if (freshSelected) {
+      setSelectedWO(freshSelected);
+    }
+    setActivityRefreshToken((value) => value + 1);
+  }, [actorIds, activePlantIds, activeTab, isViewOpen, queryClient, refetch, selectedWO?.id]);
+
+  useEffect(() => {
+    if (!authEnabled || typeof window === "undefined") return;
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshSelectedWorkOrder();
+    };
+
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+    };
+  }, [authEnabled, refreshSelectedWorkOrder]);
+
+  useEffect(() => {
+    if (!isViewOpen || !selectedWO?.id) return;
+    const latest = allWorkOrders.find((workOrder: any) => workOrder.id === selectedWO.id);
+    if (!latest) return;
+    if (latest.updated_at === selectedWO.updated_at && latest.status === selectedWO.status) return;
+    setSelectedWO(latest);
+  }, [allWorkOrders, isViewOpen, selectedWO?.id, selectedWO?.status, selectedWO?.updated_at]);
+
+  const handleView = (wo: any) => {
+    setSelectedWO(wo);
+    setIsViewOpen(true);
+    setActivityRefreshToken((value) => value + 1);
+    void refreshSelectedWorkOrder();
+  };
   const handleAdd = () => {
     setFormData(getInitialRaiseFormData(userIsSuperAdmin ? "" : user?.plantId || ""));
     setPhotoAttachments([]);
@@ -1223,6 +1391,7 @@ export default function WorkOrders() {
     setVerificationMethod("QR_SCAN");
     setVerifiedAssetId(null);
     setManualMachineCode("");
+    setManualMachineAssetId("");
     setIsManualVerifyOpen(false);
     setSafetyChecklist({ ppe_worn: false, machine_isolated: false, safety_lock_applied: false, notes: "" });
     setIsQrVerifyOpen(true);
@@ -1234,14 +1403,16 @@ export default function WorkOrders() {
     setVerificationMethod("MANUAL_ENTRY");
     setVerifiedAssetId(null);
     setManualMachineCode("");
+    setManualMachineAssetId("");
     setIsManualVerifyOpen(true);
   };
 
   const confirmManualVerification = () => {
     if (!verifyTargetWO) return;
-    const manualCode = (manualMachineCode || "").trim();
+    const selectedAsset = manualVerifyAssets.find((asset) => asset.id === manualMachineAssetId) || null;
+    const manualCode = (selectedAsset?.code || manualMachineCode || "").trim();
     if (!manualCode) {
-      toast.error("Enter the assigned machine code to continue");
+      toast.error("Select the assigned machine to continue");
       return;
     }
 
@@ -1408,10 +1579,6 @@ export default function WorkOrders() {
       toast.error("Confirm all safety checks before starting work");
       return;
     }
-    if (!(openData.initial_assessment || "").trim()) {
-      toast.error("Initial assessment is required before work begins");
-      return;
-    }
     if (verificationMethod === "QR_SCAN" && !verifiedAssetId) {
       toast.error("Scan the assigned machine QR before starting work");
       return;
@@ -1427,7 +1594,7 @@ export default function WorkOrders() {
         verification_method: verificationMethod,
         scanned_asset_id: verificationMethod === "QR_SCAN" ? verifiedAssetId : null,
         manual_machine_code: verificationMethod === "MANUAL_ENTRY" ? manualMachineCode.trim() : null,
-        initial_assessment: (openData.initial_assessment || "").trim(),
+        initial_assessment: (openData.initial_assessment || "").trim() || null,
         assigned_to_notes: (openData.assigned_to_notes || "").trim() || null,
         estimated_time_minutes: Math.max(0, Number.parseInt(openData.estimated_minutes, 10) || 0),
         safety_checklist: {
@@ -1443,6 +1610,7 @@ export default function WorkOrders() {
       setVerificationMethod("QR_SCAN");
       setVerifiedAssetId(null);
       setManualMachineCode("");
+      setManualMachineAssetId("");
       setOpeningWOId(null);
       setOpenData({ ...EMPTY_OPEN_DATA });
       triggerWorkOrderLiveSync();
@@ -1463,7 +1631,6 @@ export default function WorkOrders() {
       { label: "Module", value: formData.module_id },
       { label: "Machine", value: formData.asset_id },
       { label: "Category", value: formData.category },
-      { label: "Issue Title", value: formData.issue_title.trim() },
       { label: "Problem Details", value: formData.problem_description.trim() },
       { label: "Priority", value: formData.priority },
     ].filter((field) => !field.value);
@@ -1479,15 +1646,11 @@ export default function WorkOrders() {
 
     setIsRaisingWorkOrder(true);
     try {
-      const assetLocation =
-        (typeof (selectedAsset as any)?.location === "string" ? (selectedAsset as any).location.trim() : "") || "";
-      const normalizedLocation = formData.reported_location.trim() || assetLocation || null;
       const payload = {
         asset_id: formData.asset_id,
         priority: formData.priority,
         category: formData.category,
-        problem_description: `${formData.issue_title.trim()}\n\n${formData.problem_description.trim()}`,
-        reported_location: normalizedLocation,
+        problem_description: formData.problem_description.trim(),
         remarks: formData.remarks.trim() || null,
         plant_id: formData.plant_id,
         ...(photoAttachments.length > 0 ? { attachments: photoAttachments } : {}),
@@ -1521,6 +1684,7 @@ export default function WorkOrders() {
     setVerificationMethod("QR_SCAN");
     setVerifiedAssetId(null);
     setManualMachineCode("");
+    setManualMachineAssetId("");
     setSafetyChecklist({ ppe_worn: false, machine_isolated: false, safety_lock_applied: false, notes: "" });
     setIsOpenFormOpen(false);
     setIsQrVerifyOpen(true);
@@ -1534,10 +1698,6 @@ export default function WorkOrders() {
     }
     if (verificationMethod === "MANUAL_ENTRY" && !manualMachineCode.trim()) {
       toast.error("Enter the machine code before assessment");
-      return;
-    }
-    if (!openData.initial_assessment.trim()) {
-      toast.error("Initial assessment is required");
       return;
     }
     if (!openData.category) {
@@ -1559,7 +1719,7 @@ export default function WorkOrders() {
         verification_method: verificationMethod,
         scanned_asset_id: verificationMethod === "QR_SCAN" ? verifiedAssetId : null,
         manual_machine_code: verificationMethod === "MANUAL_ENTRY" ? manualMachineCode.trim() : null,
-        initial_assessment: openData.initial_assessment.trim(),
+        initial_assessment: openData.initial_assessment.trim() || null,
         category: openData.category,
         assigned_to: openData.assigned_to,
         estimated_time_minutes: Math.max(0, Number.parseInt(openData.estimated_minutes, 10) || 0),
@@ -1735,26 +1895,43 @@ export default function WorkOrders() {
 
   const canExecuteWO = (wo: any) => {
     if (!user) return false;
-    if (isSuperAdmin(user) || isMaintenanceManager(user)) return true;
+    if (userIsVendor) {
+      return canVendorCloseWorkOrder(wo);
+    }
+    if (isSuperAdmin(user?.roles ?? []) || hasRole(user?.roles ?? [], "MAINTENANCE_MANAGER")) return true;
     if (isOwnedByCurrentUser(wo.assigned_to)) return true;
     if (userTeamCategories.size > 0 && userTeamCategories.has(wo.category) && !isOwnedByCurrentUser(wo.raised_by)) return true;
-    return isMaintenanceUser(user) && (!wo.assigned_to || isOwnedByCurrentUser(wo.assigned_to));
+    return hasRole(user?.roles ?? [], "MAINTENANCE_USER") || hasRole(user?.roles ?? [], "MAINTENANCE_MANAGER") && (!wo.assigned_to || isOwnedByCurrentUser(wo.assigned_to));
   };
 
   const canReviewWO = (wo: any) => {
     if (!user) return false;
+    if (userIsVendor) return false;
     if (!["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status)) return false;
-    if (isSuperAdmin(user) || isMaintenanceManager(user) || isAdmin(user)) return true;
+    if (isSuperAdmin(user?.roles ?? []) || hasRole(user?.roles ?? [], "MAINTENANCE_MANAGER") || isAdminLevel(user?.roles ?? [])) return true;
     return isOwnedByCurrentUser(wo.raised_by);
   };
 
 
 
+  const enterpriseKpis = useMemo(() => {
+    const inProgress = kpiSource.filter((wo: any) => ["OPENED", "IN_PROGRESS", "ASSIGNED", "REASSIGNED"].includes(String(wo.status || "").toUpperCase())).length;
+    const completed = kpiSource.filter((wo: any) => String(wo.status || "").toUpperCase() === "CLOSED").length;
+
+    return {
+      totalWOs,
+      openWOs,
+      inProgress,
+      completed,
+      pendingApproval,
+    };
+  }, [kpiSource, openWOs, pendingApproval, totalWOs]);
+
   const kpiCards = [
-    { label: "Open Work Orders", value: openWOs, icon: ClipboardList, color: "text-blue-500" },
-    { label: "Completed (24h)", value: closedLast24h, icon: CheckSquare, color: "text-green-500" },
-    { label: "Pending Verification", value: pendingApproval, icon: AlertTriangle, color: "text-amber-500" },
-    { label: "Total", value: totalWOs, icon: Clock, color: "text-primary" },
+    { label: "Open", value: enterpriseKpis.openWOs, icon: Clock, color: "text-blue-600" },
+    { label: "In Progress", value: enterpriseKpis.inProgress, icon: Loader2, color: "text-indigo-600" },
+    { label: "Pending Verification", value: enterpriseKpis.pendingApproval, icon: CheckCircle, color: "text-amber-600" },
+    { label: "Completed", value: enterpriseKpis.completed, icon: CheckSquare, color: "text-emerald-600" },
   ];
 
   const columns = [
@@ -1777,7 +1954,7 @@ export default function WorkOrders() {
         {!wo.escalation_level && (!wo.sla_due_at || new Date(wo.sla_due_at) >= new Date()) && <span className="text-xs text-muted-foreground">—</span>}
       </div>
     )},
-    { key: "raised", header: "Raised", hideOnMobile: true, render: (wo: any) => (<div><p className="text-sm">{format(new Date(wo.created_at), "dd MMM yyyy")}</p><p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(wo.created_at), { addSuffix: true })}</p></div>) },
+    { key: "raised", header: "Raised", hideOnMobile: true, render: (wo: any) => (<div><p className="text-sm">{format(new Date(wo.created_at), "dd MMM yyyy")}</p><p className="text-xs text-muted-foreground"><TimeAgo date={wo.created_at} /></p></div>) },
     {
       key: "actions", header: "Actions", className: "text-right", render: (wo: any) => (
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
@@ -1786,8 +1963,8 @@ export default function WorkOrders() {
             {canExecuteWO(wo) && (
               <>
                 {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED"].includes(wo.status)) && <DropdownMenuItem onClick={() => openOpenForm(wo.id)}><Play className="mr-2 h-4 w-4" />Open & Assess</DropdownMenuItem>}
-                {wo.status === "IN_PROGRESS" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Complete & Send for Verification</DropdownMenuItem>}
-                {wo.status === "REJECTED" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />Revise & Resubmit</DropdownMenuItem>}
+                {wo.status === "IN_PROGRESS" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />{userIsVendor ? "Close AMC Work Order" : "Complete & Send for Verification"}</DropdownMenuItem>}
+                {wo.status === "REJECTED" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />{userIsVendor ? "Revise AMC Closure" : "Revise & Resubmit"}</DropdownMenuItem>}
               </>
             )}
             {canReviewWO(wo) && (
@@ -1809,16 +1986,35 @@ export default function WorkOrders() {
     <PageShell>
       <PageHeader
         title="Work Orders"
-        subtitle="Manage and track maintenance work orders"
+        subtitle="Industrial maintenance workflow console with role-aware actions, SLA visibility, and responsive execution views"
+        sticky
         actions={
-          <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
-            <Plus className="h-4 w-4" />
-            Raise Work Order
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <div className="hidden items-center gap-2 rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground lg:flex">
+              <span className="font-semibold text-foreground">{isFetching ? "Synchronizing" : "Live Ops"}</span>
+              <span>Updated {dataUpdatedAt ? <TimeAgo date={dataUpdatedAt} /> : "not synced yet"}</span>
+            </div>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => void refetch()}
+              disabled={isFetching || !authEnabled}
+              aria-label="Refresh work orders"
+            >
+              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+              Refresh
+            </Button>
+            {!userIsVendor ? (
+              <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
+                <Plus className="h-4 w-4" />
+                Raise Work Order
+              </Button>
+            ) : null}
+          </div>
         }
       />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
         {kpiCards.map((kpi, idx) => (
           <div key={idx}>
             <Card className="group relative overflow-hidden border-none bg-gradient-to-br from-card to-muted/30 shadow-card hover:shadow-xl transition-all duration-300">
@@ -1832,7 +2028,7 @@ export default function WorkOrders() {
                     <kpi.icon className="h-6 w-6" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">{kpi.label}</p>
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide leading-tight">{kpi.label}</p>
                     <div className="flex items-baseline gap-1">
                       <p className="text-2xl font-black tracking-tight text-foreground">{kpi.value}</p>
                     </div>
@@ -1852,6 +2048,7 @@ export default function WorkOrders() {
             ...(userIsIncharge ? [{ id: 'incharge', label: inchargeCategories.join(", "), count: inchargeWorkOrders.length }] : []),
             ...(userIsPartOfTeam ? [{ id: 'team', label: 'My Team', count: teamWorkOrders.length }] : []),
             ...(userIsAdmin ? [{ id: 'all', label: 'All Work Orders', count: allWorkOrders.length }] : []),
+            ...(userIsVendor ? [{ id: 'vendor', label: 'Vendor AMC Queue', count: displayedOrders.length }] : []),
             { id: 'approval', label: 'Verification Queue', count: myApprovalQueueCount }
           ].map((tab) => (
             <Button
@@ -1860,7 +2057,7 @@ export default function WorkOrders() {
               size="sm"
               onClick={() => setActiveTab(tab.id as any)}
               className={cn(
-                "whitespace-nowrap rounded-2xl px-3 sm:px-4 font-semibold transition-all h-9 text-xs sm:text-sm",
+                "shrink-0 whitespace-nowrap rounded-2xl px-3 sm:px-4 font-semibold transition-all h-9 text-xs sm:text-sm",
                 activeTab === tab.id ? "shadow-lg shadow-primary/20" : "text-muted-foreground hover:bg-white/50"
               )}
             >
@@ -1877,7 +2074,7 @@ export default function WorkOrders() {
           <div className="ml-auto hidden shrink-0 items-center gap-3 pr-2 text-xs text-muted-foreground lg:flex">
             <div className="flex flex-col items-end">
               <span className="font-medium text-foreground">{isFetching ? "Synchronizing..." : "Operational Data"}</span>
-              <span className="text-[10px] opacity-70">Synced {lastSyncedLabel}</span>
+              <span className="text-[10px] opacity-70">Synced {dataUpdatedAt ? <TimeAgo date={dataUpdatedAt} /> : "not synced yet"}</span>
             </div>
             <Button 
               variant="outline" 
@@ -1913,22 +2110,35 @@ export default function WorkOrders() {
         </Card>
       )}
 
-      <Card className="border-none shadow-card bg-card/40 backdrop-blur-sm">
+      <Card className="border-none shadow-card bg-card/40 backdrop-blur-sm overflow-x-auto">
         <CardContent className="p-3 sm:p-4">
           <FilterToolbar
             search={
-              <div className="relative w-full">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground opacity-50" />
-                <Input 
-                  placeholder="Search WO#, asset..." 
-                  value={searchQuery} 
-                  onChange={(e) => setSearchQuery(e.target.value)} 
-                  className="h-11 pl-10 bg-white/50 border-none shadow-inner focus-visible:ring-primary/20" 
-                />
+              <div className="flex w-full items-center gap-2">
+                <div className="relative w-full">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground opacity-50" />
+                  <Input
+                    placeholder="Search WO number, machine, category, status"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-11 pl-10 bg-white/60 border-border/50 shadow-inner focus-visible:ring-primary/20"
+                    aria-label="Search work orders"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 gap-2 sm:hidden"
+                  onClick={() => setIsMobileFilterOpen(true)}
+                  aria-label="Open filter panel"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Filters
+                </Button>
               </div>
             }
             filters={
-              <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="hidden w-full flex-col gap-2 sm:flex sm:flex-row sm:flex-wrap sm:items-center">
                 <div className="flex flex-wrap items-center gap-2">
                   <SelectField label="" value={statusFilter} onChange={setStatusFilter} options={[
                     { value: "all", label: "All Status" },
@@ -1982,6 +2192,36 @@ export default function WorkOrders() {
         </CardContent>
       </Card>
 
+      <Dialog open={isMobileFilterOpen} onOpenChange={setIsMobileFilterOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:hidden">
+          <DialogHeader>
+            <DialogTitle>Filter Work Orders</DialogTitle>
+            <DialogDescription>Refine results by status, category, date range, and export scope.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <SelectField label="Status" value={statusFilter} onChange={setStatusFilter} options={[
+              { value: "all", label: "All Status" },
+              { value: "RAISED", label: "Raised" }, { value: "TRIAGED", label: "Triaged" }, { value: "ASSIGNED", label: "Assigned" }, { value: "OPENED", label: "Opened" },
+              { value: "IN_PROGRESS", label: "In Progress" }, { value: "REASSIGNED", label: "Reassigned" },
+              { value: "APPROVAL_PENDING", label: "Pending Approval" }, { value: "USER_VERIFICATION", label: "Pending Approval" },
+              { value: "REJECTED", label: "Rejected" }, { value: "CLOSED", label: "Completed" },
+            ]} className="h-11" />
+            <SelectField label="Category" value={categoryFilter} onChange={setCategoryFilter} options={[{ value: "all", label: "All Categories" }, ...filterCategoryOptions]} className="h-11" />
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">From Date</Label>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-11" title="From date" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">To Date</Label>
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-11" title="To date" />
+            </div>
+            <DialogFooter className="pt-2">
+              <Button variant="outline" onClick={() => setIsMobileFilterOpen(false)}>Close</Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/30 p-3 backdrop-blur-sm animate-in slide-in-from-top-2">
           <div className="flex items-center gap-2">
@@ -1997,7 +2237,7 @@ export default function WorkOrders() {
           </div>
           <div className="flex flex-wrap items-center gap-2 ml-auto">
             <Button variant="outline" size="sm" onClick={function() {
-              var ids = Array.from(selectedIds);
+              const ids = Array.from(selectedIds);
               ids.forEach(function(id) {
                 approveWorkOrder(id, { comments: "Bulk closed" }).catch(function() {});
               });
@@ -2026,7 +2266,8 @@ export default function WorkOrders() {
 
       <Card className="shadow-card">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base sm:text-lg font-semibold">
+          <CardTitle className="text-base sm:text-lg font-semibold flex flex-wrap items-center justify-between gap-2">
+            <span>
             {isAssetHistoryMode
               ? "Machine Work Order History"
               : activeTab === "incharge"
@@ -2037,30 +2278,110 @@ export default function WorkOrders() {
                     ? "My Team Work Orders"
                   : activeTab === "all"
                     ? "All Work Orders"
+                    : activeTab === "vendor"
+                      ? "Vendor AMC Work Orders"
                     : activeTab === "raised"
                       ? "Raised Work Orders"
-                      : "Assigned Work Orders"} ({filtered.length})
+                        : "Assigned Work Orders"} ({filtered.length})
+              </span>
+              {!shouldUseVirtualization ? (
+                <span className="text-xs font-medium text-muted-foreground">Page {safePage} of {totalPages}</span>
+              ) : (
+                <span className="text-xs font-medium text-muted-foreground">Virtualized view</span>
+              )}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {showWorkOrdersLoading ? (
-            <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+            {workOrdersError ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                Failed to load work orders. Please retry synchronization.
+              </div>
+            ) : showWorkOrdersLoading ? (
+              <div className="flex min-h-[220px] items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+            ) : filtered.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-8 text-center">
+                <p className="text-sm font-semibold">No work orders match current filters</p>
+                <p className="mt-1 text-xs text-muted-foreground">Adjust filters, change tabs, or raise a new work order.</p>
+                <div className="mt-4 flex justify-center gap-2">
+                  <Button variant="outline" onClick={() => {
+                    setSearchQuery("");
+                    setStatusFilter("all");
+                    setCategoryFilter("all");
+                    setTypeFilter("all");
+                    setDateFrom("");
+                    setDateTo("");
+                  }}>Clear Filters</Button>
+                  {!userIsVendor ? <Button onClick={handleAdd}>Raise Work Order</Button> : null}
+                </div>
+              </div>
           ) : (
             <ResponsiveTable
-              data={filtered}
+                data={visibleWorkOrders}
               columns={columns}
               keyExtractor={(wo: any) => wo.id}
+                stickyHeader
+                ariaLabel="Work order table"
+                containerClassName="rounded-xl border border-border/60"
+                virtualizeRows={!isMobile}
+                virtualizationThreshold={120}
+                virtualRowHeight={56}
+                virtualOverscan={10}
+                virtualMaxHeight={620}
               mobileCard={(wo: any) => (
-                <MobileCard onView={() => handleView(wo)}>
+                  <MobileCard
+                    onView={() => handleView(wo)}
+                    actions={[
+                      ...(canExecuteWO(wo) && (["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED"].includes(wo.status) ? [{ label: "Open & Assess", icon: <Play className="mr-2 h-4 w-4" />, onClick: () => openOpenForm(wo.id) }] : [])),
+                      ...(canExecuteWO(wo) && (wo.status === "IN_PROGRESS" || wo.status === "REJECTED") ? [{ label: userIsVendor ? (wo.status === "REJECTED" ? "Revise AMC Closure" : "Close AMC Work Order") : (wo.status === "REJECTED" ? "Revise & Resubmit" : "Complete & Send"), icon: <Send className="mr-2 h-4 w-4" />, onClick: () => openCloseForm(wo.id) }] : []),
+                      ...(canReviewWO(wo) ? [{ label: "Accept & Close", icon: <CheckCircle className="mr-2 h-4 w-4" />, onClick: () => openReviewDialog(wo, "approve") }] : []),
+                    ]}
+                  >
                   <MobileCardHeader title={wo.wo_number} subtitle={wo.assets?.name} badge={<StatusBadge status={wo.status} variant={getStatusVariant(wo.status)} />} />
                   <MobileCardRow label="Type" value={resolveWorkOrderLabel("WO_TYPE", wo.wo_type, wo.plant_id, workOrderMasters)} />
                   <MobileCardRow label="Category" value={resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id, workOrderMasters)} />
                   <MobileCardRow label="Priority" value={formatPriorityLabel(wo.priority)} />
-                  <MobileCardRow label="Raised" value={formatDistanceToNow(new Date(wo.created_at), { addSuffix: true })} />
+                    <MobileCardRow label="SLA" value={wo.sla_due_at ? format(new Date(wo.sla_due_at), "dd MMM HH:mm") : "Not set"} />
+                    <MobileCardRow label="Escalation" value={Number(wo.escalation_level || 0) > 0 ? `Level ${wo.escalation_level}` : "None"} />
+                  <MobileCardRow label="Raised" value={<TimeAgo date={wo.created_at} />} />
                 </MobileCard>
               )}
             />
           )}
+
+            {filtered.length > 0 && !shouldUseVirtualization ? (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
+                <p className="text-xs text-muted-foreground">
+                  Showing {visibleRangeStart} to {visibleRangeEnd} of {filtered.length} work orders
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1"
+                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                    disabled={safePage <= 1}
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="h-4 w-4" /> Prev
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1"
+                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={safePage >= totalPages}
+                    aria-label="Next page"
+                  >
+                    Next <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+            {filtered.length > 0 && shouldUseVirtualization ? (
+              <p className="mt-4 border-t border-border/60 pt-4 text-xs text-muted-foreground">
+                Rendering {filtered.length} records with virtualized rows for smoother large-data scrolling.
+              </p>
+            ) : null}
         </CardContent>
       </Card>
 
@@ -2070,55 +2391,68 @@ export default function WorkOrders() {
           <div className="rounded-2xl border border-border/70 bg-card/80 p-4 sm:p-5 shadow-sm">
             <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground"><Wrench className="h-4 w-4" />Machine Selection</h3>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <SelectField
+              <AsyncSelect
                 label="Plant"
                 value={formData.plant_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, plant_id: value, department_id: "", module_id: "", asset_id: "" }))}
-                options={plantOptions}
+                fetchFn={listPlants}
+                labelExtractor={(plant) => `${plant.plantCode || "-"} - ${plant.plantName}`}
+                valueExtractor={(plant) => plant.id}
                 placeholder={userIsSuperAdmin ? "Select plant" : "Assigned plant"}
-                disabled={!userIsSuperAdmin || plantOptions.length === 0}
+                disabled={!userIsSuperAdmin}
                 required
               />
-              <SelectField
+              <AsyncSelect
                 label="Department"
                 value={formData.department_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, department_id: value, module_id: "", asset_id: "" }))}
-                options={departmentsForPlant.map((department: Department) => ({
-                  value: department.id,
-                  label: `${department.code} - ${department.name}`,
-                }))}
+                fetchFn={async (params) => {
+                  if (userIsSuperAdmin && !formData.plant_id) return { data: [], total: 0 };
+                  return listDepartments({ ...params, plantId: formData.plant_id || defaultPlantId || undefined });
+                }}
+                labelExtractor={(dep) => `${dep.code} - ${dep.name}`}
+                valueExtractor={(dep) => dep.id}
                 placeholder={formData.plant_id ? "Select department" : "Select plant first"}
                 disabled={!formData.plant_id}
                 required
               />
-              <SelectField
+              <AsyncSelect
                 label="Module"
                 value={formData.module_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, module_id: value, asset_id: "" }))}
-                options={modulesForScope.map((module: MachineModule) => ({
-                  value: module.id,
-                  label: `${module.code ? `${module.code} - ` : ""}${module.name}`,
-                }))}
+                fetchFn={async (params) => {
+                  if (!formData.department_id) return { data: [], total: 0 };
+                  return listModules({ ...params, plantId: formData.plant_id || defaultPlantId || undefined, departmentId: formData.department_id });
+                }}
+                labelExtractor={(module) => `${module.code ? `${module.code} - ` : ""}${module.name}`}
+                valueExtractor={(module) => module.id}
                 placeholder={formData.department_id ? "Select module" : "Select department first"}
                 disabled={!formData.department_id}
                 required
               />
-              <SelectField
+              <AsyncSelect
                 label="Machine"
                 value={formData.asset_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, asset_id: value }))}
-                options={assetOptions}
+                fetchFn={async (params) => {
+                  if (!formData.module_id) return { data: [], total: 0 };
+                  const response = await listAssets({ ...params, plantId: formData.plant_id || defaultPlantId || undefined });
+                  const filtered = response.data.filter((asset) => asset.moduleId === formData.module_id);
+                  return { data: filtered, total: filtered.length };
+                }}
+                labelExtractor={(asset) => `${asset.code} - ${asset.name}`}
+                valueExtractor={(asset) => asset.id}
                 placeholder={formData.module_id ? "Select machine" : "Select module first"}
-                disabled={!formData.module_id || assetOptions.length === 0}
+                disabled={!formData.module_id}
                 required
               />
             </div>
 
-            <div className="mt-4 flex items-center gap-3 rounded-xl border border-dashed border-primary/20 bg-primary/5 p-3">
+            <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center gap-3 rounded-xl border border-dashed border-primary/20 bg-primary/5 p-3">
               <Button
                 type="button"
                 variant="outline"
-                className="gap-2"
+                className="gap-2 shrink-0"
                 onClick={() => setIsRaiseQrScannerOpen(true)}
                 disabled={isResolvingRaiseQr}
               >
@@ -2169,8 +2503,6 @@ export default function WorkOrders() {
                 required
                 className="sm:col-span-2"
               />
-              <InputField label="Location" value={formData.reported_location} onChange={(v) => setFormData((prev) => ({ ...prev, reported_location: v }))} placeholder={selectedAsset ? String((selectedAsset as any).location || "") : "Machine location"} className="sm:col-span-2" />
-              <InputField label="Issue Title" value={formData.issue_title} onChange={(v) => setFormData((prev) => ({ ...prev, issue_title: v }))} placeholder="Short summary" required />
               <TextareaField label="Problem Details" value={formData.problem_description} onChange={(v) => setFormData((prev) => ({ ...prev, problem_description: v }))} placeholder="Describe symptoms and impact..." className="sm:col-span-2" required />
               <TextareaField label="Remarks" value={formData.remarks} onChange={(v) => setFormData((prev) => ({ ...prev, remarks: v }))} placeholder="Optional remarks" className="sm:col-span-2" />
             </div>
@@ -2228,9 +2560,20 @@ export default function WorkOrders() {
       {/* ===== OPEN WORK ORDER FORM ===== */}
       <FormDialog open={isOpenFormOpen} onOpenChange={setIsOpenFormOpen} title="Initial Assessment" description="Complete assessment after machine identification. Change category if the issue belongs to another discipline." onSubmit={handleOpenWO} submitLabel={isStartingWorkOrder ? "Starting..." : "Start Work"} isLoading={isStartingWorkOrder} size="lg">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <TextareaField label="Initial Assessment Details" value={openData.initial_assessment} onChange={(v) => setOpenData({ ...openData, initial_assessment: v })} placeholder="What do you observe on the machine?" className="sm:col-span-2" required />
+          <TextareaField label="Initial Assessment Details" value={openData.initial_assessment} onChange={(v) => setOpenData({ ...openData, initial_assessment: v })} placeholder="What do you observe on the machine?" className="sm:col-span-2" />
           <SelectField label="Work Order Category" value={openData.category} onChange={(v) => setOpenData({ ...openData, category: v })} options={filterCategoryOptions} placeholder="Select category" required />
-          <SelectField label="Technician Assigned" value={openData.assigned_to} onChange={(v) => setOpenData({ ...openData, assigned_to: v })} options={technicianOptions} placeholder="Select technician" required />
+          <AsyncSelect
+            label="Technician Assigned"
+            value={openData.assigned_to}
+            onChange={(v) => setOpenData({ ...openData, assigned_to: v })}
+            fetchFn={async (params) => {
+              return listUsers({ ...params, roleFilter: "MAINTENANCE_USER", plantId: technicianPlantId || undefined });
+            }}
+            labelExtractor={(user) => `${user.first_name} ${user.last_name} (${user.email})`}
+            valueExtractor={(user) => user.id}
+            placeholder="Select technician"
+            required
+          />
           <InputField label="Expected Downtime (minutes)" value={openData.expected_downtime_minutes} onChange={(v) => setOpenData({ ...openData, expected_downtime_minutes: v })} type="number" placeholder="e.g., 90" required />
           <InputField label="Estimated Repair Time (minutes)" value={openData.estimated_minutes} onChange={(v) => setOpenData({ ...openData, estimated_minutes: v })} type="number" placeholder="e.g., 120" />
           <TextareaField label="Assessment Remarks" value={openData.assessment_remarks} onChange={(v) => setOpenData({ ...openData, assessment_remarks: v })} placeholder="Safety notes, tools required, isolation steps..." className="sm:col-span-2" />
@@ -2436,7 +2779,13 @@ export default function WorkOrders() {
               {(selectedWO.status === "IN_PROGRESS" || selectedWO.status === "REJECTED") && canExecuteWO(selectedWO) ? (
                 <Button className="gap-2" onClick={() => openCloseForm(selectedWO.id)}>
                   <Send className="h-4 w-4" />
-                  {selectedWO.status === "REJECTED" ? "Revise & Resubmit" : "Complete & Send for Verification"}
+                  {userIsVendor
+                    ? selectedWO.status === "REJECTED"
+                      ? "Revise AMC Closure"
+                      : "Close AMC Work Order"
+                    : selectedWO.status === "REJECTED"
+                      ? "Revise & Resubmit"
+                      : "Complete & Send for Verification"}
                 </Button>
               ) : null}
               {(["USER_VERIFICATION", "APPROVAL_PENDING"].includes(selectedWO.status)) && canReviewWO(selectedWO) ? (
@@ -2458,6 +2807,9 @@ export default function WorkOrders() {
                   status={selectedWO.status} 
                   createdAt={selectedWO.created_at} 
                   openedAt={selectedWO.opened_at} 
+                  startedAt={selectedWO.started_at}
+                  submittedForApprovalAt={selectedWO.submitted_for_approval_at}
+                  rejectedAt={selectedWO.rejected_at}
                   closedAt={selectedWO.closed_at} 
                />
             </Card>
@@ -2468,7 +2820,6 @@ export default function WorkOrders() {
               <DetailRow label="Priority" value={<StatusBadge variant={selectedWO.priority === "CRITICAL" ? "critical" : "default"}>{formatPriorityLabel(selectedWO.priority)}</StatusBadge>} />
               <DetailRow label="Category" value={resolveWorkOrderLabel("CATEGORY", selectedWO.category, selectedWO.plant_id, workOrderMasters)} />
               {selectedWO.sub_category && <DetailRow label="Sub-Category" value={selectedWO.sub_category} />}
-              {selectedWO.reported_location && <DetailRow label="Location" value={selectedWO.reported_location} />}
               {selectedWO.safety_related && <DetailRow label="Safety Related" value={<StatusBadge variant="critical">Yes</StatusBadge>} />}
             </DetailSection>
             <DetailSection title="Asset">
@@ -2508,7 +2859,7 @@ export default function WorkOrders() {
               <DetailRow label="SLA Due" value={selectedWO.sla_due_at ? <span className={`text-xs ${new Date(selectedWO.sla_due_at) < new Date() && !["CLOSED", "CANCELLED"].includes(selectedWO.status) ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>{format(new Date(selectedWO.sla_due_at), "dd MMM yyyy HH:mm")}{new Date(selectedWO.sla_due_at) < new Date() && !["CLOSED", "CANCELLED"].includes(selectedWO.status) ? " (Overdue)" : ""}</span> : <span className="text-xs text-muted-foreground">Not set</span>} />
               <DetailRow label="Email Notifications" value={selectedWO.email_notified ? <span className="inline-flex items-center gap-1 text-xs text-green-600"><Bell className="h-3 w-3" />Sent</span> : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><BellOff className="h-3 w-3" />Pending</span>} />
             </DetailSection>
-            <ActivityTimeline workOrderId={selectedWO.id} />
+            <ActivityTimeline workOrderId={selectedWO.id} refreshToken={activityRefreshToken} />
           </div>
         )}
       </ViewDialog>
@@ -2600,18 +2951,29 @@ export default function WorkOrders() {
         open={isManualVerifyOpen}
         onOpenChange={setIsManualVerifyOpen}
         title="Manual Machine Verification"
-        description="Enter the assigned machine code exactly as printed on the machine or asset card."
+        description="Search and select the assigned machine by code, name, module, or department."
         onSubmit={confirmManualVerification}
         submitLabel="Confirm Machine"
-        size="sm"
+        size="lg"
       >
-        <InputField
-          label="Machine Code"
-          value={manualMachineCode}
-          onChange={setManualMachineCode}
-          placeholder={verifyTargetWO?.assets?.code || "Enter machine code"}
-          required
-        />
+        <div className="space-y-3">
+          <SearchableSelect
+            label="Machine"
+            required
+            value={manualMachineAssetId}
+            onChange={setManualMachineAssetId}
+            options={manualVerifyMachineOptions}
+            placeholder="Search by machine code, machine name, module, or department"
+            emptyMessage="No machines found in this plant"
+          />
+          <InputField
+            label="Selected Machine Code"
+            value={manualMachineCode}
+            onChange={setManualMachineCode}
+            placeholder={verifyTargetWO?.assets?.code || "Machine code"}
+            required
+          />
+        </div>
       </FormDialog>
 
       {qrMismatchMessage ? (
@@ -2730,25 +3092,67 @@ export default function WorkOrders() {
 }
 
 /** Inline activity timeline shown inside the work order view dialog. */
-function ActivityTimeline({ workOrderId }: { workOrderId: string }) {
-  const [events, setEvents] = useState<Array<{ event_type: string; notes: string | null; occurred_at: string; actor_name?: string }>>([]);
+function ActivityTimeline({ workOrderId, refreshToken }: { workOrderId: string; refreshToken: number }) {
+  const [events, setEvents] = useState<Array<{
+    event_type: string;
+    notes: string | null;
+    occurred_at: string;
+    actor_name?: string;
+    attachments?: Array<Record<string, unknown>> | null;
+  }>>([]);
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState("");
   const [sendingComment, setSendingComment] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  const parseEventAttachments = useCallback((value: unknown) => {
+    if (Array.isArray(value)) {
+      return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object");
+    }
+    if (typeof value !== "string" || !value.trim()) {
+      return [] as Array<Record<string, unknown>>;
+    }
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+        : [];
+    } catch {
+      return [] as Array<Record<string, unknown>>;
+    }
+  }, []);
 
   const loadEvents = useCallback(() => {
     let cancelled = false;
     setLoading(true);
     listWorkOrderActivity(workOrderId, { limit: 50 })
       .then((res: any) => {
-        if (!cancelled) setEvents(res?.data?.activity ?? res?.data ?? []);
+        if (cancelled) return;
+        const rawEvents: Array<Record<string, unknown>> = res?.data?.activity ?? res?.data ?? [];
+        const normalizedEvents = rawEvents.map((event) => ({
+          ...(event as any),
+          attachments: parseEventAttachments((event as any).attachments),
+        }));
+        setEvents(normalizedEvents);
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [workOrderId]);
+  }, [parseEventAttachments, workOrderId]);
 
   useEffect(loadEvents, [loadEvents]);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents, refreshToken]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      loadEvents();
+    }, 10_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [loadEvents]);
 
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
@@ -2829,6 +3233,26 @@ function ActivityTimeline({ workOrderId }: { workOrderId: string }) {
         <div className="space-y-1 max-h-64 overflow-y-auto">
           {events.map((ev, i) => {
             const Icon = eventIcon(ev.event_type);
+            const attachments = Array.isArray(ev.attachments) ? ev.attachments : [];
+            const imageAttachments = attachments
+              .map((attachment) => {
+                const dataUrl = typeof attachment.data_url === "string" ? attachment.data_url : "";
+                const mimeType = typeof attachment.mime_type === "string" ? attachment.mime_type : "";
+                const name = typeof attachment.name === "string" ? attachment.name : "Image attachment";
+                if (!dataUrl.startsWith("data:image/")) {
+                  return null;
+                }
+                return {
+                  dataUrl,
+                  name,
+                  capturedAt:
+                    typeof attachment.captured_at === "string" && attachment.captured_at
+                      ? attachment.captured_at
+                      : ev.occurred_at,
+                };
+              })
+              .filter((attachment): attachment is { dataUrl: string; name: string; capturedAt: string } => Boolean(attachment));
+
             return (
               <div key={i} className="flex gap-3 py-1.5 border-b border-dashed last:border-0">
                 <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -2837,6 +3261,30 @@ function ActivityTimeline({ workOrderId }: { workOrderId: string }) {
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-medium">{eventLabel(ev.event_type)}</p>
                   {ev.notes && <p className="text-xs text-muted-foreground truncate">{ev.notes}</p>}
+                  {imageAttachments.length > 0 ? (
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {imageAttachments.map((attachment, index) => (
+                        <button
+                          key={`${attachment.name}-${index}`}
+                          type="button"
+                          onClick={() => setPreviewImageUrl(attachment.dataUrl)}
+                          className="group overflow-hidden rounded-md border border-border/70 bg-muted/20 text-left"
+                        >
+                          <img
+                            src={attachment.dataUrl}
+                            alt={attachment.name}
+                            className="h-20 w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                          />
+                          <div className="space-y-0.5 p-1.5">
+                            <p className="truncate text-[10px] text-muted-foreground">{attachment.name}</p>
+                            <p className="text-[10px] text-muted-foreground/70">
+                              {attachment.capturedAt ? format(new Date(attachment.capturedAt), "dd MMM HH:mm") : ""}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                   <p className="text-[10px] text-muted-foreground/60">
                     {ev.occurred_at ? format(new Date(ev.occurred_at), "dd MMM HH:mm") : ''}
                     {ev.actor_name ? ` by ${ev.actor_name}` : ''}
@@ -2847,6 +3295,20 @@ function ActivityTimeline({ workOrderId }: { workOrderId: string }) {
           })}
         </div>
       )}
+
+      <Dialog open={Boolean(previewImageUrl)} onOpenChange={(open) => { if (!open) setPreviewImageUrl(null); }}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Attachment Preview</DialogTitle>
+            <DialogDescription>Tap outside or press Esc to close.</DialogDescription>
+          </DialogHeader>
+          {previewImageUrl ? (
+            <div className="overflow-hidden rounded-lg border border-border/70 bg-black/70">
+              <img src={previewImageUrl} alt="Work order attachment preview" className="max-h-[70vh] w-full object-contain" />
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

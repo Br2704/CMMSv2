@@ -20,7 +20,7 @@ import {
   UserRoleEntity,
 } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { toCsv } from '../../utils/csvExport';
 import { HttpError } from '../../utils/httpError';
@@ -167,7 +167,7 @@ function hasNormalizedRole(roles: string[], expected: string[]) {
 }
 
 function isSuperAdminRequest(req: Parameters<typeof ensurePlantAccess>[0]) {
-  return hasNormalizedRole(req.auth?.roles ?? [], ['SUPERADMIN']);
+  return hasNormalizedRole(req.auth?.roles ?? [], ['SUPER_ADMIN']);
 }
 
 async function ensureAuthorizedForCategory(
@@ -375,7 +375,7 @@ async function createThresholdNotifications(plantId: string, year: number, month
 
   const [authorizedUsers, plantUsers] = await Promise.all([
     AppDataSource.getRepository(EsgAuthorizedUserEntity).find({ where: { plantId } }),
-    AppDataSource.getRepository(UserRoleEntity).find({ where: { plantId, role: In(['ADMIN', 'PLANT_ADMIN']) } }),
+    AppDataSource.getRepository(UserRoleEntity).find({ where: { plantId, role: In(['PLANT_ADMIN', 'PLANT_ADMIN']) } }),
   ]);
   const recipientIds = Array.from(new Set([...authorizedUsers.map((row) => row.userId), ...plantUsers.map((row) => row.userId)]));
   if (recipientIds.length === 0) return;
@@ -447,7 +447,7 @@ esgRouter.get('/esg/access', requirePermission('ESG', 'READ'), async (req, res, 
   }
 });
 
-esgRouter.get('/esg/master/kpis', requireRole(['SUPERADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
+esgRouter.get('/esg/master/kpis', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
   try {
     const query = parseListQuery(req.query as Record<string, unknown>);
     const repo = AppDataSource.getRepository(EsgKpiMasterEntity);
@@ -464,7 +464,7 @@ esgRouter.get('/esg/master/kpis', requireRole(['SUPERADMIN']), requirePermission
   }
 });
 
-esgRouter.post('/esg/master/kpis', requireRole(['SUPERADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
+esgRouter.post('/esg/master/kpis', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
   try {
     const body = kpiMasterSchema.parse(req.body);
     const repo = AppDataSource.getRepository(EsgKpiMasterEntity);
@@ -481,7 +481,7 @@ esgRouter.post('/esg/master/kpis', requireRole(['SUPERADMIN']), requirePermissio
   }
 });
 
-esgRouter.patch('/esg/master/kpis/:id', requireRole(['SUPERADMIN']), requirePermission('ESG', 'UPDATE'), async (req, res, next) => {
+esgRouter.patch('/esg/master/kpis/:id', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'UPDATE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = kpiMasterSchema.partial().parse(req.body);
@@ -502,7 +502,7 @@ esgRouter.patch('/esg/master/kpis/:id', requireRole(['SUPERADMIN']), requirePerm
   }
 });
 
-esgRouter.get('/esg/master/emission-factors', requireRole(['SUPERADMIN']), requirePermission('ESG', 'READ'), async (_req, res, next) => {
+esgRouter.get('/esg/master/emission-factors', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'READ'), async (_req, res, next) => {
   try {
     const rows = await AppDataSource.getRepository(EsgEmissionFactorEntity).find({ order: { energyType: 'ASC', effectiveDate: 'DESC' } });
     res.json(ok(rows, 'ESG emission factors fetched'));
@@ -511,7 +511,7 @@ esgRouter.get('/esg/master/emission-factors', requireRole(['SUPERADMIN']), requi
   }
 });
 
-esgRouter.post('/esg/master/emission-factors', requireRole(['SUPERADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
+esgRouter.post('/esg/master/emission-factors', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
   try {
     const body = emissionFactorSchema.parse(req.body);
     const repo = AppDataSource.getRepository(EsgEmissionFactorEntity);
@@ -530,7 +530,7 @@ esgRouter.post('/esg/master/emission-factors', requireRole(['SUPERADMIN']), requ
   }
 });
 
-esgRouter.patch('/esg/master/emission-factors/:id', requireRole(['SUPERADMIN']), requirePermission('ESG', 'UPDATE'), async (req, res, next) => {
+esgRouter.patch('/esg/master/emission-factors/:id', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'UPDATE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = emissionFactorSchema.partial().parse(req.body);
@@ -553,7 +553,7 @@ esgRouter.patch('/esg/master/emission-factors/:id', requireRole(['SUPERADMIN']),
   }
 });
 
-esgRouter.get('/esg/master/targets', requireRole(['SUPERADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
+esgRouter.get('/esg/master/targets', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
   try {
     const query = listFiltersSchema.parse(req.query);
     const repo = AppDataSource.getRepository(EsgTargetEntity);
@@ -568,7 +568,7 @@ esgRouter.get('/esg/master/targets', requireRole(['SUPERADMIN']), requirePermiss
   }
 });
 
-esgRouter.post('/esg/master/targets', requireRole(['SUPERADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
+esgRouter.post('/esg/master/targets', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
   try {
     const body = targetSchema.parse(req.body);
     const repo = AppDataSource.getRepository(EsgTargetEntity);
@@ -586,7 +586,7 @@ esgRouter.post('/esg/master/targets', requireRole(['SUPERADMIN']), requirePermis
   }
 });
 
-esgRouter.get('/esg/master/authorized-users', requireRole(['SUPERADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
+esgRouter.get('/esg/master/authorized-users', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
   try {
     const query = listFiltersSchema.parse(req.query);
     const repo = AppDataSource.getRepository(EsgAuthorizedUserEntity);
@@ -614,7 +614,7 @@ esgRouter.get('/esg/master/authorized-users', requireRole(['SUPERADMIN']), requi
   }
 });
 
-esgRouter.post('/esg/master/authorized-users', requireRole(['SUPERADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
+esgRouter.post('/esg/master/authorized-users', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
   try {
     const body = authorizedUserSchema.parse(req.body);
     const repo = AppDataSource.getRepository(EsgAuthorizedUserEntity);
@@ -640,7 +640,7 @@ esgRouter.post('/esg/master/authorized-users', requireRole(['SUPERADMIN']), requ
   }
 });
 
-esgRouter.delete('/esg/master/authorized-users/:id', requireRole(['SUPERADMIN']), requirePermission('ESG', 'DELETE'), async (req, res, next) => {
+esgRouter.delete('/esg/master/authorized-users/:id', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'DELETE'), async (req, res, next) => {
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const repo = AppDataSource.getRepository(EsgAuthorizedUserEntity);
@@ -651,7 +651,7 @@ esgRouter.delete('/esg/master/authorized-users/:id', requireRole(['SUPERADMIN'])
   }
 });
 
-esgRouter.get('/esg/master/analytics', requireRole(['SUPERADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
+esgRouter.get('/esg/master/analytics', requireRole(['SUPER_ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
   try {
     const query = monthlyPeriodSchema.parse(req.query);
     const plantIds = resolvePlantFilter(req.auth!, undefined) ?? [];

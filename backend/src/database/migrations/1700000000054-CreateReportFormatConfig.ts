@@ -17,7 +17,7 @@ export class CreateReportFormatConfig1700000000054 implements MigrationInterface
               name: 'headerTitle',
               type: 'varchar',
               length: '500',
-              default: "'CMMS Report'",
+              default: "'OptiX Maintenance Pro'",
             },
             {
               name: 'headerSubtitle',
@@ -35,7 +35,7 @@ export class CreateReportFormatConfig1700000000054 implements MigrationInterface
               name: 'footerSubtext',
               type: 'varchar',
               length: '500',
-              default: "'TamOptiX Technologies | Intelligent CMMS Platform'",
+              default: "'OptiX Maintenance Pro | Intelligent CMMS Platform'",
             },
             {
               name: 'showTamOptixBranding',

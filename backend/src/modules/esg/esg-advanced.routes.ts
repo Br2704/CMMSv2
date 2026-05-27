@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { AppDataSource } from '../../database/data-source';
 import { EmissionsFactorEntity, EnergyMeterReadingEntity, EsgReportEntity, GhgActivityDataEntity } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
-import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { linearRegression, safeNumber } from '../../utils/advancedAnalytics';
 import { toCsv } from '../../utils/csvExport';
@@ -61,7 +61,7 @@ const forecastQuerySchema = z.object({
 });
 
 function isSuperAdmin(authRoles: string[]) {
-  return authRoles.includes('SUPERADMIN');
+  return authRoles.includes('SUPER_ADMIN');
 }
 
 function ensureSummaryPlantScope(req: Parameters<typeof ensurePlantAccess>[0], requestedPlantId?: string) {
@@ -101,7 +101,7 @@ async function resolveEmissionFactor(params: { factorKey?: string; sourceType: s
 export const esgAdvancedRouter = Router();
 esgAdvancedRouter.use(requireAuth);
 
-esgAdvancedRouter.post('/esg/energy-readings', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
+esgAdvancedRouter.post('/esg/energy-readings', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
   try {
     const body = energyReadingSchema.parse(req.body);
     ensurePlantAccess(req, body.plantId);
@@ -123,7 +123,7 @@ esgAdvancedRouter.post('/esg/energy-readings', requireRole(['SUPERADMIN', 'ADMIN
   }
 });
 
-esgAdvancedRouter.get('/esg/energy-readings', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
+esgAdvancedRouter.get('/esg/energy-readings', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
   try {
     const list = parseListQuery(req.query as Record<string, unknown>);
     const filters = dateRangeSchema
@@ -163,7 +163,7 @@ esgAdvancedRouter.get('/esg/energy-readings', requireRole(['SUPERADMIN', 'ADMIN'
   }
 });
 
-esgAdvancedRouter.post('/esg/ghg-activity', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
+esgAdvancedRouter.post('/esg/ghg-activity', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
   try {
     const body = ghgActivitySchema.parse(req.body);
     const periodStart = new Date(body.periodStart);
@@ -199,7 +199,7 @@ esgAdvancedRouter.post('/esg/ghg-activity', requireRole(['SUPERADMIN', 'ADMIN'])
   }
 });
 
-esgAdvancedRouter.get('/esg/intensity', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
+esgAdvancedRouter.get('/esg/intensity', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
   try {
     const query = dateRangeSchema.parse(req.query);
     const range = resolveDateRange(query);
@@ -271,7 +271,7 @@ esgAdvancedRouter.get('/esg/intensity', requireRole(['SUPERADMIN', 'ADMIN']), re
   }
 });
 
-esgAdvancedRouter.get('/esg/forecast', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
+esgAdvancedRouter.get('/esg/forecast', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
   try {
     const query = forecastQuerySchema.parse(req.query);
     const range = resolveDateRange(query);
@@ -362,7 +362,7 @@ esgAdvancedRouter.get('/esg/forecast', requireRole(['SUPERADMIN', 'ADMIN']), req
   }
 });
 
-esgAdvancedRouter.get('/esg/ghg-activity', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
+esgAdvancedRouter.get('/esg/ghg-activity', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
   try {
     const list = parseListQuery(req.query as Record<string, unknown>);
     const filters = dateRangeSchema
@@ -402,7 +402,7 @@ esgAdvancedRouter.get('/esg/ghg-activity', requireRole(['SUPERADMIN', 'ADMIN']),
   }
 });
 
-esgAdvancedRouter.get('/esg/ghg/summary', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
+esgAdvancedRouter.get('/esg/ghg/summary', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
   try {
     const query = dateRangeSchema.parse(req.query);
     const range = resolveDateRange(query);
@@ -455,7 +455,7 @@ esgAdvancedRouter.get('/esg/ghg/summary', requireRole(['SUPERADMIN', 'ADMIN']), 
   }
 });
 
-esgAdvancedRouter.get('/esg/energy/summary', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
+esgAdvancedRouter.get('/esg/energy/summary', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ESG', 'READ'), async (req, res, next) => {
   try {
     const query = dateRangeSchema.parse(req.query);
     const range = resolveDateRange(query);
@@ -512,7 +512,7 @@ esgAdvancedRouter.get('/esg/energy/summary', requireRole(['SUPERADMIN', 'ADMIN']
   }
 });
 
-  esgAdvancedRouter.post('/esg/reports/generate', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
+  esgAdvancedRouter.post('/esg/reports/generate', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ESG', 'CREATE'), async (req, res, next) => {
   try {
     const body = reportGenerateSchema.parse(req.body);
     const plantId = ensureSummaryPlantScope(req, body.plantId);
@@ -574,7 +574,7 @@ esgAdvancedRouter.get('/esg/energy/summary', requireRole(['SUPERADMIN', 'ADMIN']
   }
 });
 
-esgAdvancedRouter.get('/exports/esg/ghg', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ESG', 'EXPORT'), async (req, res, next) => {
+esgAdvancedRouter.get('/exports/esg/ghg', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ESG', 'EXPORT'), async (req, res, next) => {
   try {
     const query = dateRangeSchema.parse(req.query);
     const range = resolveDateRange(query);
@@ -625,7 +625,7 @@ esgAdvancedRouter.get('/exports/esg/ghg', requireRole(['SUPERADMIN', 'ADMIN']), 
   }
 });
 
-esgAdvancedRouter.get('/exports/esg/energy', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ESG', 'EXPORT'), async (req, res, next) => {
+esgAdvancedRouter.get('/exports/esg/energy', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ESG', 'EXPORT'), async (req, res, next) => {
   try {
     const query = dateRangeSchema.parse(req.query);
     const range = resolveDateRange(query);
@@ -673,7 +673,7 @@ esgAdvancedRouter.get('/exports/esg/energy', requireRole(['SUPERADMIN', 'ADMIN']
   }
 });
 
-esgAdvancedRouter.get('/exports/esg/executive-report', requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('ESG', 'EXPORT'), async (req, res, next) => {
+esgAdvancedRouter.get('/exports/esg/executive-report', requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('ESG', 'EXPORT'), async (req, res, next) => {
   try {
     const query = dateRangeSchema.parse(req.query);
     const range = resolveDateRange(query);

@@ -28,6 +28,11 @@ ENV NODE_ENV=production \
     NODE_OPTIONS="--max-old-space-size=512 --expose-gc" \
     PORT=3001
 
+# Create required directories and set ownership before dropping root privileges
+RUN mkdir -p uploads/backups backups && \
+    chown -R appuser:appgroup uploads backups && \
+    chmod 750 uploads uploads/backups backups
+
 # Install production dependencies
 COPY package*.json ./
 RUN npm ci --omit=dev --loglevel=error && \
@@ -38,6 +43,7 @@ COPY --from=build --chown=appuser:appgroup /app/dist ./dist
 
 EXPOSE 3001
 
+# Security: drop root privileges
 USER appuser
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=5 \

@@ -14,7 +14,7 @@ import {
 } from '../../database/entities';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { reportsRateLimiter } from '../../middlewares/rateLimiter';
-import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissions';
+import { ensurePlantAccess, requirePermission, requireRole } from '../../middlewares/permissionGuard';
 import { ok } from '../../utils/apiResponse';
 import { audit } from '../../utils/audit';
 import { toCsv } from '../../utils/csvExport';
@@ -27,6 +27,7 @@ import { resolvePlantFilter } from '../../utils/plantScope';
 import { resolveScopedPlantId } from '../../utils/plantScope';
 import { applyPlantScope, applySearch } from '../../utils/query';
 import { AdvancedAnalyticsService } from './advanced-analytics.service';
+import { APP_NAME } from '../../config/branding';
 
 const reportScheduleSchema = z.object({
   reportName: z.string().min(1),
@@ -57,8 +58,8 @@ const sendReportEmailSchema = z
   .object({
     scheduleId: z.string().uuid().optional(),
     to: z.array(z.string().email()).optional(),
-    subject: z.string().default('CMMS Report'),
-    message: z.string().default('CMMS report generated successfully.'),
+    subject: z.string().default(APP_NAME),
+    message: z.string().default(`${APP_NAME} report generated successfully.`),
   })
   .superRefine((value, ctx) => {
     if (!value.scheduleId && (!value.to || value.to.length === 0)) {
@@ -534,7 +535,7 @@ reportsRouter.post('/reports/send-now', reportsRateLimiter, requirePermission('R
   }
 });
 
-reportsRouter.post('/reports/test-email', reportsRateLimiter, requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('REPORTS', 'CREATE'), async (req, res, next) => {
+reportsRouter.post('/reports/test-email', reportsRateLimiter, requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('REPORTS', 'CREATE'), async (req, res, next) => {
   try {
     const body = testEmailSchema.parse(req.body);
     const result = await sendMail(body.to, body.subject, body.message);
@@ -550,7 +551,7 @@ reportsRouter.post('/reports/test-email', reportsRateLimiter, requireRole(['SUPE
   }
 });
 
-reportsRouter.post('/reports/send-report-email', reportsRateLimiter, requireRole(['SUPERADMIN', 'ADMIN']), requirePermission('REPORTS', 'CREATE'), async (req, res, next) => {
+reportsRouter.post('/reports/send-report-email', reportsRateLimiter, requireRole(['SUPER_ADMIN', 'PLANT_ADMIN']), requirePermission('REPORTS', 'CREATE'), async (req, res, next) => {
   try {
     const body = sendReportEmailSchema.parse(req.body);
 

@@ -240,7 +240,7 @@ export class BulkImportValidator {
      */
     private validatePhone(value: string, context: ValidationContext): ValidationError | null {
         // Allow various phone formats, just warn if suspicious
-        const phoneRegex = /^[\d\s\-\+\(\)\.]+$/;
+        const phoneRegex = /^[\d\s\-+().]+$/;
         if (!phoneRegex.test(value)) {
             return {
                 type: "warning",

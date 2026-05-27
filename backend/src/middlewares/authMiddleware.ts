@@ -5,189 +5,25 @@ import { AppDataSource } from '../database/data-source';
 import { EsgAuthorizedUserEntity, MaintenanceTeamEntity, OrgRoleEntity, OrgRolePermissionEntity, PlantEntity, ProfileEntity, RolePermissionEntity, UserRoleEntity, UserEntity } from '../database/entities';
 import { enforceRoleRateLimit } from './roleRateLimit';
 import { enforcePlantScopeRequest } from './plantScopeMiddleware';
-import { RBAC_ACTIONS, RBAC_MODULE_KEYS, isAdminRole, isRootAdminRole, normalizeModuleKey, normalizeRoleName, resolveScopeType } from '../utils/rbac';
-import { verifyAccessToken } from '../utils/jwt';
-import { getPrimaryRoleKey, rolePrecedence } from '../utils/policy';
+import { normalizeModuleKey } from '../utils/rbac';
+import { verifyAccessToken } from '../utils/jwtEnhanced';
 import { fail } from '../utils/apiResponse';
 import { recordSecurityEvent } from '../utils/securityEvents';
 import { resolveUserOrganizationScope } from '../utils/userOrganization';
-import { applySystemRolePermissionPolicy } from '../utils/systemRolePermissionPolicy';
+import { resolveCanonicalRoleKey } from '../config/enterprise-roles';
+import { rolePrecedence } from '../utils/policy';
+import { getPrimaryRole, getRolePrecedence, resolveRoleInfo } from '../services/role-hierarchy';
+import { buildEnterprisePermissionMap, mergePermissionMaps } from '../services/permission-engine';
+import { resolveScopeType } from '../services/scope-resolver';
 
 function normalizeRole(role: string) {
-  return normalizeRoleName(role);
+  return resolveCanonicalRoleKey(role);
 }
 
 function mergePermissionActions(permissionMap: Record<string, string[]>, moduleKey: string, actions: string[]) {
   const normalizedModuleKey = normalizeModuleKey(moduleKey);
   const existing = permissionMap[normalizedModuleKey] ?? [];
   permissionMap[normalizedModuleKey] = Array.from(new Set([...existing, ...actions.map((action) => action.toUpperCase())]));
-}
-
-export function buildFallbackPermissionsForRole(role: string): Record<string, string[]> {
-  const normalized = normalizeRole(role);
-  const allActions = [...RBAC_ACTIONS];
-
-  const fromModules = (modules: string[], actions: string[]) =>
-    Object.fromEntries(modules.map((moduleKey) => [moduleKey, [...actions]])) as Record<string, string[]>;
-
-  const readOnly = ['READ'];
-
-  if (normalized === 'SUPERADMIN') {
-    const map = Object.fromEntries(RBAC_MODULE_KEYS.map((moduleKey) => [moduleKey, [...allActions]])) as Record<string, string[]>;
-    delete map.ROLE_ACCESS;
-    map.ORGANIZATIONS = ['READ'];
-    map.PLANTS = ['READ', 'UPDATE'];
-    return map;
-  }
-  if (normalized === 'ROOT_ADMIN') {
-    return fromModules([
-      'ORGANIZATIONS',
-      'PLANTS',
-      'USERS',
-      'ROLE_ACCESS',
-      'MODULES',
-      'DASHBOARD',
-      'MASTERS',
-      'NOTIFICATIONS',
-      'SECURITY',
-      'REPORTS',
-      'WORK_ORDERS',
-      'GATES',
-    ], allActions);
-  }
-  if (normalized === 'ADMIN') {
-    const map = Object.fromEntries(RBAC_MODULE_KEYS.map((moduleKey) => [moduleKey, allActions])) as Record<string, string[]>;
-    map.PLANTS = ['READ'];
-    delete map.ROLE_ACCESS;
-    delete map.BENCHMARKING;
-    map.ORGANIZATIONS = ['READ'];
-    return map;
-  }
-  if (normalized === 'MAINTENANCE_MANAGER') {
-    return {
-      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'LOGS', 'INVENTORY', 'REPORTS', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
-      ASSETS: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
-      WORK_ORDERS: ['READ', 'CREATE', 'UPDATE', 'DELETE', 'APPROVE'],
-      PM: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
-      CALIBRATION: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
-      AMC: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
-      LOGS: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
-      INVENTORY: ['READ', 'CREATE', 'UPDATE'],
-      REPORTS: ['READ', 'CREATE', 'EXPORT'],
-      NOTIFICATIONS: ['READ', 'UPDATE'],
-    };
-  }
-  if (normalized === 'ENGINEER') {
-    return {
-      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'LOGS', 'NOTIFICATIONS', 'REPORTS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
-      WORK_ORDERS: ['READ', 'CREATE', 'UPDATE'],
-      LOGS: ['READ', 'CREATE', 'UPDATE'],
-    };
-  }
-  if (normalized === 'TECHNICIAN') {
-    return {
-      ...fromModules(['DASHBOARD', 'WORK_ORDERS', 'PM', 'LOGS', 'NOTIFICATIONS', 'ASSETS', 'CALIBRATION', 'AMC', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'GATES', 'MASTERS'], readOnly),
-      WORK_ORDERS: ['READ', 'CREATE', 'UPDATE'],
-      LOGS: ['READ', 'CREATE', 'UPDATE'],
-    };
-  }
-  if (normalized === 'STORE_USER') {
-    return {
-      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'NOTIFICATIONS', 'INVENTORY', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'GATES', 'MASTERS'], readOnly),
-      INVENTORY: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
-    };
-  }
-  if (normalized === 'VIEWER') {
-    return fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'REPORTS', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly);
-  }
-  if (normalized === 'VENDOR') {
-    return fromModules(['AMC'], readOnly);
-  }
-  if (normalized === 'VISITOR') {
-    return {};
-  }
-  if (normalized === 'SECURITY_USER' || normalized === 'SECURITY') {
-    return {
-      ...fromModules(['GATES', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'MASTERS', 'DASHBOARD', 'NOTIFICATIONS'], readOnly),
-      GATES: ['READ', 'CREATE', 'UPDATE', 'EXPORT'],
-    };
-  }
-  if (normalized === 'MAINTENANCE_USER') {
-    return {
-      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'LOGS', 'INVENTORY', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'GATES'], readOnly),
-      WORK_ORDERS: ['READ', 'CREATE', 'UPDATE'],
-      CALIBRATION: ['READ', 'CREATE', 'UPDATE'],
-      INVENTORY: ['READ', 'CREATE', 'UPDATE'],
-    };
-  }
-  if (normalized === 'PRODUCTION_USER') {
-    return {
-      ...fromModules(['DASHBOARD', 'WORK_ORDERS', 'ASSETS', 'NOTIFICATIONS', 'MASTERS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS', 'GATES'], readOnly),
-      WORK_ORDERS: ['READ', 'CREATE'],
-    };
-  }
-  if (normalized === 'SAFETY_OFFICER') {
-    return {
-      ...fromModules(['GATES', 'ESG', 'SAFETY', 'ALERTS', 'MASTERS', 'DASHBOARD', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'REPORTS'], readOnly),
-      SAFETY: ['READ', 'CREATE', 'UPDATE'],
-    };
-  }
-  if (normalized === 'HR_USER') {
-    return {
-      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'CALIBRATION', 'AMC', 'INVENTORY', 'LOGS', 'DEPARTMENTS', 'SHIFTS', 'USERS', 'MASTERS', 'NOTIFICATIONS', 'PLANTS', 'REPORTS', 'GATES', 'VENDORS', 'ALERTS'], readOnly),
-      USERS: ['READ', 'CREATE', 'UPDATE'],
-    };
-  }
-  if (normalized === 'INVENTORY_MANAGER') {
-    return {
-      ...fromModules(['INVENTORY', 'VENDORS', 'MASTERS', 'REPORTS', 'DASHBOARD', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES'], readOnly),
-      INVENTORY: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
-    };
-  }
-  if (normalized === 'USER') {
-    return {
-      DASHBOARD: ['READ'],
-      ASSETS: ['READ'],
-      WORK_ORDERS: ['READ', 'CREATE'],
-      PM: ['READ'],
-      NOTIFICATIONS: ['READ'],
-    };
-  }
-  if (normalized === 'MECHANICAL_INCHARGE' || normalized === 'ELECTRICAL_INCHARGE' || normalized === 'UTILITY_INCHARGE') {
-    return {
-      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'LOGS', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
-      WORK_ORDERS: ['READ', 'CREATE', 'UPDATE'],
-      LOGS: ['READ', 'CREATE', 'UPDATE'],
-    };
-  }
-  if (normalized === 'CALIBRATION_INCHARGE') {
-    return {
-      ...fromModules(['DASHBOARD', 'ASSETS', 'CALIBRATION', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
-      CALIBRATION: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
-    };
-  }
-  if (normalized === 'TOOLCHANGE_INCHARGE') {
-    return {
-      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'INVENTORY', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
-      WORK_ORDERS: ['READ', 'CREATE', 'UPDATE'],
-      INVENTORY: ['READ', 'CREATE', 'UPDATE'],
-    };
-  }
-  if (normalized === 'DEPARTMENT_INCHARGE') {
-    return {
-      ...fromModules(['DASHBOARD', 'ASSETS', 'WORK_ORDERS', 'PM', 'LOGS', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
-      WORK_ORDERS: ['READ', 'CREATE', 'UPDATE', 'APPROVE'],
-      LOGS: ['READ', 'CREATE', 'UPDATE'],
-    };
-  }
-  if (normalized === 'OPERATOR') {
-    return {
-      ...fromModules(['DASHBOARD', 'WORK_ORDERS', 'ASSETS', 'LOGS', 'NOTIFICATIONS', 'PLANTS', 'DEPARTMENTS', 'USERS', 'GATES', 'MASTERS'], readOnly),
-      WORK_ORDERS: ['READ', 'CREATE'],
-      LOGS: ['READ', 'CREATE', 'UPDATE'],
-    };
-  }
-  return {};
 }
 
 function mapPermissions(
@@ -262,46 +98,28 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
     const userRoles = await roleRepo.find({ where: { userId: user.id } });
     const profile = await profileRepo.findOneBy({ userId: user.id });
-    const roles = userRoles.map((item) => normalizeRole(item.role));
-    const normalizedSuperAdminEmail = env.SUPERADMIN_EMAIL.trim().toLowerCase();
-    const normalizedUserEmail = user.email.trim().toLowerCase();
-    const normalizedRootAdminEmail = env.ROOT_ADMIN_EMAIL.trim().toLowerCase();
-    const isConfiguredRootAdmin = Boolean(normalizedRootAdminEmail) && normalizedUserEmail === normalizedRootAdminEmail;
-    const isConfiguredSuperAdmin = Boolean(normalizedSuperAdminEmail) && normalizedUserEmail === normalizedSuperAdminEmail;
-    if (isConfiguredRootAdmin && !roles.some((role) => isRootAdminRole(role))) {
-      roles.unshift('ROOT_ADMIN');
-      void recordSecurityEvent({
-        userId: user.id,
-        eventType: 'AUTH_AUTO_ROLE_ASSIGNED',
-        severity: 'MEDIUM',
-        module: 'AUTH',
-        action: 'LOGIN',
-        path: req.originalUrl,
-        message: `Auto-assigned ROOT_ADMIN role based on email matching`,
-        ipAddress: req.ip,
-        userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
-        metadata: { emailDomain: normalizedUserEmail.split('@')[1] },
-      });
-    }
-    if (isConfiguredSuperAdmin && !roles.includes('SUPERADMIN') && !roles.some((role) => isRootAdminRole(role))) {
-      roles.unshift('SUPERADMIN');
-      void recordSecurityEvent({
-        userId: user.id,
-        eventType: 'AUTH_AUTO_ROLE_ASSIGNED',
-        severity: 'MEDIUM',
-        module: 'AUTH',
-        action: 'LOGIN',
-        path: req.originalUrl,
-        message: `Auto-assigned SUPERADMIN role based on email matching`,
-        ipAddress: req.ip,
-        userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
-        metadata: { emailDomain: normalizedUserEmail.split('@')[1] },
-      });
-    }
-    const hasRootAdminRole = roles.some((role) => isRootAdminRole(role));
+    const roles = userRoles.map((item) => normalizeRole(item.role)).filter(role => {
+      const { isValidEnterpriseRole } = require('../config/enterprise-roles');
+      return isValidEnterpriseRole(role);
+    });
+    
+    const hasRootAdminRole = roles.some((role) => role === 'ROOT_ADMIN');
     let effectiveRoles = hasRootAdminRole ? ['ROOT_ADMIN'] : roles;
     if (effectiveRoles.length === 0) {
-      effectiveRoles = ['USER'];
+      logger.warn({ route: req.originalUrl, userId: user.id }, 'Authentication denied: user has no active role assignments');
+      void recordSecurityEvent({
+        userId: user.id,
+        eventType: 'AUTH_NO_ROLE_ASSIGNMENT',
+        severity: 'HIGH',
+        module: 'AUTH',
+        action: req.method,
+        path: req.originalUrl,
+        message: 'Authentication denied because the user has no active role assignments',
+        ipAddress: req.ip,
+        userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+      });
+      res.status(403).json(fail('Forbidden'));
+      return;
     }
 
     const allCandidatePlantIds = Array.from(
@@ -336,9 +154,10 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       effectiveRoles = [orgRoleKey];
     }
 
-    const roleKey = getPrimaryRoleKey(effectiveRoles);
+    // Use the new role-hierarchy service for getting the primary role
+    const roleKey = getPrimaryRole(effectiveRoles);
     const scopeType = resolveScopeType(roleKey);
-    const isRootAdmin = scopeType === 'ROOT_ADMIN';
+    const isRootAdmin = scopeType === 'PLATFORM';
     const isSuperAdmin = scopeType === 'ORGANIZATION';
 
     let plantIds: string[] = [];
@@ -375,9 +194,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
     const activePlantId = plantIds[0] ?? null;
     const accessAllPlants = scopeType === 'ORGANIZATION';
+
+    // ------------------------------------------------------------------
+    // PERMISSION MAP RESOLUTION using the new Enterprise Permission Engine
+    // ------------------------------------------------------------------
     let permissionMap: Record<string, string[]> = {};
 
-    if (!isRootAdmin && resolvedOrganizationId && orgRoleId) {
+    // 1. Check org-level custom permissions (for organization-scoped roles)
+    if (resolvedOrganizationId && orgRoleId) {
       const orgPermissions = await orgPermissionRepo.find({
         where: { organizationId: resolvedOrganizationId, roleId: orgRoleId },
       });
@@ -388,71 +212,56 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
           actions: Array.isArray(row.actions) ? row.actions : [],
         })),
       );
-      if (Object.keys(permissionMap).length === 0 && orgRoleKey) {
-        logger.warn(
-          {
-            userId: user.id,
-            organizationId: resolvedOrganizationId,
-            orgRoleKey,
-            reason: 'org_role_permissions_empty_fallback_used',
-          },
-          'RBAC fallback applied',
-        );
-        permissionMap = buildFallbackPermissionsForRole(orgRoleKey);
-      }
     }
 
+    // 2. If empty, check plant-level role permissions
     if (Object.keys(permissionMap).length === 0) {
-      const roleIds = userRoles.map((item) => item.roleId).filter((value): value is string => Boolean(value));
-      const permissions = effectiveRoles.length
-        ? await permissionRepo.find({ where: [...effectiveRoles.map((role) => ({ role })), ...roleIds.map((roleId) => ({ roleId }))] })
-        : [];
-      permissionMap = mapPermissions(
-        permissions.map((permission) => ({
-          moduleKey: permission.moduleKey,
-          moduleId: permission.moduleId,
-          actions: permission.actions,
-        })),
-      );
-      if (Object.keys(permissionMap).length === 0) {
-        const fallbackRole = roleKey ?? normalizeRole(userRoles[0]?.role ?? 'USER');
-        logger.warn(
-          {
-            userId: user.id,
-            roleKey: fallbackRole,
-            reason: 'role_permissions_empty_fallback_used',
-          },
-          'RBAC fallback applied',
+      if (!isRootAdmin) {
+        const roleIds = userRoles.map((item) => item.roleId).filter((value): value is string => Boolean(value));
+        const permissions = effectiveRoles.length
+          ? await permissionRepo.find({ where: [...effectiveRoles.map((role) => ({ role })), ...roleIds.map((roleId) => ({ roleId }))] })
+          : [];
+        permissionMap = mapPermissions(
+          permissions.map((permission) => ({
+            moduleKey: permission.moduleKey,
+            moduleId: permission.moduleId,
+            actions: permission.actions,
+          })),
         );
-        permissionMap = buildFallbackPermissionsForRole(fallbackRole);
       }
     }
 
+    // 3. Fallback to enterprise-defined permissions when DB permissions are empty
+    if (Object.keys(permissionMap).length === 0) {
+      const fallbackRole = roleKey ?? 'MAINTENANCE_USER';
+      logger.warn(
+        {
+          userId: user.id,
+          roleKey: fallbackRole,
+          reason: 'permissions_empty_enterprise_fallback_used',
+        },
+        'RBAC enterprise fallback applied',
+      );
+      permissionMap = buildEnterprisePermissionMap(fallbackRole);
+    }
+
+    // 4. Merge enterprise defaults on top of DB permissions (ensure at least default access)
+    const enterpriseDefaults = buildEnterprisePermissionMap(roleKey);
+    permissionMap = mergePermissionMaps(enterpriseDefaults, permissionMap);
+
+    // 5. Apply SUPER_ADMIN overrides
     if (isSuperAdmin && !isRootAdmin) {
-      // SUPERADMIN always retains operational access inside organization scope,
-      // but governance mutations stay reserved for ROOT_ADMIN.
-      const fullSuperAdminPermissions = buildFallbackPermissionsForRole('SUPERADMIN');
-      for (const [moduleKey, actions] of Object.entries(fullSuperAdminPermissions)) {
-        const existing = permissionMap[moduleKey] ?? [];
-        permissionMap[moduleKey] = Array.from(new Set([...existing, ...actions.map((action) => action.toUpperCase())]));
-      }
       permissionMap.ORGANIZATIONS = ['READ'];
       permissionMap.PLANTS = ['READ', 'UPDATE'];
       delete permissionMap.ROLE_ACCESS;
     }
 
-    if (!effectiveRoles.includes('SUPERADMIN') && effectiveRoles.some((role) => normalizeRole(role) === 'ADMIN')) {
-      delete permissionMap.ROLE_ACCESS;
-      if (roleKey === 'ADMIN') {
-        permissionMap.ORGANIZATIONS = ['READ'];
-        permissionMap.PLANTS = ['READ'];
-      }
-    }
-
+    // 6. Remove ROLE_ACCESS for non-admin non-root users
     if (!isRootAdmin && !isSuperAdmin) {
       delete permissionMap.ROLE_ACCESS;
     }
 
+    // 7. ESG authorized user check — grant ESG access if user is ESG-authorized
     if (!isRootAdmin && plantIds.length > 0) {
       const esgAssignments = await esgAuthorizedUserRepo.find({
         where: plantIds.map((plantId) => ({ plantId, userId: user.id })),
@@ -464,32 +273,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       }
     }
 
-    if (!isRootAdmin) {
-      permissionMap = applySystemRolePermissionPolicy(roleKey, permissionMap);
-    }
-
-    if (isRootAdmin) {
-      const governanceModuleKeys = [
-        'ORGANIZATIONS',
-        'PLANTS',
-        'USERS',
-        'ROLE_ACCESS',
-        'MODULES',
-        'DASHBOARD',
-        'MASTERS',
-        'NOTIFICATIONS',
-        'SECURITY',
-        'REPORTS',
-        'WORK_ORDERS',
-        'GATES',
-      ];
-      const rootScopedPermissions: Record<string, string[]> = {};
-      governanceModuleKeys.forEach((moduleKey) => {
-        rootScopedPermissions[moduleKey] = [...RBAC_ACTIONS];
-      });
-      permissionMap = rootScopedPermissions;
-    }
-
+    // 8. Resolve maintenance team memberships
     const teamRows = plantIds.length > 0
       ? await maintenanceTeamRepo.find({
           where: plantIds.map((plantId) => ({ plantId, isActive: true })),
@@ -512,16 +296,19 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       );
     }
 
+    // ------------------------------------------------------------------
+    // Build AuthContext
+    // ------------------------------------------------------------------
     req.auth = {
       userId: user.id,
       email: user.email,
       roles: effectiveRoles,
       roleKey,
       rolePrecedence: rolePrecedence(roleKey),
-      scopeType,
+      scopeType: scopeType === 'PLATFORM' ? 'ROOT_ADMIN' : scopeType === 'ORGANIZATION' ? 'ORGANIZATION' : 'PLANT',
       organizationId: resolvedOrganizationId,
       orgRoleId: orgRoleId ?? null,
-      department: profile?.department ?? null,
+      department: (profile?.departmentId as string | null) ?? null,
       teamIds,
       permissions: permissionMap,
       plantIds,

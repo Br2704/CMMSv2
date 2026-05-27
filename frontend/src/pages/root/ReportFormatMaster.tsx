@@ -21,6 +21,7 @@ import {
   type CellStyle,
 } from "@/api/reportFormat";
 import { useBrandingStore } from "@/store/branding.store";
+import { APP_NAME, APP_TAGLINE } from "@/config/branding";
 import {
   FileText,
   Save,
@@ -414,7 +415,7 @@ export default function ReportFormatMaster() {
                     <Input
                       value={config.headerTitle}
                       onChange={(e) => updateConfig({ headerTitle: e.target.value })}
-                      placeholder="CMMS Report"
+                      placeholder={APP_NAME}
                       className="h-9"
                       maxLength={500}
                     />
@@ -548,7 +549,7 @@ export default function ReportFormatMaster() {
                     <Input
                       value={config.footerText}
                       onChange={(e) => updateConfig({ footerText: e.target.value })}
-                      placeholder="Powered by TamOptiX Technologies"
+                      placeholder={APP_TAGLINE}
                       className="h-9"
                       maxLength={200}
                     />
@@ -566,7 +567,7 @@ export default function ReportFormatMaster() {
                     <Input
                       value={config.footerSubtext}
                       onChange={(e) => updateConfig({ footerSubtext: e.target.value })}
-                      placeholder="TamOptiX Technologies | Intelligent CMMS Platform"
+                      placeholder={`${APP_NAME} | Intelligent CMMS Platform`}
                       className="h-9"
                       maxLength={500}
                     />
@@ -751,7 +752,7 @@ export default function ReportFormatMaster() {
                         }}
                         className="truncate"
                       >
-                        {config.headerTitle || "CMMS Report"}
+                        {config.headerTitle || APP_NAME}
                       </p>
                     </div>
                     <div className="p-3 rounded-lg bg-muted/30 border border-border/50">

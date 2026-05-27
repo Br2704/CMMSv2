@@ -1,6 +1,7 @@
 import { buildBrandingLogoUrl, getBrandingMe, getBrandingVersion } from "@/api/branding";
 import { ApiError } from "@/api/http";
 import { getStoredAccessToken } from "@/api/token";
+import { APP_BROWSER_TITLE, APP_DEFAULT_THEME_COLOR, APP_FAVICON_SVG, APP_LOGO_SVG, APP_NAME, APP_SIDEBAR_TITLE } from "@/config/branding";
 import { create } from "zustand";
 
 const BRANDING_WATCH_INTERVAL_MS = 30_000;
@@ -44,14 +45,14 @@ function getDefaultSnapshot(): BrandingSnapshot {
   return {
     organizationId: null,
     organizationName: null,
-    sidebarTitle: "TamOptiX",
+    sidebarTitle: APP_SIDEBAR_TITLE,
     logoUrl: null,
-    logoAssetUrl: "/tamoptix/tamoptix-logo.svg",
-    faviconUrl: "/tamoptix/tamoptix-favicon.svg",
-    fallbackLogoUrl: "/tamoptix/tamoptix-logo.svg",
-    fallbackFaviconUrl: "/tamoptix/tamoptix-favicon.svg",
-    browserTitle: "TamOptiX CMMS",
-    brandColor: "#0f766e",
+    logoAssetUrl: APP_LOGO_SVG,
+    faviconUrl: APP_FAVICON_SVG,
+    fallbackLogoUrl: APP_LOGO_SVG,
+    fallbackFaviconUrl: APP_FAVICON_SVG,
+    browserTitle: APP_BROWSER_TITLE,
+    brandColor: APP_DEFAULT_THEME_COLOR,
     updatedAt: null,
   };
 }
@@ -93,7 +94,7 @@ function applyForbiddenFallback(get: () => BrandingState, set: (partial: Partial
     faviconUrl: current.faviconUrl ?? fallback.faviconUrl,
     fallbackLogoUrl: current.fallbackLogoUrl ?? fallback.fallbackLogoUrl,
     fallbackFaviconUrl: current.fallbackFaviconUrl ?? fallback.fallbackFaviconUrl,
-    browserTitle: current.browserTitle ?? (current.organizationName ? `${current.organizationName} CMMS` : fallback.browserTitle),
+    browserTitle: current.browserTitle ?? (current.organizationName ? current.organizationName : fallback.browserTitle),
     brandColor: current.brandColor ?? fallback.brandColor,
     updatedAt: current.updatedAt ?? fallback.updatedAt,
   };
@@ -121,7 +122,7 @@ export const useBrandingStore = create<BrandingState>((set, get) => ({
       faviconUrl: current.faviconUrl ?? fallback.faviconUrl,
       fallbackLogoUrl: current.fallbackLogoUrl ?? fallback.fallbackLogoUrl,
       fallbackFaviconUrl: current.fallbackFaviconUrl ?? fallback.fallbackFaviconUrl,
-      browserTitle: seed.browserTitle ?? (seed.organizationName ? `${seed.organizationName} CMMS` : current.browserTitle ?? fallback.browserTitle),
+      browserTitle: seed.browserTitle ?? (seed.organizationName ? seed.organizationName : current.browserTitle ?? fallback.browserTitle),
       brandColor: current.brandColor ?? fallback.brandColor,
       updatedAt: current.updatedAt ?? fallback.updatedAt,
     };
@@ -155,9 +156,9 @@ export const useBrandingStore = create<BrandingState>((set, get) => ({
         fallbackLogoUrl: payload.fallbackLogoUrl || null,
         fallbackFaviconUrl: payload.fallbackFaviconUrl || payload.fallbackLogoUrl || "/tamoptix/tamoptix-favicon.svg",
         browserTitle: preserveSeededOrganization
-          ? (current.browserTitle || (current.organizationName ? `${current.organizationName} CMMS` : null))
+          ? (current.browserTitle || (current.organizationName ? current.organizationName : null))
           : (payload.browserTitle || null),
-        brandColor: payload.brandColor || "#0f172a",
+        brandColor: payload.brandColor || APP_DEFAULT_THEME_COLOR,
         updatedAt: payload.updatedAt || null,
       };
       persistSnapshot(snapshot);

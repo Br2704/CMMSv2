@@ -9,6 +9,9 @@ export const plantsService = new CrudService(
     basePath: '/api/plants',
     tableName: 'plants',
     plantColumn: 'id',
+    codeColumn: 'plantCode',
+    codeType: 'PLANT',
+    organizationColumn: 'organization_id',
   },
   plantsRepository,
 );

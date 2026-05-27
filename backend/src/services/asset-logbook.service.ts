@@ -423,7 +423,7 @@ function sheetToXml(sheet: SheetConfig, isFirstSheet: boolean, assetCode: string
   // Footer
   const footerRows = [
     rowXml([`<Cell ss:MergeAcross="${mergeAcross}" ss:StyleID="sBody"><Data ss:Type="String"></Data></Cell>`]),
-    rowXml([`<Cell ss:MergeAcross="${mergeAcross}" ss:StyleID="sTamOptix"><Data ss:Type="String">TamOptiX Technologies | Intelligent CMMS Platform</Data></Cell>`]),
+    rowXml([`<Cell ss:MergeAcross="${mergeAcross}" ss:StyleID="sTamOptix"><Data ss:Type="String">OptiX Maintenance Pro | Intelligent CMMS Platform</Data></Cell>`]),
     rowXml([`<Cell ss:MergeAcross="${mergeAcross}" ss:StyleID="sFooter"><Data ss:Type="String">Powered by TamOptiX Technologies — Confidential</Data></Cell>`]),
   ];
 

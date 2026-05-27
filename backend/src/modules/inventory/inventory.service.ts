@@ -8,6 +8,8 @@ export const inventoryService = new CrudService(
     basePath: '/api/inventory',
     tableName: 'spare_items',
     plantColumn: 'plant_id',
+    codeColumn: 'code',
+    codeType: 'SP',
   },
   inventoryRepository,
 );

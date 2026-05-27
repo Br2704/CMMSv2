@@ -1,4 +1,4 @@
-import { ensurePlantAccess } from '../middlewares/permissions';
+import { ensurePlantAccess } from '../middlewares/permissionGuard';
 import { qrTokenParamSchema } from '../modules/qr/qr.validation';
 
 describe('QR token validation and access checks', () => {
@@ -15,7 +15,7 @@ describe('QR token validation and access checks', () => {
   it('enforces plant scoping for non-global users', () => {
     const req = {
       auth: {
-        roles: ['ADMIN'],
+        roles: ['PLANT_ADMIN'],
         accessAllPlants: false,
         plantIds: ['plant-a'],
       },
@@ -43,8 +43,8 @@ describe('QR token validation and access checks', () => {
   it('requires organization roles to have resolved plant scope', () => {
     const superAdminReq = {
       auth: {
-        roles: ['SUPERADMIN'],
-        roleKey: 'SUPERADMIN',
+        roles: ['SUPER_ADMIN'],
+        roleKey: 'SUPER_ADMIN',
         scopeType: 'ORGANIZATION',
         accessAllPlants: true,
         plantIds: [],

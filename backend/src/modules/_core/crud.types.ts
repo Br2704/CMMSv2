@@ -7,6 +7,10 @@ export interface ModuleConfig {
   tableName: string;
   idColumn?: string;
   plantColumn?: string;
+  codeColumn?: string;
+  codeType?: string;
+  organizationColumn?: string;
+  uniqueCodeMessage?: string;
   searchColumns?: string[];
   sortColumns?: string[];
   defaultSort?: { column: string; direction: 'ASC' | 'DESC' };

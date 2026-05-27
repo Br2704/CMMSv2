@@ -1,4 +1,5 @@
 import { type ReportFormatConfigPayload, type ChartConfig } from "@/api/reportFormat";
+import { APP_NAME } from "@/config/branding";
 import { FileText, Info, Loader2, Monitor, Download } from "lucide-react";
 import { ImageCell } from "./ImageCell";
 import { MiniChartPreview } from "./MiniCharts";
@@ -37,7 +38,7 @@ export function PdfPreview({
 }) {
   const locale = config.reportLocale ?? "en";
   const now = new Date().toLocaleString(locale);
-  const title = config.headerTitle || "CMMS Report";
+  const title = config.headerTitle || APP_NAME;
   const headerWeight = config.headerBold ? "bold" : "normal";
   const headerDecor = config.headerUnderline ? "underline" : "none";
   const align = config.logoAlignment ?? "left";

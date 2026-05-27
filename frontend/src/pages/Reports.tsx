@@ -27,6 +27,7 @@ import { KPICard } from "@/components/dashboard/KPICard";
 import { ParetoChart } from "@/components/dashboard/Charts";
 import { hoursToMinutes } from "@/lib/time";
 import { PageShell } from "@/components/layout/PageShell";
+import { PageHeader } from "@/components/layout/PageHeader";
 
 const COLORS = [
   "hsl(var(--primary))", "hsl(var(--chart-2))", "hsl(var(--chart-3))",
@@ -269,7 +270,7 @@ export default function Reports() {
   const { data: workOrderMasters = [] } = useQuery({
     queryKey: ["report_work_order_masters"],
     queryFn: async () => {
-      const response = await listWorkOrderMasters({ page: 1, limit: 2000, includeInactive: false });
+      const response = await listWorkOrderMasters({ page: 1, limit: 2000, includeInactive: true });
       return response.data || [];
     },
   });
@@ -631,25 +632,25 @@ export default function Reports() {
 
   return (
     <PageShell>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight lg:text-3xl break-words">Reports & Analytics</h1>
-          <p className="text-sm text-muted-foreground">Comprehensive insights — MTTR, MTBF, safety, inventory & more</p>
-        </div>
-        <div className="shrink-0">
-          <SelectField label="" value={dateRange} onChange={setDateRange} options={[
-            { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" },
-            { value: "90", label: "Last 90 days" }, { value: "365", label: "Last year" },
-          ]} className="w-full sm:w-[150px]" />
-        </div>
-      </div>
+      <PageHeader
+        title="Reports & Analytics"
+        description="Comprehensive insights — MTTR, MTBF, safety, inventory & more"
+        actions={
+          <div className="shrink-0">
+            <SelectField label="" value={dateRange} onChange={setDateRange} options={[
+              { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" },
+              { value: "90", label: "Last 90 days" }, { value: "365", label: "Last year" },
+            ]} className="w-full sm:w-[150px]" />
+          </div>
+        }
+      />
 
       {isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
         <>
           {/* Global KPIs */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <KPICard title="Total WOs" value={kpis.totalWO} subtitle="work orders" icon={Wrench} variant="primary" />
             <KPICard title="Open WOs" value={kpis.openWO} subtitle="in progress" icon={Activity} variant="warning" />
             <KPICard title="Avg Downtime" value={`${kpis.avgDowntime}m`} subtitle="per WO" icon={Clock} variant="info" />
@@ -659,16 +660,18 @@ export default function Reports() {
           </div>
 
           <Tabs defaultValue="mttr_analysis" className="space-y-4">
-            <TabsList className="flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible h-auto gap-1 scrollbar-thin">
-              <TabsTrigger value="mttr_analysis">MTTR / MTBF</TabsTrigger>
-              <TabsTrigger value="maintenance_reports">Maintenance Reports</TabsTrigger>
-              <TabsTrigger value="work_orders">Work Orders</TabsTrigger>
-              <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
-              <TabsTrigger value="safety">Safety</TabsTrigger>
-              <TabsTrigger value="inventory">Inventory</TabsTrigger>
-              <TabsTrigger value="downtime">Downtime</TabsTrigger>
-              <TabsTrigger value="export">Export</TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto hide-scrollbars">
+              <TabsList className="flex-nowrap w-max min-w-full gap-1">
+                <TabsTrigger value="mttr_analysis" className="whitespace-nowrap">MTTR / MTBF</TabsTrigger>
+                <TabsTrigger value="maintenance_reports" className="whitespace-nowrap">Maintenance Reports</TabsTrigger>
+                <TabsTrigger value="work_orders" className="whitespace-nowrap">Work Orders</TabsTrigger>
+                <TabsTrigger value="maintenance" className="whitespace-nowrap">Maintenance</TabsTrigger>
+                <TabsTrigger value="safety" className="whitespace-nowrap">Safety</TabsTrigger>
+                <TabsTrigger value="inventory" className="whitespace-nowrap">Inventory</TabsTrigger>
+                <TabsTrigger value="downtime" className="whitespace-nowrap">Downtime</TabsTrigger>
+                <TabsTrigger value="export" className="whitespace-nowrap">Export</TabsTrigger>
+              </TabsList>
+            </div>
 
             {/* MTTR / MTBF Tab */}
             <TabsContent value="mttr_analysis">
@@ -702,7 +705,7 @@ export default function Reports() {
                             <CardTitle className="text-sm">Failure Distribution</CardTitle>
                           </CardHeader>
                           <CardContent>
-                            <div className="h-[250px]">
+                            <div className="h-[250px] min-w-0 w-full">
                               <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                   <Pie
@@ -727,7 +730,7 @@ export default function Reports() {
                             <CardTitle className="text-sm">Root Cause Trends</CardTitle>
                           </CardHeader>
                           <CardContent>
-                            <div className="h-[250px]">
+                            <div className="h-[250px] min-w-0 w-full">
                               <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={Object.entries(mReports.reduce((acc: any, r: any) => {
                                   const rc = r.subRootCause || "OTHER";

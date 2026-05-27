@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { FormDialog } from "@/components/shared/FormDialog";
 import { InputField, SelectField } from "@/components/shared/FormField";
+import { AsyncSelect } from "@/components/ui/async-select";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
@@ -28,7 +29,8 @@ import { listAssets, type Asset } from "@/api/assets";
 import { listDepartments, type Department } from "@/api/departments";
 import { listModules, type MachineModule } from "@/api/modules";
 import { listPlants, type Plant } from "@/api/plants";
-import { isAdmin, isSuperAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel, isSuperAdmin } from "@/lib/permission-engine";
 import { Edit, Gauge, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -78,8 +80,8 @@ function getRangeLabel(item: { rangeMin: string | null; rangeMax: string | null;
 
 export default function MachineInstrumentsMaster() {
   const { user } = useAuthStore();
-  const canManage = isAdmin(user);
-  const canSelectPlant = isSuperAdmin(user);
+  const canManage = isAdminLevel(user?.roles ?? []);
+  const canSelectPlant = isSuperAdmin(user?.roles ?? []);
   const defaultPlantId = user?.plantId || "";
 
   const [plants, setPlants] = useState<Plant[]>([]);
@@ -136,9 +138,9 @@ export default function MachineInstrumentsMaster() {
             includeInactive: true,
             search: searchQuery || undefined,
           }),
-          listDepartments({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: false }),
-          listModules({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: false }),
-          listAssets({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: false }),
+          listDepartments({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: true }),
+          listModules({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: true }),
+          listAssets({ page: 1, limit: 1000, plantId: resolvedPlantId || undefined, includeInactive: true }),
         ]);
         setInstruments(instrumentRes.data || []);
         setDepartments(departmentRes.data || []);
@@ -331,22 +333,21 @@ export default function MachineInstrumentsMaster() {
         actions={canManage ? <Button onClick={handleAdd}><Plus className="mr-2 h-4 w-4" />Add Instrument</Button> : null}
       />
 
-      <Card className="shadow-card">
-        <CardContent className="pt-5">
+      <DataTableShell
+        title={<span className="flex items-center gap-2"><Gauge className="h-5 w-5 text-primary" />Machine Instruments ({instruments.length})</span>}
+        toolbar={
           <Toolbar
             left={<div className="relative w-full max-w-sm"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="pl-9" placeholder="Search machine, instrument, serial..." /></div>}
             right={
-              <div className="grid w-full gap-3 md:grid-cols-3">
-                {canSelectPlant ? <SelectField label="" value={selectedPlantId} onChange={setSelectedPlantId} options={plantOptions} placeholder="Select plant" /> : null}
-                <SelectField label="" value={selectedDepartmentId} onChange={(value) => { setSelectedDepartmentId(value); setSelectedModuleId(""); }} options={departmentsForPlant.map((item) => ({ value: item.id, label: `${item.code} - ${item.name}` }))} placeholder="All departments" />
-                <SelectField label="" value={selectedModuleId} onChange={setSelectedModuleId} options={modules.filter((item) => !selectedDepartmentId || item.departmentId === selectedDepartmentId).map((item) => ({ value: item.id, label: item.code ? `${item.code} - ${item.name}` : item.name }))} placeholder="All modules" />
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                {canSelectPlant ? <SelectField label="" value={selectedPlantId} onChange={setSelectedPlantId} options={plantOptions} placeholder="Select plant" className="w-full sm:w-[160px]" /> : null}
+                <SelectField label="" value={selectedDepartmentId} onChange={(value) => { setSelectedDepartmentId(value); setSelectedModuleId(""); }} options={departmentsForPlant.map((item) => ({ value: item.id, label: `${item.code} - ${item.name}` }))} placeholder="All departments" className="w-full sm:w-[180px]" />
+                <SelectField label="" value={selectedModuleId} onChange={setSelectedModuleId} options={modules.filter((item) => !selectedDepartmentId || item.departmentId === selectedDepartmentId).map((item) => ({ value: item.id, label: item.code ? `${item.code} - ${item.name}` : item.name }))} placeholder="All modules" className="w-full sm:w-[180px]" />
               </div>
             }
           />
-        </CardContent>
-      </Card>
-
-      <DataTableShell title={<span className="flex items-center gap-2"><Gauge className="h-5 w-5 text-primary" />Machine Instruments ({instruments.length})</span>}>
+        }
+      >
         {loading ? (
           <TableSkeleton />
         ) : !resolvedPlantId && canSelectPlant ? (
@@ -381,36 +382,58 @@ export default function MachineInstrumentsMaster() {
       >
         <FormGrid>
           {canSelectPlant ? (
-            <SelectField
+            <AsyncSelect
               label="Plant"
+              required
               value={formData.plantId}
               onChange={(value) => setFormData((current) => ({ ...current, plantId: value, departmentId: "", moduleId: "", assetId: "" }))}
-              options={plantOptions}
+              fetchFn={listPlants}
+              labelExtractor={(plant) => `${plant.plantCode || "-"} - ${plant.plantName}`}
+              valueExtractor={(plant) => plant.id}
               placeholder="Select plant"
-              required
             />
           ) : null}
-          <SelectField
+          <AsyncSelect
             label="Department"
             value={formData.departmentId}
             onChange={(value) => setFormData((current) => ({ ...current, departmentId: value, moduleId: "", assetId: "" }))}
-            options={departments.filter((item) => !formData.plantId || item.plantId === formData.plantId).map((item) => ({ value: item.id, label: `${item.code} - ${item.name}` }))}
+            fetchFn={async (params) => {
+              if (canSelectPlant && !formData.plantId) return { data: [], total: 0 };
+              return listDepartments({ ...params, plantId: formData.plantId || defaultPlantId || undefined });
+            }}
+            labelExtractor={(dep) => `${dep.code} - ${dep.name}`}
+            valueExtractor={(dep) => dep.id}
             placeholder="Select department"
+            disabled={canSelectPlant ? !formData.plantId : false}
           />
-          <SelectField
+          <AsyncSelect
             label="Module"
             value={formData.moduleId}
             onChange={(value) => setFormData((current) => ({ ...current, moduleId: value, assetId: "" }))}
-            options={modulesForScope.map((item) => ({ value: item.id, label: item.code ? `${item.code} - ${item.name}` : item.name }))}
+            fetchFn={async (params) => {
+               if (!formData.departmentId) return { data: [], total: 0 };
+               return listModules({ ...params, plantId: formData.plantId || defaultPlantId || undefined, departmentId: formData.departmentId });
+            }}
+            labelExtractor={(module) => `${module.code ? `${module.code} - ` : ""}${module.name}`}
+            valueExtractor={(module) => module.id}
             placeholder="Select module"
+            disabled={!formData.departmentId}
           />
-          <SelectField
+          <AsyncSelect
             label="Machine"
+            required
             value={formData.assetId}
             onChange={(value) => setFormData((current) => ({ ...current, assetId: value }))}
-            options={assetsForScope.map((item) => ({ value: item.id, label: `${item.code} - ${item.name}` }))}
+            fetchFn={async (params) => {
+               if (!formData.moduleId) return { data: [], total: 0 };
+               const response = await listAssets({ ...params, plantId: formData.plantId || defaultPlantId || undefined });
+               const filtered = response.data.filter((asset) => asset.moduleId === formData.moduleId);
+               return { data: filtered, total: filtered.length };
+            }}
+            labelExtractor={(asset) => `${asset.code} - ${asset.name}`}
+            valueExtractor={(asset) => asset.id}
             placeholder="Select machine"
-            required
+            disabled={!formData.moduleId}
           />
           <InputField label="Instrument Name" value={formData.instrumentName} onChange={(value) => setFormData((current) => ({ ...current, instrumentName: value }))} placeholder="Suction Pressure Gauge" required />
           <InputField label="Instrument Type" value={formData.instrumentType} onChange={(value) => setFormData((current) => ({ ...current, instrumentType: value }))} placeholder="Pressure Gauge" required />

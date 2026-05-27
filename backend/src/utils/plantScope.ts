@@ -6,7 +6,7 @@ function getEffectiveRoleKey(auth: Pick<AuthContext, 'roleKey' | 'roles'>): stri
   if (typeof auth.roleKey === 'string' && auth.roleKey.trim()) {
     return auth.roleKey;
   }
-  return auth.roles[0] ?? 'USER';
+  return auth.roles[0] ?? 'MAINTENANCE_USER';
 }
 
 export function getActorPlantId(auth: AuthContext): string | null {
@@ -19,11 +19,11 @@ export function getActorPlantId(auth: AuthContext): string | null {
 export function isGlobalRole(roleKey?: string | null, roles: string[] = [], organizationId?: string | null): boolean {
   const normalizedRoleKey = typeof roleKey === 'string' ? normalizeRoleName(roleKey) : '';
   const normalizedRoles = roles.map(normalizeRoleName);
-  const effectiveRole = normalizedRoleKey || normalizedRoles[0] || 'USER';
+  const effectiveRole = normalizedRoleKey || normalizedRoles[0] || 'MAINTENANCE_USER';
   const scopeType = resolveScopeType(effectiveRole);
   if (scopeType === 'ROOT_ADMIN') return true;
   if (scopeType === 'ORGANIZATION') {
-    return Boolean(organizationId) || normalizedRoles.includes('SUPERADMIN');
+    return Boolean(organizationId) || normalizedRoles.includes('SUPER_ADMIN');
   }
   return false;
 }

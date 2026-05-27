@@ -47,20 +47,20 @@ function authShell(content: string, title: string, logoOverride?: string): strin
 </td></tr>
 <tr><td style="padding:32px">\${content}</td></tr>
 <tr><td style="padding:24px 32px;background:#f9fafb;border-top:1px solid #e5e7eb;text-align:center">
-<p style="margin:0 0 8px;font-size:12px;color:#6b7280">TamOptiX CMMS - Enterprise Maintenance Platform</p>
+<p style="margin:0 0 8px;font-size:12px;color:#6b7280">OptiX Maintenance Pro - Enterprise Maintenance Platform</p>
 <p style="margin:0;font-size:11px;color:#9ca3af">
 <a href="\${DASHBOARD_URL}" style="color:\${PRIMARY_COLOR};text-decoration:none">Dashboard</a>
 <span style="margin:0 8px">|</span>
 <a href="\${DASHBOARD_URL}/work-orders" style="color:\${PRIMARY_COLOR};text-decoration:none">Work Orders</a>
 </p>
-<p style="margin:8px 0 0;font-size:10px;color:#9ca3af">This is an automated message from TamOptiX CMMS. Please do not reply to this email.</p>
+<p style="margin:8px 0 0;font-size:10px;color:#9ca3af">This is an automated message from OptiX Maintenance Pro. Please do not reply to this email.</p>
 </td></tr></table></td></tr></table></body></html>\`;
 }
 
 function passwordReset(data: AuthTemplateData): string {
   return authShell(\`
 <p style="font-size:16px;color:#374151;margin:0 0 24px">Hello <strong>\${data.userName}</strong>,</p>
-<p style="font-size:14px;color:#6b7280;margin:0 0 24px">We received a request to reset the password for your TamOptiX CMMS account associated with <strong>\${data.email}</strong>.</p>
+<p style="font-size:14px;color:#6b7280;margin:0 0 24px">We received a request to reset the password for your OptiX Maintenance Pro account associated with <strong>\${data.email}</strong>.</p>
 <div style="padding:20px;background:#f0f7ff;border-radius:8px;margin-bottom:24px;text-align:center">
 <p style="font-size:14px;color:#374151;margin:0 0 8px">Click the button below to reset your password:</p>
 \${actionButton(data.link || DASHBOARD_URL + '/reset-password?token=' + (data.token || ''), 'Reset Password', PRIMARY_COLOR)}
@@ -73,19 +73,19 @@ function passwordReset(data: AuthTemplateData): string {
 function userInvitation(data: AuthTemplateData): string {
   return authShell(\`
 <p style="font-size:16px;color:#374151;margin:0 0 24px">Hello <strong>\${data.userName}</strong>,</p>
-<p style="font-size:14px;color:#6b7280;margin:0 0 24px">You have been invited to join the <strong>TamOptiX CMMS</strong> platform. Your account has been created with the email <strong>\${data.email}</strong>.</p>
+<p style="font-size:14px;color:#6b7280;margin:0 0 24px">You have been invited to join the <strong>OptiX Maintenance Pro</strong> platform. Your account has been created with the email <strong>\${data.email}</strong>.</p>
 <div style="padding:20px;background:#f0fdf4;border-radius:8px;margin-bottom:24px;text-align:center">
 <p style="font-size:14px;color:#374151;margin:0 0 16px">Get started by logging into your account:</p>
 \${actionButton(data.link || DASHBOARD_URL + '/login', 'Login to CMMS', SUCCESS_COLOR)}
 </div>
 <p style="font-size:13px;color:#6b7280;margin:0 0 4px">If you have any questions, please contact your system administrator.</p>
-\`, 'Welcome to TamOptiX CMMS');
+\`, 'Welcome to OptiX Maintenance Pro');
 }
 
 function otpVerification(data: AuthTemplateData): string {
   return authShell(\`
 <p style="font-size:16px;color:#374151;margin:0 0 24px">Hello <strong>\${data.userName}</strong>,</p>
-<p style="font-size:14px;color:#6b7280;margin:0 0 24px">Your verification code for TamOptiX CMMS is:</p>
+<p style="font-size:14px;color:#6b7280;margin:0 0 24px">Your verification code for OptiX Maintenance Pro is:</p>
 <div style="padding:24px;background:#f4f5f7;border-radius:8px;margin-bottom:24px;text-align:center;letter-spacing:12px">
 <span style="font-size:36px;font-weight:700;color:\${PRIMARY_COLOR};font-family:monospace">\${data.otp || '000000'}</span>
 </div>

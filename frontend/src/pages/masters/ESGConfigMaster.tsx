@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InputField, SelectField, TextareaField } from "@/components/shared/FormField";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
+import { DataTableShell } from "@/components/layout/DataTableShell";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { listPlants } from "@/api/plants";
 import { listUsers } from "@/api/users";
@@ -34,7 +35,9 @@ import {
   updateEsgMasterKpi,
 } from "@/api/esg";
 import { ESG_WORKBOOK_METRICS } from "@/config/esg-workbook";
-import { isSuperAdmin, useAuthStore } from "@/store/auth.store";
+import { useAuthStore } from "@/store/auth.store";
+import { isSuperAdmin } from "@/lib/permission-engine";
+import { useAccessibleRoutes } from "@/hooks/useAccessibleRoutes";
 
 const categoryOptions = [
   { value: "Energy", label: "Energy" },
@@ -57,7 +60,7 @@ const esgCategoryOptions = [
 export default function ESGConfigMaster() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
-  const superAdmin = isSuperAdmin(user);
+  const superAdmin = isSuperAdmin(user?.roles ?? []);
   const [plantId, setPlantId] = useState("");
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
@@ -110,7 +113,7 @@ export default function ESGConfigMaster() {
 
   const plantsQuery = useQuery({
     queryKey: ["esg_master_plants"],
-    queryFn: () => listPlants({ page: 1, limit: 500, includeInactive: false }),
+    queryFn: () => listPlants({ page: 1, limit: 500, includeInactive: true }),
     enabled: superAdmin,
   });
   const selectedPlantId = plantId || targetForm.plantId || authForm.plantId;
@@ -250,8 +253,9 @@ export default function ESGConfigMaster() {
   const analyticsRows = analyticsQuery.data?.data || [];
   const activeKpis = useMemo(() => (kpisQuery.data?.data || []).filter((item) => item.status === "ACTIVE").length, [kpisQuery.data?.data]);
 
+  const { resolveLandingPath } = useAccessibleRoutes();
   if (!superAdmin) {
-    return <Navigate to="/403" replace />;
+    return <Navigate to={resolveLandingPath()} replace />;
   }
 
   return (
@@ -287,9 +291,7 @@ export default function ESGConfigMaster() {
         </TabsList>
 
         <TabsContent value="kpis" className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-          <Card>
-            <CardHeader><CardTitle>KPI Configuration</CardTitle></CardHeader>
-            <CardContent>
+          <DataTableShell title="KPI Configuration">
               <ResponsiveTable
                 data={kpisQuery.data?.data || []}
                 keyExtractor={(item) => item.id}
@@ -301,8 +303,7 @@ export default function ESGConfigMaster() {
                   { key: "action", header: "", render: (item) => <Button variant="ghost" size="sm" onClick={() => { setEditingKpiId(item.id); setKpiForm({ kpiName: item.kpiName, kpiCategory: item.kpiCategory, formula: item.formula || "", unit: item.unit || "", description: item.description || "", status: item.status }); }}>Edit</Button> },
                 ]}
               />
-            </CardContent>
-          </Card>
+          </DataTableShell>
           <Card>
             <CardHeader><CardTitle>{editingKpiId ? "Edit KPI" : "Add KPI"}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
@@ -318,9 +319,8 @@ export default function ESGConfigMaster() {
         </TabsContent>
 
         <TabsContent value="workbook-targets" className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-          <Card>
-            <CardHeader><CardTitle>Workbook ESG Targets</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
+          <DataTableShell title="Workbook ESG Targets">
+            <div className="space-y-4">
               <div>
                 <div className="mb-2 text-sm font-medium text-muted-foreground">Plant-wise targets</div>
                 <ResponsiveTable
@@ -345,8 +345,8 @@ export default function ESGConfigMaster() {
                   ]}
                 />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </DataTableShell>
           <Card>
             <CardHeader><CardTitle>Set Workbook Target</CardTitle></CardHeader>
             <CardContent className="space-y-3">
@@ -364,9 +364,7 @@ export default function ESGConfigMaster() {
         </TabsContent>
 
         <TabsContent value="factors" className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-          <Card>
-            <CardHeader><CardTitle>Emission Factors</CardTitle></CardHeader>
-            <CardContent>
+          <DataTableShell title="Emission Factors">
               <ResponsiveTable
                 data={factorsQuery.data?.data || []}
                 keyExtractor={(item) => item.id}
@@ -378,8 +376,7 @@ export default function ESGConfigMaster() {
                   { key: "action", header: "", render: (item) => <Button variant="ghost" size="sm" onClick={() => { setEditingFactorId(item.id); setFactorForm({ energyType: item.energyType, unit: item.unit, co2Factor: String(item.co2Factor), source: item.source || "", effectiveDate: item.effectiveDate, isActive: String(item.isActive) }); }}>Edit</Button> },
                 ]}
               />
-            </CardContent>
-          </Card>
+          </DataTableShell>
           <Card>
             <CardHeader><CardTitle>{editingFactorId ? "Edit Factor" : "Add Factor"}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
@@ -395,9 +392,7 @@ export default function ESGConfigMaster() {
         </TabsContent>
 
         <TabsContent value="targets" className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-          <Card>
-            <CardHeader><CardTitle>Plant ESG Targets</CardTitle></CardHeader>
-            <CardContent>
+          <DataTableShell title="Plant ESG Targets">
               <ResponsiveTable
                 data={targetsQuery.data?.data || []}
                 keyExtractor={(item) => item.id}
@@ -408,8 +403,7 @@ export default function ESGConfigMaster() {
                   { key: "energy", header: "Energy", render: (item) => item.targetEnergyReduction || "-" },
                 ]}
               />
-            </CardContent>
-          </Card>
+          </DataTableShell>
           <Card>
             <CardHeader><CardTitle>Set Target</CardTitle></CardHeader>
             <CardContent className="space-y-3">
@@ -426,9 +420,7 @@ export default function ESGConfigMaster() {
         </TabsContent>
 
         <TabsContent value="authorized" className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-          <Card>
-            <CardHeader><CardTitle>ESG Authorized Users</CardTitle></CardHeader>
-            <CardContent>
+          <DataTableShell title="ESG Authorized Users">
               <ResponsiveTable
                 data={authUsersQuery.data?.data || []}
                 keyExtractor={(item) => item.id}
@@ -439,8 +431,7 @@ export default function ESGConfigMaster() {
                   { key: "action", header: "", render: (item) => <Button variant="ghost" size="sm" onClick={async () => { await deleteEsgAuthorizedUser(item.id); await queryClient.invalidateQueries({ queryKey: ["esg_master_auth_users", plantId] }); toast.success("Authorized ESG user removed"); }}>Remove</Button> },
                 ]}
               />
-            </CardContent>
-          </Card>
+          </DataTableShell>
           <Card>
             <CardHeader><CardTitle>Add Authorized User</CardTitle></CardHeader>
             <CardContent className="space-y-3">

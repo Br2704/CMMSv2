@@ -12,8 +12,8 @@ const WINDOW_MS = 60_000;
 
 const ROLE_RATE_LIMITS: Record<string, number> = {
   ROOT_ADMIN: 10000,
-  SUPERADMIN: 10000,
-  ADMIN: 5000,
+  SUPER_ADMIN: 10000,
+  PLANT_ADMIN: 5000,
   DEFAULT: 2500,
 };
 

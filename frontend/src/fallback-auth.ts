@@ -1,4 +1,6 @@
-const FALLBACK_ORG_NAME = "TamOptiX Technologies";
+import { APP_COMPANY, APP_NAME } from "@/config/branding";
+
+const FALLBACK_ORG_NAME = APP_NAME;
 const FALLBACK_ORG_ID = "tamoptix-root";
 
 const encodedPassword = btoa("TamOptiX@09022026");
@@ -51,6 +53,6 @@ export function getFallbackBrandingSeed() {
     organizationName: FALLBACK_ORG_NAME,
     organizationLogoUrl: "/tamoptix/tamoptix-logo.png",
     sidebarTitle: FALLBACK_ORG_NAME,
-    browserTitle: `${FALLBACK_ORG_NAME} CMMS`,
+    browserTitle: FALLBACK_ORG_NAME,
   };
 }

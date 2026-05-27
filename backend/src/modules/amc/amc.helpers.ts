@@ -22,15 +22,14 @@ import {
 
 const ACTIVE_CONTRACT_STATUSES = new Set(['ACTIVE', 'RENEWAL_DUE']);
 const INTERNAL_NOTIFICATION_ROLES = [
-  'ADMIN',
+  'PLANT_ADMIN',
   'PLANT_ADMIN',
   'MAINTENANCE_MANAGER',
-  'MECHANICAL_INCHARGE',
-  'ELECTRICAL_INCHARGE',
-  'UTILITY_INCHARGE',
-  'TOOLCHANGE_INCHARGE',
-  'CALIBRATION_INCHARGE',
-  'SUPERADMIN',
+  'MAINTENANCE_USER',
+  'CALIBRATION_USER',
+  'SCM_USER',
+  'PRODUCTION_USER',
+  'SUPER_ADMIN',
 ];
 
 export const DEFAULT_AMC_NOTIFICATION_SETTINGS = {
@@ -231,8 +230,8 @@ async function buildNotificationBundle(
     mappingRepo.find({ where: { vendorId } }),
     userRoleRepo.find({
       where: [
-        { role: In(INTERNAL_NOTIFICATION_ROLES.filter((role) => role !== 'SUPERADMIN')), plantId: plantId ?? undefined },
-        { role: 'SUPERADMIN' },
+        { role: In(INTERNAL_NOTIFICATION_ROLES.filter((role) => role !== 'SUPER_ADMIN')), plantId: plantId ?? undefined },
+        { role: 'SUPER_ADMIN' },
       ],
     }),
     plantId
@@ -247,7 +246,7 @@ async function buildNotificationBundle(
   const candidateInternalUserIds = Array.from(
     new Set(
       internalRoleRows
-        .filter((row) => row.role === 'SUPERADMIN' || !plantId || row.plantId === plantId || row.plantId === null)
+        .filter((row) => row.role === 'SUPER_ADMIN' || !plantId || row.plantId === plantId || row.plantId === null)
         .map((row) => row.userId),
     ),
   );

@@ -203,6 +203,12 @@ export function useNotifications(options?: { enabled?: boolean }) {
           return;
         }
 
+        if (response.status === 403) {
+          setNotifications([]);
+          setLoading(false);
+          return;
+        }
+
         if (!response.ok || !response.body) {
           scheduleReconnect();
           return;
@@ -218,9 +224,26 @@ export function useNotifications(options?: { enabled?: boolean }) {
           const { value, done } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
-          buffer = consumeSseBuffer(buffer, (eventName) => {
+          buffer = consumeSseBuffer(buffer, (eventName, eventData) => {
             if (eventName === "notifications.changed") {
               void fetchNotifications();
+            } else if (eventName === "notification.received" && eventData) {
+              try {
+                const payload = JSON.parse(eventData);
+                const newNotif = toLegacyNotification(payload.notification);
+                
+                if (payload.silent) {
+                  // If silent, mark as seen so the toast effect doesn't trigger
+                  seenNotificationIds.current.add(newNotif.id);
+                }
+                
+                setNotifications((prev) => {
+                  if (prev.some((n) => n.id === newNotif.id)) return prev;
+                  return [newNotif, ...prev];
+                });
+              } catch (e) {
+                if (import.meta.env.DEV) console.error("Failed to parse incoming notification", e);
+              }
             }
           });
         }

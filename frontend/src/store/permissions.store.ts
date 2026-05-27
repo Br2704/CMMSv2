@@ -4,9 +4,16 @@ import { getOrganizationRbacVersion, getRbacPermissionsMe, getRbacVersion } from
 import { getStoredAccessToken } from "@/api/token";
 import { create } from "zustand";
 import { isApiHealthy } from "@/lib/apiHealth";
+import {
+  normalizeAction,
+  normalizeRole,
+  ROLE_PRECEDENCE,
+  getPrimaryRole as engineGetPrimaryRole,
+  can as engineCan,
+} from "@/lib/permission-engine";
 
 const PERMISSIONS_CACHE_TTL_MS = 60_000;
-const RBAC_WATCH_INTERVAL_MS = 8_000;
+const RBAC_WATCH_INTERVAL_MS = 60_000;
 const RBAC_REFRESH_DEBOUNCE_MS = 300;
 const RBAC_UPDATED_EVENT = "cmms:permissions-invalidated";
 const RBAC_UPDATED_STORAGE_KEY = "cmms:permissions-updated-at";
@@ -29,6 +36,8 @@ let lastPermissionsFetchAtMs = 0;
 let lastFallbackRefreshAtMs = 0;
 let queuedPermissionsRefreshId: number | null = null;
 let lastPermissionsSnapshot = "";
+let rbacFetchInFlight: Promise<void> | null = null;
+let lastRbacFetchAtMs = 0;
 
 function debugLog(...args: unknown[]) {
   if (isDev) {
@@ -61,81 +70,35 @@ function emitPermissionsInvalidationSignal() {
   }
 }
 
-function normalizeAction(action: string | null | undefined): string {
-  const input = (action || "").trim().toUpperCase();
-  if (input === "VIEW") return "READ";
-  if (input === "ADD") return "CREATE";
-  if (input === "EDIT") return "UPDATE";
-  if (input === "REMOVE") return "DELETE";
-  return input;
-}
-
-function normalizeRole(role: string | null | undefined): string {
-  if (!role) return "USER";
-  const normalized = role
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  if (normalized === "SUPER_ADMIN" || normalized === "SUPERADMIN") return "SUPERADMIN";
-  if (normalized === "ROOT_ADMIN" || normalized === "ROOTADMIN") return "ROOT_ADMIN";
-  if (normalized === "PLANT_ADMIN" || normalized === "PLANTADMIN") return "ADMIN";
-  if (normalized === "ORG_ADMIN" || normalized === "ORGANIZATION_ADMIN") return "ADMIN";
-  if (normalized === "SECURITY_USER") return "SECURITY";
-  if (normalized === "MECHANICAL_INCHARGE" || normalized === "ELECTRICAL_INCHARGE" || normalized === "UTILITY_INCHARGE" || normalized === "DEPARTMENT_INCHARGE") return "MECHANICAL_INCHARGE";
-  if (normalized === "TOOLCHANGE_INCHARGE") return "TOOLCHANGE_INCHARGE";
-  if (normalized === "CALIBRATION_INCHARGE") return "CALIBRATION_INCHARGE";
-  if (normalized === "OPERATOR") return "PRODUCTION_USER";
-  return normalized || "USER";
-}
-
-function rolePrecedence(roleKey: string): number {
-  const normalized = normalizeRole(roleKey);
-  if (normalized === "ROOT_ADMIN") return 400;
-  if (normalized === "SUPERADMIN") return 300;
-  if (normalized === "ADMIN") return 200;
-  if (normalized === "MAINTENANCE_MANAGER") return 180;
-  if (normalized === "ENGINEER") return 140;
-  if (normalized === "MECHANICAL_INCHARGE") return 135;
-  if (normalized === "TOOLCHANGE_INCHARGE") return 133;
-  if (normalized === "CALIBRATION_INCHARGE") return 132;
-  if (normalized === "TECHNICIAN") return 130;
-  if (normalized === "STORE_USER") return 125;
-  if (normalized === "MAINTENANCE_USER") return 120;
-  if (normalized === "PRODUCTION_USER") return 115;
-  if (normalized === "VIEWER") return 110;
-  if (normalized === "VENDOR") return 105;
-  if (normalized === "SECURITY") return 102;
-  if (normalized === "HR_USER") return 100;
-  if (normalized === "SAFETY_OFFICER") return 98;
-  if (normalized === "INVENTORY_MANAGER") return 96;
-  if (normalized === "TEMPORARY_VISITOR") return 94;
-  return 100;
-}
-
 function uniqueRoles(roles: string[]): string[] {
   return Array.from(new Set(roles.map((role) => normalizeRole(role)).filter(Boolean)));
 }
 
-function getPrimaryRole(roles: string[]): string {
-  if (roles.length === 0) return "USER";
-  return [...roles].sort((a, b) => rolePrecedence(b) - rolePrecedence(a))[0];
-}
+const SYSTEM_ROLES = [
+  'ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'ESG_ADMIN', 'HR_ADMIN',
+  'MAINTENANCE_MANAGER', 'PRODUCTION_MANAGER', 'SCM_MANAGER', 'HR_MANAGER',
+  'CALIBRATION_MANAGER', 'ACCOUNTS_MANAGER', 'SAFETY_MANAGER', 'ESG_MANAGER',
+  'MAINTENANCE_USER', 'PRODUCTION_USER', 'SCM_USER', 'HR_USER', 'CALIBRATION_USER',
+  'ACCOUNTS_USER', 'SAFETY_USER', 'ESG_USER', 'VENDOR', 'VISITOR', 'SECURITY'
+];
+
+const ADMIN_ROLES = ['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'ESG_ADMIN', 'HR_ADMIN'];
+const NON_ADMIN_ROLES = SYSTEM_ROLES.filter((r) => !ADMIN_ROLES.includes(r));
 
 function allowedRoleTargetsForCreate(roleKey: string): string[] {
   const role = normalizeRole(roleKey);
-  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "MAINTENANCE_MANAGER", "MECHANICAL_INCHARGE", "TOOLCHANGE_INCHARGE", "CALIBRATION_INCHARGE", "ENGINEER", "TECHNICIAN", "MAINTENANCE_USER", "PRODUCTION_USER", "STORE_USER", "HR_USER", "SAFETY_OFFICER", "INVENTORY_MANAGER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
-  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "MECHANICAL_INCHARGE", "TOOLCHANGE_INCHARGE", "CALIBRATION_INCHARGE", "ENGINEER", "TECHNICIAN", "MAINTENANCE_USER", "PRODUCTION_USER", "STORE_USER", "HR_USER", "SAFETY_OFFICER", "INVENTORY_MANAGER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
-  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "MECHANICAL_INCHARGE", "TOOLCHANGE_INCHARGE", "CALIBRATION_INCHARGE", "ENGINEER", "TECHNICIAN", "MAINTENANCE_USER", "PRODUCTION_USER", "STORE_USER", "HR_USER", "SAFETY_OFFICER", "INVENTORY_MANAGER", "VIEWER", "SECURITY", "USER", "VENDOR", "VISITOR", "TEMPORARY_VISITOR"];
+  if (role === "ROOT_ADMIN") return [...SYSTEM_ROLES];
+  if (ADMIN_ROLES.includes(role) && role !== 'ROOT_ADMIN') {
+    return NON_ADMIN_ROLES;
+  }
+  if (role === 'HR_MANAGER') {
+    return ['HR_USER', 'SECURITY', 'VENDOR', 'VISITOR'];
+  }
   return [];
 }
 
 function allowedRoleTargetsForEdit(roleKey: string): string[] {
-  const role = normalizeRole(roleKey);
-  if (role === "ROOT_ADMIN") return ["ROOT_ADMIN", "SUPERADMIN", "ADMIN", "MAINTENANCE_MANAGER", "MECHANICAL_INCHARGE", "TOOLCHANGE_INCHARGE", "CALIBRATION_INCHARGE", "ENGINEER", "TECHNICIAN", "MAINTENANCE_USER", "PRODUCTION_USER", "STORE_USER", "HR_USER", "SAFETY_OFFICER", "INVENTORY_MANAGER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
-  if (role === "SUPERADMIN") return ["MAINTENANCE_MANAGER", "MECHANICAL_INCHARGE", "TOOLCHANGE_INCHARGE", "CALIBRATION_INCHARGE", "ENGINEER", "TECHNICIAN", "MAINTENANCE_USER", "PRODUCTION_USER", "STORE_USER", "HR_USER", "SAFETY_OFFICER", "INVENTORY_MANAGER", "VIEWER", "SECURITY", "VENDOR", "VISITOR", "TEMPORARY_VISITOR", "USER"];
-  if (role === "ADMIN") return ["MAINTENANCE_MANAGER", "MECHANICAL_INCHARGE", "TOOLCHANGE_INCHARGE", "CALIBRATION_INCHARGE", "ENGINEER", "TECHNICIAN", "MAINTENANCE_USER", "PRODUCTION_USER", "STORE_USER", "HR_USER", "SAFETY_OFFICER", "INVENTORY_MANAGER", "VIEWER", "SECURITY", "USER", "VENDOR", "VISITOR", "TEMPORARY_VISITOR"];
-  return [];
+  return allowedRoleTargetsForCreate(roleKey);
 }
 
 function normalizePermissionMap(permissionMap: Record<string, string[]> | undefined): Record<string, string[]> {
@@ -162,9 +125,9 @@ function buildPermissionKeys(permissionMap: Record<string, string[]>): string[] 
 
 function normalizePermissionsPayload(payload: PermissionsMeResponse, currentVersion: number | null): PermissionsMeResponse {
   const normalizedRoles = uniqueRoles(payload.roles ?? []);
-  const roles = normalizedRoles.length > 0 ? normalizedRoles : ["USER"];
-  const roleKey = normalizeRole(payload.roleKey ?? getPrimaryRole(roles));
-  const scopeType = payload.scopeType ?? (roleKey === "ROOT_ADMIN" ? "ROOT_ADMIN" : roleKey === "SUPERADMIN" ? "ORGANIZATION" : "PLANT");
+  const roles = normalizedRoles.length > 0 ? normalizedRoles : ["MAINTENANCE_USER"];
+  const roleKey = normalizeRole(payload.roleKey ?? engineGetPrimaryRole(roles));
+  const scopeType = payload.scopeType ?? (roleKey === "ROOT_ADMIN" ? "ROOT_ADMIN" : roleKey === "SUPER_ADMIN" ? "ORGANIZATION" : "PLANT");
   const permissionMap = normalizePermissionMap(payload.permissions ?? {});
   const kpis = Array.isArray(payload.kpis) ? payload.kpis : [];
   const roleNames = Array.isArray(payload.roleNames) && payload.roleNames.length > 0 ? uniqueRoles(payload.roleNames) : roles;
@@ -179,7 +142,8 @@ function normalizePermissionsPayload(payload: PermissionsMeResponse, currentVers
       ? [fallbackPlantId]
       : [];
 
-  const hasGlobalPlantAccess = roleKey === "ROOT_ADMIN" || roleKey === "SUPERADMIN";
+  const hasGlobalPlantAccess = roleKey === "ROOT_ADMIN" || roleKey === "SUPER_ADMIN";
+  const precedence = typeof payload.rolePrecedence === "number" ? payload.rolePrecedence : (ROLE_PRECEDENCE[roleKey] ?? 100);
 
   return {
     ...payload,
@@ -187,9 +151,9 @@ function normalizePermissionsPayload(payload: PermissionsMeResponse, currentVers
     roles,
     roleKey,
     scopeType,
-    rolePrecedence: typeof payload.rolePrecedence === "number" ? payload.rolePrecedence : rolePrecedence(roleKey),
+    rolePrecedence: precedence,
     isRootAdmin: payload.isRootAdmin ?? roles.includes("ROOT_ADMIN"),
-    isGlobal: payload.isGlobal ?? (roles.includes("ROOT_ADMIN") || roles.includes("SUPERADMIN")),
+    isGlobal: payload.isGlobal ?? (roles.includes("ROOT_ADMIN") || roles.includes("SUPER_ADMIN")),
     organizationId: payload.organizationId ?? null,
     orgRoleId: payload.orgRoleId ?? null,
     plantId: fallbackPlantId,
@@ -217,8 +181,8 @@ async function buildPermissionsFromAuthMe(currentVersion: number | null): Promis
 
     const hasRootAdmin = roles.includes("ROOT_ADMIN");
     const effectiveRoles = hasRootAdmin ? ["ROOT_ADMIN"] : roles;
-    const roleKey = normalizeRole(me.roleKey ?? getPrimaryRole(effectiveRoles));
-    const scopeType = me.scopeType ?? (roleKey === "ROOT_ADMIN" ? "ROOT_ADMIN" : roleKey === "SUPERADMIN" ? "ORGANIZATION" : "PLANT");
+    const roleKey = normalizeRole(me.roleKey ?? engineGetPrimaryRole(effectiveRoles));
+    const scopeType = me.scopeType ?? (roleKey === "ROOT_ADMIN" ? "ROOT_ADMIN" : roleKey === "SUPER_ADMIN" ? "ORGANIZATION" : "PLANT");
     const permissionMap = normalizePermissionMap(me.allowedActionsByModule ?? {});
     const kpis = Array.isArray(me.kpiVisibility) ? me.kpiVisibility : [];
     const plantId = me.plantId ?? me.profile?.plantId ?? null;
@@ -230,15 +194,16 @@ async function buildPermissionsFromAuthMe(currentVersion: number | null): Promis
     const permissionKeys = Array.isArray(me.permissionKeys) && me.permissionKeys.length > 0
       ? me.permissionKeys
       : buildPermissionKeys(permissionMap);
+    const precedence = typeof me.rolePrecedence === "number" ? me.rolePrecedence : (ROLE_PRECEDENCE[roleKey] ?? 100);
 
     return {
       roleNames: effectiveRoles,
       roles: effectiveRoles,
       roleKey,
       scopeType,
-      rolePrecedence: typeof me.rolePrecedence === "number" ? me.rolePrecedence : rolePrecedence(roleKey),
+      rolePrecedence: precedence,
       isRootAdmin: roleKey === "ROOT_ADMIN",
-      isGlobal: roleKey === "ROOT_ADMIN" || roleKey === "SUPERADMIN",
+      isGlobal: roleKey === "ROOT_ADMIN" || roleKey === "SUPER_ADMIN",
       organizationId: me.organizationId ?? null,
       orgRoleId: null,
       plantId,
@@ -251,7 +216,7 @@ async function buildPermissionsFromAuthMe(currentVersion: number | null): Promis
       kpis,
       kpiVisibility: kpis,
       plantIds,
-      accessAllPlants: me.accessAllPlants ?? (roleKey === "ROOT_ADMIN" || roleKey === "SUPERADMIN"),
+      accessAllPlants: me.accessAllPlants ?? (roleKey === "ROOT_ADMIN" || roleKey === "SUPER_ADMIN"),
       rbacVersion: currentVersion ?? undefined,
     };
   } catch {
@@ -432,9 +397,17 @@ export const usePermissionsStore = create<PermissionsStoreState>((set, get) => (
       return;
     }
 
+    const now = Date.now();
+    if (now - lastRbacFetchAtMs < 10_000) {
+      return; // Throttle aggressive fetching from focus/visibility events
+    }
+
+    if (rbacFetchInFlight) {
+      return rbacFetchInFlight;
+    }
+
     const state = get();
     if (state.rbacVersionEndpointAvailable === false) {
-      const now = Date.now();
       if (now - lastFallbackRefreshAtMs >= PERMISSIONS_CACHE_TTL_MS) {
         lastFallbackRefreshAtMs = now;
         await get().fetchPermissionsMe(false);
@@ -442,53 +415,60 @@ export const usePermissionsStore = create<PermissionsStoreState>((set, get) => (
       return;
     }
 
-    try {
-      const orgId = get().permissionsMe?.organizationId;
-      const response = orgId ? await getOrganizationRbacVersion(orgId) : await getRbacVersion();
-      const nextVersion = Number(response.data?.version || 0);
-      const currentVersion = get().rbacVersion;
+    rbacFetchInFlight = (async () => {
+      try {
+        lastRbacFetchAtMs = Date.now();
+        const orgId = get().permissionsMe?.organizationId;
+        const response = orgId ? await getOrganizationRbacVersion(orgId) : await getRbacVersion();
+        const nextVersion = Number(response.data?.version || 0);
+        const currentVersion = get().rbacVersion;
 
-      if (get().rbacVersionEndpointAvailable !== true) {
-        set({ rbacVersionEndpointAvailable: true });
-      }
+        if (get().rbacVersionEndpointAvailable !== true) {
+          set({ rbacVersionEndpointAvailable: true });
+        }
 
-      if (!Number.isFinite(nextVersion) || nextVersion <= 0) {
-        return;
-      }
+        if (!Number.isFinite(nextVersion) || nextVersion <= 0) {
+          return;
+        }
 
-      if (currentVersion === null) {
+        if (currentVersion === null) {
+          set({ rbacVersion: nextVersion });
+          return;
+        }
+
+        if (nextVersion === currentVersion) {
+          return;
+        }
+
         set({ rbacVersion: nextVersion });
-        return;
-      }
+        if (queuedPermissionsRefreshId !== null && typeof window !== "undefined") {
+          window.clearTimeout(queuedPermissionsRefreshId);
+        }
 
-      if (nextVersion === currentVersion) {
-        return;
-      }
+        if (typeof window === "undefined") {
+          await get().fetchPermissionsMe(true);
+          return;
+        }
 
-      set({ rbacVersion: nextVersion });
-      if (queuedPermissionsRefreshId !== null && typeof window !== "undefined") {
-        window.clearTimeout(queuedPermissionsRefreshId);
+        queuedPermissionsRefreshId = window.setTimeout(() => {
+          queuedPermissionsRefreshId = null;
+          void get()
+            .fetchPermissionsMe(true)
+            .then(() => {
+              window.dispatchEvent(new Event(RBAC_UPDATED_EVENT));
+            });
+        }, RBAC_REFRESH_DEBOUNCE_MS);
+      } catch (error: any) {
+        const status = Number(error?.status || 0);
+        if (status === 404 || status === 403) {
+          set({ rbacVersionEndpointAvailable: false });
+        }
+      } finally {
+        rbacFetchInFlight = null;
       }
+    })();
 
-      if (typeof window === "undefined") {
-        await get().fetchPermissionsMe(true);
-        return;
-      }
-
-      queuedPermissionsRefreshId = window.setTimeout(() => {
-        queuedPermissionsRefreshId = null;
-        void get()
-          .fetchPermissionsMe(true)
-          .then(() => {
-            window.dispatchEvent(new Event(RBAC_UPDATED_EVENT));
-          });
-      }, RBAC_REFRESH_DEBOUNCE_MS);
-    } catch (error: any) {
-      const status = Number(error?.status || 0);
-      if (status === 404 || status === 403) {
-        set({ rbacVersionEndpointAvailable: false });
-      }
-    }
+    return rbacFetchInFlight;
   },
 
   startWatcher: () => {
@@ -634,15 +614,8 @@ export const usePermissionsStore = create<PermissionsStoreState>((set, get) => (
   },
 
   can: (moduleKey: string | null | undefined, action = "READ") => {
-    const normalizedModule = (moduleKey || "").trim().toUpperCase();
-    const normalizedAction = normalizeAction(action);
     const permissionMap = get().permissionsMe?.permissions ?? {};
-    const actions = [...(permissionMap[normalizedModule] ?? []), ...(permissionMap["*"] ?? [])].map((item) => item.toUpperCase());
-    if (actions.includes("*")) return true;
-    if (actions.includes(normalizedAction)) return true;
-    if (normalizedAction === "ASSIGN" && actions.includes("UPDATE")) return true;
-    if (normalizedAction === "REJECT" && actions.includes("APPROVE")) return true;
-    return false;
+    return engineCan(permissionMap, moduleKey, action);
   },
 }));
 

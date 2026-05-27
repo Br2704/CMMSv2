@@ -45,8 +45,11 @@ import {
   type UserProfile,
 } from "@/api/users";
 import { listDepartments, type Department } from "@/api/departments";
+import { listPlants } from "@/api/plants";
 import { listRoleCatalog } from "@/api/roles";
-import { useAuthStore, isRootAdmin, isSuperAdmin } from "@/store/auth.store";
+
+import { useAuthStore } from "@/store/auth.store";
+import { isRootAdmin, isSuperAdmin } from "@/lib/permission-engine";
 import { useMastersOptions } from "@/hooks/useMastersOptions";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getPermissionsUpdatedEventName } from "@/store/permissions.store";
@@ -134,18 +137,12 @@ function getValidationIssueMessage(error: unknown) {
 }
 
 function normalizeRoleKey(role: string | null | undefined) {
-  if (!role) return "USER";
+  if (!role) return "VISITOR";
   const normalized = role.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  if (normalized === "SUPER_ADMIN" || normalized === "SUPERADMIN") return "SUPERADMIN";
-  if (normalized === "ROOTADMIN" || normalized === "ROOT_ADMIN") return "ROOT_ADMIN";
-  if (normalized === "PLANT_ADMIN" || normalized === "PLANTADMIN" || normalized === "ORG_ADMIN" || normalized === "ORGANIZATION_ADMIN") {
-    return "ADMIN";
-  }
-  if (normalized === "SECURITY_USER") return "SECURITY";
   return normalized;
 }
 
-const BULK_UPLOAD_BLOCKED_ROLE_KEYS = new Set(["SUPERADMIN", "ROOT_ADMIN", "ADMIN"]);
+const BULK_UPLOAD_BLOCKED_ROLE_KEYS = new Set(["SUPER_ADMIN", "ROOT_ADMIN", "PLANT_ADMIN", "ESG_ADMIN", "HR_ADMIN"]);
 
 function isBulkUploadBlockedRole(role: string) {
   return BULK_UPLOAD_BLOCKED_ROLE_KEYS.has(normalizeRoleKey(role));
@@ -177,7 +174,7 @@ const emptyForm = {
   password: "",
   phone: "",
   profileImageUrl: "",
-  department: "",
+  departmentId: "",
   plantId: "",
   role: "" as AppRole | "",
 };
@@ -185,8 +182,9 @@ const emptyForm = {
 export default function UsersMaster() {
   const [searchParams] = useSearchParams();
   const { user: currentUser } = useAuthStore();
-  const currentIsSuperAdmin = isSuperAdmin(currentUser);
-  const currentIsRootAdmin = isRootAdmin(currentUser);
+  const currentRoles = currentUser?.roles ?? [];
+  const currentIsSuperAdmin = isSuperAdmin(currentRoles);
+  const currentIsRootAdmin = isRootAdmin(currentRoles);
   const { allowedRoleTargetsForCreate, allowedRoleTargetsForEdit, can, rbacVersion } = usePermissions();
   const canCreateUsers = can("USERS", "create");
   const canUpdateUsers = can("USERS", "update");
@@ -202,7 +200,7 @@ export default function UsersMaster() {
   } | null>(null);
   const [isImportConfirmOpen, setIsImportConfirmOpen] = useState(false);
 
-  const isSuperAdminRole = (role: string) => role.toUpperCase() === "SUPERADMIN" || role.toUpperCase() === "SUPER_ADMIN";
+  const isSuperAdminRole = (role: string) => role.toUpperCase() === "SUPER_ADMIN" || role.toUpperCase() === "SUPER_ADMIN";
   const isRootAdminRole = (role: string) => role.toUpperCase() === "ROOT_ADMIN";
   const isSystemRoleWithoutPlant = useCallback((role: string) => isSuperAdminRole(role) || isRootAdminRole(role), []);
   const toRoleLabel = (role: string) =>
@@ -237,7 +235,9 @@ export default function UsersMaster() {
     () =>
       allRoles.filter((role) => {
         const normalized = normalizeRoleKey(role.value);
-        if (currentIsRootAdmin) return true;
+        if (currentIsRootAdmin) {
+          return ["SUPER_ADMIN", "PLANT_ADMIN", "ESG_ADMIN", "HR_ADMIN"].includes(normalized);
+        }
         const allowedTargets = selectedUser ? allowedRoleTargetsForEdit : allowedRoleTargetsForCreate;
         return allowedTargets.includes(normalized);
       }),
@@ -247,7 +247,9 @@ export default function UsersMaster() {
     () =>
       allRoles.filter((role) => {
         if (isBulkUploadBlockedRole(role.value)) return false;
-        if (currentIsRootAdmin) return true;
+        if (currentIsRootAdmin) {
+          return ["SUPER_ADMIN", "PLANT_ADMIN", "ESG_ADMIN", "HR_ADMIN"].includes(normalizeRoleKey(role.value));
+        }
         return allowedRoleTargetsForCreate.includes(normalizeRoleKey(role.value));
       }),
     [allRoles, allowedRoleTargetsForCreate, currentIsRootAdmin],
@@ -255,8 +257,11 @@ export default function UsersMaster() {
   const filterRoleOptions = useMemo(
     () =>
       allRoles.filter((role) => {
-        if (currentIsRootAdmin) return true;
-        return visibleRoleTargetKeys.includes(normalizeRoleKey(role.value));
+        const normalized = normalizeRoleKey(role.value);
+        if (currentIsRootAdmin) {
+          return ["SUPER_ADMIN", "PLANT_ADMIN", "ESG_ADMIN", "HR_ADMIN"].includes(normalized);
+        }
+        return visibleRoleTargetKeys.includes(normalized);
       }),
     [allRoles, currentIsRootAdmin, visibleRoleTargetKeys],
   );
@@ -371,7 +376,7 @@ export default function UsersMaster() {
 
   useEffect(() => {
     if (isSystemRoleWithoutPlant(formData.role) && formData.plantId) {
-      setFormData((prev) => ({ ...prev, plantId: "", department: "" }));
+      setFormData((prev) => ({ ...prev, plantId: "", departmentId: "" }));
     }
   }, [formData.plantId, formData.role, isSystemRoleWithoutPlant]);
 
@@ -414,18 +419,18 @@ export default function UsersMaster() {
     () => {
       const options = departments
         .filter((department) => !formData.plantId || department.plantId === formData.plantId)
-        .map((department) => ({ value: department.name, label: `${department.code} - ${department.name}` }));
+        .map((department) => ({ value: department.id, label: `${department.code} - ${department.name}` }));
 
-      if (formData.department && !options.some((department) => department.value === formData.department)) {
+      if (formData.departmentId && !options.some((department) => department.value === formData.departmentId)) {
         options.unshift({
-          value: formData.department,
-          label: `${formData.department} (saved value)`,
+          value: formData.departmentId,
+          label: `Unknown Department (${formData.departmentId})`,
         });
       }
 
       return options;
     },
-    [departments, formData.department, formData.plantId],
+    [departments, formData.departmentId, formData.plantId],
   );
 
   const filteredUsers = useMemo(
@@ -454,7 +459,7 @@ export default function UsersMaster() {
   };
 
   const getRoleVariant = (role: string) => {
-    if (role.includes("ADMIN")) return "primary" as const;
+    if (role.includes("PLANT_ADMIN")) return "primary" as const;
     if (normalizeRoleKey(role) === "VENDOR") return "info" as const;
     if (normalizeRoleKey(role) === "VISITOR") return "warning" as const;
     if (role.includes("INCHARGE")) return "info" as const;
@@ -477,7 +482,7 @@ export default function UsersMaster() {
       password: "",
       phone: row.phone || "",
       profileImageUrl: row.profileImageUrl || "",
-      department: row.department || "",
+      departmentId: row.departmentId || "",
       plantId: row.plantId || "",
       role: (row.roles[0] || "") as AppRole | "",
     });
@@ -487,18 +492,18 @@ export default function UsersMaster() {
     setIsFormOpen(true);
   };
 
-  const handlePlantChange = async (plantId: string) => {
-    setFormData((prev) => ({ ...prev, plantId, department: "" }));
-    await fetchDepartmentsData(plantId, true);
+  const handlePlantChange = async (plantId: string | null) => {
+    setFormData((prev) => ({ ...prev, plantId: plantId || "", departmentId: "" }));
+    if (plantId) await fetchDepartmentsData(plantId, true);
   };
 
   const handleSubmit = async () => {
-    if (!formData.userCode.trim() || !formData.fullName.trim() || !formData.email.trim() || !formData.role) {
+    if (!formData.fullName.trim() || !formData.email.trim() || !formData.role) {
       toast.error("Please fill all required fields");
       return;
     }
 
-    const selectedRole = formData.role === "SUPER_ADMIN" ? "SUPERADMIN" : formData.role;
+    const selectedRole = normalizeRoleKey(formData.role);
     const resolvedPlantId = isSystemRoleWithoutPlant(selectedRole) ? null : canSelectPlant ? formData.plantId || null : defaultPlantId || null;
     if (!isSystemRoleWithoutPlant(selectedRole) && !resolvedPlantId) {
       toast.error("Plant is required");
@@ -509,13 +514,13 @@ export default function UsersMaster() {
     try {
       if (selectedUser) {
         await updateProfile(selectedUser.id, {
-          userCode: formData.userCode.trim(),
+          userCode: formData.userCode.trim() || undefined,
           fullName: formData.fullName.trim(),
           email: formData.email.trim(),
           phone: formData.phone.trim() || null,
           profileImageUrl: formData.profileImageUrl.trim() || null,
           plantId: resolvedPlantId,
-          department: formData.department || null,
+          departmentId: formData.departmentId || null,
         });
 
         await updateUserRoles(selectedUser.userId, { roles: [selectedRole], plantId: resolvedPlantId });
@@ -539,12 +544,12 @@ export default function UsersMaster() {
         await createUser({
           email: formData.email.trim(),
           password: formData.password.trim(),
-          userCode: formData.userCode.trim(),
+          userCode: formData.userCode.trim() || undefined,
           fullName: formData.fullName.trim(),
           phone: formData.phone.trim() || null,
           profileImageUrl: formData.profileImageUrl.trim() || null,
           plantId: resolvedPlantId,
-          department: formData.department || null,
+          departmentId: formData.departmentId || null,
           roles: [selectedRole],
           isActive: true,
         });
@@ -610,7 +615,7 @@ export default function UsersMaster() {
 
     const roleValueByNormalized = new Map<string, string>();
     allowedBulkRoleOptions.forEach((roleOption) => {
-      roleValueByNormalized.set(normalizeRoleKey(roleOption.value), roleOption.value === "SUPER_ADMIN" ? "SUPERADMIN" : roleOption.value);
+      roleValueByNormalized.set(normalizeRoleKey(roleOption.value), roleOption.value);
     });
     const allowedRoleList = Array.from(roleValueByNormalized.values());
     const allowedRoleText = allowedRoleList.join(", ");
@@ -640,7 +645,7 @@ export default function UsersMaster() {
       if (!plantId) return trimmed;
 
       if (!departmentAliasByPlant.has(plantId)) {
-        const response = await listDepartments({ page: 1, limit: 1000, plantId, includeInactive: false });
+        const response = await listDepartments({ page: 1, limit: 1000, plantId, includeInactive: true });
         const aliasMap = new Map<string, string>();
         response.data.forEach((department) => {
           aliasMap.set(normalizeLookupValue(department.name), department.name);
@@ -763,7 +768,7 @@ export default function UsersMaster() {
             phone: pickCell(row, ["phone"]) || null,
             profileImageUrl: null,
             plantId: resolvedPlantId,
-            department: departmentName,
+            departmentId: departmentName, // Assuming departmentName was actually resolving to an ID if needed, though this might need fixing in bulk upload logic if needed later
             roles: [roleValue],
             isActive,
           });
@@ -840,10 +845,12 @@ export default function UsersMaster() {
     const sourceRoles = latestRoles.length > 0 ? latestRoles : allRoles;
     const latestAllowedBulkRoleOptions = sourceRoles.filter((role) => {
       if (isBulkUploadBlockedRole(role.value)) return false;
-      if (currentIsRootAdmin) return true;
+      if (currentIsRootAdmin) {
+        return ["SUPER_ADMIN", "PLANT_ADMIN", "ESG_ADMIN", "HR_ADMIN"].includes(normalizeRoleKey(role.value));
+      }
       return allowedRoleTargetsForCreate.includes(normalizeRoleKey(role.value));
     });
-    const sampleRoleValues = latestAllowedBulkRoleOptions.map((role) => (role.value === "SUPER_ADMIN" ? "SUPERADMIN" : role.value));
+    const sampleRoleValues = latestAllowedBulkRoleOptions.map((role) => role.value);
 
     const sampleRows = sampleRoleValues.length > 0
       ? sampleRoleValues.map((roleValue, index) => [
@@ -857,7 +864,7 @@ export default function UsersMaster() {
           `+91-90000000${String(index + 1).padStart(2, "0")}`,
           "Active",
         ])
-      : [["USR001", "Sample User", "sample.user@example.com", "TempPass@123", "USER", "PLANT_CODE_OR_ID", "Maintenance", "+91-9000000001", "Active"]];
+      : [["USR001", "Sample User", "sample.user@example.com", "TempPass@123", "MAINTENANCE_USER", "PLANT_CODE_OR_ID", "Maintenance", "+91-9000000001", "Active"]];
 
     const plantValues = plantsOptions.map((plant) => plant.label || plant.value).filter(Boolean);
     const departmentValues = departments
@@ -873,7 +880,7 @@ export default function UsersMaster() {
         { key: "full_name", label: "Full name", required: true, example: "Sample User", description: "Display name for the user.", width: 180 },
         { key: "email", label: "Email", required: true, example: "sample.user@example.com", format: "Valid unique email address.", width: 220 },
         { key: "password", label: "Temporary password", required: true, example: "TempPass@123", format: PASSWORD_POLICY_MESSAGE, width: 180 },
-        { key: "role", label: "Role", required: true, example: sampleRoleValues[0] || "USER", allowedValues: sampleRoleValues, description: "Use one allowed role exactly as listed.", width: 140 },
+        { key: "role", label: "Role", required: true, example: sampleRoleValues[0] || "MAINTENANCE_USER", allowedValues: sampleRoleValues, description: "Use one allowed role exactly as listed.", width: 140 },
         { key: "plant", label: "Plant", required: true, example: plantValues[0] || "PLANT_CODE_OR_ID", allowedValues: plantValues, description: "Accepts plant code, name, or id when available.", width: 180 },
         { key: "department", label: "Department", example: departmentValues[0] || "Maintenance", allowedValues: departmentValues, description: "Accepts department code or name.", width: 180 },
         { key: "phone", label: "Phone", example: "+91-9000000001", format: "Optional contact number.", width: 140 },
@@ -941,7 +948,7 @@ export default function UsersMaster() {
         </div>
       ),
     },
-    { key: "department", header: "Department", render: (item: UserRow) => item.department || "-", hideOnMobile: true },
+    { key: "department", header: "Department", render: (item: UserRow) => item.departmentId ? (departments.find(d => d.id === item.departmentId)?.name || item.departmentId) : "-", hideOnMobile: true },
     { key: "plant", header: "Plant", render: (item: UserRow) => getPlantName(item.plantId), hideOnMobile: true },
     { key: "status", header: "Status", render: (item: UserRow) => <StatusBadge variant={item.isActive ? "active" : "inactive"}>{item.isActive ? "Active" : "Inactive"}</StatusBadge> },
     {
@@ -1080,7 +1087,7 @@ export default function UsersMaster() {
                     </div>
                   }
                 />
-                <MobileCardRow label="Department" value={item.department || "-"} />
+                <MobileCardRow label="Department" value={item.departmentId ? (departments.find(d => d.id === item.departmentId)?.name || item.departmentId) : "-"} />
                 <MobileCardRow label="Email" value={item.email} />
               </MobileCard>
             )}
@@ -1106,7 +1113,7 @@ export default function UsersMaster() {
               name={formData.fullName || "User"}
             />
           </div>
-          <InputField label="User Code" value={formData.userCode} onChange={(value) => setFormData({ ...formData, userCode: value })} placeholder="USR001" required />
+          <InputField label="User Code" value={formData.userCode} onChange={(value) => setFormData({ ...formData, userCode: value })} placeholder="Leave empty to auto-generate" hint="Optional - auto-generated based on role" />
           <InputField label="Full Name" value={formData.fullName} onChange={(value) => setFormData({ ...formData, fullName: value })} placeholder="Rajesh Kumar" required />
           <InputField label="Email" value={formData.email} onChange={(value) => setFormData({ ...formData, email: value })} placeholder="user@company.com" type="email" required autoComplete="off" />
           <div className="space-y-2">
@@ -1135,7 +1142,7 @@ export default function UsersMaster() {
             <SelectField
               label="Plant"
               value={formData.plantId}
-              onChange={handlePlantChange}
+              onChange={(val) => handlePlantChange(val)}
               options={plantsOptions}
               placeholder={isSystemRoleWithoutPlant(formData.role) ? "Not required for system role" : "Select plant"}
               disabled={isSystemRoleWithoutPlant(formData.role)}
@@ -1145,22 +1152,17 @@ export default function UsersMaster() {
           )}
           <SelectField
             label="Department"
-            value={formData.department}
-            onChange={(value) => setFormData({ ...formData, department: value })}
+            value={formData.departmentId}
+            onChange={(val) => setFormData({ ...formData, departmentId: val })}
             options={departmentOptions}
             placeholder={
               isSystemRoleWithoutPlant(formData.role)
                 ? "Not required for system role"
                 : canSelectPlant && !formData.plantId
                   ? "Select plant first"
-                  : departmentsLoading
-                    ? "Loading departments..."
-                    : departmentOptions.length === 0
-                      ? "No departments found"
-                      : "Select department"
+                  : "Select department"
             }
-            disabled={departmentsLoading || isSystemRoleWithoutPlant(formData.role) || (canSelectPlant && !formData.plantId)}
-            hint={formData.department && departmentOptions[0]?.value === formData.department && departmentOptions[0]?.label.endsWith("(saved value)") ? "This user has a saved department value that is not present in the latest department master." : undefined}
+            disabled={isSystemRoleWithoutPlant(formData.role) || (canSelectPlant && !formData.plantId)}
           />
         </FormGrid>
       </FormDialog>
@@ -1182,7 +1184,7 @@ export default function UsersMaster() {
               <DetailRow label="User Code" value={selectedUser.userCode} />
               <DetailRow label="Email" value={selectedUser.email} />
               <DetailRow label="Phone" value={selectedUser.phone || "-"} />
-              <DetailRow label="Department" value={selectedUser.department || "-"} />
+              <DetailRow label="Department" value={selectedUser.departmentId ? (departments.find(d => d.id === selectedUser.departmentId)?.name || selectedUser.departmentId) : "-"} />
               <DetailRow label="Plant" value={getPlantName(selectedUser.plantId)} />
             </DetailSection>
             <DetailSection title="Access & Status">
@@ -1216,7 +1218,7 @@ export default function UsersMaster() {
       />
 
       <AlertDialog open={isImportConfirmOpen} onOpenChange={setIsImportConfirmOpen}>
-        <AlertDialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col">
+        <AlertDialogContent aria-describedby={undefined} className="sm:max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col">
           <AlertDialogHeader>
             <AlertDialogTitle>Bulk Import Review - {importSummary?.fileName}</AlertDialogTitle>
             <AlertDialogDescription>

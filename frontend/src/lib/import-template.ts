@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { APP_TAGLINE } from "@/config/branding";
 
 export interface CsvTemplateColumn {
   key: string;
@@ -248,7 +249,7 @@ export async function downloadEnterpriseExcelTemplate(config: ExcelTemplateConfi
   });
 
   instrSheet.addRow([]);
-  const footerRow = instrSheet.addRow(["", "Powered by TamOptiX Technologies"]);
+  const footerRow = instrSheet.addRow(["", APP_TAGLINE]);
   footerRow.getCell(2).font = { italic: true, color: { argb: "FF94A3B8" }, size: 9 };
 
 

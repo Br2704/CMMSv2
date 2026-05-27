@@ -10,7 +10,7 @@ export interface UserProfile {
   email: string;
   phone: string | null;
   profileImageUrl?: string | null;
-  department: string | null;
+  departmentId: string | null;
   plantId: string | null;
   isActive: boolean;
   createdAt: string;
@@ -26,7 +26,7 @@ export interface CreateUserPayload {
   phone?: string | null;
   profileImageUrl?: string | null;
   userCode: string;
-  department?: string | null;
+  departmentId?: string | null;
   plantId?: string | null;
   isActive?: boolean;
   roles: string[];
@@ -37,7 +37,7 @@ export interface PatchUserPayload {
   fullName?: string;
   phone?: string | null;
   profileImageUrl?: string | null;
-  department?: string | null;
+  departmentId?: string | null;
   plantId?: string | null;
   isActive?: boolean;
   password?: string;
@@ -49,7 +49,7 @@ export interface PatchProfilePayload {
   email?: string;
   phone?: string | null;
   profileImageUrl?: string | null;
-  department?: string | null;
+  departmentId?: string | null;
   plantId?: string | null;
   isActive?: boolean;
 }

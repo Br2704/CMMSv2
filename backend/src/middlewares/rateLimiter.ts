@@ -14,8 +14,8 @@ function resolveAuthLoginKey(req: Request) {
   return `${resolveRateLimitKey(req)}:${email}`;
 }
 
-const skipE2E = (req: Request) =>
-  env.NODE_ENV !== 'production' && req.headers['x-test-suite'] === 'CMMS-E2E';
+const skipInNonProd = (req: Request) =>
+  env.DISABLE_RATE_LIMIT === true || req.headers['x-test-suite'] === 'CMMS-E2E';
 
 export const generalApiRateLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -23,7 +23,7 @@ export const generalApiRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipE2E,
+  skip: skipInNonProd,
   message: { success: false, message: 'Too many API requests' },
 });
 
@@ -33,7 +33,7 @@ export const mutatingApiRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => skipE2E(req) || ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase()),
+  skip: (req) => skipInNonProd(req) || ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase()),
   message: { success: false, message: 'Too many write requests' },
 });
 
@@ -43,7 +43,7 @@ export const authLoginRateLimiter = rateLimit({
   keyGenerator: resolveAuthLoginKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipE2E,
+  skip: skipInNonProd,
   message: { success: false, message: 'Too many login attempts. Please retry later.' },
 });
 
@@ -53,7 +53,7 @@ export const authRefreshRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipE2E,
+  skip: skipInNonProd,
   message: { success: false, message: 'Too many token refresh requests' },
 });
 
@@ -63,7 +63,7 @@ export const authLogoutRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipE2E,
+  skip: skipInNonProd,
   message: { success: false, message: 'Too many logout requests' },
 });
 
@@ -73,7 +73,7 @@ export const reportsRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipE2E,
+  skip: skipInNonProd,
   message: { success: false, message: 'Too many report requests' },
 });
 
@@ -83,7 +83,7 @@ export const exportsRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipE2E,
+  skip: skipInNonProd,
   message: { success: false, message: 'Too many export requests' },
 });
 
@@ -93,7 +93,7 @@ export const webappLogsRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipE2E,
+  skip: skipInNonProd,
   message: { success: false, message: 'Too many log requests' },
 });
 
@@ -103,7 +103,7 @@ export const heavyApiRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipE2E,
+  skip: skipInNonProd,
   message: { success: false, message: 'Too many data-intensive requests' },
 });
 
@@ -113,7 +113,7 @@ export const mailConfigRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipE2E,
+  skip: skipInNonProd,
   message: { success: false, message: 'Too many mail config requests. Slow down.' },
 });
 
@@ -123,7 +123,7 @@ export const mailTestRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipE2E,
+  skip: skipInNonProd,
   message: { success: false, message: 'Too many test emails. Please wait.' },
 });
 
@@ -133,7 +133,7 @@ export const authPasswordResetRateLimiter = rateLimit({
   keyGenerator: resolveRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: skipE2E,
+  skip: skipInNonProd,
   message: { success: false, message: 'Too many password reset requests. Please retry later.' },
 });
 

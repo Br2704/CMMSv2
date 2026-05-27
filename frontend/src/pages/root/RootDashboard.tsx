@@ -2,9 +2,11 @@ import { useEffect, useState, useMemo } from "react";
 import { Building2, Factory, Users2, PieChart as PieChartIcon, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { getGovernanceOverview, type GovernanceOverviewResponse } from "@/api/governance";
+import { getStoredAccessToken } from "@/api/http";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { useAuthStore } from "@/store/auth.store";
 import {
   BarChart,
   Bar,
@@ -24,8 +26,16 @@ const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#6366f1"
 export default function RootDashboard() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<GovernanceOverviewResponse | null>(null);
+  const { isFallbackMode } = useAuthStore();
+  const accessToken = getStoredAccessToken();
 
   useEffect(() => {
+    if (isFallbackMode || !accessToken) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+
     const load = async () => {
       setLoading(true);
       try {
@@ -38,7 +48,7 @@ export default function RootDashboard() {
       }
     };
     void load();
-  }, []);
+  }, [accessToken, isFallbackMode]);
 
   const chartData = useMemo(() => {
     if (!data?.recentlyCreatedOrganizations) return [];
@@ -66,6 +76,19 @@ export default function RootDashboard() {
         title="Governance Dashboard"
         subtitle="Operations control center for multi-organization rollout and access governance"
       />
+
+      {isFallbackMode && (
+        <Card className="mb-6 border-amber-500/30 bg-amber-500/10">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold text-amber-800 dark:text-amber-200">
+              Fallback Mode
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-amber-900/90 dark:text-amber-100/90">
+            Governance metrics are disabled in fallback login mode. Sign in with a real root-admin session to load live data.
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card className="shadow-card hover:shadow-md transition-shadow">

@@ -1,8 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { useAuthStore, isAdmin } from "@/store/auth.store";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuthStore } from "@/store/auth.store";
+import { isAdminLevel } from "@/lib/permission-engine";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Plus, Search, Edit, Trash2, Truck, Phone, Eye, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -13,8 +11,15 @@ import { DeleteConfirmDialog } from "@/components/shared/DeleteConfirmDialog";
 import { InputField, TextareaField } from "@/components/shared/FormField";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
-import { PageShell } from "@/components/layout/PageShell";
-import { createVendor, deleteVendor, listVendors, type Vendor, updateVendor } from "@/api/vendors";
+import { FormGrid } from "@/components/layout/FormGrid";
+import { DataTableShell } from "@/components/layout/DataTableShell";
+import { Toolbar } from "@/components/layout/Toolbar";
+import { EmptyState } from "@/components/app-shell/EmptyState";
+import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { createVendor, deleteVendor, listVendors, type Vendor, type VendorPayload, updateVendor } from "@/api/vendors";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface VendorFormState {
   code: string;
@@ -42,7 +47,7 @@ const emptyForm: VendorFormState = {
 
 export default function VendorsMaster() {
   const { user } = useAuthStore();
-  const canManage = isAdmin(user);
+  const canManage = isAdminLevel(user?.roles ?? []);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -54,7 +59,7 @@ export default function VendorsMaster() {
   const [formData, setFormData] = useState<VendorFormState>(emptyForm);
   const [isEditing, setIsEditing] = useState(false);
 
-  const fetchVendors = async () => {
+  const fetchVendors = useCallback(async () => {
     setLoading(true);
     try {
       const response = await listVendors({ page: 1, limit: 1000, search: searchQuery || undefined });
@@ -64,11 +69,11 @@ export default function VendorsMaster() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchQuery]);
 
   useEffect(() => {
     fetchVendors();
-  }, [searchQuery]);
+  }, [fetchVendors]);
 
   const filtered = useMemo(() => vendors, [vendors]);
 
@@ -97,15 +102,16 @@ export default function VendorsMaster() {
   };
 
   const handleSubmit = async () => {
-    if (!formData.code.trim() || !formData.name.trim()) {
-      toast.error("Code and name are required");
+    if (!formData.name.trim()) {
+      toast.error("Name is required");
       return;
     }
 
     setSaving(true);
     try {
-      const payload = {
-        code: formData.code.trim(),
+      const code = formData.code.trim();
+      const payload: VendorPayload = {
+        code: code || 'N/A',
         name: formData.name.trim(),
         contactPerson: formData.contactPerson.trim() || null,
         email: formData.email.trim() || null,
@@ -179,58 +185,64 @@ export default function VendorsMaster() {
 
   return (    <PageShell>
       <BackButton />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight lg:text-3xl">Vendor Master</h1>
-          <p className="text-sm text-muted-foreground">Manage vendors and suppliers</p>
-        </div>
-        {canManage && (
-          <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
-            <Plus className="h-4 w-4" />
-            Add Vendor
-          </Button>
+      <PageHeader
+        title="Vendor Master"
+        subtitle="Manage vendors and suppliers"
+        actions={
+          canManage && (
+            <Button onClick={handleAdd} className="gap-2 gradient-primary text-primary-foreground shadow-glow w-full sm:w-auto">
+              <Plus className="h-4 w-4" />
+              Add Vendor
+            </Button>
+          )
+        }
+      />
+      <DataTableShell
+        title={
+          <span className="flex items-center gap-2">
+            <Truck className="h-5 w-5 text-primary" />
+            Vendors ({filtered.length})
+          </span>
+        }
+        toolbar={
+          <Toolbar
+            right={
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input id="vendor-search" name="vendorSearch" placeholder="Search vendors..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
+              </div>
+            }
+          />
+        }
+      >
+        {loading ? (
+          <TableSkeleton />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            title="No vendors found"
+            description="Create a vendor to start managing suppliers."
+            actionLabel={canManage ? "Add Vendor" : undefined}
+            onAction={canManage ? handleAdd : undefined}
+          />
+        ) : (
+          <ResponsiveTable
+            data={filtered}
+            columns={columns}
+            keyExtractor={(item: Vendor) => item.id}
+            mobileCard={(item: Vendor) => (
+              <MobileCard onView={() => { setSelectedVendor(item); setIsViewOpen(true); }} onEdit={canManage ? () => handleEdit(item) : undefined} onDelete={canManage ? () => { setSelectedVendor(item); setIsDeleteOpen(true); } : undefined}>
+                <MobileCardHeader title={item.code} subtitle={item.name} badge={<StatusBadge variant={item.isActive ? "active" : "inactive"}>{item.isActive ? "Active" : "Inactive"}</StatusBadge>} />
+                <MobileCardRow label="Category" value={item.category || "-"} />
+                <MobileCardRow label="Contact" value={item.contactPerson || "-"} />
+              </MobileCard>
+            )}
+          />
         )}
-      </div>
-      <Card className="shadow-card">
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-base sm:text-lg font-semibold flex items-center gap-2">
-              <Truck className="h-5 w-5 text-primary" />
-              Vendors ({filtered.length})
-            </CardTitle>
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input id="vendor-search" name="vendorSearch" placeholder="Search vendors..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} className="h-10 pl-9" />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">No vendors found.</div>
-          ) : (
-            <ResponsiveTable
-              data={filtered}
-              columns={columns}
-              keyExtractor={(item: Vendor) => item.id}
-              mobileCard={(item: Vendor) => (
-                <MobileCard onView={() => { setSelectedVendor(item); setIsViewOpen(true); }} onEdit={canManage ? () => handleEdit(item) : undefined} onDelete={canManage ? () => { setSelectedVendor(item); setIsDeleteOpen(true); } : undefined}>
-                  <MobileCardHeader title={item.code} subtitle={item.name} badge={<StatusBadge variant={item.isActive ? "active" : "inactive"}>{item.isActive ? "Active" : "Inactive"}</StatusBadge>} />
-                  <MobileCardRow label="Category" value={item.category || "-"} />
-                  <MobileCardRow label="Contact" value={item.contactPerson || "-"} />
-                </MobileCard>
-              )}
-            />
-          )}
-        </CardContent>
-      </Card>
+      </DataTableShell>
 
-      <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title={isEditing ? "Edit Vendor" : "Add New Vendor"} description={isEditing ? "Update vendor" : "Add a new vendor"} onSubmit={handleSubmit} submitLabel={saving ? "Saving..." : isEditing ? "Update" : "Add Vendor"} size="lg">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <InputField label="Code" value={formData.code} onChange={(value) => setFormData({ ...formData, code: value })} placeholder="VND-001" required />
+      <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title={isEditing ? "Edit Vendor" : "Add New Vendor"} description={isEditing ? "Update vendor" : "Add a new vendor"} onSubmit={handleSubmit} submitLabel={saving ? "Saving..." : isEditing ? "Update" : "Add Vendor"} isLoading={saving} size="lg">
+        <FormGrid>
+          <InputField label="Code" value={formData.code} onChange={(value) => setFormData({ ...formData, code: value })} placeholder="Leave empty to auto-generate" hint="Optional - auto-generated if left blank" />
           <InputField label="Name" value={formData.name} onChange={(value) => setFormData({ ...formData, name: value })} placeholder="SKF Bearings" required />
           <InputField label="Category" value={formData.category} onChange={(value) => setFormData({ ...formData, category: value })} placeholder="Bearings" />
           <InputField label="Contact Person" value={formData.contactPerson} onChange={(value) => setFormData({ ...formData, contactPerson: value })} placeholder="Name" />
@@ -238,7 +250,7 @@ export default function VendorsMaster() {
           <InputField label="Email" value={formData.email} onChange={(value) => setFormData({ ...formData, email: value })} type="email" />
           <InputField label="GST Number" value={formData.gstNumber} onChange={(value) => setFormData({ ...formData, gstNumber: value })} />
           <TextareaField label="Address" value={formData.address} onChange={(value) => setFormData({ ...formData, address: value })} className="sm:col-span-2" />
-        </div>
+        </FormGrid>
       </FormDialog>
 
       <ViewDialog open={isViewOpen} onOpenChange={setIsViewOpen} title={selectedVendor?.name || ""} subtitle={selectedVendor?.code}>
