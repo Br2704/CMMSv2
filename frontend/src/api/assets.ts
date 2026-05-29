@@ -281,18 +281,14 @@ export function deleteAssetEnergyMeterConfig(id: string, configId: string) {
 }
 
 export async function downloadAssetLogbook(id: string, assetCode: string): Promise<void> {
-  const token = localStorage.getItem("auth_token");
-  const response = await fetch(`/api/assets/${id}/logbook`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!response.ok) throw new Error("Failed to download logbook");
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
+  const { httpDownload } = await import("@/api/http");
+  const blob = await httpDownload(`/assets/${id}/logbook`);
+  const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `logbook_${assetCode}_${new Date().toISOString().slice(0, 10)}.xls`;
+  a.download = `logbook_${assetCode}_${new Date().toISOString().slice(0, 10)}.pdf`;
   document.body.appendChild(a);
   a.click();
+  window.URL.revokeObjectURL(url);
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }

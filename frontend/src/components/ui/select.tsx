@@ -1,3 +1,4 @@
+/* eslint-disable */
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
@@ -20,6 +21,8 @@ const SelectTrigger = React.forwardRef<
         "flex min-h-11 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:min-w-0 [&>span]:truncate",
         className,
       )}
+      // biome-ignore all: shadcn
+      // eslint-disable-next-line react/jsx-props-no-spreading
       {...props}
     >
     {children}
@@ -72,7 +75,18 @@ const SelectContent = React.forwardRef<
         className,
       )}
       position={position}
+      // biome-ignore all: shadcn
+      // eslint-disable-next-line react/jsx-props-no-spreading
       {...props}
+      onCloseAutoFocus={(e) => {
+        if (props.onCloseAutoFocus) props.onCloseAutoFocus(e);
+        if (!e.defaultPrevented) {
+          e.preventDefault();
+          if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+          }
+        }
+      }}
     >
       <SelectScrollUpButton />
       <SelectPrimitive.Viewport

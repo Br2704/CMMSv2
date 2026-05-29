@@ -19,6 +19,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { ViewDialog } from "@/components/shared/ViewDialog";
+import { AssetLogbookDialog } from "@/components/shared/AssetLogbookDialog";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { parseQrContent } from "@/mobile/qr";
 import { toast } from "sonner";
@@ -60,12 +61,14 @@ function AssetOverviewPanel({
   qrImageUrl,
   qrLoading,
   onRaiseWorkOrder,
+  onOpenLogbook,
 }: {
   overview: AssetOverview;
   qrData: AssetQrData | null;
   qrImageUrl: string | null;
   qrLoading: boolean;
   onRaiseWorkOrder: () => void;
+  onOpenLogbook: () => void;
 }) {
   const reliability = overview.analytics.reliability;
   const resolverUrl = qrData?.publicResolverUrl || "";
@@ -162,11 +165,7 @@ function AssetOverviewPanel({
                   </Button>
                   <Button variant="outline" className="h-14 rounded-2xl flex-row gap-2 border-slate-100" onClick={() => {
                     if (!overview?.asset?.id) return;
-                    toast.promise(downloadAssetLogbook(overview.asset.id, overview.asset.code), {
-                      loading: "Generating logbook...",
-                      success: "Logbook downloaded",
-                      error: "Failed to download logbook",
-                    });
+                    onOpenLogbook();
                   }}>
                     <History className="h-4 w-4" />
                     <span className="text-[10px] font-black uppercase">Logbook</span>
@@ -349,6 +348,8 @@ export default function Assets() {
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [resolvingQr, setResolvingQr] = useState(false);
+  const [isLogbookOpen, setIsLogbookOpen] = useState(false);
+  const [logbookAssetInfo, setLogbookAssetInfo] = useState<{id: string; code: string; name: string} | null>(null);
   const assetIdFromQuery = searchParams.get("assetId");
   const queryOpenHandledRef = useRef<string | null>(null);
   const lastAssetRefreshRef = useRef<{ assetId: string; at: number } | null>(null);
@@ -977,6 +978,14 @@ export default function Assets() {
             qrImageUrl={assetQrImageUrl}
             qrLoading={assetQrQuery.isLoading || assetQrQuery.isFetching}
             onRaiseWorkOrder={handleRaiseWorkOrder}
+            onOpenLogbook={() => {
+              setLogbookAssetInfo({
+                id: selectedAsset.id,
+                code: selectedAsset.code,
+                name: selectedAsset.name
+              });
+              setIsLogbookOpen(true);
+            }}
           />
         ) : selectedAsset ? (
           <div className="rounded-[2.5rem] border-2 border-dashed border-slate-100 p-20 text-center">
@@ -984,6 +993,16 @@ export default function Assets() {
           </div>
         ) : null}
       </ViewDialog>
+
+      {logbookAssetInfo && (
+        <AssetLogbookDialog
+          open={isLogbookOpen}
+          onOpenChange={setIsLogbookOpen}
+          assetId={logbookAssetInfo.id}
+          assetCode={logbookAssetInfo.code}
+          assetName={logbookAssetInfo.name}
+        />
+      )}
     </PageShell>
   );
 }

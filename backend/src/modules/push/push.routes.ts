@@ -6,6 +6,7 @@ import { PushSubscriptionEntity } from '../../database/entities/push-subscriptio
 import { UserEntity } from '../../database/entities/user.entity';
 import { requireAuth } from '../../middlewares/authMiddleware';
 import { ok } from '../../utils/apiResponse';
+import * as webPush from 'web-push';
 
 export const pushRouter = Router();
 
@@ -18,7 +19,6 @@ function resolveVapidConfiguration(): { publicKey: string; privateKey: string } 
     return { publicKey, privateKey };
   }
   if (!devVapidConfig) {
-    const webPush = require('web-push');
     devVapidConfig = webPush.generateVAPIDKeys();
   }
   return devVapidConfig;
@@ -102,7 +102,6 @@ export async function sendPushNotification(userId: string, title: string, body: 
     if (!vapidConfig) {
       return;
     }
-    const webPush = require('web-push');
     webPush.setVapidDetails(
       'mailto:admin@cmms.local',
       vapidConfig.publicKey,

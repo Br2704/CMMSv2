@@ -27,7 +27,7 @@ export class CrudService {
       return fromCamel;
     }
     if (this.config.plantColumn) {
-      return input[this.config.plantColumn] as string | null | undefined;
+      return Reflect.get(input, this.config.plantColumn) as string | null | undefined;
     }
     return undefined;
   }
@@ -43,7 +43,7 @@ export class CrudService {
       notFound(`${this.config.moduleName} record not found`);
     }
     if (this.config.plantColumn) {
-      enforcePlantScope(auth, (row[this.config.plantColumn] as string | null | undefined) ?? null);
+      enforcePlantScope(auth, (Reflect.get(row, this.config.plantColumn) as string | null | undefined) ?? null);
     }
     return row;
   }
@@ -54,7 +54,7 @@ export class CrudService {
       enforcePlantScope(auth, scopedPlantId);
       if (scopedPlantId !== null) {
         input.plantId = scopedPlantId;
-        input[this.config.plantColumn] = scopedPlantId;
+        Reflect.set(input, this.config.plantColumn, scopedPlantId);
       }
     }
 
@@ -104,19 +104,19 @@ export class CrudService {
     if (this.config.plantColumn) {
       const scopedPlantId = resolveScopedPlantId(
         auth,
-        this.resolvePlantValue(input) ?? (existing[this.config.plantColumn] as string | null | undefined),
+        this.resolvePlantValue(input) ?? (Reflect.get(existing, this.config.plantColumn) as string | null | undefined),
       );
       enforcePlantScope(auth, scopedPlantId);
       if (scopedPlantId !== null) {
         input.plantId = scopedPlantId;
-        input[this.config.plantColumn] = scopedPlantId;
+        Reflect.set(input, this.config.plantColumn, scopedPlantId);
       }
     }
 
     if (this.config.codeColumn) {
       const incomingCode = resolvePayloadCode({ tableName: this.config.tableName, codeColumn: this.config.codeColumn, input });
       if (incomingCode) {
-        const plantId = this.resolvePlantValue(input) ?? (existing[this.config.plantColumn ?? ''] as string | null | undefined) ?? null;
+        const plantId = this.resolvePlantValue(input) ?? (Reflect.get(existing, this.config.plantColumn ?? '') as string | null | undefined) ?? null;
         const organizationId = auth.organizationId ?? null;
         const exists = await ensureUniqueCode({
           tableName: this.config.tableName,

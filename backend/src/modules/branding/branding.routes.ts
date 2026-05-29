@@ -47,16 +47,18 @@ function normalizeThemeColor(value: string | null | undefined) {
   return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed : DEFAULT_THEME_COLOR;
 }
 
-function getDefaultBrandingAsset(kind: 'logo' | 'favicon', size: number) {
-  if (kind === 'favicon') {
-    return '/tamoptix/tamoptix-favicon.svg';
-  }
-  return size >= 512 ? '/tamoptix/tamoptix-logo.png' : '/tamoptix/tamoptix-logo.svg';
-}
 
 async function sendDefaultAsset(res: Response, kind: 'logo' | 'favicon', size: number) {
   res.setHeader('Cache-Control', 'public, max-age=300');
-  res.redirect(getDefaultBrandingAsset(kind, size));
+  if (kind === 'favicon') {
+    res.redirect('/tamoptix/tamoptix-favicon.svg');
+    return;
+  }
+  if (size >= 512) {
+    res.redirect('/tamoptix/tamoptix-logo.png');
+    return;
+  }
+  res.redirect('/tamoptix/tamoptix-logo.svg');
 }
 
 function getBrandingAssetUrl(kind: 'logo' | 'favicon', organizationId: string | null, version: number, size: number) {
@@ -173,12 +175,12 @@ async function sendOrganizationAsset(
         await sendDefaultAsset(res, kind, size);
         return;
       }
+      res.redirect(parsed.href);
+      return;
     } catch {
       await sendDefaultAsset(res, kind, size);
       return;
     }
-    res.redirect(rawAsset);
-    return;
   }
 
   if (rawAsset.startsWith('/')) {
@@ -186,7 +188,12 @@ async function sendOrganizationAsset(
       await sendDefaultAsset(res, kind, size);
       return;
     }
-    res.redirect(rawAsset);
+    try {
+      const safePath = new URL(rawAsset, 'http://localhost').pathname;
+      res.redirect(safePath);
+    } catch {
+      await sendDefaultAsset(res, kind, size);
+    }
     return;
   }
 

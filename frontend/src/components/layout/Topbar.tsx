@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Factory } from "lucide-react";
-import { useAuthStore } from "@/store/auth.store";
+import { useAuthStore, fetchUserProfile } from "@/store/auth.store";
 import { isRootAdmin, isSuperAdmin } from "@/lib/permission-engine";
 import { SidebarToggle } from "./Sidebar";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import { ViewDialog, DetailRow, DetailSection } from "@/components/shared/ViewDi
 import { ProfileEditDialog } from "@/components/shared/ProfileEditDialog";
 import { toast } from "sonner";
 import { UserCog } from "lucide-react";
+import { useEffect } from "react";
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -28,7 +29,7 @@ interface TopbarProps {
 }
 
 export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
-  const { user, logout, activePlantCode, activePlantName, isFallbackMode } = useAuthStore();
+  const { user, setUser, logout, activePlantCode, activePlantName, isFallbackMode } = useAuthStore();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -45,6 +46,14 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
   const badgeSubtitle = showOrganizationBadge ? null : activePlantName;
   const notificationsSubtitle =
     notifications.length === 0 ? APP_TAGLINE : `${unreadCount} unread of ${notifications.length}`;
+
+  useEffect(() => {
+    if (isProfileOpen && user?.id) {
+      fetchUserProfile().then((freshUser) => {
+        if (freshUser) setUser(freshUser);
+      });
+    }
+  }, [isProfileOpen, user?.id, setUser]);
 
   const getInitials = (name: string | undefined | null) => {
     if (!name) return "U";
@@ -148,7 +157,7 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
       <Sheet open={isMobileSearchOpen} onOpenChange={setIsMobileSearchOpen}>
         <SheetContent side="top" className="h-auto p-4">
           <SheetHeader className="mb-3">
-            <SheetTitle className="text-lg">Search</SheetTitle>
+            <SheetTitle className="text-lg">{String("Search")}</SheetTitle>
           </SheetHeader>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -205,12 +214,12 @@ export function Topbar({ onMenuClick, sidebarCollapsed }: TopbarProps) {
                   {notificationsLoading ? (
                     <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
                       <Bell className="mb-2 h-8 w-8 opacity-30" />
-                      <p className="text-sm">Loading notifications...</p>
+                      <p className="text-sm">{String("Loading notifications...")}</p>
                     </div>
                   ) : notifications.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
                       <Bell className="mb-2 h-8 w-8 opacity-30" />
-                      <p className="text-sm">No notifications yet</p>
+                      <p className="text-sm">{String("No notifications yet")}</p>
                     </div>
                   ) : (
                     notifications.map((notif) => (

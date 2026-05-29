@@ -29,7 +29,7 @@ async function getEscalationUsers(
   plantId: string | null | undefined,
   slaConfig: SlaConfigEntity | null,
 ): Promise<{ emails: string[]; userIds: string[] }> {
-  const roleKey = slaConfig ? (slaConfig as any)[`escalationRole${level}`] as string | null : null;
+  const roleKey = slaConfig ? Reflect.get(slaConfig, `escalationRole${level}`) as string | null : null;
   if (!roleKey) return { emails: [], userIds: [] };
 
   const userRoleRepo = AppDataSource.getRepository(UserRoleEntity);

@@ -30,6 +30,12 @@ export function ViewDialog({
     <Dialog open={open} onOpenChange={onOpenChange} modal={modal}>
       <DialogContent 
         className={`sm:max-w-[600px] w-full p-0 flex flex-col ${contentClassName || ""}`}
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+          }
+        }}
       >
         <div className="flex flex-col flex-1 min-h-0">
           <DialogHeader className="px-4 sm:px-6 py-4 border-b shrink-0">

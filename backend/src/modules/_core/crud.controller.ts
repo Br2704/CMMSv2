@@ -20,11 +20,8 @@ function toCamelCase<T>(value: T): T {
 
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>;
-    const transformed: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(record)) {
-      transformed[toCamelKey(key)] = toCamelCase(item);
-    }
-    return transformed as T;
+    const entries = Object.entries(record).map(([key, item]) => [toCamelKey(key), toCamelCase(item)]);
+    return Object.fromEntries(entries) as T;
   }
 
   return value;

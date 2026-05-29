@@ -15,12 +15,9 @@ function toSnakeKey(input: string): string {
     .toLowerCase();
 }
 
-function normalizeKeys(input: GenericRecord): GenericRecord {
-  const result: GenericRecord = {};
-  for (const [key, value] of Object.entries(input)) {
-    result[toSnakeKey(key)] = value;
-  }
-  return result;
+function normalizeKeys(input: Record<string, unknown>): Record<string, unknown> {
+  const entries = Object.entries(input).map(([key, value]) => [toSnakeKey(key), value]);
+  return Object.fromEntries(entries);
 }
 
 function sanitizePayload(input: GenericRecord): GenericRecord {

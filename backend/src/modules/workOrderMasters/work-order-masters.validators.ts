@@ -12,11 +12,8 @@ function normalizeObjectKeys(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return value;
   }
-  const result: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    result[toSnakeKey(key)] = item;
-  }
-  return result;
+  const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => [toSnakeKey(key), item]);
+  return Object.fromEntries(entries);
 }
 
 const nullableTrimmedString = z.preprocess((value) => {

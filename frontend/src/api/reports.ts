@@ -152,7 +152,7 @@ export async function downloadAdvancedReliabilityReport(
   const anchor = document.createElement("a");
   anchor.href = url;
   const date = new Date().toISOString().slice(0, 10);
-  const extension = format === "excel" ? "xls" : format;
+  const extension = format === "excel" ? "xlsx" : format;
   anchor.download = `machine-reliability-${date}.${extension}`;
   anchor.click();
   URL.revokeObjectURL(url);

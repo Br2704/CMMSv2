@@ -71,7 +71,13 @@ export function ProfileEditDialog({ open, onOpenChange }: ProfileEditDialogProps
     try {
       const response = await updateProfile(profileData);
       if (response.success) {
-        setUser({ ...user!, ...response.data.user, profileImageUrl: response.data.profile.profileImageUrl });
+        setUser({ 
+          ...user!, 
+          ...response.data.user, 
+          fullName: response.data.profile.fullName ?? user?.fullName,
+          phone: response.data.profile.phone ?? user?.phone,
+          profileImageUrl: response.data.profile.profileImageUrl 
+        });
         toast.success("Profile updated successfully");
         onOpenChange(false);
       }
@@ -208,7 +214,7 @@ export function ProfileEditDialog({ open, onOpenChange }: ProfileEditDialogProps
 
         <TabsContent value="notifications" className="space-y-4 py-2 max-h-[380px] overflow-y-auto pr-2">
           <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b pb-1">Channels</h4>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b pb-1">{String("Channels")}</h4>
             <SwitchField
               label="In-App Notifications"
               checked={notifData.inAppNotifications ?? true}
@@ -230,7 +236,7 @@ export function ProfileEditDialog({ open, onOpenChange }: ProfileEditDialogProps
           </div>
 
           <div className="space-y-3 pt-2">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b pb-1">Preferences</h4>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b pb-1">{String("Preferences")}</h4>
             <SwitchField
               label="New Work Order Raised"
               checked={notifData.newWoEmail ?? true}
@@ -258,7 +264,7 @@ export function ProfileEditDialog({ open, onOpenChange }: ProfileEditDialogProps
           </div>
 
           <div className="space-y-3 pt-2">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b pb-1">Quiet Hours</h4>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b pb-1">{String("Quiet Hours")}</h4>
             <div className="grid grid-cols-2 gap-4">
               <InputField
                 label="Quiet Hours Start"

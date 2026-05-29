@@ -24,6 +24,10 @@ import {
   acceptWorkOrderSchema,
   workOrderActivitySchema,
   bulkUpdateSchema,
+  verifyWorkOrderSchema,
+  handoverWorkOrderSchema,
+  acknowledgeHandoverSchema,
+  holdWorkOrderSchema,
 } from './workorders.validators';
 
 const crudRouter = createCrudRouter(
@@ -146,6 +150,20 @@ workordersRouter.post(
   },
 );
 
+workordersRouter.post(
+  '/work-orders/:id/hold',
+  requirePermission('WORK_ORDERS', 'UPDATE'),
+  validateRequest({ params: idParamSchema, body: holdWorkOrderSchema }),
+  async (req, res, next) => {
+    try {
+      const record = await workordersService.holdWorkOrder(req.params.id, req.body as Record<string, unknown>, req.auth!);
+      res.json(ok(record, 'Work order placed on hold'));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 workordersRouter.use(crudRouter);
 
 workordersRouter.post(
@@ -246,4 +264,47 @@ workordersRouter.post(
     }
   },
 );
+
+workordersRouter.post(
+  '/work-orders/:id/verify',
+  requirePermission('WORK_ORDERS', 'UPDATE'),
+  validateRequest({ params: idParamSchema, body: verifyWorkOrderSchema }),
+  async (req, res, next) => {
+    try {
+      const record = await workordersService.verifyWorkOrder(req.params.id, req.body as Record<string, unknown>, req.auth!);
+      res.json(ok(record, 'Work order verification processed'));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+workordersRouter.post(
+  '/work-orders/:id/handover',
+  requirePermission('WORK_ORDERS', 'UPDATE'),
+  validateRequest({ params: idParamSchema, body: handoverWorkOrderSchema }),
+  async (req, res, next) => {
+    try {
+      const record = await workordersService.handoverWorkOrder(req.params.id, req.body as Record<string, unknown>, req.auth!);
+      res.json(ok(record, 'Work order handed over'));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+workordersRouter.post(
+  '/work-orders/:id/handover/acknowledge',
+  requirePermission('WORK_ORDERS', 'UPDATE'),
+  validateRequest({ params: idParamSchema, body: acknowledgeHandoverSchema }),
+  async (req, res, next) => {
+    try {
+      const record = await workordersService.acknowledgeHandover(req.params.id, req.body as Record<string, unknown>, req.auth!);
+      res.json(ok(record, 'Work order handover acknowledged'));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 

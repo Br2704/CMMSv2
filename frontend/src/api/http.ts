@@ -666,3 +666,54 @@ export async function httpRequest<T>(
 
   return parsed;
 }
+
+export async function httpDownload(
+  path: string,
+  init: RequestInit = {}
+): Promise<Blob> {
+  if (isUnauthorizedActive()) {
+    throw new ApiError(401, "Session expired. Please sign in again.", null);
+  }
+
+  const url = `${API_BASE_URL}${path}`;
+  const headers = new Headers(init.headers);
+  headers.set("Cache-Control", "no-cache");
+  headers.set("Pragma", "no-cache");
+  headers.set("X-Device-Id", getDeviceId());
+
+  const accessToken = getStoredAccessToken();
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+
+  try {
+    const response = await fetch(url, {
+      ...init,
+      headers,
+      credentials: "include",
+      cache: "no-store",
+    });
+
+    if (response.status === 401) {
+      await handleUnauthorized();
+      throw new ApiError(401, "Session expired. Please sign in again.", null);
+    }
+
+    if (!response.ok) {
+      const payload = await parseResponse<unknown>(response).catch(() => null);
+      const message = getPayloadMessage(payload) || `Request failed with status ${response.status}`;
+      throw new ApiError(response.status, message, payload);
+    }
+
+    return await response.blob();
+  } catch (fetchError) {
+    if (fetchError instanceof ApiError) {
+      throw fetchError;
+    }
+    const message = fetchError instanceof TypeError
+      ? "Unable to reach the server. Please check your connection or try again later."
+      : `Network error: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`;
+    throw new ApiError(0, message, null);
+  }
+}
+

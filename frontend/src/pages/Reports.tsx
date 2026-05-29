@@ -10,24 +10,30 @@ import {
   ChevronDown, Filter, X
 } from "lucide-react";
 import { toast } from "sonner";
-import { SelectField } from "@/components/shared/FormField";
+import { SelectField, InputField } from "@/components/shared/FormField";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dbClient } from "@/api/dbClient";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { downloadAdvancedReliabilityReport, getAdvancedReliabilityReport } from "@/api/reports";
 import { listWorkOrderMasters, type WorkOrderMaster } from "@/api/workOrderMasters";
 import { listMaintenanceReports } from "@/api/maintenance-reports";
+import { listProfiles, listUsers, type UserProfile } from "@/api/users";
 import { subscribeWorkOrderSync } from "@/lib/work-order-sync";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, LineChart, Line, AreaChart, Area
 } from "recharts";
 import { format, subDays, eachDayOfInterval, differenceInMinutes, parseISO } from "date-fns";
+import ExcelJS from "exceljs";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { ParetoChart } from "@/components/dashboard/Charts";
 import { hoursToMinutes } from "@/lib/time";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { APP_COMPANY, APP_FAVICON_PNG, APP_LOGO_PNG, APP_NAME } from "@/config/branding";
+import { useAuthStore } from "@/store/auth.store";
+import { getStoredAccessToken } from "@/api/http";
+import { useBrandingStore } from "@/store/branding.store";
 
 const COLORS = [
   "hsl(var(--primary))", "hsl(var(--chart-2))", "hsl(var(--chart-3))",
@@ -135,24 +141,326 @@ function FilterBar({ filters, onReset }: {
   );
 }
 
-// CSV export helper
-function downloadCSV(filename: string, headers: string[], rows: string[][]) {
-  const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-  toast.success(`Exported ${rows.length} records`);
+type ExcelSheetData = {
+  name: string;
+  title: string;
+  subtitle?: string;
+  dateRange?: { from: string; to: string };
+  organizationLabel?: string;
+  organizationLogoUrl?: string | null;
+  footerLogoUrl?: string | null;
+  footerBrandText?: string;
+  headers: string[];
+  rows: Array<Array<string | number | null | undefined>>;
+};
+
+const WRAP_HEADER_HINTS = ["description", "remarks", "root cause", "problem", "action", "location", "asset", "department", "vendor", "name"];
+
+function colLetter(index: number) {
+  let col = "";
+  let n = index;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    col = String.fromCharCode(65 + rem) + col;
+    n = Math.floor((n - 1) / 26);
+  }
+  return col;
 }
 
-const esc = (v: string | null | undefined) => `"${(v || "").replace(/"/g, '""')}"`;
+function bufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+async function fetchImageBase64(url: string | null | undefined): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const token = getStoredAccessToken();
+    const response = await fetch(url, {
+      credentials: "include",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!response.ok) return null;
+    const buffer = await response.arrayBuffer();
+    return bufferToBase64(buffer);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeAssetUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = String(url).trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("/")) return trimmed;
+  return `/${trimmed}`;
+}
+
+function resolveOrganizationLogoUrl(organizationName: string | null | undefined, organizationCode: string | null | undefined, preferredUrl: string | null | undefined) {
+  const normalizedUrl = normalizeAssetUrl(preferredUrl);
+  if (normalizedUrl && !normalizedUrl.toLowerCase().endsWith(".svg")) {
+    return normalizedUrl;
+  }
+
+  const orgCode = (organizationCode || "").toLowerCase();
+  const orgName = (organizationName || "").toLowerCase();
+
+  if (orgCode.includes("jk") || orgName.includes("jk fenner") || orgName.includes("jkfenner")) {
+    return "/jkfenner/jkfenner-logo.png";
+  }
+
+  return APP_LOGO_PNG;
+}
+
+async function downloadStyledExcelWorkbook(filename: string, sheets: ExcelSheetData[]) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = APP_COMPANY;
+  workbook.lastModifiedBy = APP_NAME;
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  const footerLogoCache = new Map<string, number>();
+
+  const generatedAt = format(new Date(), "dd MMM yyyy HH:mm");
+  const footerText = "OptiX Maintenance Pro developed by TamOptiX Technologies";
+
+  for (const sheetData of sheets) {
+    const sheet = workbook.addWorksheet(sheetData.name);
+    sheet.views = [{ state: "frozen", ySplit: 5 }];
+    const colCount = Math.max(sheetData.headers.length, 1);
+    const lastCol = colLetter(colCount);
+    const titleStartCol = Math.min(3, colCount);
+    const titleEndCol = Math.max(titleStartCol, Math.min(colCount - 2, 9));
+    const rightStartCol = Math.max(titleEndCol + 1, Math.ceil(colCount * 0.75));
+    const rightRangeStart = Math.min(Math.max(rightStartCol, 1), colCount);
+    const rightRange = `${colLetter(rightRangeStart)}1:${lastCol}2`;
+
+    const orgLogoBase64 = await fetchImageBase64(sheetData.organizationLogoUrl || APP_LOGO_PNG);
+    const orgLogoImageId = orgLogoBase64 ? workbook.addImage({ base64: orgLogoBase64, extension: "png" }) : null;
+
+    if (orgLogoImageId !== null) {
+      sheet.addImage(orgLogoImageId, {
+        tl: { col: 0.1, row: 0.1 },
+        ext: { width: 132, height: 48 },
+      });
+    }
+
+    sheet.mergeCells(`${colLetter(titleStartCol)}1:${colLetter(titleEndCol)}1`);
+    const titleCell = sheet.getCell(`${colLetter(titleStartCol)}1`);
+    titleCell.value = sheetData.title;
+    titleCell.font = { name: "Calibri", size: 16, bold: true, color: { argb: "FF0F172A" } };
+    titleCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+
+    if (sheetData.subtitle) {
+      sheet.mergeCells(`${colLetter(titleStartCol)}2:${colLetter(titleEndCol)}2`);
+      const subtitleCell = sheet.getCell(`${colLetter(titleStartCol)}2`);
+      subtitleCell.value = sheetData.subtitle;
+      subtitleCell.font = { name: "Calibri", size: 10, italic: true, color: { argb: "FF475569" } };
+      subtitleCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    }
+
+    sheet.mergeCells(`A3:B3`);
+    const orgCell = sheet.getCell("A3");
+    orgCell.value = sheetData.organizationLabel || APP_COMPANY;
+    orgCell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FF0F172A" } };
+    orgCell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+
+    sheet.mergeCells(`A4:B4`);
+    const generatedCell = sheet.getCell("A4");
+    generatedCell.value = `Generated on ${generatedAt}`;
+    generatedCell.font = { name: "Calibri", size: 10, italic: true, bold: true, color: { argb: "FF334155" } };
+    generatedCell.alignment = { vertical: "middle", horizontal: "left" };
+
+    if (sheetData.dateRange) {
+      sheet.mergeCells(rightRange);
+      const dateRangeCell = sheet.getCell(`${colLetter(rightRangeStart)}1`);
+      dateRangeCell.value = [
+        `From: ${sheetData.dateRange.from}`,
+        `To: ${sheetData.dateRange.to}`,
+      ].join("\n");
+      dateRangeCell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FF0F172A" } };
+      dateRangeCell.alignment = { vertical: "middle", horizontal: "right", wrapText: true };
+    } else {
+      sheet.mergeCells(rightRange);
+      const rangeCell = sheet.getCell(`${colLetter(rightRangeStart)}1`);
+      rangeCell.value = `Generated: ${generatedAt}`;
+      rangeCell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FF0F172A" } };
+      rangeCell.alignment = { vertical: "middle", horizontal: "right" };
+    }
+
+    sheet.getRow(1).height = 30;
+    sheet.getRow(2).height = 28;
+    sheet.getRow(3).height = 18;
+    sheet.getRow(4).height = 18;
+    sheet.getRow(5).height = 34;
+
+    const headerRowIdx = 5;
+    const headerRow = sheet.getRow(headerRowIdx);
+    sheetData.headers.forEach((header, idx) => {
+      const cell = headerRow.getCell(idx + 1);
+      cell.value = header;
+      cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF115E59" } };
+      cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFD1D5DB" } },
+        left: { style: "thin", color: { argb: "FFD1D5DB" } },
+        bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
+        right: { style: "thin", color: { argb: "FFD1D5DB" } },
+      };
+    });
+    headerRow.height = 34;
+
+    sheetData.rows.forEach((rowData, rowIndex) => {
+      const row = sheet.getRow(headerRowIdx + 1 + rowIndex);
+      rowData.forEach((value, colIndex) => {
+        const cell = row.getCell(colIndex + 1);
+        cell.value = value ?? "";
+        cell.alignment = { vertical: "top", horizontal: "left", wrapText: true };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE5E7EB" } },
+          left: { style: "thin", color: { argb: "FFE5E7EB" } },
+          bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+          right: { style: "thin", color: { argb: "FFE5E7EB" } },
+        };
+      });
+      if (rowIndex % 2 === 1) {
+        row.eachCell((cell) => {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+        });
+      }
+    });
+
+    const forcedWidths: Record<string, number> = {
+      "wo number": 16,
+      "status": 14,
+      "category": 16,
+      "type": 14,
+      "priority": 12,
+      "asset": 18,
+      "department": 18,
+      "raised by": 20,
+      "assigned to": 20,
+      "closed by": 20,
+      "submitted for approval by": 22,
+      "approved by": 18,
+      "rejected by": 18,
+      "admin override by": 20,
+      "problem": 30,
+      "root cause": 28,
+      "action taken": 28,
+      "remarks": 28,
+      "opened at": 18,
+      "started at": 18,
+      "resolved at": 18,
+      "submitted for approval at": 22,
+      "approved at": 18,
+      "closed at": 18,
+      "cancelled at": 18,
+      "downtime (min)": 14,
+      "labor minutes": 14,
+      "actual cost": 14,
+      "created at": 18,
+      "updated at": 18,
+    };
+
+    sheetData.headers.forEach((header, idx) => {
+      const maxContent = Math.max(
+        header.length,
+        ...sheetData.rows.map((row) => String(row[idx] ?? "").length),
+      );
+      const headerKey = header.toLowerCase();
+      if (forcedWidths[headerKey]) {
+        sheet.getColumn(idx + 1).width = forcedWidths[headerKey];
+        return;
+      }
+      const compactByDefault = !WRAP_HEADER_HINTS.some((hint) => headerKey.includes(hint));
+      const width = compactByDefault
+        ? Math.min(20, Math.max(10, Math.round(maxContent * 0.5) + 4))
+        : Math.min(30, Math.max(14, Math.round(maxContent * 0.45) + 6));
+      sheet.getColumn(idx + 1).width = width;
+    });
+
+    sheetData.rows.forEach((rowData, rowIndex) => {
+      const row = sheet.getRow(headerRowIdx + 1 + rowIndex);
+      let estimatedLines = 1;
+      rowData.forEach((value, colIndex) => {
+        const text = String(value ?? "");
+        const colWidth = sheet.getColumn(colIndex + 1).width ?? 14;
+        const hardBreaks = text.split(/\r?\n/).length;
+        const wrapped = Math.ceil(text.length / Math.max(10, Number(colWidth) - 2));
+        estimatedLines = Math.max(estimatedLines, hardBreaks, wrapped);
+      });
+      row.height = Math.min(110, Math.max(20, estimatedLines * 14));
+    });
+
+    const footerRowIdx = headerRowIdx + sheetData.rows.length + 1;
+    const footerBrandRowIdx = footerRowIdx + 1;
+    sheet.mergeCells(`B${footerBrandRowIdx}:${lastCol}${footerBrandRowIdx}`);
+    const footerCell = sheet.getCell(`B${footerBrandRowIdx}`);
+    footerCell.value = sheetData.footerBrandText || footerText;
+    footerCell.font = { name: "Calibri", size: 10, italic: true, bold: true, color: { argb: "FF0F766E" } };
+    footerCell.alignment = { vertical: "middle", horizontal: "left" };
+    sheet.getRow(footerRowIdx).height = 16;
+    sheet.getRow(footerBrandRowIdx).height = 16;
+
+    const footerLogoUrl = sheetData.footerLogoUrl || APP_LOGO_PNG;
+    let footerLogoImageId = footerLogoCache.get(footerLogoUrl);
+    if (footerLogoImageId === undefined) {
+      const footerLogoBase64 = await fetchImageBase64(footerLogoUrl);
+      footerLogoImageId = footerLogoBase64 ? workbook.addImage({ base64: footerLogoBase64, extension: "png" }) : null;
+      if (footerLogoImageId !== null) {
+        footerLogoCache.set(footerLogoUrl, footerLogoImageId);
+      }
+    }
+
+    if (footerLogoImageId !== null) {
+      sheet.addImage(footerLogoImageId, {
+        tl: { col: 0.1, row: footerBrandRowIdx - 0.02 },
+        ext: { width: 24, height: 24 },
+      });
+    }
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function Reports() {
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore((state) => state.user);
+  const brandingLogoAssetUrl = useBrandingStore((state) => state.logoAssetUrl);
   const [dateRange, setDateRange] = useState("30");
+  const [customStartDate, setCustomStartDate] = useState(format(subDays(new Date(), 30), "yyyy-MM-dd"));
+  const [customEndDate, setCustomEndDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const inferredOrgLogoFallback = useMemo(() => {
+    const orgCode = (currentUser?.organizationCode || "").toLowerCase();
+    const orgName = (currentUser?.organizationName || "").toLowerCase();
+    if (orgCode.includes("jk") || orgName.includes("jk fenner") || orgName.includes("jkfenner")) {
+      return "/jkfenner/jkfenner-logo.png";
+    }
+    return null;
+  }, [currentUser?.organizationCode, currentUser?.organizationName]);
+  const workbookBranding = useMemo(() => ({
+    organizationLabel: currentUser?.organizationName || currentUser?.organizationCode || APP_COMPANY,
+    organizationLogoUrl: resolveOrganizationLogoUrl(currentUser?.organizationName, currentUser?.organizationCode, currentUser?.organizationLogoUrl)
+      || resolveOrganizationLogoUrl(currentUser?.organizationName, currentUser?.organizationCode, brandingLogoAssetUrl)
+      || inferredOrgLogoFallback,
+    footerLogoUrl: APP_FAVICON_PNG,
+    footerBrandText: "OptiX Maintenance Pro developed by TamOptiX Technologies",
+  }), [brandingLogoAssetUrl, currentUser, inferredOrgLogoFallback]);
 
   // MTTR filters
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
@@ -192,7 +500,7 @@ export default function Reports() {
   const [expPriorities, setExpPriorities] = useState<string[]>([]);
   const [expCats, setExpCats] = useState<string[]>([]);
   const [expDepts, setExpDepts] = useState<string[]>([]);
-  const [advancedExportBusy, setAdvancedExportBusy] = useState<"csv" | "excel" | "pdf" | null>(null);
+  const [advancedExportBusy, setAdvancedExportBusy] = useState<"excel" | "pdf" | null>(null);
 
   // Fetch data
   const { data: workOrders = [], isLoading: woLoading } = useQuery({
@@ -204,6 +512,90 @@ export default function Reports() {
       return data;
     },
   });
+
+  const workOrderUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    workOrders.forEach((workOrder: any) => {
+      [workOrder.raised_by, workOrder.assigned_to, workOrder.submitted_for_approval_by, workOrder.approved_by, workOrder.rejected_by, workOrder.admin_override_by]
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+        .forEach((id) => ids.add(id));
+    });
+    return Array.from(ids);
+  }, [workOrders]);
+
+  const { data: workOrderUsers = [] } = useQuery({
+    queryKey: ["report_work_order_users", workOrderUserIds.join(",")],
+    queryFn: async () => {
+      if (workOrderUserIds.length === 0) return [];
+      const collected: UserProfile[] = [];
+      let page = 1;
+      while (page <= 20) {
+        const response = await listUsers({ page, limit: 500, includeInactive: true } as any);
+        const chunk = (response.data ?? []) as UserProfile[];
+        if (chunk.length === 0) break;
+        collected.push(...chunk);
+        const totalPages = response.pagination?.totalPages || response.meta?.pagination?.totalPages || 1;
+        if (page >= totalPages) break;
+        page += 1;
+      }
+      return collected.filter((user: UserProfile) => workOrderUserIds.includes(user.authId || user.userId || user.id));
+    },
+    enabled: workOrderUserIds.length > 0,
+  });
+
+  const { data: apiProfiles = [] } = useQuery({
+    queryKey: ["report_work_order_profiles_api", workOrderUserIds.join(",")],
+    queryFn: async () => {
+      if (workOrderUserIds.length === 0) return [];
+      const collected: UserProfile[] = [];
+      let page = 1;
+      while (page <= 20) {
+        const response = await listProfiles({ page, limit: 500, includeInactive: true } as any);
+        const chunk = (response.data ?? []) as UserProfile[];
+        if (chunk.length === 0) break;
+        collected.push(...chunk);
+        const totalPages = response.pagination?.totalPages || response.meta?.pagination?.totalPages || 1;
+        if (page >= totalPages) break;
+        page += 1;
+      }
+      return collected.filter((profile) => workOrderUserIds.includes(profile.userId || profile.id));
+    },
+    enabled: workOrderUserIds.length > 0,
+  });
+
+  const { data: directUserRows = [] } = useQuery({
+    queryKey: ["report_work_order_direct_users", workOrderUserIds.join(",")],
+    queryFn: async () => {
+      if (workOrderUserIds.length === 0) return [];
+      const { data, error } = await dbClient
+        .from("users")
+        .select("id, full_name, email")
+        .in("id", workOrderUserIds);
+      if (error) return [];
+      return data ?? [];
+    },
+    enabled: workOrderUserIds.length > 0,
+  });
+
+  const workOrderUserNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    workOrderUsers.forEach((user: any) => {
+      const resolvedName = user.fullName || user.email || user.userCode || user.authId || user.id;
+      if (user.authId) map.set(user.authId, resolvedName);
+      if (user.userId) map.set(user.userId, resolvedName);
+      map.set(user.id, resolvedName);
+    });
+    apiProfiles.forEach((row: any) => {
+      const name = row.fullName || row.email || "";
+      if (name && row.userId) map.set(row.userId, name);
+      if (name && row.id) map.set(row.id, name);
+    });
+    directUserRows.forEach((row: any) => {
+      const name = row.full_name || row.email || "";
+      if (name && row.id) map.set(row.id, name);
+    });
+    return map;
+  }, [workOrderUsers, apiProfiles, directUserRows]);
 
   const { data: departments = [] } = useQuery({
     queryKey: ["report_departments"],
@@ -300,11 +692,18 @@ export default function Reports() {
   }, [departments]);
   const toDeptIds = (names: string[]) => names.map(n => deptIdMap[n]).filter(Boolean);
 
-  const startDate = useMemo(() => format(subDays(new Date(), parseInt(dateRange, 10)), "yyyy-MM-dd"), [dateRange]);
-  const endDate = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
+  const startDate = useMemo(() => {
+    if (dateRange === "custom") return customStartDate;
+    return format(subDays(new Date(), parseInt(dateRange, 10)), "yyyy-MM-dd");
+  }, [dateRange, customStartDate]);
+  
+  const endDate = useMemo(() => {
+    if (dateRange === "custom") return customEndDate;
+    return format(new Date(), "yyyy-MM-dd");
+  }, [dateRange, customEndDate]);
 
   const { data: advancedReliability } = useQuery({
-    queryKey: ["advanced_reliability", dateRange],
+    queryKey: ["advanced_reliability", dateRange, startDate, endDate],
     queryFn: async () => {
       const response = await getAdvancedReliabilityReport({ startDate, endDate, page: 1, limit: 200 });
       return response.data;
@@ -524,14 +923,15 @@ export default function Reports() {
   }, [woFiltered]);
 
   const woTrend = useMemo(() => {
-    const days = parseInt(dateRange);
-    const interval = eachDayOfInterval({ start: subDays(new Date(), days), end: new Date() });
+    const start = dateRange === "custom" ? parseISO(customStartDate) : subDays(new Date(), parseInt(dateRange));
+    const end = dateRange === "custom" ? parseISO(customEndDate) : new Date();
+    const interval = eachDayOfInterval({ start, end });
     return interval.map(day => {
       const dayStr = format(day, "yyyy-MM-dd");
       const count = woFiltered.filter((wo: any) => wo.created_at?.startsWith(dayStr)).length;
       return { date: format(day, "dd MMM"), count };
     });
-  }, [woFiltered, dateRange]);
+  }, [woFiltered, dateRange, customStartDate, customEndDate]);
 
   const woPriorityChart = useMemo(() => {
     const p: Record<string, number> = {};
@@ -559,14 +959,15 @@ export default function Reports() {
   }, [safetyFiltered]);
 
   const safetyTrend = useMemo(() => {
-    const days = parseInt(dateRange);
-    const interval = eachDayOfInterval({ start: subDays(new Date(), days), end: new Date() });
+    const start = dateRange === "custom" ? parseISO(customStartDate) : subDays(new Date(), parseInt(dateRange));
+    const end = dateRange === "custom" ? parseISO(customEndDate) : new Date();
+    const interval = eachDayOfInterval({ start, end });
     return interval.map(day => {
       const dayStr = format(day, "yyyy-MM-dd");
       const count = safetyFiltered.filter((i: any) => i.incident_date?.startsWith(dayStr)).length;
       return { date: format(day, "dd MMM"), count };
     });
-  }, [safetyFiltered, dateRange]);
+  }, [safetyFiltered, dateRange, customStartDate, customEndDate]);
 
   const safetyKpis = useMemo(() => {
     const total = safetyFiltered.length;
@@ -598,26 +999,152 @@ export default function Reports() {
       .slice(0, 10);
   }, [invFiltered]);
 
+  const formatExcelDateTime = (value: string | Date | null | undefined) => {
+    if (!value) return "";
+    const dateValue = value instanceof Date ? value : parseISO(String(value));
+    if (Number.isNaN(dateValue.getTime())) return "";
+    return format(dateValue, "yyyy-MM-dd HH:mm");
+  };
+
+  const resolveUserName = useCallback((userId: string | null | undefined) => {
+    if (!userId) return "";
+    const resolved = workOrderUserNameMap.get(userId);
+    if (resolved) return resolved;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)) {
+      return "Unknown User";
+    }
+    return userId;
+  }, [workOrderUserNameMap]);
+
   // Export helpers
-  const exportWOs = useCallback((wos: any[]) => {
-    if (wos.length === 0) { toast.error("No work orders to export"); return; }
-    downloadCSV(
-      `work_orders_${format(new Date(), "yyyyMMdd")}.csv`,
-      ["WO Number", "Category", "Type", "Priority", "Status", "Asset", "Department", "Problem", "Root Cause", "Action Taken", "Downtime (min)", "Labor Minutes", "Actual Cost", "Created", "Closed"],
-      wos.map((wo: any) => [
-        wo.wo_number, wo.category, wo.wo_type || "", wo.priority, wo.status,
-        esc(wo.assets?.name), esc(wo.assets?.departments?.name),
-        esc(wo.problem_description), esc(wo.root_cause), esc(wo.action_taken),
-        wo.downtime_minutes || 0, hoursToMinutes(wo.labor_hours), wo.actual_cost || 0,
-        wo.created_at ? format(parseISO(wo.created_at), "yyyy-MM-dd HH:mm") : "",
-        wo.closed_at ? format(parseISO(wo.closed_at), "yyyy-MM-dd HH:mm") : "",
-      ].map(String))
+  const exportWOs = useCallback(async (wos: any[], filenamePrefix = "work_orders", title = "Work Orders Export") => {
+    if (wos.length === 0) {
+      toast.error("No work orders to export");
+      return;
+    }
+
+    const createdDates = wos
+      .map((wo: any) => wo.created_at ? new Date(wo.created_at) : null)
+      .filter((value): value is Date => value instanceof Date && !Number.isNaN(value.getTime()))
+      .sort((left, right) => left.getTime() - right.getTime());
+    const exportRange = createdDates.length > 0
+      ? {
+        from: format(createdDates[0], "dd MMM yyyy HH:mm"),
+        to: format(createdDates[createdDates.length - 1], "dd MMM yyyy HH:mm"),
+      }
+      : undefined;
+
+    await downloadStyledExcelWorkbook(
+      `${filenamePrefix}_${format(new Date(), "yyyyMMdd")}.xlsx`,
+      [
+        {
+          name: "Work Orders",
+          title,
+          subtitle: "Detailed lifecycle export with ownership, approvals, and closure milestones",
+          ...workbookBranding,
+          dateRange: exportRange,
+          headers: [
+            "WO Number",
+            "Status",
+            "Category",
+            "Type",
+            "Priority",
+            "Asset",
+            "Department",
+            "Raised By",
+            "Assigned To",
+            "Closed By",
+            "Submitted For Approval By",
+            "Approved By",
+            "Rejected By",
+            "Admin Override By",
+            "Problem",
+            "Root Cause",
+            "Action Taken",
+            "Remarks",
+            "Opened At",
+            "Started At",
+            "Resolved At",
+            "Submitted For Approval At",
+            "Approved At",
+            "Closed At",
+            "Cancelled At",
+            "Downtime (min)",
+            "Labor Minutes",
+            "Actual Cost",
+            "Created At",
+            "Updated At",
+          ],
+          rows: wos.map((wo: any) => [
+            wo.wo_number || "",
+            wo.status || "",
+            wo.category || "",
+            wo.wo_type || "",
+            wo.priority || "",
+            wo.assets?.name || "",
+            wo.assets?.departments?.name || "",
+            resolveUserName(wo.raised_by),
+            resolveUserName(wo.assigned_to),
+            wo.closed_at ? resolveUserName(wo.approved_by || wo.admin_override_by || wo.rejected_by || wo.submitted_for_approval_by) : "",
+            resolveUserName(wo.submitted_for_approval_by),
+            resolveUserName(wo.approved_by),
+            resolveUserName(wo.rejected_by),
+            resolveUserName(wo.admin_override_by),
+            wo.problem_description || "",
+            wo.root_cause || "",
+            wo.action_taken || "",
+            wo.remarks || "",
+            formatExcelDateTime(wo.opened_at),
+            formatExcelDateTime(wo.started_at),
+            formatExcelDateTime(wo.resolved_at),
+            formatExcelDateTime(wo.submitted_for_approval_at),
+            formatExcelDateTime(wo.approved_at),
+            formatExcelDateTime(wo.closed_at),
+            formatExcelDateTime(wo.cancelled_at),
+            wo.downtime_minutes || 0,
+            hoursToMinutes(wo.labor_hours),
+            wo.actual_cost || 0,
+            formatExcelDateTime(wo.created_at),
+            formatExcelDateTime(wo.updated_at),
+          ]),
+        },
+      ],
     );
+
+    toast.success(`Exported ${wos.length} records to Excel`);
+  }, []);
+
+  const exportQuickReport = useCallback(async (config: {
+    filenamePrefix: string;
+    title: string;
+    sheetName: string;
+    headers: string[];
+    rows: Array<Array<string | number | null | undefined>>;
+  }) => {
+    if (config.rows.length === 0) {
+      toast.error("No records to export");
+      return;
+    }
+
+    await downloadStyledExcelWorkbook(
+      `${config.filenamePrefix}_${format(new Date(), "yyyyMMdd")}.xlsx`,
+      [
+        {
+          name: config.sheetName,
+          title: config.title,
+          ...workbookBranding,
+          headers: config.headers,
+          rows: config.rows,
+        },
+      ],
+    );
+
+    toast.success(`Exported ${config.rows.length} records to Excel`);
   }, []);
 
   const isLoading = woLoading;
 
-  const handleAdvancedExport = useCallback(async (formatType: "csv" | "excel" | "pdf") => {
+  const handleAdvancedExport = useCallback(async (formatType: "excel" | "pdf") => {
     setAdvancedExportBusy(formatType);
     try {
       await downloadAdvancedReliabilityReport(formatType, { startDate, endDate, page: 1, limit: 500 });
@@ -636,11 +1163,19 @@ export default function Reports() {
         title="Reports & Analytics"
         description="Comprehensive insights — MTTR, MTBF, safety, inventory & more"
         actions={
-          <div className="shrink-0">
+          <div className="shrink-0 flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <SelectField label="" value={dateRange} onChange={setDateRange} options={[
               { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" },
               { value: "90", label: "Last 90 days" }, { value: "365", label: "Last year" },
+              { value: "custom", label: "Custom Range" },
             ]} className="w-full sm:w-[150px]" />
+            {dateRange === "custom" && (
+              <>
+                <div className="w-[140px]"><InputField type="date" label="" value={customStartDate} onChange={setCustomStartDate} /></div>
+                <span className="text-sm text-muted-foreground">to</span>
+                <div className="w-[140px]"><InputField type="date" label="" value={customEndDate} onChange={setCustomEndDate} /></div>
+              </>
+            )}
           </div>
         }
       />
@@ -754,15 +1289,6 @@ export default function Reports() {
                           variant="outline"
                           size="sm"
                           disabled={advancedExportBusy !== null}
-                          onClick={() => handleAdvancedExport("csv")}
-                          className="gap-2"
-                        >
-                          {advancedExportBusy === "csv" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} CSV
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={advancedExportBusy !== null}
                           onClick={() => handleAdvancedExport("excel")}
                           className="gap-2"
                         >
@@ -856,12 +1382,6 @@ export default function Reports() {
                       <CardTitle className="text-base">Industrial Maintenance Reports</CardTitle>
                       <p className="text-xs text-muted-foreground">High-fidelity closure records for every work order</p>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => downloadCSV("maintenance_reports.csv", 
-                      ["WO #", "Asset", "Date", "Failure Cat", "Root Cause", "Downtime", "Repair Time"],
-                      mReports.map(r => [r.woNumber, r.assetName, r.closureDate, r.actualFailureCategory || "", r.rootCause || "", r.totalDowntime, r.actualRepairTime].map(String))
-                    )}>
-                      <Download className="h-3.5 w-3.5 mr-2" /> Export Log
-                    </Button>
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="overflow-x-auto">
@@ -1257,14 +1777,29 @@ export default function Reports() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                      <Button variant="outline" className="justify-start gap-2" onClick={() => exportWOs(expFiltered)}>
+                      <Button variant="outline" className="justify-start gap-2" onClick={() => {
+                        exportWOs(expFiltered, "work_orders_filtered", "Filtered Work Orders Export").catch((error) => {
+                          const message = error instanceof Error ? error.message : "Failed to export work orders";
+                          toast.error(message);
+                        });
+                      }}>
                         <FileText className="h-4 w-4" /> Export Filtered WOs
                         <Badge variant="secondary" className="ml-auto text-[10px]">{expFiltered.length}</Badge>
                       </Button>
                       {categoryOptions.map(cat => {
                         const count = expFiltered.filter((w: any) => w.category === cat).length;
                         return (
-                          <Button key={cat} variant="outline" className="justify-start gap-2 text-xs" onClick={() => exportWOs(expFiltered.filter((w: any) => w.category === cat))}>
+                          <Button key={cat} variant="outline" className="justify-start gap-2 text-xs" onClick={() => {
+                            const filteredByCategory = expFiltered.filter((w: any) => w.category === cat);
+                            exportWOs(
+                              filteredByCategory,
+                              `work_orders_${cat.toLowerCase()}`,
+                              `${categoryLabelMap[cat] || cat.replace(/_/g, " ")} Work Orders Export`,
+                            ).catch((error) => {
+                              const message = error instanceof Error ? error.message : "Failed to export category work orders";
+                              toast.error(message);
+                            });
+                          }}>
                             <Download className="h-3.5 w-3.5" /> {categoryLabelMap[cat] || cat.replace(/_/g, " ")}
                             <Badge variant="secondary" className="ml-auto text-[10px]">{count}</Badge>
                           </Button>
@@ -1281,73 +1816,137 @@ export default function Reports() {
                   <CardContent>
                     <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
                       <Button variant="outline" className="justify-start gap-2" onClick={() => {
-                        downloadCSV(`safety_report_${format(new Date(), "yyyyMMdd")}.csv`,
-                          ["Incident#", "Type", "Severity", "Status", "Date", "Description", "Location", "Lost Time (min)", "People"],
-                          safetyFiltered.map((i: any) => [
-                            i.incident_number, i.incident_type, i.severity, i.status,
+                        exportQuickReport({
+                          filenamePrefix: "safety_report",
+                          title: "Safety Incidents Report",
+                          sheetName: "Safety",
+                          headers: ["Incident#", "Type", "Severity", "Status", "Date", "Description", "Location", "Lost Time (min)", "People"],
+                          rows: safetyFiltered.map((i: any) => [
+                            i.incident_number || "",
+                            i.incident_type || "",
+                            i.severity || "",
+                            i.status || "",
                             i.incident_date ? format(parseISO(i.incident_date), "yyyy-MM-dd") : "",
-                            esc(i.description), esc(i.location), hoursToMinutes(i.lost_time_hours), i.people_involved || 0,
-                          ].map(String))
-                        );
+                            i.description || "",
+                            i.location || "",
+                            hoursToMinutes(i.lost_time_hours),
+                            i.people_involved || 0,
+                          ]),
+                        }).catch((error) => {
+                          const message = error instanceof Error ? error.message : "Failed to export safety report";
+                          toast.error(message);
+                        });
                       }}>
                         <ShieldAlert className="h-4 w-4" /> Safety Incidents
                         <Badge variant="secondary" className="ml-auto text-[10px]">{safetyFiltered.length}</Badge>
                       </Button>
                       <Button variant="outline" className="justify-start gap-2" onClick={() => {
-                        downloadCSV(`pm_report_${format(new Date(), "yyyyMMdd")}.csv`,
-                          ["Asset", "Frequency", "Status", "Next Due", "Last Completed"],
-                          pmFiltered.map((p: any) => [
-                            esc(p.assets?.name), p.frequency, p.status,
+                        exportQuickReport({
+                          filenamePrefix: "pm_report",
+                          title: "Preventive Maintenance Schedule Report",
+                          sheetName: "PM",
+                          headers: ["Asset", "Frequency", "Status", "Next Due", "Last Completed"],
+                          rows: pmFiltered.map((p: any) => [
+                            p.assets?.name || "",
+                            p.frequency || "",
+                            p.status || "",
                             p.next_due ? format(parseISO(p.next_due), "yyyy-MM-dd") : "",
                             p.last_completed ? format(parseISO(p.last_completed), "yyyy-MM-dd") : "",
-                          ].map(String))
-                        );
+                          ]),
+                        }).catch((error) => {
+                          const message = error instanceof Error ? error.message : "Failed to export PM report";
+                          toast.error(message);
+                        });
                       }}>
                         <Calendar className="h-4 w-4" /> PM Schedules
                         <Badge variant="secondary" className="ml-auto text-[10px]">{pmFiltered.length}</Badge>
                       </Button>
                       <Button variant="outline" className="justify-start gap-2" onClick={() => {
-                        downloadCSV(`calibration_report_${format(new Date(), "yyyyMMdd")}.csv`,
-                          ["Asset", "Status", "Cal Date", "Next Due", "Certificate#"],
-                          calFiltered.map((c: any) => [
-                            esc(c.assets?.name), c.status, c.calibration_date || "", c.next_due_date || "", c.certificate_number || "",
-                          ].map(String))
-                        );
+                        exportQuickReport({
+                          filenamePrefix: "calibration_report",
+                          title: "Calibration Report",
+                          sheetName: "Calibration",
+                          headers: ["Asset", "Status", "Cal Date", "Next Due", "Certificate#"],
+                          rows: calFiltered.map((c: any) => [
+                            c.assets?.name || "",
+                            c.status || "",
+                            c.calibration_date || "",
+                            c.next_due_date || "",
+                            c.certificate_number || "",
+                          ]),
+                        }).catch((error) => {
+                          const message = error instanceof Error ? error.message : "Failed to export calibration report";
+                          toast.error(message);
+                        });
                       }}>
                         <Gauge className="h-4 w-4" /> Calibration
                         <Badge variant="secondary" className="ml-auto text-[10px]">{calFiltered.length}</Badge>
                       </Button>
                       <Button variant="outline" className="justify-start gap-2" onClick={() => {
-                        downloadCSV(`inventory_report_${format(new Date(), "yyyyMMdd")}.csv`,
-                          ["Code", "Name", "Category", "Current Stock", "Min Level", "Reorder Level", "Unit", "Location"],
-                          invFiltered.map((s: any) => [
-                            s.code, esc(s.name), s.category || "", s.current_stock, s.min_level, s.reorder_level, s.unit, esc(s.location),
-                          ].map(String))
-                        );
+                        exportQuickReport({
+                          filenamePrefix: "inventory_report",
+                          title: "Inventory Report",
+                          sheetName: "Inventory",
+                          headers: ["Code", "Name", "Category", "Current Stock", "Min Level", "Reorder Level", "Unit", "Location"],
+                          rows: invFiltered.map((s: any) => [
+                            s.code || "",
+                            s.name || "",
+                            s.category || "",
+                            s.current_stock || 0,
+                            s.min_level || 0,
+                            s.reorder_level || 0,
+                            s.unit || "",
+                            s.location || "",
+                          ]),
+                        }).catch((error) => {
+                          const message = error instanceof Error ? error.message : "Failed to export inventory report";
+                          toast.error(message);
+                        });
                       }}>
                         <Package className="h-4 w-4" /> Inventory
                         <Badge variant="secondary" className="ml-auto text-[10px]">{invFiltered.length}</Badge>
                       </Button>
                       <Button variant="outline" className="justify-start gap-2" onClick={() => {
-                        downloadCSV(`amc_report_${format(new Date(), "yyyyMMdd")}.csv`,
-                          ["Contract#", "Asset", "Vendor", "Start", "End", "Amount", "Status"],
-                          amcFiltered.map((c: any) => [
-                            c.contract_number, esc(c.assets?.name), esc(c.vendors?.name),
-                            c.start_date, c.end_date, c.amount || 0, c.status,
-                          ].map(String))
-                        );
+                        exportQuickReport({
+                          filenamePrefix: "amc_report",
+                          title: "AMC Contracts Report",
+                          sheetName: "AMC",
+                          headers: ["Contract#", "Asset", "Vendor", "Start", "End", "Amount", "Status"],
+                          rows: amcFiltered.map((c: any) => [
+                            c.contract_number || "",
+                            c.assets?.name || "",
+                            c.vendors?.name || "",
+                            c.start_date || "",
+                            c.end_date || "",
+                            c.amount || 0,
+                            c.status || "",
+                          ]),
+                        }).catch((error) => {
+                          const message = error instanceof Error ? error.message : "Failed to export AMC report";
+                          toast.error(message);
+                        });
                       }}>
                         <FileText className="h-4 w-4" /> AMC Contracts
                         <Badge variant="secondary" className="ml-auto text-[10px]">{amcFiltered.length}</Badge>
                       </Button>
                       <Button variant="outline" className="justify-start gap-2" onClick={() => {
-                        downloadCSV(`stock_requests_${format(new Date(), "yyyyMMdd")}.csv`,
-                          ["Item", "Code", "Quantity", "Status", "Remarks", "Created"],
-                          srFiltered.map((r: any) => [
-                            esc(r.spare_items?.name), r.spare_items?.code || "", r.quantity, r.status,
-                            esc(r.remarks), r.created_at ? format(parseISO(r.created_at), "yyyy-MM-dd") : "",
-                          ].map(String))
-                        );
+                        exportQuickReport({
+                          filenamePrefix: "stock_requests",
+                          title: "Stock Requests Report",
+                          sheetName: "Stock Requests",
+                          headers: ["Item", "Code", "Quantity", "Status", "Remarks", "Created"],
+                          rows: srFiltered.map((r: any) => [
+                            r.spare_items?.name || "",
+                            r.spare_items?.code || "",
+                            r.quantity || 0,
+                            r.status || "",
+                            r.remarks || "",
+                            r.created_at ? format(parseISO(r.created_at), "yyyy-MM-dd") : "",
+                          ]),
+                        }).catch((error) => {
+                          const message = error instanceof Error ? error.message : "Failed to export stock requests report";
+                          toast.error(message);
+                        });
                       }}>
                         <Package className="h-4 w-4" /> Stock Requests
                         <Badge variant="secondary" className="ml-auto text-[10px]">{srFiltered.length}</Badge>

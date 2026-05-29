@@ -9,6 +9,10 @@ import {
   WorkOrderEntity,
   WorkOrderMasterEntity,
   WorkOrderTeamMappingEntity,
+  WorkOrderVerificationEntity,
+  WorkOrderHandoverEntity,
+  UserRoleEntity,
+  ProfileEntity,
 } from '../../database/entities';
 import type { AuthContext } from '../../types/auth';
 import { badRequest, conflict, forbidden } from '../../utils/httpError';
@@ -35,11 +39,8 @@ function toSnakeKey(input: string): string {
 }
 
 function normalizeKeys(input: GenericRecord): GenericRecord {
-  const result: GenericRecord = {};
-  for (const [key, value] of Object.entries(input)) {
-    result[toSnakeKey(key)] = value;
-  }
-  return result;
+  const entries = Object.entries(input).map(([key, value]) => [toSnakeKey(key), value]);
+  return Object.fromEntries(entries);
 }
 
 function sanitizePayload(input: GenericRecord): GenericRecord {
@@ -49,17 +50,18 @@ function sanitizePayload(input: GenericRecord): GenericRecord {
 function toEntityPayload(input: GenericRecord): GenericRecord {
   const metadata = AppDataSource.getRepository(WorkOrderEntity).metadata;
   const blockedKeys = new Set(['id', 'createdAt', 'updatedAt', 'version']);
-  const result: GenericRecord = {};
-
-  for (const [key, value] of Object.entries(input)) {
-    if (value === undefined) continue;
-    const column = metadata.columns.find((candidate) => candidate.propertyName === key || candidate.databaseName === key);
-    const propertyName = column?.propertyName;
-    if (!propertyName || blockedKeys.has(propertyName)) continue;
-    result[propertyName] = value;
-  }
-
-  return result;
+  
+  const entries = Object.entries(input)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => {
+      const column = metadata.columns.find((candidate) => candidate.propertyName === key || candidate.databaseName === key);
+      const propertyName = column?.propertyName;
+      if (!propertyName || blockedKeys.has(propertyName)) return null;
+      return [propertyName, value];
+    })
+    .filter((entry): entry is [string, unknown] => entry !== null);
+    
+  return Object.fromEntries(entries);
 }
 
 function generateWorkOrderNumber(): string {
@@ -79,6 +81,30 @@ function uniqueIds(values: Array<string | null | undefined>): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
 }
 
+function isProductionRoleActor(auth: AuthContext): boolean {
+  return (auth.roles ?? []).some((role) => {
+    const normalized = String(role ?? '').trim().toUpperCase();
+    return normalized === 'PRODUCTION_USER' || normalized === 'PRODUCTION_MANAGER';
+  });
+}
+
+function buildAssignedWorkOrderPredicate(alias: string): string {
+  return `(
+    ${alias}.assigned_to = :actorUserId
+    OR ${alias}.follow_up_team_id IN (:...teamIds)
+    OR EXISTS (
+      SELECT 1
+      FROM work_order_team_mappings wm
+      LEFT JOIN assets a ON a.id = ${alias}.asset_id
+      WHERE wm.team_id IN (:...teamIds)
+        AND wm.plant_id = ${alias}.plant_id
+        AND wm.category = ${alias}.category
+        AND (wm.department_id IS NULL OR wm.department_id = a.department_id)
+        AND (${alias}.raised_by IS NULL OR ${alias}.raised_by <> :actorUserId)
+    )
+  )`;
+}
+
 const WORKFLOW_STATUSES = {
   RAISED: 'RAISED',
   TRIAGED: 'TRIAGED',
@@ -86,6 +112,14 @@ const WORKFLOW_STATUSES = {
   ACCEPTED: 'ACCEPTED',
   OPENED: 'OPENED',
   IN_PROGRESS: 'IN_PROGRESS',
+  FOLLOW_UP_ACTIVE: 'FOLLOW_UP_ACTIVE',
+  PENDING_VERIFICATION: 'PENDING_VERIFICATION',
+  VERIFICATION_REQUIRED: 'VERIFICATION_REQUIRED',
+  WAITING_SHUTDOWN: 'WAITING_SHUTDOWN',
+  WAITING_SPARE: 'WAITING_SPARE',
+  ESCALATED: 'ESCALATED',
+  SUPERVISOR_VERIFIED: 'SUPERVISOR_VERIFIED',
+  ARCHIVED: 'ARCHIVED',
   COMPLETED: 'COMPLETED',
   USER_VERIFICATION: 'USER_VERIFICATION',
   APPROVAL_PENDING: 'APPROVAL_PENDING',
@@ -153,6 +187,7 @@ const WORKFLOW_MANAGED_FIELDS = new Set([
 
 const INCHARGE_CATEGORY_MAP: Record<string, string> = {
   MAINTENANCE_MANAGER: 'MECHANICAL',
+  MAINTENANCE_USER: 'MECHANICAL',
   PRODUCTION_MANAGER: 'PRODUCTION',
   SCM_MANAGER: 'SUPPLY_CHAIN',
   HR_MANAGER: 'PEOPLE',
@@ -314,7 +349,7 @@ class WorkOrdersService extends CrudService {
   }
 
   private getInchargeCategories(auth: AuthContext): string[] {
-    const roles = auth.roles.map((role) => String(role).toUpperCase());
+    const roles = auth.roles.map((role) => String(role).trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_'));
     return Array.from(new Set(roles.map((role) => INCHARGE_CATEGORY_MAP[role]).filter((value): value is string => Boolean(value))));
   }
 
@@ -402,6 +437,7 @@ class WorkOrdersService extends CrudService {
       .addSelect('asset.id', 'asset_ref_id')
       .addSelect('asset.code', 'asset_ref_code')
       .addSelect('asset.name', 'asset_ref_name')
+      .addSelect('asset.department_id', 'asset_ref_department_id')
       .from('work_orders', 't')
       .leftJoin('assets', 'asset', 'asset.id = t.asset_id');
 
@@ -415,12 +451,7 @@ class WorkOrdersService extends CrudService {
     if (effectiveScope === 'assigned') {
       const teamIds = auth.teamIds ?? [];
       if (teamIds.length > 0) {
-        qb.andWhere(
-          `(t.assigned_to = :actorUserId OR (t.category IN (
-            SELECT DISTINCT wm.category FROM work_order_team_mappings wm WHERE wm.team_id IN (:...teamIds)
-          ) AND (t.raised_by IS NULL OR t.raised_by <> :actorUserId)))`,
-          { actorUserId: auth.userId, teamIds }
-        );
+        qb.andWhere(buildAssignedWorkOrderPredicate('t'), { actorUserId: auth.userId, teamIds });
       } else {
         qb.andWhere('t.assigned_to = :actorUserId', { actorUserId: auth.userId });
       }
@@ -521,11 +552,13 @@ class WorkOrdersService extends CrudService {
           id: assetId,
           code: row.asset_ref_code ?? null,
           name: row.asset_ref_name ?? null,
+          departmentId: row.asset_ref_department_id ?? null,
         }
         : null;
       delete item.asset_ref_id;
       delete item.asset_ref_code;
       delete item.asset_ref_name;
+      delete item.asset_ref_department_id;
       return item;
     });
 
@@ -566,7 +599,7 @@ class WorkOrdersService extends CrudService {
       .select('COUNT(1)', 'total_count')
       .addSelect(
         teamIds.length > 0
-          ? `SUM(CASE WHEN t.assigned_to = :actorUserId OR (t.category IN (SELECT DISTINCT wm.category FROM work_order_team_mappings wm WHERE wm.team_id IN (:...teamIds)) AND (t.raised_by IS NULL OR t.raised_by <> :actorUserId)) THEN 1 ELSE 0 END)`
+          ? `SUM(CASE WHEN ${buildAssignedWorkOrderPredicate('t')} THEN 1 ELSE 0 END)`
           : `SUM(CASE WHEN t.assigned_to = :actorUserId THEN 1 ELSE 0 END)`,
         'assigned_count'
       )
@@ -831,6 +864,22 @@ class WorkOrdersService extends CrudService {
     );
   }
 
+  private async getRoleUserIds(role: string, plantId: string | null | undefined, manager = AppDataSource.manager): Promise<string[]> {
+    const userRoleRepo = manager.getRepository(UserRoleEntity);
+    const profileRepo = manager.getRepository(ProfileEntity);
+    const roles = await userRoleRepo.find({ where: { role: role.toUpperCase() } });
+    if (roles.length === 0) return [];
+    let userIds = roles.map((r) => r.userId);
+    if (plantId) {
+      const profiles = await profileRepo.find({
+        where: { userId: In(userIds), plantId },
+        select: ['userId']
+      });
+      userIds = profiles.map((p) => p.userId);
+    }
+    return userIds;
+  }
+
   private async validateMasterOption(
     plantId: string | null,
     optionType: WorkOrderMasterOptionType,
@@ -905,19 +954,32 @@ class WorkOrdersService extends CrudService {
         select: ['teamId'],
       });
     }
-    const assignedTeam = categoryMapping && plantId
+    let assignedTeam = categoryMapping && plantId
       ? await this.teamsRepo.findOne({
         where: { id: categoryMapping.teamId, plantId, isActive: true },
         select: ['id', 'teamLeaderId', 'teamMemberIds', 'teamName'],
       })
       : null;
 
+    if (!assignedTeam && plantId) {
+      // Fallback: find a team whose discipline matches the category
+      assignedTeam = await this.teamsRepo.findOne({
+        where: { plantId, discipline: normalizedCategory as string, isActive: true },
+        select: ['id', 'teamLeaderId', 'teamMemberIds', 'teamName'],
+      });
+    }
+
     const woNumber = typeof normalized.wo_number === 'string' ? normalized.wo_number.trim() : '';
-    const initialStatus = assignedTeam?.teamLeaderId ? WORKFLOW_STATUSES.ASSIGNED : WORKFLOW_STATUSES.RAISED;
     
-    // SLA Management: Set initial SLA due (e.g., 2 hours for breakdown)
-    const slaMinutes = 120; // Default 2 hours
-    const slaDueAt = new Date(Date.now() + slaMinutes * 60 * 1000);
+    const machineRunning = normalized.machine_running === true || normalized.machine_running === 'true';
+    const verificationRequired = machineRunning || (normalized.verification_required === true || normalized.verification_required === 'true');
+
+    let initialStatus: string = assignedTeam?.teamLeaderId ? WORKFLOW_STATUSES.ASSIGNED : WORKFLOW_STATUSES.RAISED;
+    if (verificationRequired) {
+      initialStatus = WORKFLOW_STATUSES.VERIFICATION_REQUIRED;
+    }
+    
+    // SLA Management: initial SLA due is null; it will be calculated by scheduler if config matches
 
     const payload: GenericRecord = {
       ...normalized,
@@ -927,12 +989,14 @@ class WorkOrdersService extends CrudService {
       failure_code: null,
       sub_category: null,
       status: initialStatus,
+      machine_running: machineRunning,
+      verification_required: verificationRequired,
       downtime_start_at: new Date().toISOString(),
       raised_by: normalized.raised_by ?? auth.userId,
       assigned_to: normalized.assigned_to ?? assignedTeam?.teamLeaderId ?? null,
       plant_id: plantId,
       plantId,
-      sla_due_at: slaDueAt.toISOString(),
+      sla_due_at: null,
       escalation_level: 0,
       shift: normalized.shift || null,
       breakdown_type: normalized.breakdown_type || null,
@@ -969,6 +1033,21 @@ class WorkOrdersService extends CrudService {
       }));
       
       await this.createNotifications(notifications);
+    }
+
+    if (verificationRequired) {
+      const prodManagerIds = await this.getRoleUserIds('PRODUCTION_MANAGER', plantId);
+      const verificationRecipients = uniqueIds([auth.userId, ...prodManagerIds]);
+      if (verificationRecipients.length > 0) {
+        await this.createNotifications(verificationRecipients.map((userId) => ({
+          userId,
+          title: 'Verification Required',
+          message: `Work Order ${createdWorkOrder.wo_number || 'Update'} requires machine running verification.`,
+          type: 'critical',
+          link: '/work-orders',
+          woId: String(createdWorkOrder.id),
+        })));
+      }
     }
 
     await this.writeActivityLog(
@@ -1159,6 +1238,8 @@ class WorkOrdersService extends CrudService {
         WORKFLOW_STATUSES.ACCEPTED,
         WORKFLOW_STATUSES.OPENED,
         WORKFLOW_STATUSES.REASSIGNED,
+        WORKFLOW_STATUSES.WAITING_SPARE,
+        WORKFLOW_STATUSES.WAITING_SHUTDOWN,
       ];
       if (!allowedStartStatuses.includes(status)) {
         conflict('Work order can only be started from Raised, Triaged, Assigned, Accepted, Opened, or Reassigned status');
@@ -1289,6 +1370,77 @@ class WorkOrdersService extends CrudService {
               title: 'Work Order In Progress',
               message: `${String(existing.wo_number)} is now in progress.`,
               type: 'info',
+              link: '/work-orders',
+              woId: String(existing.id),
+            },
+          ],
+          manager,
+        );
+      }
+
+      return updated;
+    });
+  }
+
+  async holdWorkOrder(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+    return AppDataSource.transaction(async (manager) => {
+      const existing = await this.loadExistingWorkOrder(id, auth, manager);
+      const status = String(existing.status ?? '').toUpperCase();
+      const allowedHoldStatuses: string[] = [
+        WORKFLOW_STATUSES.ASSIGNED,
+        WORKFLOW_STATUSES.ACCEPTED,
+        WORKFLOW_STATUSES.OPENED,
+        WORKFLOW_STATUSES.IN_PROGRESS,
+        WORKFLOW_STATUSES.REASSIGNED,
+      ];
+      if (!allowedHoldStatuses.includes(status)) {
+        conflict('Work order can only be placed on hold from Assigned, Accepted, Opened, In Progress, or Reassigned status');
+      }
+
+      await this.ensureExecutionAccess(existing, auth, manager);
+
+      const normalized = normalizeKeys(input);
+      const reason = toUpperText(normalized.reason);
+      if (!reason || !['WAITING_SPARE', 'WAITING_SHUTDOWN'].includes(reason)) {
+        badRequest('reason must be WAITING_SPARE or WAITING_SHUTDOWN');
+      }
+
+      const notes = normalizeText(normalized.notes);
+      const now = new Date().toISOString();
+      const updated = await this.persistWorkOrderUpdate(
+        id,
+        {
+          status: reason,
+          downtime_start_at: existing.downtime_start_at ?? now,
+          remarks: notes ?? existing.remarks ?? null,
+        },
+        auth,
+        { manager, allowWorkflowMutation: true, existing },
+      );
+
+      await this.writeActivityLog(
+        updated,
+        auth,
+        {
+          eventType: 'WORK_ON_HOLD',
+          notes,
+          eventMeta: {
+            reason,
+          },
+          occurredAt: now,
+        },
+        manager,
+      );
+
+      const raisedBy = normalizeText(existing.raised_by);
+      if (raisedBy && raisedBy !== auth.userId) {
+        await this.createNotifications(
+          [
+            {
+              userId: raisedBy,
+              title: 'Work Order On Hold',
+              message: `${String(existing.wo_number)} has been placed on hold (${reason.replace('_', ' ').toLowerCase()}).`,
+              type: 'warning',
               link: '/work-orders',
               woId: String(existing.id),
             },
@@ -2019,6 +2171,148 @@ class WorkOrdersService extends CrudService {
     return csvRows.join('\n');
   }
 
+    async verifyWorkOrder(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+      return AppDataSource.transaction(async (manager) => {
+        const workOrderRepo = manager.getRepository(WorkOrderEntity);
+        const workOrder = await workOrderRepo.findOne({ where: { id } });
+        if (!workOrder) {
+          badRequest('Work order not found');
+        }
+        
+        await this.ensureExecutionAccess(workOrder as unknown as GenericRecord, auth, manager);
+    
+        if (workOrder.status !== WORKFLOW_STATUSES.VERIFICATION_REQUIRED) {
+          badRequest('Work order is not in a verification state');
+        }
+    
+        const { status, comments } = input as { status: string, comments?: string };
+    
+        const verificationRepo = manager.getRepository(WorkOrderVerificationEntity);
+        await verificationRepo.save({
+          workOrderId: workOrder.id,
+          approverRole: 'SHIFT_SUPERVISOR',
+          approverId: auth.userId,
+          status: status,
+          comments: comments ?? null,
+          verifiedAt: new Date(),
+        });
+    
+        if (status === 'APPROVED') {
+          workOrder.status = WORKFLOW_STATUSES.SUPERVISOR_VERIFIED;
+          workOrder.verificationRequired = false;
+        } else {
+          workOrder.status = WORKFLOW_STATUSES.IN_PROGRESS; // Go back to being worked on if rejected
+        }
+    
+        const updated = await workOrderRepo.save(workOrder);
+        
+        await this.addActivity(id, {
+          eventType: 'INTERNAL_NOTE',
+          notes: `Verification ${status.toLowerCase()}${comments ? `: ${comments}` : ''}`,
+        }, auth);
+
+        const recipients = uniqueIds([workOrder.raisedBy, workOrder.assignedTo].filter(Boolean));
+        if (recipients.length > 0) {
+          await this.createNotifications(recipients.map((userId) => ({
+            userId: userId as string,
+            title: `Work Order Verification ${status}`,
+            message: `Work Order ${workOrder.woNumber || 'Update'} verification was ${status.toLowerCase()}.`,
+            type: status === 'APPROVED' ? 'success' : 'critical',
+            link: '/work-orders',
+            woId: String(workOrder.id),
+          })), manager);
+        }
+    
+        return sanitizePayload(updated as unknown as GenericRecord);
+      });
+    }
+
+    async handoverWorkOrder(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+      return AppDataSource.transaction(async (manager) => {
+        const workOrderRepo = manager.getRepository(WorkOrderEntity);
+        const workOrder = await workOrderRepo.findOne({ where: { id } });
+        if (!workOrder) {
+          badRequest('Work order not found');
+        }
+    
+        if (!isProductionRoleActor(auth)) {
+          forbidden('Shift handover is restricted to production roles');
+        }
+
+        await this.ensureExecutionAccess(workOrder as unknown as GenericRecord, auth, manager);
+    
+        const { to_shift_id, handover_notes } = input as { to_shift_id: string, handover_notes: string };
+    
+        const handoverRepo = manager.getRepository(WorkOrderHandoverEntity);
+        await handoverRepo.save({
+          workOrderId: workOrder.id,
+          fromShiftId: workOrder.activeShiftId,
+          toShiftId: to_shift_id,
+          handoverNotes: handover_notes,
+        });
+    
+        workOrder.activeShiftId = to_shift_id;
+        workOrder.carryForwardCount = (workOrder.carryForwardCount || 0) + 1;
+        const updated = await workOrderRepo.save(workOrder);
+    
+        await this.addActivity(id, {
+          eventType: 'INTERNAL_NOTE',
+          notes: `Handed over to shift ${to_shift_id}. Notes: ${handover_notes}`,
+        }, auth);
+
+        const prodManagerIds = await this.getRoleUserIds('PRODUCTION_MANAGER', workOrder.plantId, manager);
+        const prodUserIds = await this.getRoleUserIds('PRODUCTION_USER', workOrder.plantId, manager);
+        const recipients = uniqueIds([...prodManagerIds, ...prodUserIds]);
+
+        if (recipients.length > 0) {
+          await this.createNotifications(recipients.map((userId) => ({
+            userId,
+            title: 'Work Order Shift Handover',
+            message: `Work Order ${workOrder.woNumber || 'Update'} has been handed over. Priority: ${workOrder.priority || 'MEDIUM'}`,
+            type: workOrder.priority === 'CRITICAL' ? 'critical' : 'warning',
+            link: '/work-orders',
+            woId: String(workOrder.id),
+          })), manager);
+        }
+    
+        return sanitizePayload(updated as unknown as GenericRecord);
+      });
+    }
+
+  async acknowledgeHandover(id: string, input: GenericRecord, auth: AuthContext): Promise<GenericRecord> {
+    const workOrderRepo = AppDataSource.getRepository(WorkOrderEntity);
+    const workOrder = await workOrderRepo.findOne({ where: { id } });
+    if (!workOrder) {
+      badRequest('Work order not found');
+    }
+
+    if (!isProductionRoleActor(auth)) {
+      forbidden('Shift handover is restricted to production roles');
+    }
+
+    const handoverRepo = AppDataSource.getRepository(WorkOrderHandoverEntity);
+    const pendingHandover = await handoverRepo.findOne({
+      where: { workOrderId: id, toShiftId: workOrder.activeShiftId ? workOrder.activeShiftId : IsNull(), acknowledgedBy: IsNull() },
+      order: { createdAt: 'DESC' }
+    });
+
+    if (!pendingHandover) {
+      badRequest('No pending handover to acknowledge');
+    }
+
+    pendingHandover.acknowledgedBy = auth.userId;
+    pendingHandover.acknowledgedAt = new Date();
+    await handoverRepo.save(pendingHandover);
+
+    const { notes } = input as { notes?: string };
+    
+    await this.addActivity(id, {
+      type: 'INTERNAL_NOTE',
+      notes: `Handover acknowledged.${notes ? ` Notes: ${notes}` : ''}`,
+    }, auth);
+
+    return sanitizePayload(workOrder as unknown as GenericRecord);
+  }
 }
 
 export const workordersService = new WorkOrdersService();

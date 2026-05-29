@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { resolvePublicMachineCode, resolvePublicQrToken } from "@/api/qr";
 import { getAssetOverview, type AssetOverview, type AssetWorkOrder } from "@/api/assets";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -625,7 +626,7 @@ export default function PublicQrAssetPage() {
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground">{qrData.asset.name}</h1>
               <p className="text-sm text-muted-foreground mt-1">{qrData.asset.code}</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <Button
                 variant="outline"
                 size="sm"
@@ -633,8 +634,9 @@ export default function PublicQrAssetPage() {
                 onClick={() => navigate(`/assets?assetId=${qrData.asset.id}&view=1&from=qr`)}
               >
                 <Factory className="h-4 w-4" />
-                <span className="text-[10px] font-bold uppercase">Full Console</span>
+                <span className="hidden sm:inline text-[10px] font-bold uppercase">Full Console</span>
               </Button>
+              <ThemeToggle />
             </div>
           </div>
 
@@ -688,46 +690,52 @@ export default function PublicQrAssetPage() {
 
   // ─── Public (unauthenticated) view ──────────────────────────────────────
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#020617] text-slate-50 selection:bg-teal-500/30">
+    <div className="relative flex flex-col min-h-screen overflow-x-hidden bg-background text-foreground transition-colors duration-300 selection:bg-primary/20">
       {/* Dynamic Background */}
-      <div className="fixed inset-0 z-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.15),transparent_40%),radial-gradient(circle_at_bottom_left,_rgba(14,165,233,0.15),transparent_40%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_80%)]" />
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent opacity-60 dark:opacity-40" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_var(--tw-gradient-stops))] from-cyan-500/10 via-transparent to-transparent opacity-60 dark:opacity-40" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_80%)]" />
       </div>
 
-      <div className="relative z-10 flex min-h-screen flex-col items-center px-4 py-8 sm:py-12 lg:py-20">
+      {/* Top Header */}
+      <div className="relative z-20 flex w-full justify-end p-4 sm:p-6">
+        <ThemeToggle />
+      </div>
+
+      <div className="relative z-10 flex flex-1 flex-col items-center px-4 pb-8 sm:pb-12 lg:pb-20">
         <div className="w-full max-w-2xl space-y-6">
           {/* Header Section */}
           <div className="flex flex-col items-center text-center space-y-3">
-             <div className="inline-flex items-center gap-2 rounded-full border border-teal-500/20 bg-teal-500/10 px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-teal-400">
+             <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
                <ScanLine className="h-3.5 w-3.5" />
                Machine Authentication
              </div>
-             <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">QR Asset Card</h1>
-             <p className="max-w-md text-sm font-medium text-slate-400 leading-relaxed">
+             <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl text-foreground">QR Asset Card</h1>
+             <p className="max-w-md text-sm font-medium text-muted-foreground leading-relaxed">
                Secure access to maintenance protocols and asset performance data.
              </p>
           </div>
 
           {isLoading ? (
-            <div className="flex min-h-[400px] flex-col items-center justify-center gap-4 rounded-[2.5rem] border border-white/5 bg-white/5 backdrop-blur-2xl">
-              <Loader2 className="h-10 w-10 animate-spin text-teal-500" />
-              <p className="text-sm font-bold uppercase tracking-widest text-slate-500">Retrieving Asset Intelligence</p>
+            <div className="flex min-h-[400px] flex-col items-center justify-center gap-4 rounded-[2.5rem] border border-border/50 bg-card/40 backdrop-blur-2xl shadow-xl">
+              <Loader2 className="h-10 w-10 animate-spin text-primary" />
+              <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Retrieving Asset Intelligence</p>
             </div>
           ) : isError || !qrData ? (
-            <div className="group relative overflow-hidden rounded-[2.5rem] border border-rose-500/20 bg-rose-500/5 p-8 text-center backdrop-blur-2xl">
-              <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-500">
+            <div className="group relative overflow-hidden rounded-[2.5rem] border border-destructive/20 bg-destructive/5 p-8 text-center backdrop-blur-2xl shadow-xl">
+              <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
                 <AlertTriangle className="h-8 w-8" />
               </div>
-              <h2 className="text-xl font-bold text-slate-100">Invalid QR Credentials</h2>
-              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+              <h2 className="text-xl font-bold text-foreground">Invalid QR Credentials</h2>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 {error instanceof Error ? error.message : "The provided token is invalid, expired, or the machine has been decommissioned."}
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-                <Button asChild className="rounded-2xl px-8 h-12 bg-rose-600 hover:bg-rose-700 font-bold">
+                <Button asChild className="rounded-2xl px-8 h-12 bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold">
                   <Link to="/login">Authentication Portal</Link>
                 </Button>
-                <Button variant="outline" asChild className="rounded-2xl px-8 h-12 border-white/10 bg-white/5 hover:bg-white/10 text-slate-200">
+                <Button variant="outline" asChild className="rounded-2xl px-8 h-12 border-border/50 bg-background/50 hover:bg-accent hover:text-accent-foreground text-foreground">
                   <Link to="/">System Home</Link>
                 </Button>
               </div>
@@ -735,23 +743,23 @@ export default function PublicQrAssetPage() {
           ) : (
             <div className="space-y-6">
               {/* Primary Asset Card */}
-              <Card className="overflow-hidden rounded-[2.5rem] border-none bg-white/5 shadow-2xl backdrop-blur-3xl">
+              <Card className="overflow-hidden rounded-[2.5rem] border border-border/50 bg-card/60 shadow-2xl backdrop-blur-3xl transition-all duration-300 hover:shadow-primary/5">
                 {/* Hero Machine Image */}
-                <div className="relative h-64 w-full overflow-hidden sm:h-80">
+                <div className="relative h-64 w-full overflow-hidden sm:h-80 bg-muted">
                   {qrData.asset.machineImageUrl ? (
                     <img src={qrData.asset.machineImageUrl} alt={qrData.asset.name} className="h-full w-full object-cover transition-transform duration-700 hover:scale-110" />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-slate-900/50">
-                      <Factory className="h-16 w-16 text-slate-700" />
+                    <div className="flex h-full w-full items-center justify-center bg-muted/80">
+                      <Factory className="h-16 w-16 text-muted-foreground/30" />
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-transparent opacity-60" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent opacity-90 dark:opacity-60" />
                   <div className="absolute bottom-6 left-6 right-6 flex items-end justify-between">
                     <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-[0.25em] text-teal-400">{qrData.asset.code}</p>
-                      <h2 className="text-2xl font-black text-white sm:text-3xl">{qrData.asset.name}</h2>
+                      <p className="text-[10px] font-black uppercase tracking-[0.25em] text-primary">{qrData.asset.code}</p>
+                      <h2 className="text-2xl font-black text-foreground sm:text-3xl">{qrData.asset.name}</h2>
                     </div>
-                    <StatusBadge variant={statusVariant} className="h-8 px-4 text-[10px] font-black uppercase tracking-widest">
+                    <StatusBadge variant={statusVariant} className="h-8 px-4 text-[10px] font-black uppercase tracking-widest shadow-sm">
                       {qrData.asset.status || "READY"}
                     </StatusBadge>
                   </div>
@@ -760,87 +768,90 @@ export default function PublicQrAssetPage() {
                 <CardContent className="p-6 sm:p-8">
                   {/* Hierarchy Grid */}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    <div className="flex flex-col gap-1 rounded-2xl border border-white/5 bg-white/5 p-4 transition-colors hover:bg-white/[0.08]">
-                      <div className="flex items-center gap-2 text-slate-500">
+                    <div className="flex flex-col gap-1 rounded-2xl border border-border/40 bg-background/40 p-4 transition-colors hover:bg-accent/40 shadow-sm">
+                      <div className="flex items-center gap-2 text-muted-foreground">
                         <Building2 className="h-3.5 w-3.5" />
                         <span className="text-[9px] font-black uppercase tracking-widest">Plant Unit</span>
                       </div>
-                      <p className="text-sm font-bold text-slate-200 truncate">
+                      <p className="text-sm font-bold text-foreground truncate">
                         {qrData.hierarchy.plant?.name || qrData.hierarchy.plant?.code || "-"}
                       </p>
                     </div>
-                    <div className="flex flex-col gap-1 rounded-2xl border border-white/5 bg-white/5 p-4 transition-colors hover:bg-white/[0.08]">
-                      <div className="flex items-center gap-2 text-slate-500">
+                    <div className="flex flex-col gap-1 rounded-2xl border border-border/40 bg-background/40 p-4 transition-colors hover:bg-accent/40 shadow-sm">
+                      <div className="flex items-center gap-2 text-muted-foreground">
                         <QrCode className="h-3.5 w-3.5" />
                         <span className="text-[9px] font-black uppercase tracking-widest">Department</span>
                       </div>
-                      <p className="text-sm font-bold text-slate-200 truncate">
+                      <p className="text-sm font-bold text-foreground truncate">
                         {qrData.hierarchy.department?.name || qrData.hierarchy.department?.code || "-"}
                       </p>
                     </div>
-                    <div className="flex flex-col gap-1 rounded-2xl border border-white/5 bg-white/5 p-4 transition-colors hover:bg-white/[0.08]">
-                      <div className="flex items-center gap-2 text-slate-500">
+                    <div className="flex flex-col gap-1 rounded-2xl border border-border/40 bg-background/40 p-4 transition-colors hover:bg-accent/40 shadow-sm">
+                      <div className="flex items-center gap-2 text-muted-foreground">
                         <MapPin className="h-3.5 w-3.5" />
                         <span className="text-[9px] font-black uppercase tracking-widest">Location</span>
                       </div>
-                      <p className="text-sm font-bold text-slate-200 truncate">{qrData.asset.location || "On-site"}</p>
+                      <p className="text-sm font-bold text-foreground truncate">{qrData.asset.location || "On-site"}</p>
                     </div>
                   </div>
 
                   {/* Reliability Snapshot */}
                   <div className="mt-8 space-y-4">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Performance Metrics</h3>
-                      <ShieldCheck className="h-4 w-4 text-teal-500" />
+                      <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Performance Metrics</h3>
+                      <ShieldCheck className="h-4 w-4 text-primary" />
                     </div>
                     <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-2xl bg-slate-950/40 p-4 text-center">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">MTTR</p>
-                        <p className="text-base font-black text-teal-400">{formatMetricMinutes(qrData.asset.reliability?.mttrMinutes)}</p>
+                      <div className="rounded-2xl border border-border/40 bg-muted/30 p-4 text-center transition-colors hover:bg-muted/50">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">MTTR</p>
+                        <p className="text-base font-black text-primary">{formatMetricMinutes(qrData.asset.reliability?.mttrMinutes)}</p>
                       </div>
-                      <div className="rounded-2xl bg-slate-950/40 p-4 text-center">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">MTBF</p>
-                        <p className="text-base font-black text-sky-400">{formatMetricMinutes(qrData.asset.reliability?.mtbfMinutes)}</p>
+                      <div className="rounded-2xl border border-border/40 bg-muted/30 p-4 text-center transition-colors hover:bg-muted/50">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">MTBF</p>
+                        <p className="text-base font-black text-sky-500">{formatMetricMinutes(qrData.asset.reliability?.mtbfMinutes)}</p>
                       </div>
-                      <div className="rounded-2xl bg-slate-950/40 p-4 text-center">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Uptime</p>
-                        <p className="text-base font-black text-emerald-400">98.2%</p>
+                      <div className="rounded-2xl border border-border/40 bg-muted/30 p-4 text-center transition-colors hover:bg-muted/50">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">Uptime</p>
+                        <p className="text-base font-black text-emerald-500">98.2%</p>
                       </div>
                     </div>
                   </div>
 
                   {/* Auth Actions */}
-                  <div className="mt-10 rounded-[2rem] border border-teal-500/20 bg-teal-500/5 p-6 text-center sm:p-8">
-                    <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-teal-500/10 text-teal-400">
-                      <LogIn className="h-6 w-6" />
-                    </div>
-                    <h4 className="text-lg font-bold text-slate-100">Elevated Protocol Access</h4>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                      Please authenticate to unlock full maintenance controls, history logs, and work order creation for this asset.
-                    </p>
-                    
-                    <div className="mt-8 flex flex-col gap-3">
-                      {isAuthLoading ? (
-                        <Button disabled className="h-14 rounded-2xl bg-teal-600 font-black uppercase tracking-widest">
-                          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                          Security Validation
-                        </Button>
-                      ) : (
-                        <Button asChild className="h-14 rounded-2xl bg-teal-600 hover:bg-teal-500 font-black uppercase tracking-widest shadow-[0_0_20px_rgba(20,184,166,0.3)]">
-                          <Link to={`/login?returnTo=${encodeURIComponent(returnTo)}`}>
-                            Continue to Maintenance Console
-                            <ArrowRight className="ml-2 h-4 w-4" />
-                          </Link>
-                        </Button>
-                      )}
+                  <div className="mt-10 rounded-[2rem] border border-primary/20 bg-primary/5 p-6 text-center sm:p-8 relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-primary/5 scale-0 rounded-full transition-transform duration-700 group-hover:scale-[2.5]" />
+                    <div className="relative z-10">
+                      <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                        <LogIn className="h-6 w-6" />
+                      </div>
+                      <h4 className="text-lg font-bold text-foreground">Elevated Protocol Access</h4>
+                      <p className="mt-2 text-sm leading-relaxed text-muted-foreground max-w-sm mx-auto">
+                        Please authenticate to unlock full maintenance controls, history logs, and work order creation for this asset.
+                      </p>
                       
-                      <Button
-                        variant="ghost"
-                        className="h-12 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-500 hover:bg-white/5 hover:text-slate-300"
-                        onClick={() => window.location.reload()}
-                      >
-                        Refresh Hardware Sync
-                      </Button>
+                      <div className="mt-8 flex flex-col gap-3">
+                        {isAuthLoading ? (
+                          <Button disabled className="h-14 rounded-2xl bg-primary text-primary-foreground font-black uppercase tracking-widest">
+                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                            Security Validation
+                          </Button>
+                        ) : (
+                          <Button asChild className="h-14 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black uppercase tracking-widest shadow-lg transition-transform active:scale-[0.98]">
+                            <Link to={`/login?returnTo=${encodeURIComponent(returnTo)}`}>
+                              Continue to Maintenance Console
+                              <ArrowRight className="ml-2 h-4 w-4" />
+                            </Link>
+                          </Button>
+                        )}
+                        
+                        <Button
+                          variant="ghost"
+                          className="h-12 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+                          onClick={() => window.location.reload()}
+                        >
+                          Refresh Hardware Sync
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -848,36 +859,39 @@ export default function PublicQrAssetPage() {
 
               {/* Secondary Info Bento */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="rounded-[2rem] border border-white/5 bg-white/5 p-6 backdrop-blur-xl">
+                <div className="rounded-[2rem] border border-border/50 bg-card/60 p-6 backdrop-blur-xl shadow-lg transition-all hover:shadow-xl">
                   <div className="flex items-center gap-3 mb-4">
-                    <div className="h-8 w-8 rounded-lg bg-sky-500/10 flex items-center justify-center text-sky-400">
+                    <div className="h-8 w-8 rounded-lg bg-sky-500/10 flex items-center justify-center text-sky-500">
                       <QrCode className="h-4 w-4" />
                     </div>
-                    <span className="text-xs font-black uppercase tracking-widest text-slate-200">Asset Identity</span>
+                    <span className="text-xs font-black uppercase tracking-widest text-foreground">Asset Identity</span>
                   </div>
-                  <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                    This encrypted QR signature uniquely identifies asset <span className="font-bold text-slate-300">{qrData.asset.code}</span> within the TamOptiX ecosystem.
+                  <p className="text-xs text-muted-foreground leading-relaxed mb-4">
+                    This encrypted QR signature uniquely identifies asset <span className="font-bold text-foreground">{qrData.asset.code}</span> within the TamOptiX ecosystem.
                   </p>
-                  <div className="rounded-xl bg-slate-950/60 p-3 font-mono text-[9px] text-teal-500/70 break-all border border-white/5">
+                  <div className="rounded-xl bg-muted/50 p-3 font-mono text-[9px] text-primary/80 break-all border border-border/40">
                     {qrData?.links?.publicResolverUrl || window.location.href}
                   </div>
                 </div>
 
-                <div className="rounded-[2rem] border border-white/5 bg-white/5 p-6 backdrop-blur-xl flex flex-col justify-between">
+                <div className="rounded-[2rem] border border-border/50 bg-card/60 p-6 backdrop-blur-xl shadow-lg transition-all hover:shadow-xl flex flex-col justify-between">
                   <div>
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400">
+                      <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-500">
                         <MapPin className="h-4 w-4" />
                       </div>
-                      <span className="text-xs font-black uppercase tracking-widest text-slate-200">Quick Context</span>
+                      <span className="text-xs font-black uppercase tracking-widest text-foreground">Quick Context</span>
                     </div>
-                    <p className="text-xs text-slate-500 leading-relaxed">
+                    <p className="text-xs text-muted-foreground leading-relaxed">
                       Scanning this QR provides instant verification of physical presence. All subsequent actions are logged with this location context for audit compliance.
                     </p>
                   </div>
-                  <div className="mt-4 flex items-center justify-between pt-4 border-t border-white/5">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-600">Audit Ready</span>
-                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                  <div className="mt-4 flex items-center justify-between pt-4 border-t border-border/40">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Audit Ready</span>
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                      <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">VERIFIED</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -885,9 +899,9 @@ export default function PublicQrAssetPage() {
           )}
 
           {/* Footer Info */}
-          <div className="flex flex-col items-center gap-4 pt-12 opacity-40 grayscale hover:grayscale-0 transition-all duration-500">
-             <div className="h-px w-24 bg-gradient-to-r from-transparent via-slate-500 to-transparent" />
-             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">TamOptiX Technologies • Intelligent CMMS Platform</p>
+          <div className="flex flex-col items-center gap-4 pt-12 opacity-60 grayscale hover:grayscale-0 transition-all duration-500">
+             <div className="h-px w-24 bg-gradient-to-r from-transparent via-border to-transparent" />
+             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground">TamOptiX Technologies • Intelligent CMMS Platform</p>
           </div>
         </div>
       </div>

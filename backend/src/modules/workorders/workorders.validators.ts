@@ -329,11 +329,37 @@ const workOrderActivityBodySchema = z
   });
 
 export const startWorkOrderSchema = z.preprocess(normalizeObjectKeys, startWorkOrderBodySchema);
+
+const holdWorkOrderBodySchema = z.object({
+  reason: z.enum(['WAITING_SPARE', 'WAITING_SHUTDOWN']),
+  notes: nullableTrimmedString.optional(),
+});
+
+export const holdWorkOrderSchema = z.preprocess(normalizeObjectKeys, holdWorkOrderBodySchema);
+
 export const triageWorkOrderSchema = z.preprocess(normalizeObjectKeys, triageWorkOrderBodySchema);
 export const submitWorkOrderForApprovalSchema = z.preprocess(normalizeObjectKeys, submitWorkOrderForApprovalBodySchema);
 export const reviewWorkOrderSchema = z.preprocess(normalizeObjectKeys, reviewWorkOrderBodySchema);
 export const acceptWorkOrderSchema = z.preprocess(normalizeObjectKeys, acceptWorkOrderBodySchema);
 export const workOrderActivitySchema = z.preprocess(normalizeObjectKeys, workOrderActivityBodySchema);
+
+const verifyWorkOrderBodySchema = z.object({
+  status: z.enum(['APPROVED', 'REJECTED']),
+  comments: nullableTrimmedString.optional(),
+});
+export const verifyWorkOrderSchema = z.preprocess(normalizeObjectKeys, verifyWorkOrderBodySchema);
+
+const handoverWorkOrderBodySchema = z.object({
+  to_shift_id: z.string().uuid(),
+  handover_notes: requiredTrimmedString,
+});
+export const handoverWorkOrderSchema = z.preprocess(normalizeObjectKeys, handoverWorkOrderBodySchema);
+
+const acknowledgeHandoverBodySchema = z.object({
+  notes: nullableTrimmedString.optional(),
+});
+export const acknowledgeHandoverSchema = z.preprocess(normalizeObjectKeys, acknowledgeHandoverBodySchema);
+
 
 const workOrderScopeSchema = z.enum(['assigned', 'raised', 'incharge', 'all', 'approval_required']);
 

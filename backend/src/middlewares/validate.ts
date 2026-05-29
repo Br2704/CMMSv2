@@ -29,7 +29,13 @@ export function validate(schema: ZodTypeAny, source: 'body' | 'query' | 'params'
       return;
     }
 
-    (req as any)[source] = parsed.data;
+      if (source === 'body') {
+        req.body = parsed.data;
+      } else if (source === 'query') {
+        req.query = parsed.data;
+      } else if (source === 'params') {
+        req.params = parsed.data;
+      }
     next();
   };
 }
@@ -68,7 +74,13 @@ export function validateRequest(schema: MultiSourceSchema) {
         res.status(400).json(fail('Validation failed', { issues: details, flattened: parsed.error.flatten() }));
         return;
       }
-      (req as unknown as Record<string, unknown>)[source] = parsed.data;
+        if (source === 'body') {
+          req.body = parsed.data;
+        } else if (source === 'query') {
+          req.query = parsed.data;
+        } else if (source === 'params') {
+          req.params = parsed.data;
+        }
     }
 
     next();

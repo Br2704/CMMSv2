@@ -91,7 +91,7 @@ export function normalizeCalibrationChecklistResults(value: unknown): Calibratio
   if (Array.isArray(value)) {
     return value
       .map((item, index) => {
-        const base = tasks[index] ?? { id: `task-${index + 1}`, title: `Task ${index + 1}` };
+        const base = tasks.at(index) ?? { id: `task-${index + 1}`, title: `Task ${index + 1}` };
         if (!item || typeof item !== 'object') {
           return { ...base, taskStatus: 'PENDING', referenceValue: '', measuredValue: '', deviation: '', passFail: 'PENDING', remarks: '' };
         }

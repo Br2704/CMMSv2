@@ -76,16 +76,14 @@ function sanitizeForLogging(data: unknown): unknown {
     return data.map(sanitizeForLogging);
   }
   if (typeof data === 'object' && data !== null) {
-    const sanitized: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(data)) {
-      const sensitiveKeys = ['password', 'token', 'secret', 'key', 'mfa', 'captcha', 'authorization'];
+    const sensitiveKeys = ['password', 'token', 'secret', 'key', 'mfa', 'captcha', 'authorization'];
+    const entries = Object.entries(data).map(([key, value]) => {
       if (sensitiveKeys.some((k) => key.toLowerCase().includes(k))) {
-        sanitized[key] = '[REDACTED]';
-      } else {
-        sanitized[key] = sanitizeForLogging(value);
+        return [key, '[REDACTED]'];
       }
-    }
-    return sanitized;
+      return [key, sanitizeForLogging(value)];
+    });
+    return Object.fromEntries(entries);
   }
   return data;
 }

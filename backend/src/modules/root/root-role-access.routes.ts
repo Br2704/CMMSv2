@@ -76,19 +76,21 @@ async function ensureDefaultOrgRoles(organizationId: string) {
 }
 
 function toPermissionMap(rows: OrgRolePermissionEntity[]): Record<string, string[]> {
-  const map: Record<string, string[]> = {};
-  for (const row of rows) {
-    const moduleKey = normalizeModuleKey(row.moduleKey);
-    if (!map[moduleKey]) {
-      map[moduleKey] = [];
-    }
-    const actions = normalizeActions(Array.isArray(row.actions) ? row.actions : []);
-    for (const action of actions) {
-      if (!map[moduleKey].includes(action)) {
-        map[moduleKey].push(action);
+    const tempMap = new Map<string, string[]>();
+    for (const row of rows) {
+      const moduleKey = normalizeModuleKey(row.moduleKey);
+      if (!tempMap.has(moduleKey)) {
+        tempMap.set(moduleKey, []);
+      }
+      const actions = normalizeActions(Array.isArray(row.actions) ? row.actions : []);
+      const existing = tempMap.get(moduleKey)!;
+      for (const action of actions) {
+        if (!existing.includes(action)) {
+          existing.push(action);
+        }
       }
     }
-  }
+    const map = Object.fromEntries(tempMap);
   return map;
 }
 
@@ -384,7 +386,7 @@ rootRoleAccessRouter.get('/orgs/:orgId/features', async (req, res, next) => {
 
     DEFAULT_FEATURE_KEYS.forEach((featureKey) => {
       if (!(featureKey in map)) {
-        map[featureKey] = false;
+        Reflect.set(map, featureKey, false);
       }
     });
 

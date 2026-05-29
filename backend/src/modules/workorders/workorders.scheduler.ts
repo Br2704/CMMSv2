@@ -150,8 +150,8 @@ async function runWorkOrderEscalationScheduler() {
       continue;
     }
 
-    const escalationMinutes = ESCALATION_INTERVALS[nextLevel - 1];
-    const slaDueAt = workOrder.sla_due_at ? toDate(workOrder.sla_due_at) : new Date(baseline.getTime() + ESCALATION_INTERVALS[ESCALATION_INTERVALS.length - 1] * 60000);
+    const escalationMinutes = ESCALATION_INTERVALS.at(nextLevel - 1) ?? 0;
+    const slaDueAt = workOrder.sla_due_at ? toDate(workOrder.sla_due_at) : new Date(baseline.getTime() + (ESCALATION_INTERVALS.at(-1) ?? 0) * 60000);
 
     await workOrderRepo
       .createQueryBuilder()
@@ -402,17 +402,10 @@ export function startWorkOrdersScheduler() {
   }
   schedulerStarted = true;
 
-  cron.schedule('*/15 * * * *', () => {
-    void runUserVerificationSlaScheduler().catch((error) => {
-      logger.error({ error }, 'Failed running work order verification SLA scheduler');
-    });
-  });
+  // Disabled: The default work order escalation and verification schedulers 
+  // were sending SLA and escalation notifications unconditionally.
+  // Escalations are now strictly managed by the enhanced mail-scheduler 
+  // which properly respects configured SLA rules.
 
-  cron.schedule('*/5 * * * *', () => {
-    void runWorkOrderEscalationScheduler().catch((error) => {
-      logger.error({ error }, 'Failed running work order escalation scheduler');
-    });
-  });
-
-  logger.info('Work order verification scheduler started');
+  logger.info('Legacy work order verification schedulers have been disabled in favor of rule-based escalation');
 }

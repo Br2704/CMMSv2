@@ -29,8 +29,7 @@ const SheetOverlay = React.forwardRef<
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName;
 
 const sheetVariants = cva(
-  "fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500 overflow-y-auto",
-  "fixed z-50 gap-4 overflow-hidden bg-background p-4 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500 sm:p-6",
+  "fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500 overflow-y-auto fixed z-50 gap-4 overflow-hidden bg-background p-4 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500 sm:p-6",
   {
     variants: {
       side: {
@@ -56,7 +55,20 @@ const SheetContent = React.forwardRef<React.ElementRef<typeof SheetPrimitive.Con
   ({ side = "right", className, children, ...props }, ref) => (
     <SheetPortal>
       <SheetOverlay />
-      <SheetPrimitive.Content ref={ref} aria-describedby={undefined} className={cn(sheetVariants({ side }), className)} {...props}>
+      <SheetPrimitive.Content 
+        ref={ref} 
+        aria-describedby={undefined} 
+        className={cn(sheetVariants({ side }), className)} 
+        onCloseAutoFocus={(e) => {
+          if (props.onCloseAutoFocus) props.onCloseAutoFocus(e);
+          if (!e.defaultPrevented) {
+            if (document.activeElement instanceof HTMLElement) {
+              document.activeElement.blur();
+            }
+          }
+        }}
+        {...props}
+      >
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">{children}</div>
         <SheetPrimitive.Close className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-md p-0 opacity-70 ring-offset-background transition-opacity data-[state=open]:bg-secondary hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none sm:right-4 sm:top-4">
           <X className="h-4 w-4" />

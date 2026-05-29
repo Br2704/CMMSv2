@@ -203,6 +203,18 @@ export class WorkOrderEntity extends TimestampedUuidEntity {
   @Column({ name: 'parent_work_order_id', type: 'uuid', nullable: true })
   parentWorkOrderId!: string | null;
 
+  @Column({ name: 'machine_running', type: 'boolean', default: false })
+  machineRunning!: boolean;
+
+  @Column({ name: 'verification_required', type: 'boolean', default: false })
+  verificationRequired!: boolean;
+
+  @Column({ name: 'active_shift_id', type: 'uuid', nullable: true })
+  activeShiftId!: string | null;
+
+  @Column({ name: 'carry_forward_count', type: 'int', default: 0 })
+  carryForwardCount!: number;
+
   @VersionColumn({ type: 'int', default: 1 })
   version!: number;
 

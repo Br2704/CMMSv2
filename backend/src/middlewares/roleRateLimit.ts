@@ -10,17 +10,17 @@ type Bucket = {
 
 const WINDOW_MS = 60_000;
 
-const ROLE_RATE_LIMITS: Record<string, number> = {
-  ROOT_ADMIN: 10000,
-  SUPER_ADMIN: 10000,
-  PLANT_ADMIN: 5000,
-  DEFAULT: 2500,
-};
+const ROLE_RATE_LIMITS = new Map<string, number>([
+  ['ROOT_ADMIN', 10000],
+  ['SUPER_ADMIN', 10000],
+  ['PLANT_ADMIN', 5000],
+  ['DEFAULT', 2500],
+]);
 
 const buckets = new Map<string, Bucket>();
 
 function getRoleLimit(roleKey: string) {
-  return ROLE_RATE_LIMITS[roleKey] ?? ROLE_RATE_LIMITS.DEFAULT;
+  return ROLE_RATE_LIMITS.get(roleKey) ?? ROLE_RATE_LIMITS.get('DEFAULT')!;
 }
 
 function getBucketKey(req: Request, roleKey: string) {

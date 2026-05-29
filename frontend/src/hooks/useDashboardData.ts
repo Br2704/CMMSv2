@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { dbClient } from "@/api/dbClient";
 import { getGateDashboardSummary } from "@/api/gates";
 import { getStoredAccessToken } from "@/api/http";
+import { getWorkOrderSummary } from "@/api/workorders";
 import { useAuthStore } from "@/store/auth.store";
 import { isAdminLevel, isSuperAdmin, hasRole } from "@/lib/permission-engine";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -156,6 +157,16 @@ export function useDashboardData(selectedPlantId?: string | null) {
     },
   });
 
+  const { data: workOrderSummary } = useQuery({
+    queryKey: ["dashboard_wo_summary", selectedPlantId],
+    ...protectedQueryOptions,
+    enabled: protectedQueryOptions.enabled && canReadWorkOrders,
+    queryFn: async () => {
+      const response = await getWorkOrderSummary({ plantId: selectedPlantId || undefined });
+      return response.data;
+    },
+  });
+
   const { data: assets = [], isLoading: assetsLoading } = useQuery({
     queryKey: ["dashboard_assets"],
     ...protectedQueryOptions,
@@ -279,12 +290,13 @@ export function useDashboardData(selectedPlantId?: string | null) {
   const totalAssets = scopedAssets.length;
   const totalPlants = activePlants.length;
   const activeAssets = scopedAssets.filter((a: any) => a.status === "ACTIVE").length;
-  const openWOs = filteredWOs.filter((wo: any) => wo.status !== "CLOSED").length;
-  const closedLast24h = filteredWOs.filter(
-    (wo: any) => wo.status === "CLOSED" && wo.closed_at && new Date(wo.closed_at) > now24h
-  ).length;
+  const openWOs = Number(workOrderSummary?.kpis?.open ?? filteredWOs.filter((wo: any) => wo.status !== "CLOSED").length);
+  const closedLast24h = Number(
+    workOrderSummary?.kpis?.closedLast24h ??
+      filteredWOs.filter((wo: any) => wo.status === "CLOSED" && wo.closed_at && new Date(wo.closed_at) > now24h).length,
+  );
   const overduePM = scopedPmSchedules.filter((pm: any) => pm.status === "OVERDUE").length;
-  const pendingApproval = filteredWOs.filter((wo: any) => ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status)).length;
+  const pendingApproval = Number(workOrderSummary?.kpis?.pendingApproval ?? filteredWOs.filter((wo: any) => ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status)).length);
   const overdueCalibrations = scopedCalibrations.filter((c: any) => c.status === "OVERDUE").length;
   const visitorsToday = gateSummary.visitorsToday;
   const vehiclesEntered = gateSummary.vehiclesEntered;
@@ -466,6 +478,7 @@ export function useDashboardData(selectedPlantId?: string | null) {
       overduePM, pendingApproval, overdueCalibrations,
       visitorsToday, vehiclesEntered, materialsInward, materialsOutward, activeVisitors, mttrAvg, mtbfAvg, pmCompliance,
       ...advancedKpis,
+      ...workOrderSummary?.kpis,
     },
     charts: {
       woByCategoryData, woByStatusData, woByPriorityData,

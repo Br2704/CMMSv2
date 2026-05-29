@@ -20,7 +20,9 @@ export function forbidFieldsByRole(fieldRules: FieldRules) {
     const forbiddenFields = new Set<string>();
 
     for (const role of actorRoles) {
-      (fieldRules[role] ?? []).forEach((field) => forbiddenFields.add(field));
+      if (Object.prototype.hasOwnProperty.call(fieldRules, role)) {
+        (fieldRules[role] ?? []).forEach((field) => forbiddenFields.add(field));
+      }
     }
 
     const blocked = Array.from(forbiddenFields).filter((field) => Object.prototype.hasOwnProperty.call(payload, field));

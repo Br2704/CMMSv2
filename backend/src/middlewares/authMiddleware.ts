@@ -10,7 +10,7 @@ import { verifyAccessToken } from '../utils/jwtEnhanced';
 import { fail } from '../utils/apiResponse';
 import { recordSecurityEvent } from '../utils/securityEvents';
 import { resolveUserOrganizationScope } from '../utils/userOrganization';
-import { resolveCanonicalRoleKey } from '../config/enterprise-roles';
+import { resolveCanonicalRoleKey, isValidEnterpriseRole } from '../config/enterprise-roles';
 import { rolePrecedence } from '../utils/policy';
 import { getPrimaryRole, getRolePrecedence, resolveRoleInfo } from '../services/role-hierarchy';
 import { buildEnterprisePermissionMap, mergePermissionMaps } from '../services/permission-engine';
@@ -99,7 +99,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const userRoles = await roleRepo.find({ where: { userId: user.id } });
     const profile = await profileRepo.findOneBy({ userId: user.id });
     const roles = userRoles.map((item) => normalizeRole(item.role)).filter(role => {
-      const { isValidEnterpriseRole } = require('../config/enterprise-roles');
       return isValidEnterpriseRole(role);
     });
     

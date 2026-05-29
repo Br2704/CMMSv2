@@ -197,7 +197,7 @@ function buildAuthTokenPayload(accessToken: string, csrfToken?: string, refreshT
 }
 
 function getHeaderValue(req: Request, key: string): string | undefined {
-  const value = req.headers[key];
+  const value = req.header(key);
   if (Array.isArray(value)) {
     return value[0];
   }
@@ -304,7 +304,7 @@ export async function resolveRefreshSessionRow(
 }
 
 function getUserAgent(req: Request) {
-  return typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
+  return typeof req.header('user-agent') === 'string' ? req.header('user-agent') : null;
 }
 
 export function buildCaptchaChallenge(email: string) {
@@ -499,7 +499,7 @@ async function buildMePayload(userId: string) {
         ? [effectivePlantId]
         : [];
 
-  let permissionMap: Record<string, string[]> = {};
+  let permissionMap = new Map<string, string[]>();
 
   if (!hasRootAdminRole && resolvedOrganizationId && orgRoleId) {
     const orgPermissions = await orgPermissionRepo.find({
@@ -507,19 +507,20 @@ async function buildMePayload(userId: string) {
     });
     orgPermissions.forEach((permission) => {
       const moduleKey = normalizeModuleKey(permission.moduleKey);
-      if (!permissionMap[moduleKey]) {
-        permissionMap[moduleKey] = [];
+      if (!permissionMap.has(moduleKey)) {
+        permissionMap.set(moduleKey, []);
       }
+      const existing = permissionMap.get(moduleKey)!;
       normalizeActions(permission.actions).forEach((action) => {
-        if (!permissionMap[moduleKey].includes(action)) {
-          permissionMap[moduleKey].push(action);
+        if (!existing.includes(action)) {
+          existing.push(action);
         }
       });
     });
   }
 
   // If no org-specific permissions found, fallback to global role permissions
-  if (Object.keys(permissionMap).length === 0) {
+  if (permissionMap.size === 0) {
     const permissions = effectiveRoles.length || roleIds.length
       ? await permissionRepo.find({
         where: [
@@ -531,12 +532,13 @@ async function buildMePayload(userId: string) {
 
     permissions.forEach((permission) => {
       const moduleKey = normalizeModuleKey(permission.moduleKey ?? permission.moduleId);
-      if (!permissionMap[moduleKey]) {
-        permissionMap[moduleKey] = [];
+      if (!permissionMap.has(moduleKey)) {
+        permissionMap.set(moduleKey, []);
       }
+      const existing = permissionMap.get(moduleKey)!;
       normalizeActions(permission.actions).forEach((action) => {
-        if (!permissionMap[moduleKey].includes(action)) {
-          permissionMap[moduleKey].push(action);
+        if (!existing.includes(action)) {
+          existing.push(action);
         }
       });
     });
@@ -544,18 +546,20 @@ async function buildMePayload(userId: string) {
 
   if (hasRootAdminRole) {
     RBAC_MODULE_KEYS.forEach((moduleKey) => {
-      permissionMap[moduleKey] = [...RBAC_ACTIONS];
+      permissionMap.set(moduleKey, [...RBAC_ACTIONS]);
     });
   } else if (effectiveRoles.includes('SUPER_ADMIN')) {
     RBAC_MODULE_KEYS.forEach((moduleKey) => {
-      permissionMap[moduleKey] = [...RBAC_ACTIONS];
+      permissionMap.set(moduleKey, [...RBAC_ACTIONS]);
     });
-    permissionMap.PLANTS = ["READ", "UPDATE"];
+    permissionMap.set('PLANTS', ["READ", "UPDATE"]);
   }
 
-  if (Object.keys(permissionMap).length === 0) {
+  let finalPermissionMap: Record<string, string[]> = Object.fromEntries(permissionMap);
+
+  if (permissionMap.size === 0) {
     const fallbackRole = roleKey ?? (normalizedRoles[0] ? normalizeRole(normalizedRoles[0]) : 'MAINTENANCE_USER');
-    permissionMap = buildEnterprisePermissionMap(fallbackRole);
+    finalPermissionMap = buildEnterprisePermissionMap(fallbackRole);
   }
 
   const roleKpis = roleIds.length
@@ -589,7 +593,6 @@ async function buildMePayload(userId: string) {
       });
     });
   }
-  const permissionKeys = permissionKeysFromMap(permissionMap);
 
   return {
     user: {
@@ -620,9 +623,9 @@ async function buildMePayload(userId: string) {
     roleKey,
     scopeType,
     rolePrecedence: rolePrec,
-    allowedModules: Object.keys(permissionMap),
-    allowedActionsByModule: permissionMap,
-    permissionKeys,
+    allowedModules: Object.keys(finalPermissionMap),
+    allowedActionsByModule: finalPermissionMap,
+    permissionKeys: permissionKeysFromMap(finalPermissionMap),
     allowedRoleTargetsForCreate: allowedRoleTargetsForCreate(roleKey),
     allowedRoleTargetsForEdit: allowedRoleTargetsForEdit(roleKey),
     kpiVisibility,

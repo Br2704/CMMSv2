@@ -26,6 +26,8 @@ export * from './feature-flag.entity';
 export * from './alert-config.entity';
 export * from './alert-log.entity';
 export * from './work-order.entity';
+export * from './work-order-verification.entity';
+export * from './work-order-handover.entity';
 export * from './work-order-master.entity';
 export * from './work-order-activity-log.entity';
 export * from './pm-schedule.entity';

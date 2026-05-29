@@ -117,3 +117,14 @@ export const rejectWorkOrder = (id: string, payload: { comments: string }) =>
     body: JSON.stringify(payload),
   });
 
+export const handoverWorkOrder = (id: string, payload: { toShiftId: string; handoverNotes: string }) =>
+  httpRequest<{ success: true; data: any }>(`/work-orders/${id}/handover`, { method: 'POST', body: JSON.stringify(payload) });
+
+export const acknowledgeHandoverWorkOrder = (id: string, payload?: { notes?: string }) =>
+  httpRequest<{ success: true; data: any }>(`/work-orders/${id}/handover/acknowledge`, { method: 'POST', body: JSON.stringify(payload || {}) });
+
+export const verifyWorkOrder = (id: string, payload: { status: 'APPROVED' | 'REJECTED'; comments?: string }) =>
+  httpRequest<{ success: true; data: any }>(`/work-orders/${id}/verify`, { method: 'POST', body: JSON.stringify(payload) });
+
+export const holdWorkOrder = (id: string, payload: { reason: 'WAITING_SPARE' | 'WAITING_SHUTDOWN'; notes?: string }) =>
+  httpRequest<{ success: true; data: any }>(`/work-orders/${id}/hold`, { method: 'POST', body: JSON.stringify(payload) });

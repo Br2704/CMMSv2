@@ -119,18 +119,10 @@ export function MainLayout() {
   useEffect(() => {
     if (typeof document === "undefined") return;
 
-    const baseTitle =
-      browserTitle ||
-      (organizationName
-        ? organizationName
-        : sidebarTitle
-          ? sidebarTitle
-          : APP_NAME);
-    const resolvedTitle =
-      baseTitle && !baseTitle.includes(APP_COMPANY) && baseTitle !== APP_BROWSER_TITLE
-        ? `${baseTitle} | ${APP_BROWSER_TITLE}`
-        : APP_BROWSER_TITLE;
-    document.title = resolvedTitle;
+    const baseTitle = organizationName 
+      ? `OptiX Maintenance Pro - ${organizationName}` 
+      : "OptiX Maintenance Pro";
+    document.title = baseTitle;
 
     const updateMetaContent = (selector: string, value: string) => {
       const element = document.querySelector<HTMLMetaElement>(selector);
@@ -139,9 +131,9 @@ export function MainLayout() {
       }
     };
 
-    updateMetaContent('meta[name="application-name"]', resolvedTitle);
-    updateMetaContent('meta[name="apple-mobile-web-app-title"]', resolvedTitle);
-    updateMetaContent('meta[name="title"]', resolvedTitle);
+    updateMetaContent('meta[name="application-name"]', baseTitle);
+    updateMetaContent('meta[name="apple-mobile-web-app-title"]', baseTitle);
+    updateMetaContent('meta[name="title"]', baseTitle);
     updateMetaContent('meta[name="theme-color"]', brandColor || APP_DEFAULT_THEME_COLOR);
     updateMetaContent('meta[name="msapplication-TileColor"]', brandColor || APP_DEFAULT_THEME_COLOR);
 
@@ -202,11 +194,11 @@ export function MainLayout() {
             </div>
           </main>
 
-          <footer className="border-t border-border/70 bg-card/80 px-4 py-2 backdrop-blur-sm sm:px-6 lg:px-8">
-            <div className="mx-auto flex w-full max-w-[1720px] items-center justify-center gap-2 text-center">
-              <img src={TAMOPTIX_LOGO} alt="TamOptiX" className="h-4 w-auto object-contain sm:h-5" decoding="async" />
-              <span className="text-[10px] font-medium tracking-wide text-muted-foreground sm:text-xs">{APP_TAGLINE}</span>
-            </div>
+          {/* Footer on all pages */}
+          <footer className="mt-auto border-t border-border/50 bg-background/50 px-4 py-3 text-center backdrop-blur-sm">
+            <p className="text-xs font-medium text-muted-foreground">
+              &copy; 2026 TamOptiX Technologies. OptiX Maintenance Pro.
+            </p>
           </footer>
         </div>
 

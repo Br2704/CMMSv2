@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { format, subHours } from "date-fns";
 import {
   Plus, Search, Eye, MoreHorizontal, Play, CheckCircle, Loader2, RefreshCw,
-  ClipboardList, Clock, CheckSquare, AlertTriangle, Send, Wrench, QrCode,
+  ClipboardList, Clock, CheckSquare, AlertTriangle, Send, Wrench, QrCode, PauseCircle,
   Bell, BellOff, History, MessageCircle, XCircle, SlidersHorizontal, ChevronLeft, ChevronRight, Layers3, Gauge
 } from "lucide-react";
 import { toast } from "sonner";
@@ -23,13 +23,16 @@ import { AsyncSelect } from "@/components/ui/async-select";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { MaterialsUsageEditor, type MaterialDraft } from "@/components/spares/MaterialsUsageEditor";
+import { ShiftHandoverDialog } from "@/components/shared/ShiftHandoverDialog";
+import { MachineVerificationDialog } from "@/components/shared/MachineVerificationDialog";
+import { HoldWorkOrderDialog } from "@/components/shared/HoldWorkOrderDialog";
 import { useAuthStore } from "@/store/auth.store";
 import { isAdminLevel, isSuperAdmin, hasRole } from "@/lib/permission-engine";
 import { getStoredAccessToken } from "@/api/http";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { FilterToolbar } from "@/components/layout/FilterToolbar";
@@ -51,8 +54,11 @@ import {
   startWorkOrder,
   submitWorkOrderForApproval,
   addWorkOrderActivity,
-  exportWorkOrdersCSV,
   bulkUpdateWorkOrders,
+  handoverWorkOrder,
+  acknowledgeHandoverWorkOrder,
+  verifyWorkOrder,
+  holdWorkOrder,
 } from "@/api/workorders";
 import { humanizeWorkOrderCode, normalizeWorkOrderCode, resolveWorkOrderLabel } from "@/config/work-order-masters";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
@@ -65,14 +71,16 @@ import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/shared/SearchableSelect";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { TimeAgo } from "@/components/shared/TimeAgo";
+import { normalizeRole } from "@/lib/permission-engine";
 
-const INCHARGE_CATEGORY_MAP: Record<string, string> = {
-  MAINTENANCE_MANAGER: "MECHANICAL",
-  PRODUCTION_MANAGER: "PRODUCTION",
-  SCM_MANAGER: "SUPPLY_CHAIN",
-  HR_MANAGER: "PEOPLE",
-  CALIBRATION_MANAGER: "CALIBRATION",
-};
+const INCHARGE_CATEGORY_MAP = new Map<string, string>([
+  ["MAINTENANCE_MANAGER", "MECHANICAL"],
+  ["MAINTENANCE_USER", "MECHANICAL"],
+  ["PRODUCTION_MANAGER", "PRODUCTION"],
+  ["SCM_MANAGER", "SUPPLY_CHAIN"],
+  ["HR_MANAGER", "PEOPLE"],
+  ["CALIBRATION_MANAGER", "CALIBRATION"],
+]);
 
 interface PhotoAttachment {
   name: string;
@@ -107,7 +115,10 @@ function normalizeDraftAttachments(input: unknown): PhotoAttachment[] {
 }
 
 function getInchargeCategories(roles: string[]): string[] {
-  return roles.filter((r) => INCHARGE_CATEGORY_MAP[r]).map((r) => INCHARGE_CATEGORY_MAP[r]);
+  return roles
+    .map((role) => normalizeRole(role))
+    .filter((role) => INCHARGE_CATEGORY_MAP.has(role))
+    .map((role) => INCHARGE_CATEGORY_MAP.get(role)!);
 }
 
 const WorkflowTimeline = ({ status, createdAt, openedAt, startedAt, submittedForApprovalAt, rejectedAt, closedAt }: {
@@ -253,6 +264,10 @@ function getStatusVariant(status: string) {
   if (status === "IN_PROGRESS") return "in_progress" as const;
   if (status === "USER_VERIFICATION") return "approval_pending" as const;
   if (status === "APPROVAL_PENDING") return "approval_pending" as const;
+  if (status === "VERIFICATION_REQUIRED") return "warning" as const;
+  if (status === "SUPERVISOR_VERIFIED") return "info" as const;
+  if (status === "WAITING_SPARE") return "warning" as const;
+  if (status === "WAITING_SHUTDOWN") return "warning" as const;
   if (status === "REASSIGNED") return "warning" as const;
   if (status === "ASSIGNED") return "primary" as const;
   if (status === "TRIAGED") return "info" as const;
@@ -363,6 +378,7 @@ export default function WorkOrders() {
   const userIsAdmin = isAdminLevel(user?.roles ?? []);
   const userIsSuperAdmin = isSuperAdmin(user?.roles ?? []);
   const userIsIncharge = hasRole(user?.roles ?? [], "MAINTENANCE_MANAGER") || hasRole(user?.roles ?? [], "MAINTENANCE_USER") || hasRole(user?.roles ?? [], "CALIBRATION_USER");
+  const userIsProductionTeam = hasRole(user?.roles ?? [], "PRODUCTION_MANAGER") || hasRole(user?.roles ?? [], "PRODUCTION_USER");
   const userIsVendor = hasRole(user?.roles ?? [], "VENDOR");
   const inchargeCategories = useMemo(() => getInchargeCategories(user?.roles || []), [user?.roles]);
   const assetPrefillApplied = useRef<string | null>(null);
@@ -371,11 +387,11 @@ export default function WorkOrders() {
   const authEnabled = !authLoading && isAuthenticated && Boolean(getStoredAccessToken());
   const workOrderRefetchInterval: number | false = authEnabled ? 15_000 : false;
 
-  const activePlantIds = user?.plantId ? [user.plantId] : [];
+  const activePlantIds = useMemo(() => (user?.plantId ? [user.plantId] : []), [user?.plantId]);
   const defaultPlantId = user?.plantId || "";
   const actorIds = useMemo(
-    () => new Set([user?.authId, user?.id].filter((value): value is string => Boolean(value))),
-    [user?.authId, user?.id],
+    () => new Set([user?.id, user?.authId].filter((value): value is string => Boolean(value))),
+    [user?.id, user?.authId],
   );
 
   const { data: workOrderMasters = [], isLoading: isWorkOrderConfigLoading } = useQuery({
@@ -425,10 +441,10 @@ export default function WorkOrders() {
     },
   });
 
-  const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "incharge" | "team" | "all" | "approval" | "vendor">("assigned");
+  const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "incharge" | "team" | "all" | "handover" | "approval">("assigned");
 
   const { data: allWorkOrders = [], isLoading, isFetching, refetch, dataUpdatedAt, error: workOrdersError } = useQuery({
-    queryKey: ["work_orders", ...activePlantIds, activeTab, actorIds],
+    queryKey: ["work_orders", ...activePlantIds, user?.id || "anonymous"],
     enabled: Boolean(authEnabled),
     refetchInterval: workOrderRefetchInterval,
     refetchIntervalInBackground: true,
@@ -438,25 +454,86 @@ export default function WorkOrders() {
     },
   });
 
-  const isOwnedByCurrentUser = (value: unknown) => typeof value === "string" && actorIds.has(value);
+  const isOwnedByCurrentUser = useCallback((value: any) => {
+    const id = typeof value === "string" ? value : value?.id;
+    return typeof id === "string" && actorIds.has(id);
+  }, [actorIds]);
 
   const raisedWorkOrders = useMemo(() => {
     if (!user || actorIds.size === 0) return [];
     return allWorkOrders.filter((wo: any) => isOwnedByCurrentUser(wo.raised_by));
-  }, [actorIds, allWorkOrders, user]);
+  }, [actorIds, allWorkOrders, isOwnedByCurrentUser, user]);
 
   const inchargeWorkOrders = useMemo(() => {
     if (!userIsIncharge || inchargeCategories.length === 0) return [];
     return allWorkOrders.filter(
       (wo: any) => inchargeCategories.includes(wo.category) && !isOwnedByCurrentUser(wo.raised_by),
     );
-  }, [allWorkOrders, inchargeCategories, userIsIncharge]);
+  }, [allWorkOrders, inchargeCategories, isOwnedByCurrentUser, userIsIncharge]);
 
   const approvalQueueWorkOrders = useMemo(() => {
     return allWorkOrders.filter(
       (wo: any) => ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status) && (userIsAdmin || isOwnedByCurrentUser(wo.raised_by)),
     );
-  }, [allWorkOrders, userIsAdmin]);
+  }, [allWorkOrders, isOwnedByCurrentUser, userIsAdmin]);
+
+  const followUpWorkOrders = useMemo(() => {
+    return allWorkOrders.filter((wo: any) => wo.follow_up_required && !["CLOSED", "CANCELLED"].includes(wo.status));
+  }, [allWorkOrders]);
+
+  const verificationRequiredWorkOrders = useMemo(() => {
+    return allWorkOrders.filter((wo: any) => wo.status === "VERIFICATION_REQUIRED");
+  }, [allWorkOrders]);
+
+  const handoverWorkOrders = useMemo(() => {
+    if (!userIsProductionTeam) return [];
+    return allWorkOrders.filter((wo: any) => wo.carry_forward_count > 0 && !["CLOSED", "CANCELLED"].includes(wo.status));
+  }, [allWorkOrders, userIsProductionTeam]);
+
+  const inProgressWorkOrders = useMemo(
+    () => allWorkOrders.filter((wo: any) => ["OPENED", "IN_PROGRESS", "ASSIGNED", "ACCEPTED", "REASSIGNED", "FOLLOW_UP_ACTIVE"].includes(String(wo.status ?? "").toUpperCase())),
+    [allWorkOrders],
+  );
+
+  const waitingShutdownWorkOrders = useMemo(
+    () => allWorkOrders.filter((wo: any) => String(wo.status ?? "").toUpperCase() === "WAITING_SHUTDOWN"),
+    [allWorkOrders],
+  );
+
+  const waitingSpareWorkOrders = useMemo(
+    () => allWorkOrders.filter((wo: any) => String(wo.status ?? "").toUpperCase() === "WAITING_SPARE"),
+    [allWorkOrders],
+  );
+
+  const escalatedWorkOrders = useMemo(
+    () => allWorkOrders.filter((wo: any) => String(wo.status ?? "").toUpperCase() === "ESCALATED"),
+    [allWorkOrders],
+  );
+
+  const criticalWorkOrders = useMemo(
+    () => allWorkOrders.filter((wo: any) => String(wo.priority ?? "").toUpperCase() === "CRITICAL" || String(wo.status ?? "").toUpperCase() === "ESCALATED"),
+    [allWorkOrders],
+  );
+
+  const slaBreachWorkOrders = useMemo(
+    () => allWorkOrders.filter((wo: any) => wo.sla_due_at && new Date(wo.sla_due_at) < new Date() && !["CLOSED", "CANCELLED", "ARCHIVED"].includes(String(wo.status ?? "").toUpperCase())),
+    [allWorkOrders],
+  );
+
+  const completedWorkOrders = useMemo(
+    () => allWorkOrders.filter((wo: any) => String(wo.status ?? "").toUpperCase() === "COMPLETED"),
+    [allWorkOrders],
+  );
+
+  const closedWorkOrders = useMemo(
+    () => allWorkOrders.filter((wo: any) => String(wo.status ?? "").toUpperCase() === "CLOSED"),
+    [allWorkOrders],
+  );
+
+  const archivedWorkOrders = useMemo(
+    () => allWorkOrders.filter((wo: any) => String(wo.status ?? "").toUpperCase() === "ARCHIVED"),
+    [allWorkOrders],
+  );
 
   const { data: userMaintenanceTeams = [] } = useQuery({
     queryKey: ["wo_user_teams", ...activePlantIds],
@@ -467,38 +544,93 @@ export default function WorkOrders() {
     },
   });
 
-  const userTeamCategories = useMemo(() => {
-    const userId = user?.authId || user?.id;
-    if (!userId || userMaintenanceTeams.length === 0 || workOrderTeamMappings.length === 0) return new Set<string>();
-    const userTeamIds = new Set(
-      userMaintenanceTeams
-        .filter((team) => team.teamLeaderId === userId || (team.teamMemberIds ?? []).includes(userId))
-        .map((t) => t.id)
+  const actualUserTeams = useMemo(() => {
+    if (!user) return [];
+    return userMaintenanceTeams.filter(
+      (team) => team.teamLeaderId === user?.id || team.teamLeaderId === user?.authId || 
+                (team.teamMemberIds ?? []).includes(user?.id) || (team.teamMemberIds ?? []).includes(user?.authId)
     );
-    return new Set(
-      workOrderTeamMappings
-        .filter((mapping) => userTeamIds.has(mapping.teamId))
-        .map((mapping) => mapping.category)
-    );
-  }, [userMaintenanceTeams, workOrderTeamMappings, user?.authId, user?.id]);
+  }, [userMaintenanceTeams, user]);
 
-  const userIsPartOfTeam = userTeamCategories.size > 0;
+  const userTeamMappings = useMemo(() => {
+    if (actualUserTeams.length === 0 || workOrderTeamMappings.length === 0) return [];
+    const teamIds = new Set(actualUserTeams.map((t) => t.id));
+    return workOrderTeamMappings.filter((mapping) => teamIds.has(mapping.teamId));
+  }, [actualUserTeams, workOrderTeamMappings]);
+
+  const userTeamIds = useMemo(() => {
+    const ids = new Set<string>();
+    actualUserTeams.forEach((t) => ids.add(t.id));
+    userTeamMappings.forEach((m) => ids.add(m.teamId));
+    return ids;
+  }, [actualUserTeams, userTeamMappings]);
+
+  const userTeamCategories = useMemo(() => {
+    const cats = new Set<string>();
+    userTeamMappings.forEach((m) => {
+      if (m.category) cats.add(m.category);
+    });
+    actualUserTeams.forEach((t) => {
+      if (t.discipline) cats.add(t.discipline);
+    });
+    return cats;
+  }, [actualUserTeams, userTeamMappings]);
+
+  const userIsPartOfTeam = userTeamIds.size > 0;
+
+  const isTeamOwnedWorkOrder = useCallback(
+    (wo: any) => {
+      if (!user) return false;
+      const woCategory = String(wo?.category ?? "").toUpperCase();
+      const assetDepartmentId = wo.assets?.departmentId || wo.assets?.department_id || null;
+
+      if (userTeamMappings.length > 0) {
+        const matchesMapping = userTeamMappings.some((mapping) => {
+          if (String(mapping.category ?? "").toUpperCase() !== woCategory) return false;
+          if (mapping.departmentId && mapping.departmentId !== assetDepartmentId) return false;
+          return true;
+        });
+        if (matchesMapping) return true;
+      }
+
+      if (actualUserTeams.length > 0) {
+        const matchesDiscipline = actualUserTeams.some((team) => {
+          return String(team.discipline ?? "").toUpperCase() === woCategory;
+        });
+        if (matchesDiscipline) return true;
+      }
+
+      return false;
+    },
+    [user, userTeamMappings, actualUserTeams],
+  );
+
+  const isFollowUpOwnedWorkOrder = useCallback(
+    (wo: any) => {
+      const followUpTeamId = typeof wo?.follow_up_team_id === "string" ? wo.follow_up_team_id : null;
+      return Boolean(followUpTeamId && userTeamIds.has(followUpTeamId));
+    },
+    [userTeamIds],
+  );
 
   const assignedWorkOrders = useMemo(() => {
     if (!user || actorIds.size === 0) return [];
     return allWorkOrders.filter(
       (wo: any) =>
         isOwnedByCurrentUser(wo.assigned_to) ||
-        (userTeamCategories.size > 0 && userTeamCategories.has(wo.category) && !isOwnedByCurrentUser(wo.raised_by))
+        isFollowUpOwnedWorkOrder(wo) ||
+        (isTeamOwnedWorkOrder(wo) && !isOwnedByCurrentUser(wo.raised_by)) ||
+        (userIsIncharge && inchargeCategories.includes(wo.category) && !isOwnedByCurrentUser(wo.raised_by))
     );
-  }, [actorIds, allWorkOrders, user, userTeamCategories]);
+  }, [actorIds, allWorkOrders, inchargeCategories, isFollowUpOwnedWorkOrder, isOwnedByCurrentUser, isTeamOwnedWorkOrder, user, userIsIncharge]);
 
   const teamWorkOrders = useMemo(() => {
-    if (userTeamCategories.size === 0) return [];
-    return allWorkOrders.filter(
-      (wo: any) => userTeamCategories.has(wo.category) && !isOwnedByCurrentUser(wo.raised_by),
-    );
-  }, [allWorkOrders, userTeamCategories]);
+    if (actualUserTeams.length === 0 && userTeamMappings.length === 0) return [];
+    return allWorkOrders.filter((wo: any) => {
+      if (isOwnedByCurrentUser(wo.raised_by)) return false;
+      return isTeamOwnedWorkOrder(wo);
+    });
+  }, [allWorkOrders, isOwnedByCurrentUser, actualUserTeams.length, userTeamMappings.length, isTeamOwnedWorkOrder]);
 
   const activeAssetHistoryId = assetIdFromQuery?.trim() || "";
   const isAssetHistoryMode = Boolean(activeAssetHistoryId);
@@ -529,61 +661,62 @@ export default function WorkOrders() {
     [isAmcWorkOrder, isVendorAssignedWorkOrder, userIsVendor],
   );
 
-  useEffect(() => {
-    if (!authEnabled || activeTabInitializedRef.current) return;
-    setActiveTab(userIsAdmin ? "all" : userIsVendor ? "vendor" : userIsIncharge ? "incharge" : userIsPartOfTeam ? "team" : "assigned");
-    activeTabInitializedRef.current = true;
-  }, [authEnabled, userIsAdmin, userIsIncharge, userIsPartOfTeam, userIsVendor]);
+  const isTeamDataLoaded = !isFetching && !isLoading && workOrderTeamMappings && userMaintenanceTeams;
 
   useEffect(() => {
-    if (activeTab === "vendor" && !userIsVendor) {
-      setActiveTab(userIsAdmin ? "all" : userIsIncharge ? "incharge" : "assigned");
+    if (!authEnabled || activeTabInitializedRef.current || !isTeamDataLoaded) return;
+    setActiveTab((userIsIncharge && inchargeCategories.length > 0) ? "incharge" : userIsPartOfTeam ? "team" : "assigned");
+    activeTabInitializedRef.current = true;
+  }, [authEnabled, isTeamDataLoaded, userIsIncharge, inchargeCategories.length, userIsPartOfTeam]);
+
+  useEffect(() => {
+    if (activeTab === "handover" && !userIsProductionTeam) {
+      setActiveTab((userIsIncharge && inchargeCategories.length > 0) ? "incharge" : "assigned");
       return;
     }
-    if (activeTab === "all" && !userIsAdmin) {
-      setActiveTab(userIsIncharge ? "incharge" : "assigned");
+    if (activeTab === "incharge" && !(userIsIncharge && inchargeCategories.length > 0)) {
+      setActiveTab(userIsPartOfTeam ? "team" : "assigned");
       return;
-    }
-    if (activeTab === "incharge" && !userIsIncharge) {
-      setActiveTab(userIsAdmin ? "all" : "assigned");
     }
     if (activeTab === "team" && !userIsPartOfTeam) {
-      setActiveTab(userIsAdmin ? "all" : "assigned");
+      setActiveTab((userIsIncharge && inchargeCategories.length > 0) ? "incharge" : "assigned");
     }
-  }, [activeTab, userIsAdmin, userIsIncharge, userIsPartOfTeam, userIsVendor]);
+  }, [activeTab, userIsIncharge, inchargeCategories.length, userIsPartOfTeam, userIsProductionTeam]);
+
+  const tabWorkOrders = useMemo(
+    () => ({
+      assigned: assignedWorkOrders,
+      raised: raisedWorkOrders,
+      incharge: inchargeWorkOrders,
+      handover: handoverWorkOrders,
+      team: teamWorkOrders,
+      all: allWorkOrders,
+    }),
+    [
+      assignedWorkOrders,
+      handoverWorkOrders,
+      inchargeWorkOrders,
+      raisedWorkOrders,
+      teamWorkOrders,
+      allWorkOrders,
+    ],
+  );
 
   const displayedOrders = useMemo(() => {
-    if (isAssetHistoryMode) {
-      return allWorkOrders;
+    switch (activeTab) {
+      case "all": return allWorkOrders;
+      case "assigned": return tabWorkOrders.assigned;
+      case "raised": return tabWorkOrders.raised;
+      case "incharge": return tabWorkOrders.incharge;
+      case "team": return tabWorkOrders.team;
+      case "handover": return tabWorkOrders.handover;
+      default: return assignedWorkOrders;
     }
-    if (activeTab === "assigned") return assignedWorkOrders;
-    if (activeTab === "raised") return raisedWorkOrders;
-    if (userIsIncharge && activeTab === "incharge") return inchargeWorkOrders;
-    if (activeTab === "approval") return approvalQueueWorkOrders;
-    if (activeTab === "team") return teamWorkOrders;
-    if (userIsAdmin && activeTab === "all") return allWorkOrders;
-    if (activeTab === "vendor") {
-      return allWorkOrders.filter((wo: any) => isVendorAssignedWorkOrder(wo));
-    }
-    return assignedWorkOrders;
-  }, [activeTab, allWorkOrders, approvalQueueWorkOrders, assignedWorkOrders, inchargeWorkOrders, isAssetHistoryMode, isVendorAssignedWorkOrder, raisedWorkOrders, teamWorkOrders, userIsAdmin, userIsIncharge]);
+  }, [activeTab, allWorkOrders, assignedWorkOrders, isAssetHistoryMode, tabWorkOrders]);
 
-  const kpiSource =
-    isAssetHistoryMode
-      ? allWorkOrders.filter((wo: any) => wo.asset_id === activeAssetHistoryId)
-      : activeTab === "approval"
-        ? approvalQueueWorkOrders
-        : activeTab === "vendor"
-          ? displayedOrders
-        : activeTab === "incharge"
-          ? inchargeWorkOrders
-        : activeTab === "team"
-          ? teamWorkOrders
-        : activeTab === "all"
-            ? allWorkOrders
-            : activeTab === "raised"
-              ? raisedWorkOrders
-              : assignedWorkOrders;
+  const kpiSource = isAssetHistoryMode
+    ? allWorkOrders.filter((wo: any) => wo.asset_id === activeAssetHistoryId)
+    : displayedOrders;
   const now24h = subHours(new Date(), 24);
   const openWOs = kpiSource.filter((wo: any) => !["CLOSED"].includes(wo.status)).length;
   const closedLast24h = kpiSource.filter((wo: any) => wo.status === "CLOSED" && wo.closed_at && new Date(wo.closed_at) > now24h).length;
@@ -600,7 +733,27 @@ export default function WorkOrders() {
   const [currentPage, setCurrentPage] = useState(1);
   const isMobile = useIsMobile();
 
-  const myApprovalQueueCount = approvalQueueWorkOrders.length;
+  const workOrderTabs = useMemo(() => ([
+    { id: "assigned", label: "Assigned to Me", count: assignedWorkOrders.length },
+    { id: "raised", label: "Raised by Me", count: raisedWorkOrders.length },
+    ...(userIsPartOfTeam ? [{ id: "team", label: "My Team", count: teamWorkOrders.length }] : []),
+    ...(userIsIncharge && inchargeCategories.length > 0 ? [{ id: "incharge", label: inchargeCategories.join(", "), count: inchargeWorkOrders.length }] : []),
+    ...(userIsProductionTeam ? [{ id: "handover", label: "Shift Handover", count: handoverWorkOrders.length }] : []),
+    ...(userIsAdmin || userIsSuperAdmin ? [{ id: "all", label: "All Work Orders", count: allWorkOrders.length }] : []),
+  ]), [
+    allWorkOrders.length,
+    assignedWorkOrders.length,
+    handoverWorkOrders.length,
+    inchargeCategories,
+    inchargeWorkOrders.length,
+    raisedWorkOrders.length,
+    teamWorkOrders.length,
+    userIsAdmin,
+    userIsIncharge,
+    userIsPartOfTeam,
+    userIsProductionTeam,
+    userIsSuperAdmin,
+  ]);
 
 
   const showWorkOrdersLoading = authLoading || (authEnabled && isLoading);
@@ -680,6 +833,15 @@ export default function WorkOrders() {
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [reviewMode, setReviewMode] = useState<"approve" | "reject">("approve");
   const [reviewData, setReviewData] = useState(() => ({ ...EMPTY_REVIEW_DATA }));
+  const [isHandoverOpen, setIsHandoverOpen] = useState(false);
+  const [isHandoverSubmitting, setIsHandoverSubmitting] = useState(false);
+  const [handoverWorkOrderTarget, setHandoverTargetWO] = useState<any>(null);
+  const [isMachineVerificationOpen, setIsMachineVerificationOpen] = useState(false);
+  const [isMachineVerificationSubmitting, setIsMachineVerificationSubmitting] = useState(false);
+  const [machineVerificationTargetWO, setMachineVerificationTargetWO] = useState<any>(null);
+  const [isHoldOpen, setIsHoldOpen] = useState(false);
+  const [isHoldSubmitting, setIsHoldSubmitting] = useState(false);
+  const [holdTargetWO, setHoldTargetWO] = useState<any>(null);
   const [formData, setFormData] = useState(() => getInitialRaiseFormData(user?.plantId || ""));
   const [photoAttachments, setPhotoAttachments] = useState<PhotoAttachment[]>([]);
   const [reviewTargetWO, setReviewTargetWO] = useState<any>(null);
@@ -693,7 +855,7 @@ export default function WorkOrders() {
   const [cameraError, setCameraError] = useState("");
   const reviewRequiresComments = useMemo(
     () => selectedWO !== null && isAdminLevel(user?.roles ?? []) && !isOwnedByCurrentUser(selectedWO.raised_by),
-    [selectedWO, user],
+    [isOwnedByCurrentUser, selectedWO, user],
   );
   const filterCategoryOptions = useMemo(
     () => getUnionWorkOrderOptions(workOrderMasters, "CATEGORY"),
@@ -1621,6 +1783,60 @@ export default function WorkOrders() {
     }
   };
 
+  const handleHandoverSubmit = async ({ toShiftId, handoverNotes }: { toShiftId: string; handoverNotes: string }) => {
+    if (!handoverWorkOrderTarget || isHandoverSubmitting) return;
+
+    setIsHandoverSubmitting(true);
+    try {
+      await handoverWorkOrder(handoverWorkOrderTarget.id, {
+        toShiftId,
+        handoverNotes,
+      });
+      toast.success("Work order handed over to the next shift successfully");
+      setIsHandoverOpen(false);
+      setHandoverTargetWO(null);
+      triggerWorkOrderLiveSync();
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to hand over work order");
+    } finally {
+      setIsHandoverSubmitting(false);
+    }
+  };
+
+  const handleMachineVerificationSubmit = async (data: { status: 'APPROVED' | 'REJECTED'; comments?: string }) => {
+    if (!machineVerificationTargetWO || isMachineVerificationSubmitting) return;
+
+    setIsMachineVerificationSubmitting(true);
+    try {
+      await verifyWorkOrder(machineVerificationTargetWO.id, data);
+      toast.success(data.status === 'APPROVED' ? "Work order verified successfully" : "Work order rejected");
+      setIsMachineVerificationOpen(false);
+      setMachineVerificationTargetWO(null);
+      triggerWorkOrderLiveSync();
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to verify work order");
+    } finally {
+      setIsMachineVerificationSubmitting(false);
+    }
+  };
+
+  const handleHoldSubmit = async (data: { reason: 'WAITING_SPARE' | 'WAITING_SHUTDOWN'; notes?: string }) => {
+    if (!holdTargetWO || isHoldSubmitting) return;
+
+    setIsHoldSubmitting(true);
+    try {
+      await holdWorkOrder(holdTargetWO.id, data);
+      toast.success("Work order placed on hold");
+      setIsHoldOpen(false);
+      setHoldTargetWO(null);
+      triggerWorkOrderLiveSync();
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to place on hold");
+    } finally {
+      setIsHoldSubmitting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (isRaisingWorkOrder) return;
 
@@ -1900,8 +2116,20 @@ export default function WorkOrders() {
     }
     if (isSuperAdmin(user?.roles ?? []) || hasRole(user?.roles ?? [], "MAINTENANCE_MANAGER")) return true;
     if (isOwnedByCurrentUser(wo.assigned_to)) return true;
-    if (userTeamCategories.size > 0 && userTeamCategories.has(wo.category) && !isOwnedByCurrentUser(wo.raised_by)) return true;
-    return hasRole(user?.roles ?? [], "MAINTENANCE_USER") || hasRole(user?.roles ?? [], "MAINTENANCE_MANAGER") && (!wo.assigned_to || isOwnedByCurrentUser(wo.assigned_to));
+    if (isFollowUpOwnedWorkOrder(wo)) return true;
+    
+    // Check if explicitly assigned to a team leader/member in one of the current user's teams
+    const assignedToId = typeof wo?.assigned_to === "string" ? wo.assigned_to : wo?.assigned_to?.id;
+    if (assignedToId && actualUserTeams.some((team) => team.teamLeaderId === assignedToId || (team.teamMemberIds ?? []).includes(assignedToId))) return true;
+
+    // Fallback to category mapping guess
+    if (isTeamOwnedWorkOrder(wo)) return true;
+
+    // Allow incharge users (e.g. MAINTENANCE_USER) to execute WOs in their managed categories
+    const woCategory = String(wo?.category ?? "").toUpperCase();
+    if (userIsIncharge && inchargeCategories.includes(woCategory)) return true;
+
+    return false;
   };
 
   const canReviewWO = (wo: any) => {
@@ -1959,18 +2187,43 @@ export default function WorkOrders() {
       key: "actions", header: "Actions", className: "text-right", render: (wo: any) => (
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => handleView(wo)}><Eye className="mr-2 h-4 w-4" />View Details</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setTimeout(() => handleView(wo), 0)}><Eye className="mr-2 h-4 w-4" />View Details</DropdownMenuItem>
             {canExecuteWO(wo) && (
               <>
-                {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED"].includes(wo.status)) && <DropdownMenuItem onClick={() => openOpenForm(wo.id)}><Play className="mr-2 h-4 w-4" />Open & Assess</DropdownMenuItem>}
-                {wo.status === "IN_PROGRESS" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />{userIsVendor ? "Close AMC Work Order" : "Complete & Send for Verification"}</DropdownMenuItem>}
-                {wo.status === "REJECTED" && <DropdownMenuItem onClick={() => openCloseForm(wo.id)}><Send className="mr-2 h-4 w-4" />{userIsVendor ? "Revise AMC Closure" : "Revise & Resubmit"}</DropdownMenuItem>}
+                {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED", "WAITING_SPARE", "WAITING_SHUTDOWN"].includes(wo.status)) && <DropdownMenuItem onSelect={() => setTimeout(() => openOpenForm(wo.id), 0)}><Play className="mr-2 h-4 w-4" />{["WAITING_SPARE", "WAITING_SHUTDOWN"].includes(wo.status) ? "Resume Work" : "Open & Assess"}</DropdownMenuItem>}
+                {wo.status === "IN_PROGRESS" && <DropdownMenuItem onSelect={() => setTimeout(() => openCloseForm(wo.id), 0)}><Send className="mr-2 h-4 w-4" />{userIsVendor ? "Close AMC Work Order" : "Complete & Send for Verification"}</DropdownMenuItem>}
+                {["ASSIGNED", "OPENED", "IN_PROGRESS"].includes(wo.status) && (
+                  <DropdownMenuItem onSelect={() => setTimeout(() => { setHoldTargetWO(wo); setIsHoldOpen(true); }, 0)}>
+                    <PauseCircle className="mr-2 h-4 w-4" /> Put on Hold
+                  </DropdownMenuItem>
+                )}
+                {wo.status === "IN_PROGRESS" && userIsProductionTeam && !userIsVendor && (
+                  <DropdownMenuItem onSelect={() => setTimeout(() => { setHandoverTargetWO(wo); setIsHandoverOpen(true); }, 0)}>
+                    <Layers3 className="mr-2 h-4 w-4" /> Shift Handover
+                  </DropdownMenuItem>
+                )}
+                {activeTab === "handover" && wo.status === "IN_PROGRESS" && userIsProductionTeam && !userIsVendor && (
+                  <DropdownMenuItem onSelect={() => setTimeout(() => {
+                    acknowledgeHandoverWorkOrder(wo.id).then(() => {
+                      toast.success("Handover acknowledged");
+                      triggerWorkOrderLiveSync();
+                    }).catch((e) => toast.error(e.message || "Failed to acknowledge"));
+                  }, 0)}>
+                    <CheckCircle className="mr-2 h-4 w-4" /> Acknowledge Handover
+                  </DropdownMenuItem>
+                )}
+                {wo.status === "VERIFICATION_REQUIRED" && (
+                  <DropdownMenuItem onSelect={() => setTimeout(() => { setMachineVerificationTargetWO(wo); setIsMachineVerificationOpen(true); }, 0)}>
+                    <CheckSquare className="mr-2 h-4 w-4" /> Verify Machine Running
+                  </DropdownMenuItem>
+                )}
+                {wo.status === "REJECTED" && <DropdownMenuItem onSelect={() => setTimeout(() => openCloseForm(wo.id), 0)}><Send className="mr-2 h-4 w-4" />{userIsVendor ? "Revise AMC Closure" : "Revise & Resubmit"}</DropdownMenuItem>}
               </>
             )}
             {canReviewWO(wo) && (
               <>
-                <DropdownMenuItem onClick={() => openReviewDialog(wo, "approve")}><CheckCircle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Force Close" : "Accept & Close"}</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openReviewDialog(wo, "reject")}><AlertTriangle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Reopen" : "Reject & Reopen"}</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setTimeout(() => openReviewDialog(wo, "approve"), 0)}><CheckCircle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Force Close" : "Accept & Close"}</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setTimeout(() => openReviewDialog(wo, "reject"), 0)}><AlertTriangle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Reopen" : "Reject & Reopen"}</DropdownMenuItem>
               </>
             )}
             {!canReviewWO(wo) && ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status) && (
@@ -1986,7 +2239,7 @@ export default function WorkOrders() {
     <PageShell>
       <PageHeader
         title="Work Orders"
-        subtitle="Industrial maintenance workflow console with role-aware actions, SLA visibility, and responsive execution views"
+        subtitle="Manage maintenance work orders"
         sticky
         actions={
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
@@ -2042,15 +2295,7 @@ export default function WorkOrders() {
 
       {(userIsAdmin || userIsIncharge || Boolean(user)) && !isAssetHistoryMode && (
         <div className="flex flex-nowrap items-center gap-1 overflow-x-auto rounded-3xl border border-white/40 bg-white/40 p-1.5 shadow-sm backdrop-blur-md scrollbar-thin">
-          {[
-            { id: 'assigned', label: 'Assigned to Me', count: assignedWorkOrders.length },
-            { id: 'raised', label: 'Raised by Me', count: raisedWorkOrders.length },
-            ...(userIsIncharge ? [{ id: 'incharge', label: inchargeCategories.join(", "), count: inchargeWorkOrders.length }] : []),
-            ...(userIsPartOfTeam ? [{ id: 'team', label: 'My Team', count: teamWorkOrders.length }] : []),
-            ...(userIsAdmin ? [{ id: 'all', label: 'All Work Orders', count: allWorkOrders.length }] : []),
-            ...(userIsVendor ? [{ id: 'vendor', label: 'Vendor AMC Queue', count: displayedOrders.length }] : []),
-            { id: 'approval', label: 'Verification Queue', count: myApprovalQueueCount }
-          ].map((tab) => (
+          {workOrderTabs.map((tab) => (
             <Button
               key={tab.id}
               variant={activeTab === tab.id ? "default" : "ghost"}
@@ -2144,7 +2389,7 @@ export default function WorkOrders() {
                     { value: "all", label: "All Status" },
                     { value: "RAISED", label: "Raised" }, { value: "TRIAGED", label: "Triaged" }, { value: "ASSIGNED", label: "Assigned" }, { value: "OPENED", label: "Opened" },
                     { value: "IN_PROGRESS", label: "In Progress" }, { value: "REASSIGNED", label: "Reassigned" },
-                    { value: "APPROVAL_PENDING", label: "Pending Approval" }, { value: "USER_VERIFICATION", label: "Pending Approval" },
+                    { value: "APPROVAL_PENDING", label: "Pending Approval" }, { value: "USER_VERIFICATION", label: "Pending Verification" },
                     { value: "REJECTED", label: "Rejected" }, { value: "CLOSED", label: "Completed" },
                   ]} className="min-w-[130px] h-11" />
                   <SelectField label="" value={categoryFilter} onChange={setCategoryFilter} options={[
@@ -2169,22 +2414,6 @@ export default function WorkOrders() {
                       title="To date"
                     />
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-11 gap-2"
-                    onClick={function() { exportWorkOrdersCSV({
-                      status: statusFilter !== "all" ? statusFilter : undefined,
-                      category: categoryFilter !== "all" ? categoryFilter : undefined,
-                      date_from: dateFrom || undefined,
-                      date_to: dateTo || undefined,
-                      ...(activePlantIds.length === 1 ? { plantId: activePlantIds[0] } : {}),
-                    }).catch(function() { toast.error("Export failed"); }); }}
-                    title="Export to CSV"
-                  >
-                    <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    Export CSV
-                  </Button>
                 </div>
               </div>
             }
@@ -2196,14 +2425,14 @@ export default function WorkOrders() {
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:hidden">
           <DialogHeader>
             <DialogTitle>Filter Work Orders</DialogTitle>
-            <DialogDescription>Refine results by status, category, date range, and export scope.</DialogDescription>
+            <DialogDescription>Refine results by status, category, and date range.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <SelectField label="Status" value={statusFilter} onChange={setStatusFilter} options={[
               { value: "all", label: "All Status" },
               { value: "RAISED", label: "Raised" }, { value: "TRIAGED", label: "Triaged" }, { value: "ASSIGNED", label: "Assigned" }, { value: "OPENED", label: "Opened" },
               { value: "IN_PROGRESS", label: "In Progress" }, { value: "REASSIGNED", label: "Reassigned" },
-              { value: "APPROVAL_PENDING", label: "Pending Approval" }, { value: "USER_VERIFICATION", label: "Pending Approval" },
+              { value: "APPROVAL_PENDING", label: "Pending Approval" }, { value: "USER_VERIFICATION", label: "Pending Verification" },
               { value: "REJECTED", label: "Rejected" }, { value: "CLOSED", label: "Completed" },
             ]} className="h-11" />
             <SelectField label="Category" value={categoryFilter} onChange={setCategoryFilter} options={[{ value: "all", label: "All Categories" }, ...filterCategoryOptions]} className="h-11" />
@@ -2246,17 +2475,6 @@ export default function WorkOrders() {
             }}>
               Close Selected
             </Button>
-            <Button variant="outline" size="sm" onClick={function() {
-              exportWorkOrdersCSV({
-                status: statusFilter !== "all" ? statusFilter : undefined,
-                category: categoryFilter !== "all" ? categoryFilter : undefined,
-                date_from: dateFrom || undefined,
-                date_to: dateTo || undefined,
-              }).catch(function() { toast.error("Export failed"); });
-              setSelectedIds(new Set());
-            }}>
-              Export CSV
-            </Button>
             <Button variant="ghost" size="sm" onClick={function() { setSelectedIds(new Set()); }}>
               Clear
             </Button>
@@ -2270,19 +2488,7 @@ export default function WorkOrders() {
             <span>
             {isAssetHistoryMode
               ? "Machine Work Order History"
-              : activeTab === "incharge"
-                ? "Category Work Orders"
-                : activeTab === "approval"
-                    ? "User Verification Queue"
-                  : activeTab === "team"
-                    ? "My Team Work Orders"
-                  : activeTab === "all"
-                    ? "All Work Orders"
-                    : activeTab === "vendor"
-                      ? "Vendor AMC Work Orders"
-                    : activeTab === "raised"
-                      ? "Raised Work Orders"
-                        : "Assigned Work Orders"} ({filtered.length})
+              : workOrderTabs.find((tab) => tab.id === activeTab)?.label ?? "Assigned Work Orders"} ({filtered.length})
               </span>
               {!shouldUseVirtualization ? (
                 <span className="text-xs font-medium text-muted-foreground">Page {safePage} of {totalPages}</span>
@@ -2331,8 +2537,12 @@ export default function WorkOrders() {
                   <MobileCard
                     onView={() => handleView(wo)}
                     actions={[
-                      ...(canExecuteWO(wo) && (["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED"].includes(wo.status) ? [{ label: "Open & Assess", icon: <Play className="mr-2 h-4 w-4" />, onClick: () => openOpenForm(wo.id) }] : [])),
+                      ...(canExecuteWO(wo) && ["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED", "WAITING_SPARE", "WAITING_SHUTDOWN"].includes(wo.status) ? [{ label: ["WAITING_SPARE", "WAITING_SHUTDOWN"].includes(wo.status) ? "Resume Work" : "Open & Assess", icon: <Play className="mr-2 h-4 w-4" />, onClick: () => openOpenForm(wo.id) }] : []),
                       ...(canExecuteWO(wo) && (wo.status === "IN_PROGRESS" || wo.status === "REJECTED") ? [{ label: userIsVendor ? (wo.status === "REJECTED" ? "Revise AMC Closure" : "Close AMC Work Order") : (wo.status === "REJECTED" ? "Revise & Resubmit" : "Complete & Send"), icon: <Send className="mr-2 h-4 w-4" />, onClick: () => openCloseForm(wo.id) }] : []),
+                      ...(canExecuteWO(wo) && ["ASSIGNED", "OPENED", "IN_PROGRESS"].includes(wo.status) ? [{ label: "Put on Hold", icon: <PauseCircle className="mr-2 h-4 w-4" />, onClick: () => { setHoldTargetWO(wo); setIsHoldOpen(true); } }] : []),
+                      ...(canExecuteWO(wo) && wo.status === "IN_PROGRESS" && userIsProductionTeam && !userIsVendor ? [{ label: "Shift Handover", icon: <Layers3 className="mr-2 h-4 w-4" />, onClick: () => { setHandoverTargetWO(wo); setIsHandoverOpen(true); } }] : []),
+                      ...(canExecuteWO(wo) && activeTab === "handover" && wo.status === "IN_PROGRESS" && userIsProductionTeam && !userIsVendor ? [{ label: "Acknowledge Handover", icon: <CheckCircle className="mr-2 h-4 w-4" />, onClick: () => { acknowledgeHandoverWorkOrder(wo.id).then(() => { toast.success("Handover acknowledged"); triggerWorkOrderLiveSync(); }).catch((e) => toast.error(e.message || "Failed to acknowledge")); } }] : []),
+                      ...(canExecuteWO(wo) && wo.status === "VERIFICATION_REQUIRED" ? [{ label: "Verify Machine", icon: <CheckSquare className="mr-2 h-4 w-4" />, onClick: () => { setMachineVerificationTargetWO(wo); setIsMachineVerificationOpen(true); } }] : []),
                       ...(canReviewWO(wo) ? [{ label: "Accept & Close", icon: <CheckCircle className="mr-2 h-4 w-4" />, onClick: () => openReviewDialog(wo, "approve") }] : []),
                     ]}
                   >
@@ -2395,7 +2605,10 @@ export default function WorkOrders() {
                 label="Plant"
                 value={formData.plant_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, plant_id: value, department_id: "", module_id: "", asset_id: "" }))}
-                fetchFn={listPlants}
+                fetchFn={async (params) => {
+                  const res = await listPlants(params);
+                  return { data: res.data, total: res.pagination?.total || 0 };
+                }}
                 labelExtractor={(plant) => `${plant.plantCode || "-"} - ${plant.plantName}`}
                 valueExtractor={(plant) => plant.id}
                 placeholder={userIsSuperAdmin ? "Select plant" : "Assigned plant"}
@@ -2408,7 +2621,8 @@ export default function WorkOrders() {
                 onChange={(value) => setFormData((prev) => ({ ...prev, department_id: value, module_id: "", asset_id: "" }))}
                 fetchFn={async (params) => {
                   if (userIsSuperAdmin && !formData.plant_id) return { data: [], total: 0 };
-                  return listDepartments({ ...params, plantId: formData.plant_id || defaultPlantId || undefined });
+                  const res = await listDepartments({ ...params, plantId: formData.plant_id || defaultPlantId || undefined });
+                  return { data: res.data, total: res.pagination?.total || 0 };
                 }}
                 labelExtractor={(dep) => `${dep.code} - ${dep.name}`}
                 valueExtractor={(dep) => dep.id}
@@ -2422,7 +2636,8 @@ export default function WorkOrders() {
                 onChange={(value) => setFormData((prev) => ({ ...prev, module_id: value, asset_id: "" }))}
                 fetchFn={async (params) => {
                   if (!formData.department_id) return { data: [], total: 0 };
-                  return listModules({ ...params, plantId: formData.plant_id || defaultPlantId || undefined, departmentId: formData.department_id });
+                  const res = await listModules({ ...params, plantId: formData.plant_id || defaultPlantId || undefined, departmentId: formData.department_id });
+                  return { data: res.data, total: res.pagination?.total || 0 };
                 }}
                 labelExtractor={(module) => `${module.code ? `${module.code} - ` : ""}${module.name}`}
                 valueExtractor={(module) => module.id}
@@ -2567,9 +2782,10 @@ export default function WorkOrders() {
             value={openData.assigned_to}
             onChange={(v) => setOpenData({ ...openData, assigned_to: v })}
             fetchFn={async (params) => {
-              return listUsers({ ...params, roleFilter: "MAINTENANCE_USER", plantId: technicianPlantId || undefined });
+              const res = await listUsers({ ...params, role: "MAINTENANCE_USER", plantId: technicianPlantId || undefined } as any);
+              return { data: res.data, total: res.pagination?.total || 0 };
             }}
-            labelExtractor={(user) => `${user.first_name} ${user.last_name} (${user.email})`}
+            labelExtractor={(user) => `${user.fullName} (${user.email})`}
             valueExtractor={(user) => user.id}
             placeholder="Select technician"
             required
@@ -2624,9 +2840,11 @@ export default function WorkOrders() {
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground mb-3">Why-Why Analysis (if downtime &gt; 120 min)</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {(["why_1", "why_2", "why_3", "why_4", "why_5"] as const).map((key, index) => (
-                <InputField key={key} label={`Why ${index + 1}`} value={closeData.why_why[key]} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, [key]: v } })} />
-              ))}
+              <InputField label="Why 1" value={closeData.why_why.why_1} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_1: v } })} />
+              <InputField label="Why 2" value={closeData.why_why.why_2} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_2: v } })} />
+              <InputField label="Why 3" value={closeData.why_why.why_3} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_3: v } })} />
+              <InputField label="Why 4" value={closeData.why_why.why_4} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_4: v } })} />
+              <InputField label="Why 5" value={closeData.why_why.why_5} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_5: v } })} />
               <InputField label="Root Reason" value={closeData.why_why.root_reason} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, root_reason: v } })} className="sm:col-span-2" />
               <TextareaField label="Corrective Prevention" value={closeData.why_why.corrective_prevention} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, corrective_prevention: v } })} className="sm:col-span-2" />
               <TextareaField label="Recurrence Prevention" value={closeData.why_why.recurrence_prevention} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, recurrence_prevention: v } })} className="sm:col-span-2" />
@@ -2827,11 +3045,105 @@ export default function WorkOrders() {
               <DetailRow label="Code" value={selectedWO.assets?.code || "—"} />
             </DetailSection>
             <DetailSection title="Problem & Resolution">
-              <DetailRow label="Problem" value={selectedWO.problem_description} />
+              <DetailRow label="Problem" value={
+                <div className="space-y-3">
+                  <p className="whitespace-pre-wrap leading-relaxed">{selectedWO.problem_description}</p>
+                  {(() => {
+                    let attachments: any[] = [];
+                    try {
+                      const arr = typeof selectedWO.attachments === 'string' ? JSON.parse(selectedWO.attachments) : selectedWO.attachments;
+                      if (Array.isArray(arr)) {
+                        attachments = arr.filter((item) => Boolean(item) && typeof item === 'object' && typeof item.data_url === 'string' && item.data_url.startsWith('data:image/'));
+                      }
+                    } catch {}
+                    
+                    if (attachments.length > 0) {
+                      return (
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                          {attachments.map((att: any, idx: number) => (
+                            <Dialog key={idx}>
+                              <DialogTrigger asChild>
+                                <button className="group overflow-hidden rounded-md border border-border/70 bg-muted/20 text-left">
+                                  <img
+                                    src={att.data_url}
+                                    alt={att.name || 'Attachment'}
+                                    className="h-24 w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                                  />
+                                  <div className="p-1.5 flex items-center justify-between">
+                                    <p className="truncate text-[10px] font-medium text-muted-foreground">{att.name || 'Attachment'}</p>
+                                    <Eye className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                                  </div>
+                                </button>
+                              </DialogTrigger>
+                              <DialogContent className="sm:max-w-3xl">
+                                <DialogHeader>
+                                  <DialogTitle>{att.name || 'Attachment Preview'}</DialogTitle>
+                                </DialogHeader>
+                                <div className="overflow-hidden rounded-lg border border-border/70 bg-black/70 flex items-center justify-center p-2">
+                                  <img src={att.data_url} alt="Preview" className="max-h-[70vh] w-auto max-w-full object-contain" />
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                          ))}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              } />
               {selectedWO.failure_code && <DetailRow label="Failure Code" value={resolveWorkOrderLabel("FAILURE_CODE", selectedWO.failure_code, selectedWO.plant_id, workOrderMasters)} />}
               {selectedWO.technician_verification?.initial_assessment && <DetailRow label="Initial Assessment" value={selectedWO.technician_verification.initial_assessment} />}
               {selectedWO.root_cause && <DetailRow label="Issue Details" value={selectedWO.root_cause} />}
-              {selectedWO.action_taken && <DetailRow label="Work Performed" value={selectedWO.action_taken} />}
+              {selectedWO.action_taken && <DetailRow label="Work Performed" value={
+                <div className="space-y-3">
+                  <p className="whitespace-pre-wrap leading-relaxed">{selectedWO.action_taken}</p>
+                  {(() => {
+                    let closeAttachments: any[] = [];
+                    try {
+                      // Attempt to fetch from technicians_verification or similar if stored there
+                      const technicianVerification = typeof selectedWO.technician_verification === 'string' ? JSON.parse(selectedWO.technician_verification) : selectedWO.technician_verification;
+                      const arr = technicianVerification?.attachments || [];
+                      if (Array.isArray(arr)) {
+                        closeAttachments = arr.filter((item: any) => Boolean(item) && typeof item === 'object' && typeof item.data_url === 'string' && item.data_url.startsWith('data:image/'));
+                      }
+                    } catch {}
+                    
+                    if (closeAttachments.length > 0) {
+                      return (
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 mt-2">
+                          {closeAttachments.map((att: any, idx: number) => (
+                            <Dialog key={`close-${idx}`}>
+                              <DialogTrigger asChild>
+                                <button className="group overflow-hidden rounded-md border border-border/70 bg-muted/20 text-left">
+                                  <img
+                                    src={att.data_url}
+                                    alt={att.name || 'Attachment'}
+                                    className="h-24 w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                                  />
+                                  <div className="p-1.5 flex items-center justify-between">
+                                    <p className="truncate text-[10px] font-medium text-muted-foreground">{att.name || 'Attachment'}</p>
+                                    <Eye className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                                  </div>
+                                </button>
+                              </DialogTrigger>
+                              <DialogContent className="sm:max-w-3xl">
+                                <DialogHeader>
+                                  <DialogTitle>{att.name || 'Attachment Preview'}</DialogTitle>
+                                </DialogHeader>
+                                <div className="overflow-hidden rounded-lg border border-border/70 bg-black/70 flex items-center justify-center p-2">
+                                  <img src={att.data_url} alt="Preview" className="max-h-[70vh] w-auto max-w-full object-contain" />
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                          ))}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              } />}
               {selectedWO.parts_replaced && <DetailRow label="Parts Replaced" value={selectedWO.parts_replaced} />}
               {selectedWO.approval_comments && <DetailRow label="Approval Comments" value={selectedWO.approval_comments} />}
             </DetailSection>
@@ -3087,6 +3399,35 @@ export default function WorkOrders() {
         />
       </FormDialog>
 
+      {handoverWorkOrderTarget && (
+        <ShiftHandoverDialog
+          open={isHandoverOpen}
+          onOpenChange={setIsHandoverOpen}
+          workOrder={handoverWorkOrderTarget}
+          onSubmit={handleHandoverSubmit}
+          isLoading={isHandoverSubmitting}
+        />
+      )}
+
+      {machineVerificationTargetWO && (
+        <MachineVerificationDialog
+          open={isMachineVerificationOpen}
+          onOpenChange={setIsMachineVerificationOpen}
+          workOrder={machineVerificationTargetWO}
+          onSubmit={handleMachineVerificationSubmit}
+          isLoading={isMachineVerificationSubmitting}
+        />
+      )}
+
+      {holdTargetWO && (
+        <HoldWorkOrderDialog
+          open={isHoldOpen}
+          onOpenChange={setIsHoldOpen}
+          workOrder={holdTargetWO}
+          onSubmit={handleHoldSubmit}
+          isLoading={isHoldSubmitting}
+        />
+      )}
     </PageShell>
   );
 }
@@ -3173,17 +3514,27 @@ function ActivityTimeline({ workOrderId, refreshToken }: { workOrderId: string; 
   };
 
   const eventLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      RAISED: 'Raised', ASSIGNED: 'Assigned', ACCEPTED: 'Accepted', WORK_STARTED: 'Work Started',
-      TRIAGED: 'Triaged', COMMENT: 'Comment', INTERNAL_NOTE: 'Internal Note',
-      USER_VERIFICATION_REQUESTED: 'Sent for Verification', USER_CONFIRMED_CLOSE: 'Closed',
-      ADMIN_FORCE_CLOSED: 'Force Closed', USER_REOPENED: 'Reopened', ADMIN_REOPENED: 'Admin Reopened',
-      FOLLOW_UP_ROUTED: 'Follow-up Routed', WORK_ORDER_ESCALATED: 'Escalated',
-      BULK_UPDATE: 'Bulk Updated',
-      USER_VERIFICATION_REMINDER_6H: '6h Reminder', USER_VERIFICATION_REMINDER_24H: '24h Reminder',
-      AUTO_CLOSED_SLA: 'Auto-Closed',
-    };
-    return labels[type] || type;
+    switch (type) {
+      case 'RAISED': return 'Raised';
+      case 'ASSIGNED': return 'Assigned';
+      case 'ACCEPTED': return 'Accepted';
+      case 'WORK_STARTED': return 'Work Started';
+      case 'TRIAGED': return 'Triaged';
+      case 'COMMENT': return 'Comment';
+      case 'INTERNAL_NOTE': return 'Internal Note';
+      case 'USER_VERIFICATION_REQUESTED': return 'Sent for Verification';
+      case 'USER_CONFIRMED_CLOSE': return 'Closed';
+      case 'ADMIN_FORCE_CLOSED': return 'Force Closed';
+      case 'USER_REOPENED': return 'Reopened';
+      case 'ADMIN_REOPENED': return 'Admin Reopened';
+      case 'FOLLOW_UP_ROUTED': return 'Follow-up Routed';
+      case 'WORK_ORDER_ESCALATED': return 'Escalated';
+      case 'BULK_UPDATE': return 'Bulk Updated';
+      case 'USER_VERIFICATION_REMINDER_6H': return '6h Reminder';
+      case 'USER_VERIFICATION_REMINDER_24H': return '24h Reminder';
+      case 'AUTO_CLOSED_SLA': return 'Auto-Closed';
+      default: return type;
+    }
   };
 
   const eventIcon = (type: string) => {

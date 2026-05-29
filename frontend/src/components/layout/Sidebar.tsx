@@ -235,18 +235,18 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
           >
             <div
               className={cn(
-                "flex shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-2 ",
-                isCollapsed ? "h-12 w-12" : "h-12 w-32 shadow-sm border border-slate-100",
+                "flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white p-2 shadow-sm border border-slate-100",
+                isCollapsed ? "h-12 w-12" : "h-12 w-32"
               )}
             >
               <img
                 src={resolvedLogo}
-                alt={organizationName ? `${organizationName} logo` : `${APP_NAME} logo`}
+                alt={organizationName ? `${organizationName} logo` : `OptiX Maintenance Pro logo`}
                 className="h-full w-full object-contain"
                 decoding="async"
                 onError={(event) => {
                   event.currentTarget.onerror = null;
-                  event.currentTarget.src = "/tamoptix/tamoptix-logo.svg";
+                  event.currentTarget.src = "/tamoptix/tamoptix-favicon.svg";
                 }}
               />
             </div>
@@ -372,6 +372,21 @@ export function Sidebar({ isOpen, isCollapsed, onToggleMobile }: SidebarProps) {
             );
           })}
         </nav>
+
+        {/* Branding at the bottom */}
+        <div className={cn("mt-auto flex shrink-0 items-center border-t border-border bg-card/50 p-4", isCollapsed ? "justify-center" : "gap-3")}>
+           <img 
+              src="/tamoptix/tamoptix-favicon.svg" 
+              alt="TamOptiX" 
+              className={cn("object-contain transition-all", isCollapsed ? "h-6 w-6" : "h-6 w-6")} 
+            />
+            {!isCollapsed && (
+              <div className="flex flex-col truncate">
+                <span className="truncate text-xs font-bold leading-tight text-foreground">OptiX Maintenance Pro</span>
+                <span className="truncate text-[10px] font-medium uppercase tracking-wider text-muted-foreground/80">by TamOptiX</span>
+              </div>
+            )}
+        </div>
       </aside>
     </>
   );

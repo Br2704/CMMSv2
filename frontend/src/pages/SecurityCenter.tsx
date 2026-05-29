@@ -187,10 +187,6 @@ export default function SecurityCenter() {
   const { toast } = useToast();
   const { resolveLandingPath } = useAccessibleRoutes();
 
-  if (!canAccessSecurityCenter) {
-    return <Navigate to={resolveLandingPath()} replace />;
-  }
-
   const load = useCallback(async (severity = severityFilter) => {
     setIsLoading(true);
     try {
@@ -499,6 +495,10 @@ export default function SecurityCenter() {
       setIsSubmittingOperation(false);
     }
   };
+
+  if (!canAccessSecurityCenter) {
+    return <Navigate to={resolveLandingPath()} replace />;
+  }
 
   return (
     <PageShell>

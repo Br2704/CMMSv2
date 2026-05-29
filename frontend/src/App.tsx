@@ -60,7 +60,7 @@ const LogTemplateMaster = lazy(() => import("@/pages/masters/LogTemplateMaster")
 
 // Lazy-loaded Root Pages
 const MailConfigMaster = lazy(() => import("@/pages/root/MailConfigMaster"));
-const SLAConfigMaster = lazy(() => import("@/pages/root/SLAConfigMaster"));
+const SLAConfigMaster = lazy(() => import("@/pages/masters/SLAConfigMaster"));
 const RootDashboard = lazy(() => import("@/pages/root/RootDashboard"));
 const RootOrganizationMaster = lazy(() => import("@/pages/root/RootOrganizationMaster"));
 const RootPlantMaster = lazy(() => import("@/pages/root/RootPlantMaster"));

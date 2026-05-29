@@ -63,18 +63,18 @@ export class CrudRepository {
   }
 
   private normalizePayload(input: GenericRecord): GenericRecord {
-    const normalized: GenericRecord = {};
-    for (const [key, value] of Object.entries(input)) {
-      if (value === undefined) {
-        continue;
-      }
-      const normalizedKey = this.resolvePayloadKey(key);
-      if (!normalizedKey || this.isBlockedKey(normalizedKey)) {
-        continue;
-      }
-      normalized[normalizedKey] = value;
-    }
-    return normalized;
+    const entries = Object.entries(input)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => {
+        const normalizedKey = this.resolvePayloadKey(key);
+        if (!normalizedKey || this.isBlockedKey(normalizedKey)) {
+          return null;
+        }
+        return [normalizedKey, value];
+      })
+      .filter((entry): entry is [string, unknown] => entry !== null);
+    
+    return Object.fromEntries(entries);
   }
 
   private generateWorkOrderNumber(): string {
@@ -127,8 +127,8 @@ export class CrudRepository {
   async create(input: GenericRecord): Promise<GenericRecord> {
     const idColumn = this.config.idColumn ?? 'id';
     const payload = this.normalizePayload({ ...input });
-    if (!payload[idColumn]) {
-      payload[idColumn] = randomUUID();
+    if (!Reflect.get(payload, idColumn)) {
+      Reflect.set(payload, idColumn, randomUUID());
     }
 
     if (this.config.tableName === 'work_orders') {
@@ -139,7 +139,7 @@ export class CrudRepository {
             ? payload.wo_number.trim()
             : '';
       if (!woNumber) {
-        payload.woNumber = this.generateWorkOrderNumber();
+        Reflect.set(payload, 'woNumber', this.generateWorkOrderNumber());
       }
 
       const missingFields = [

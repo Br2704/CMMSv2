@@ -23,14 +23,10 @@ function sanitizeValue(value: unknown, depth = 0): unknown {
   }
   if (value && typeof value === 'object') {
     const obj = value as Record<string, unknown>;
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(obj)) {
-      if (BLOCKED_KEYS.has(key)) {
-        continue;
-      }
-      out[key] = sanitizeValue(item, depth + 1);
-    }
-    return out;
+    const entries = Object.entries(obj)
+      .filter(([key]) => !BLOCKED_KEYS.has(key))
+      .map(([key, item]) => [key, sanitizeValue(item, depth + 1)]);
+    return Object.fromEntries(entries);
   }
   return value;
 }

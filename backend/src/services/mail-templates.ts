@@ -9,6 +9,16 @@ const INFO_COLOR = '#0891b2';
 const BRAND_LOGO = `${env.FRONTEND_URL || 'http://localhost:5173'}/tamoptix/tamoptix-logo.png`;
 const DASHBOARD_URL = env.FRONTEND_URL || 'http://localhost:5173';
 
+function escapeHtml(unsafe: any): string {
+  if (unsafe == null) return '';
+  return String(unsafe)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 interface WoTemplateData {
   woNumber: string;
   category?: string;
@@ -57,7 +67,7 @@ function getPriorityColor(priority: string): string {
 
 function priorityBadge(priority: string): string {
   const color = getPriorityColor(priority);
-  return `<span style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:${color}">${priority || 'N/A'}</span>`;
+  return `<span style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:${color}">${escapeHtml(priority || 'N/A')}</span>`;
 }
 
 function statusBadge(status: string): string {
@@ -74,7 +84,7 @@ function statusBadge(status: string): string {
     USER_VERIFICATION: '#0891b2',
   };
   const color = colors[status?.toUpperCase()] || '#6b7280';
-  return `<span style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:${color}">${status || 'N/A'}</span>`;
+  return `<span style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:${color}">${escapeHtml(status || 'N/A')}</span>`;
 }
 
 function shell(content: string, title: string): string {
@@ -101,17 +111,17 @@ function shell(content: string, title: string): string {
 
 function woSummaryTable(data: WoTemplateData): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:1.6">
-<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500;width:40%">Work Order</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${data.woNumber}</td></tr>
-${data.category ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Category</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${data.category}</td></tr>` : ''}
-${data.assetName ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Asset/Machine</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.assetName}</td></tr>` : ''}
-${data.problemDescription ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Issue Details</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.problemDescription}</td></tr>` : ''}
+<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500;width:40%">Work Order</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${escapeHtml(data.woNumber)}</td></tr>
+${data.category ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Category</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${escapeHtml(data.category)}</td></tr>` : ''}
+${data.assetName ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Asset/Machine</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.assetName)}</td></tr>` : ''}
+${data.problemDescription ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Issue Details</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.problemDescription)}</td></tr>` : ''}
 <tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Priority</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${priorityBadge(data.priority)}</td></tr>
 ${data.status ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Status</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${statusBadge(data.status)}</td></tr>` : ''}
-${data.location ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Location</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.location}</td></tr>` : ''}
-${data.assignedTeam ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Assigned Team</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.assignedTeam}</td></tr>` : ''}
-${data.createdTime ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Created</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.createdTime}</td></tr>` : ''}
-${data.slaResponseTime ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">SLA Response</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:${DANGER_COLOR};font-weight:600">${data.slaResponseTime}</td></tr>` : ''}
-${data.escalationLevel ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Escalation Level</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb"><span style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:${DANGER_COLOR}">Level ${data.escalationLevel}</span></td></tr>` : ''}
+${data.location ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Location</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.location)}</td></tr>` : ''}
+${data.assignedTeam ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Assigned Team</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.assignedTeam)}</td></tr>` : ''}
+${data.createdTime ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Created</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.createdTime)}</td></tr>` : ''}
+${data.slaResponseTime ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">SLA Response</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:${DANGER_COLOR};font-weight:600">${escapeHtml(data.slaResponseTime)}</td></tr>` : ''}
+${data.escalationLevel ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Escalation Level</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb"><span style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:${DANGER_COLOR}">Level ${escapeHtml(data.escalationLevel)}</span></td></tr>` : ''}
 </table>`;
 }
 
@@ -227,8 +237,8 @@ function workOrderDigest(data: {
     .map(
       (item, index) => `
 <tr${index % 2 === 0 ? ' style="background:#f9fafb"' : ''}>
-<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px">${item.woNumber}</td>
-<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px">${item.assetName || '-'}</td>
+<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px">${escapeHtml(item.woNumber)}</td>
+<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px">${escapeHtml(item.assetName || '-')}</td>
 <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${priorityBadge(item.priority)}</td>
 <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${statusBadge(item.status || '')}</td>
 </tr>`,
@@ -237,7 +247,7 @@ function workOrderDigest(data: {
 
   return shell(`
 <h2 style="font-size:18px;color:#374151;margin:0 0 16px">Daily Work Order Digest</h2>
-<p style="font-size:14px;color:#6b7280;margin:0 0 24px">Summary of work order activity for ${data.date}</p>
+<p style="font-size:14px;color:#6b7280;margin:0 0 24px">Summary of work order activity for ${escapeHtml(data.date)}</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
 <tr>
 <td style="padding:16px;text-align:center;background:#eff6ff;border-radius:8px;width:25%">
@@ -290,21 +300,21 @@ function authShell(content: string, title: string, logoOverride?: string): strin
 
 function passwordReset(data: AuthTemplateData): string {
   return authShell(`
-<p style="font-size:16px;color:#374151;margin:0 0 24px">Hello <strong>${data.userName}</strong>,</p>
-<p style="font-size:14px;color:#6b7280;margin:0 0 24px">We received a request to reset the password for your ${APP_NAME} account associated with <strong>${data.email}</strong>.</p>
+<p style="font-size:16px;color:#374151;margin:0 0 24px">Hello <strong>${escapeHtml(data.userName)}</strong>,</p>
+<p style="font-size:14px;color:#6b7280;margin:0 0 24px">We received a request to reset the password for your ${APP_NAME} account associated with <strong>${escapeHtml(data.email)}</strong>.</p>
 <div style="padding:20px;background:#f0f7ff;border-radius:8px;margin-bottom:24px;text-align:center">
 <p style="font-size:14px;color:#374151;margin:0 0 8px">Click the button below to reset your password:</p>
 ${actionButton(data.link || DASHBOARD_URL + '/reset-password?token=' + (data.token || ''), 'Reset Password', PRIMARY_COLOR)}
 </div>
-<p style="font-size:13px;color:#9ca3af;margin:0 0 8px">This link will expire in <strong>${data.expiresIn || '1 hour'}</strong>.</p>
+<p style="font-size:13px;color:#9ca3af;margin:0 0 8px">This link will expire in <strong>${escapeHtml(data.expiresIn || '1 hour')}</strong>.</p>
 <p style="font-size:13px;color:#9ca3af;margin:0">If you did not request a password reset, please ignore this email or contact your administrator.</p>
 `, 'Reset Your Password');
 }
 
 function userInvitation(data: AuthTemplateData): string {
   return authShell(`
-<p style="font-size:16px;color:#374151;margin:0 0 24px">Hello <strong>${data.userName}</strong>,</p>
-<p style="font-size:14px;color:#6b7280;margin:0 0 24px">You have been invited to join the <strong>${APP_NAME}</strong> platform. Your account has been created with the email <strong>${data.email}</strong>.</p>
+<p style="font-size:16px;color:#374151;margin:0 0 24px">Hello <strong>${escapeHtml(data.userName)}</strong>,</p>
+<p style="font-size:14px;color:#6b7280;margin:0 0 24px">You have been invited to join the <strong>${APP_NAME}</strong> platform. Your account has been created with the email <strong>${escapeHtml(data.email)}</strong>.</p>
 <div style="padding:20px;background:#f0fdf4;border-radius:8px;margin-bottom:24px;text-align:center">
 <p style="font-size:14px;color:#374151;margin:0 0 16px">Get started by logging into your account:</p>
 ${actionButton(data.link || DASHBOARD_URL + '/login', 'Login to CMMS', SUCCESS_COLOR)}
@@ -315,12 +325,12 @@ ${actionButton(data.link || DASHBOARD_URL + '/login', 'Login to CMMS', SUCCESS_C
 
 function otpVerification(data: AuthTemplateData): string {
   return authShell(`
-<p style="font-size:16px;color:#374151;margin:0 0 24px">Hello <strong>${data.userName}</strong>,</p>
+<p style="font-size:16px;color:#374151;margin:0 0 24px">Hello <strong>${escapeHtml(data.userName)}</strong>,</p>
 <p style="font-size:14px;color:#6b7280;margin:0 0 24px">Your verification code for ${APP_NAME} is:</p>
 <div style="padding:24px;background:#f4f5f7;border-radius:8px;margin-bottom:24px;text-align:center;letter-spacing:12px">
-<span style="font-size:36px;font-weight:700;color:${PRIMARY_COLOR};font-family:monospace">${data.otp || '000000'}</span>
+<span style="font-size:36px;font-weight:700;color:${PRIMARY_COLOR};font-family:monospace">${escapeHtml(data.otp || '000000')}</span>
 </div>
-<p style="font-size:13px;color:#9ca3af;margin:0 0 8px">This code will expire in <strong>${data.expiresIn || '10 minutes'}</strong>.</p>
+<p style="font-size:13px;color:#9ca3af;margin:0 0 8px">This code will expire in <strong>${escapeHtml(data.expiresIn || '10 minutes')}</strong>.</p>
 <p style="font-size:13px;color:#9ca3af;margin:0">If you did not request this code, please ignore this email.</p>
 `, 'Your Verification Code');
 }
@@ -329,12 +339,12 @@ function pmDue(data: PmNotificationData): string {
   return authShell(`
 <p style="font-size:16px;color:#374151;margin:0 0 24px">A preventive maintenance task is <strong>due</strong>.</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:1.6">
-<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500;width:40%">Template</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${data.templateName}</td></tr>
-<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Asset</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.assetName}</td></tr>
-<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Due Date</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.dueDate}</td></tr>
-${data.maintenanceType ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Type</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.maintenanceType}</td></tr>` : ''}
-${data.discipline ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Discipline</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.discipline}</td></tr>` : ''}
-${data.estimatedDuration ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Est. Duration</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.estimatedDuration}</td></tr>` : ''}
+<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500;width:40%">Template</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${escapeHtml(data.templateName)}</td></tr>
+<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Asset</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.assetName)}</td></tr>
+<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Due Date</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.dueDate)}</td></tr>
+${data.maintenanceType ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Type</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.maintenanceType)}</td></tr>` : ''}
+${data.discipline ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Discipline</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.discipline)}</td></tr>` : ''}
+${data.estimatedDuration ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Est. Duration</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.estimatedDuration)}</td></tr>` : ''}
 </table>
 ${actionButton(data.link || DASHBOARD_URL + '/preventive-maintenance', 'View PM Schedule', INFO_COLOR)}
 `, 'Preventive Maintenance Due');
@@ -344,10 +354,10 @@ function calibrationDue(data: PmNotificationData): string {
   return authShell(`
 <p style="font-size:16px;color:#374151;margin:0 0 24px">A calibration task is <strong>due</strong> for an instrument.</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;line-height:1.6">
-<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500;width:40%">Template</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${data.templateName}</td></tr>
-<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Instrument/Asset</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.assetName}</td></tr>
-<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Due Date</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.dueDate}</td></tr>
-${data.maintenanceType ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Calibration Type</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${data.maintenanceType}</td></tr>` : ''}
+<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500;width:40%">Template</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600">${escapeHtml(data.templateName)}</td></tr>
+<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Instrument/Asset</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.assetName)}</td></tr>
+<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Due Date</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.dueDate)}</td></tr>
+${data.maintenanceType ? `<tr><td style="padding:8px 12px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:500">Calibration Type</td><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${escapeHtml(data.maintenanceType)}</td></tr>` : ''}
 </table>
 ${actionButton(data.link || DASHBOARD_URL + '/calibration', 'View Calibration Schedule', WARNING_COLOR)}
 `, 'Calibration Due');
@@ -355,11 +365,11 @@ ${actionButton(data.link || DASHBOARD_URL + '/calibration', 'View Calibration Sc
 
 function assetReminder(data: PmNotificationData): string {
   return authShell(`
-<p style="font-size:16px;color:#374151;margin:0 0 24px">A maintenance reminder for asset <strong>${data.assetName}</strong>.</p>
-<p style="font-size:14px;color:#6b7280;margin:0 0 24px">${data.templateName}</p>
+<p style="font-size:16px;color:#374151;margin:0 0 24px">A maintenance reminder for asset <strong>${escapeHtml(data.assetName)}</strong>.</p>
+<p style="font-size:14px;color:#6b7280;margin:0 0 24px">${escapeHtml(data.templateName)}</p>
 <div style="padding:16px;background:#fffbeb;border-radius:8px;margin-bottom:24px;text-align:center">
 <span style="font-size:32px">🔧</span>
-<p style="font-size:14px;color:#92400e;font-weight:600;margin:8px 0 0">Due by: ${data.dueDate}</p>
+<p style="font-size:14px;color:#92400e;font-weight:600;margin:8px 0 0">Due by: ${escapeHtml(data.dueDate)}</p>
 </div>
 ${actionButton(data.link || DASHBOARD_URL + '/assets', 'View Asset', INFO_COLOR)}
 `, 'Asset Maintenance Reminder');
