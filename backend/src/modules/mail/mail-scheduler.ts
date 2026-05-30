@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { logger } from '../../config/logger';
 import { AppDataSource } from '../../database/data-source';
 import { processMailQueue } from '../../services/mail.service';
-import { EscalationHistoryEntity, NotificationEntity, WorkOrderActivityLogEntity, WorkOrderEntity, UserEntity, UserRoleEntity, ProfileEntity, SlaConfigEntity } from '../../database/entities';
+import { EscalationHistoryEntity, NotificationEntity, WorkOrderActivityLogEntity, WorkOrderEntity, UserEntity, UserRoleEntity, ProfileEntity, SlaConfigEntity, MaintenanceTeamEntity } from '../../database/entities';
 import type { EscalationLevel } from '../../database/entities/escalation-history.entity';
 import { publishNotificationChange } from '../notifications/notification-stream';
 import { isMailConfigured } from '../../services/mail.service';
@@ -24,38 +24,108 @@ function uniqueUserIds(values: Array<string | null | undefined>): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
 }
 
-async function getEscalationUsers(
-  level: number,
-  plantId: string | null | undefined,
-  slaConfig: SlaConfigEntity | null,
-): Promise<{ emails: string[]; userIds: string[] }> {
-  const roleKey = slaConfig ? Reflect.get(slaConfig, `escalationRole${level}`) as string | null : null;
-  if (!roleKey) return { emails: [], userIds: [] };
+const DEFAULT_ESCALATION_ROLES: Record<number, string[]> = {
+  2: ['MAINTENANCE_MANAGER'],
+  3: ['PLANT_ADMIN'],
+  4: ['SUPER_ADMIN', 'ROOT_ADMIN'],
+};
+
+async function resolveUsersByRoles(roleKeys: string[], plantId: string | null | undefined): Promise<{ emails: string[]; userIds: string[] }> {
+  const normalizedRoles = uniqueUserIds(roleKeys.map((role) => String(role ?? '').trim().toUpperCase()));
+  if (normalizedRoles.length === 0) {
+    return { emails: [], userIds: [] };
+  }
 
   const userRoleRepo = AppDataSource.getRepository(UserRoleEntity);
   const profileRepo = AppDataSource.getRepository(ProfileEntity);
   const userRepo = AppDataSource.getRepository(UserEntity);
 
-  const roles = await userRoleRepo.find({ where: { role: roleKey.toUpperCase() } });
-  if (roles.length === 0) return { emails: [], userIds: [] };
+  const roles = await userRoleRepo.find({ where: normalizedRoles.map((role) => ({ role })) });
+  if (roles.length === 0) {
+    return { emails: [], userIds: [] };
+  }
 
-  let userIds = roles.map((r) => r.userId);
+  let userIds = uniqueUserIds(roles.map((role) => role.userId));
   if (plantId) {
     const profiles = await profileRepo.find({
-      where: userIds.map((uid) => ({ userId: uid, plantId })),
+      where: userIds.map((userId) => ({ userId, plantId })),
       select: ['userId'],
     });
-    userIds = profiles.map((p) => p.userId);
+    userIds = uniqueUserIds(profiles.map((profile) => profile.userId));
+  }
+
+  if (userIds.length === 0) {
+    return { emails: [], userIds: [] };
   }
 
   const users = await userRepo.find({
-    where: userIds.map((uid) => ({ id: uid, isActive: true })),
+    where: userIds.map((userId) => ({ id: userId, isActive: true })),
     select: ['id', 'email'],
   });
+
   return {
-    emails: users.map((u) => u.email).filter((e): e is string => Boolean(e)),
-    userIds: users.map((u) => u.id),
+    emails: users.map((user) => user.email).filter((email): email is string => Boolean(email)),
+    userIds: users.map((user) => user.id),
   };
+}
+
+async function resolveTeamRecipients(workOrder: { assigned_to: string | null; follow_up_team_id: string | null; plant_id: string | null }): Promise<{ emails: string[]; userIds: string[] }> {
+  const teamRepo = AppDataSource.getRepository(MaintenanceTeamEntity);
+
+  let team: Pick<MaintenanceTeamEntity, 'teamLeaderId' | 'teamMemberIds'> | null = null;
+  if (workOrder.follow_up_team_id) {
+    team = await teamRepo.findOne({
+      where: { id: workOrder.follow_up_team_id, isActive: true },
+      select: ['teamLeaderId', 'teamMemberIds'],
+    });
+  }
+
+  if (!team && workOrder.assigned_to) {
+    const qb = teamRepo
+      .createQueryBuilder('team')
+      .select(['team.teamLeaderId', 'team.teamMemberIds'])
+      .where('team.isActive = true')
+      .andWhere('team.teamLeaderId = :teamLeaderId', { teamLeaderId: workOrder.assigned_to });
+
+    if (workOrder.plant_id) {
+      qb.andWhere('team.plantId = :plantId', { plantId: workOrder.plant_id });
+    }
+
+    team = await qb.getOne();
+  }
+
+  if (!team) {
+    return { emails: [], userIds: [] };
+  }
+
+  const userIds = uniqueUserIds([team.teamLeaderId, ...(team.teamMemberIds ?? [])]);
+  if (userIds.length === 0) {
+    return { emails: [], userIds: [] };
+  }
+
+  const users = await AppDataSource.getRepository(UserEntity).find({
+    where: userIds.map((userId) => ({ id: userId, isActive: true })),
+    select: ['id', 'email'],
+  });
+
+  return {
+    emails: users.map((user) => user.email).filter((email): email is string => Boolean(email)),
+    userIds: users.map((user) => user.id),
+  };
+}
+
+function getEscalationRoleKeys(level: number, slaConfig: SlaConfigEntity | null): string[] {
+  const configuredRole = slaConfig ? String(Reflect.get(slaConfig, `escalationRole${level}`) ?? '').trim().toUpperCase() : '';
+  const fallbackRoles = DEFAULT_ESCALATION_ROLES[level] ?? [];
+  return uniqueUserIds([configuredRole, ...fallbackRoles]);
+}
+
+async function getEscalationUsers(
+  level: number,
+  plantId: string | null | undefined,
+  slaConfig: SlaConfigEntity | null,
+): Promise<{ emails: string[]; userIds: string[] }> {
+  return resolveUsersByRoles(getEscalationRoleKeys(level, slaConfig), plantId);
 }
 
 async function updateEscalationHistory(
@@ -154,6 +224,7 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
     .addSelect('wo.plant_id', 'plant_id')
     .addSelect('wo.raised_by', 'raised_by')
     .addSelect('wo.assigned_to', 'assigned_to')
+    .addSelect('wo.follow_up_team_id', 'follow_up_team_id')
     .addSelect('wo.accepted_at', 'accepted_at')
     .addSelect('wo.started_at', 'started_at')
     .addSelect('wo.created_at', 'created_at')
@@ -172,6 +243,7 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
       plant_id: string | null;
       raised_by: string | null;
       assigned_to: string | null;
+      follow_up_team_id: string | null;
       accepted_at: string | Date | null;
       started_at: string | Date | null;
       created_at: string | Date;
@@ -247,9 +319,22 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
         }),
       );
 
-      const recipients = uniqueUserIds([workOrder.assigned_to, workOrder.raised_by]);
+      const teamRecipients = await resolveTeamRecipients({
+        assigned_to: workOrder.assigned_to,
+        follow_up_team_id: workOrder.follow_up_team_id,
+        plant_id: workOrder.plant_id,
+      });
       const { emails: escalationEmails, userIds: escalationUserIds } = await getEscalationUsers(nextLevel, workOrder.plant_id, matchedSla);
-      const allRecipients = uniqueUserIds([...recipients, ...escalationUserIds]);
+      const allRecipients = uniqueUserIds([workOrder.assigned_to, workOrder.raised_by, ...teamRecipients.userIds, ...escalationUserIds]);
+      const recipientEmails = await AppDataSource.getRepository(UserEntity).find({
+        where: allRecipients.map((userId) => ({ id: userId, isActive: true })),
+        select: ['email'],
+      });
+      const escalationMailRecipients = uniqueUserIds([
+        ...recipientEmails.map((user) => user.email),
+        ...teamRecipients.emails,
+        ...escalationEmails,
+      ]);
 
       if (allRecipients.length > 0) {
         const rows = allRecipients.map((userId) =>
@@ -275,7 +360,7 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
         escalationEmails,
       );
 
-      if ((await isMailConfigured()) && escalationEmails.length > 0) {
+      if ((await isMailConfigured()) && escalationMailRecipients.length > 0) {
         const woData: WoNotificationData = {
           woId: workOrder.id,
           woNumber: workOrder.wo_number,
@@ -287,17 +372,30 @@ export async function runEnhancedEscalationScheduler(): Promise<void> {
           location: workOrder.reported_location ?? undefined,
           escalationLevel: nextLevel,
         };
-        await sendWorkOrderEscalationEmails(woData, nextLevel, escalationEmails);
+        await sendWorkOrderEscalationEmails(woData, nextLevel, escalationMailRecipients);
       }
     }
 
     if (isReminder && currentLevel > 0) {
-      const recipients = uniqueUserIds([workOrder.assigned_to, workOrder.raised_by]);
+      const teamRecipients = await resolveTeamRecipients({
+        assigned_to: workOrder.assigned_to,
+        follow_up_team_id: workOrder.follow_up_team_id,
+        plant_id: workOrder.plant_id,
+      });
       const { emails: levelEmails, userIds: levelUserIds } = await getEscalationUsers(currentLevel, workOrder.plant_id, matchedSla);
       const { emails: managerEmails, userIds: managerUserIds } = await getEscalationUsers(Math.min(currentLevel + 2, 4), workOrder.plant_id, matchedSla);
-      
-      const allRecipients = uniqueUserIds([...recipients, ...levelUserIds, ...managerUserIds]);
-      const allEmails = Array.from(new Set([...levelEmails, ...managerEmails]));
+
+      const allRecipients = uniqueUserIds([workOrder.assigned_to, workOrder.raised_by, ...teamRecipients.userIds, ...levelUserIds, ...managerUserIds]);
+      const recipientEmails = await AppDataSource.getRepository(UserEntity).find({
+        where: allRecipients.map((userId) => ({ id: userId, isActive: true })),
+        select: ['email'],
+      });
+      const allEmails = uniqueUserIds([
+        ...recipientEmails.map((user) => user.email),
+        ...teamRecipients.emails,
+        ...levelEmails,
+        ...managerEmails,
+      ]);
 
       const rows = allRecipients.map((userId) =>
         notificationRepo.create({

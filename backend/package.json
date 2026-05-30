@@ -20,11 +20,14 @@
     "security:test": "jest src/tests/security-hardening.test.ts --runInBand",
     "lint": "echo \"No backend lint configured yet\"",
     "test": "jest --runInBand",
-    "test:smoke": "jest src/tests/smoke.test.ts --runInBand"
+    "test:smoke": "jest src/tests/smoke.test.ts --runInBand",
+    "worker:start": "tsx src/workers/backupWorker.ts",
+    "worker:build": "node dist/workers/backupWorker.js"
   },
   "dependencies": {
     "archiver": "^8.0.0",
     "bcryptjs": "^2.4.3",
+    "bullmq": "^1.91.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -43,6 +46,7 @@
     "pino": "^9.4.0",
     "pino-http": "^10.3.0",
     "reflect-metadata": "^0.2.2",
+    "tslib": "^2.8.1",
     "typeorm": "^0.3.20",
     "unzipper": "^0.12.3",
     "web-push": "^3.6.7",

@@ -271,6 +271,7 @@ const submitWorkOrderForApprovalBodySchema = z
     root_cause: nullableTrimmedString.optional(),
     time_spent_minutes: z.coerce.number().int().min(0).optional(),
     downtime_minutes: z.coerce.number().int().min(0).optional(),
+    started_at: optionalIsoDateTimeOrNull.optional(),
     completion_at: optionalIsoDateTimeOrNull.optional(),
     materials_used: nullableTrimmedString.optional(),
     spare_used: z.coerce.boolean().optional(),

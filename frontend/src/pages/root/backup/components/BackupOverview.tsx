@@ -5,13 +5,14 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Database, ShieldCheck, HardDrive, AlertTriangle, Download } from "lucide-react";
 import { listBackups, type BackupHistory } from "@/api/backup";
+import { ApiError } from "@/api/http";
 import { useAccessibleRoutes } from '@/hooks/useAccessibleRoutes';
 import { format } from "date-fns";
 import { EmptyState } from "@/components/app-shell/EmptyState";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 
 export function BackupOverview({ onNavigateCreate, onNavigateRestore }: { onNavigateCreate: () => void, onNavigateRestore: () => void }) {
-  const { canAccess } = useAccessibleRoutes();
+  const { canAccessPath } = useAccessibleRoutes();
   const [backups, setBackups] = useState<BackupHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -21,7 +22,7 @@ export function BackupOverview({ onNavigateCreate, onNavigateRestore }: { onNavi
     setLoadError(null);
     try {
       // Avoid calling the backup API if the user cannot access this route
-      if (!canAccess('/root/backup')) {
+      if (!canAccessPath('/root/backup')) {
         setBackups([]);
         setLoadError('You do not have permission to view backup history.');
         return;
@@ -31,16 +32,16 @@ export function BackupOverview({ onNavigateCreate, onNavigateRestore }: { onNavi
       if (success && data) {
         setBackups(data.backups);
       } else {
-        setBackups([]);
         setLoadError("Backup history is currently unavailable.");
       }
     } catch (err) {
-      setBackups([]);
-      const status = typeof err === "object" && err !== null && "status" in err ? Number((err as { status?: number }).status) : null;
+      const status = err instanceof ApiError ? err.status : typeof err === "object" && err !== null && "status" in err ? Number((err as { status?: number }).status) : null;
       if (status === 403) {
         setLoadError("You do not have permission to view backup history.");
       } else if (status === 404) {
         setLoadError("Backup history endpoint is not available.");
+      } else if (status === 503 && backups.length > 0) {
+        setLoadError("Live updates are temporarily unavailable. Showing the last successful backup data.");
       } else {
         setLoadError("Failed to load backup history.");
       }
@@ -52,6 +53,17 @@ export function BackupOverview({ onNavigateCreate, onNavigateRestore }: { onNavi
   useEffect(() => {
     void fetchBackups();
   }, []);
+
+  useEffect(() => {
+    const hasActiveBackup = backups.some((backup) => backup.status === "IN_PROGRESS");
+    if (!hasActiveBackup) return;
+
+    const timer = window.setInterval(() => {
+      void fetchBackups();
+    }, 3000);
+
+    return () => window.clearInterval(timer);
+  }, [backups]);
 
   const formatBytes = (bytes: number) => {
     if (!bytes) return '0 B';
@@ -120,9 +132,14 @@ export function BackupOverview({ onNavigateCreate, onNavigateRestore }: { onNavi
           </div>
         </CardHeader>
         <CardContent>
+          {loadError && backups.length > 0 ? (
+            <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+              {loadError}
+            </div>
+          ) : null}
           {loading ? (
             <TableSkeleton rows={6} />
-          ) : loadError ? (
+          ) : loadError && backups.length === 0 ? (
             <EmptyState
               title="Backup history unavailable"
               description={loadError}
@@ -143,6 +160,7 @@ export function BackupOverview({ onNavigateCreate, onNavigateRestore }: { onNavi
                   <TableHead>Name</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Progress</TableHead>
                   <TableHead>Size</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -161,6 +179,18 @@ export function BackupOverview({ onNavigateCreate, onNavigateRestore }: { onNavi
                         {backup.status}
                       </Badge>
                     </TableCell>
+                      <TableCell>
+                        {backup.status === 'IN_PROGRESS' ? (
+                          <div className="w-48">
+                            <div className="h-2 bg-muted rounded overflow-hidden">
+                              <div className="h-2 bg-primary" style={{ width: `${backup.progressPercent ?? 0}%` }} />
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">{backup.progressPercent ?? 0}%</div>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-muted-foreground">{backup.status === 'SUCCESS' ? 'Completed' : '-'}</div>
+                        )}
+                      </TableCell>
                     <TableCell>{formatBytes(backup.sizeBytes)}</TableCell>
                     <TableCell>{format(new Date(backup.createdAt), 'PP p')}</TableCell>
                     <TableCell className="text-right">

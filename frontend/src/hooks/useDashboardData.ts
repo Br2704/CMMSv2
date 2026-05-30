@@ -468,6 +468,41 @@ export function useDashboardData(selectedPlantId?: string | null) {
 
   // Recent WOs (top 10 from filtered)
   const recentWOs = filteredWOs.slice(0, 10);
+  const lockedMachineCards = useMemo(() => {
+    const openRows = filteredWOs.filter((wo: any) => !["CLOSED", "CANCELLED"].includes(String(wo.status ?? "").toUpperCase()));
+    const grouped = new Map<string, { assetId: string; assetCode: string; assetName: string; count: number; latestWo: string; latestAt: string | null }>();
+
+    openRows.forEach((wo: any) => {
+      const assetId = String(wo.asset_id || wo.assets?.id || "").trim();
+      if (!assetId) return;
+      const assetCode = String(wo.assets?.code || wo.asset_code || "N/A").trim() || "N/A";
+      const assetName = String(wo.assets?.name || wo.asset_name || "Unknown machine").trim() || "Unknown machine";
+      const current = grouped.get(assetId);
+      const createdAt = typeof wo.created_at === "string" ? wo.created_at : wo.created_at ? new Date(wo.created_at).toISOString() : null;
+
+      if (!current) {
+        grouped.set(assetId, {
+          assetId,
+          assetCode,
+          assetName,
+          count: 1,
+          latestWo: String(wo.wo_number || "WO").trim(),
+          latestAt: createdAt,
+        });
+        return;
+      }
+
+      current.count += 1;
+      if (!current.latestAt || (createdAt && new Date(createdAt).getTime() > new Date(current.latestAt).getTime())) {
+        current.latestWo = String(wo.wo_number || current.latestWo).trim();
+        current.latestAt = createdAt;
+      }
+    });
+
+    return Array.from(grouped.values())
+      .sort((left, right) => right.count - left.count || String(left.assetName).localeCompare(String(right.assetName)))
+      .slice(0, 4);
+  }, [filteredWOs]);
 
   return {
     isLoading,
@@ -486,6 +521,7 @@ export function useDashboardData(selectedPlantId?: string | null) {
     },
     comparisonRows,
     recentWOs,
+    lockedMachineCards,
     userIsSuperAdmin,
     userIsAdmin,
     userIsIncharge,

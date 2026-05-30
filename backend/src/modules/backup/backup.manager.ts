@@ -6,6 +6,7 @@ import { BackupHistoryEntity } from '../../database/entities/BackupHistoryEntity
 import { BackupAuditLogEntity } from '../../database/entities/BackupAuditLogEntity';
 import { createBackupCipher } from './backup.encryption';
 import { logger } from '../../config/logger';
+import { enqueueDeleteJob } from '../../queues/backupQueue';
 
 const BACKUPS_DIR = join(process.cwd(), 'backups');
 
@@ -26,6 +27,18 @@ export class BackupManager {
     const auditRepo = AppDataSource.getRepository(BackupAuditLogEntity);
     const log = auditRepo.create({ action, status, userId, backupId, details });
     await auditRepo.save(log);
+  }
+
+  public async requestDeleteAll(userId: string, scope: 'ALL' | 'ORGANIZATION' | 'PLANT', opts?: { organizationId?: string; plantId?: string }) {
+    await this.createAuditLog('DELETE', 'DENIED', userId, null, `Deletion requested for scope=${scope} org=${opts?.organizationId ?? 'N/A'} plant=${opts?.plantId ?? 'N/A'}`);
+    const jobId = await enqueueDeleteJob({
+      scope,
+      organizationId: opts?.organizationId,
+      plantId: opts?.plantId,
+      requestedBy: userId,
+    });
+    logger.info({ userId, scope, opts, jobId }, 'Queued backup delete job');
+    return { queued: true, jobId };
   }
 
   public async startBackupJob(userId: string, options: {
@@ -91,6 +104,30 @@ export class BackupManager {
         zlib: { level: backup.isCompressed ? 9 : 0 } // Sets the compression level.
       });
 
+      // Track progress events from archiver and persist progress periodically
+      let lastProgressSave = 0;
+      archive.on('progress', (progress: any) => {
+        try {
+          const now = Date.now();
+          if (now - lastProgressSave < 1000) return; // throttle to ~1s
+          lastProgressSave = now;
+
+          let percent = 0;
+          if (progress && progress.fs && typeof progress.fs.totalBytes === 'number' && progress.fs.totalBytes > 0) {
+            percent = Math.min(100, Math.floor((progress.fs.processedBytes / progress.fs.totalBytes) * 100));
+          } else if (progress && progress.entries && typeof progress.entries.total === 'number' && progress.entries.total > 0) {
+            percent = Math.min(100, Math.floor((progress.entries.processed / progress.entries.total) * 100));
+          }
+
+          backup.progressPercent = percent;
+          backup.status = 'IN_PROGRESS';
+          // Fire-and-forget save so we don't block archiving
+          void backupRepo.save(backup).catch((e) => logger.warn({ err: e }, 'Failed to save backup progress'));
+        } catch (e) {
+          // ignore progress handler errors
+        }
+      });
+
       archive.on('error', (err) => {
         throw err;
       });
@@ -132,6 +169,7 @@ export class BackupManager {
       backup.storagePath = filePath;
       // You would read stats.size from fs.statSync(filePath)
       backup.sizeBytes = archive.pointer(); 
+      backup.progressPercent = 100;
       await backupRepo.save(backup);
 
       await this.createAuditLog('CREATE', 'SUCCESS', backup.initiatedById, backup.id);

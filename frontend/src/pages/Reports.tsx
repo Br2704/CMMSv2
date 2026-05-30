@@ -463,6 +463,7 @@ export default function Reports() {
   }), [brandingLogoAssetUrl, currentUser, inferredOrgLogoFallback]);
 
   // MTTR filters
+  const [mttrGroupKey, setMttrGroupKey] = useState<"dept" | "category" | "machine">("machine");
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
@@ -715,13 +716,24 @@ export default function Reports() {
     "RAISED",
     "TRIAGED",
     "ASSIGNED",
+    "ACCEPTED",
     "OPENED",
     "IN_PROGRESS",
-    "PARTIALLY_CLOSED",
+    "REASSIGNED",
+    "FOLLOW_UP_ACTIVE",
+    "WAITING_SPARE",
+    "WAITING_SHUTDOWN",
+    "PENDING_VERIFICATION",
+    "VERIFICATION_REQUIRED",
     "USER_VERIFICATION",
     "APPROVAL_PENDING",
+    "SUPERVISOR_VERIFIED",
     "REJECTED",
     "CLOSED",
+    "CANCELLED",
+    "COMPLETED",
+    "ARCHIVED",
+    "ESCALATED",
   ];
   const typeOptions = useMemo(() => getMasterCodes(workOrderMasters, "WO_TYPE"), [workOrderMasters]);
   const categoryLabelMap = useMemo(() => {
@@ -844,12 +856,15 @@ export default function Reports() {
 
   // MTTR
   const mttrData = useMemo(() => {
-    const groupKey = selectedDepts.length > 0 ? "dept" : "category";
     const groups: Record<string, number[]> = {};
     filteredWOs.forEach((wo: any) => {
-      if (wo.status === "CLOSED" && wo.opened_at && wo.closed_at) {
-        const mins = differenceInMinutes(parseISO(wo.closed_at), parseISO(wo.opened_at));
-        const key = groupKey === "dept" ? (wo.assets?.departments?.name || "Unknown") : (wo.category || "Unknown");
+      if (wo.status === "CLOSED" && wo.closed_at) {
+        const startTime = wo.started_at ? wo.started_at : wo.opened_at;
+        if (!startTime) return;
+        const mins = differenceInMinutes(parseISO(wo.closed_at), parseISO(startTime));
+        const key = mttrGroupKey === "dept" ? (wo.assets?.departments?.name || "Unknown") 
+                  : mttrGroupKey === "category" ? (wo.category || "Unknown")
+                  : (wo.assets?.name || "Unknown");
         if (!groups[key]) groups[key] = [];
         groups[key].push(mins);
       }
@@ -859,30 +874,35 @@ export default function Reports() {
       mttr: Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10,
       count: vals.length,
     }));
-  }, [filteredWOs, selectedDepts]);
+  }, [filteredWOs, mttrGroupKey]);
 
   // MTBF
   const mtbfData = useMemo(() => {
-    const assetWOs: Record<string, { dates: Date[]; dept: string }> = {};
+    const assetWOs: Record<string, { dates: Date[]; key: string }> = {};
     filteredWOs.forEach((wo: any) => {
-      if (!assetWOs[wo.asset_id]) assetWOs[wo.asset_id] = { dates: [], dept: wo.assets?.departments?.name || "Unknown" };
+      if (!assetWOs[wo.asset_id]) {
+        const key = mttrGroupKey === "dept" ? (wo.assets?.departments?.name || "Unknown")
+                  : mttrGroupKey === "category" ? (wo.category || "Unknown")
+                  : (wo.assets?.name || "Unknown");
+        assetWOs[wo.asset_id] = { dates: [], key };
+      }
       assetWOs[wo.asset_id].dates.push(parseISO(wo.created_at));
     });
-    const deptMtbf: Record<string, number[]> = {};
-    Object.values(assetWOs).forEach(({ dates, dept }) => {
+    const keyMtbf: Record<string, number[]> = {};
+    Object.values(assetWOs).forEach(({ dates, key }) => {
       if (dates.length < 2) return;
       dates.sort((a, b) => a.getTime() - b.getTime());
       for (let i = 1; i < dates.length; i++) {
         const mins = differenceInMinutes(dates[i], dates[i - 1]);
-        if (!deptMtbf[dept]) deptMtbf[dept] = [];
-        deptMtbf[dept].push(mins);
+        if (!keyMtbf[key]) keyMtbf[key] = [];
+        keyMtbf[key].push(mins);
       }
     });
-    return Object.entries(deptMtbf).map(([name, vals]) => ({
+    return Object.entries(keyMtbf).map(([name, vals]) => ({
       name: name.replace(/_/g, " "),
       mtbf: Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10,
     }));
-  }, [filteredWOs]);
+  }, [filteredWOs, mttrGroupKey]);
 
   // KPIs
   const kpis = useMemo(() => {
@@ -1187,7 +1207,7 @@ export default function Reports() {
           {/* Global KPIs */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <KPICard title="Total WOs" value={kpis.totalWO} subtitle="work orders" icon={Wrench} variant="primary" />
-            <KPICard title="Open WOs" value={kpis.openWO} subtitle="in progress" icon={Activity} variant="warning" />
+            <KPICard title="Open WOs" value={kpis.openWO} subtitle="current workflow" icon={Activity} variant="warning" />
             <KPICard title="Avg Downtime" value={`${kpis.avgDowntime}m`} subtitle="per WO" icon={Clock} variant="info" />
             <KPICard title="PM Compliance" value={`${kpis.pmCompliance}%`} subtitle="on schedule" icon={Calendar} variant={kpis.pmCompliance >= 80 ? "success" : "warning"} />
             <KPICard title="Safety Events" value={kpis.totalIncidents} subtitle={`${kpis.openIncidents} open`} icon={ShieldAlert} variant="destructive" />
@@ -1211,6 +1231,21 @@ export default function Reports() {
             {/* MTTR / MTBF Tab */}
             <TabsContent value="mttr_analysis">
               <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-2 bg-muted/20 p-2 rounded-lg border border-border/50">
+                  <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">View By:</span>
+                  <div className="w-[200px]">
+                    <SelectField
+                      label=""
+                      value={mttrGroupKey}
+                      onChange={(v) => setMttrGroupKey(v as any)}
+                      options={[
+                        { value: "machine", label: "Machine Wise" },
+                        { value: "dept", label: "Department Wise" },
+                        { value: "category", label: "Category Wise" },
+                      ]}
+                    />
+                  </div>
+                </div>
                 <FilterBar
                   filters={[
                     { label: "Departments", options: deptNames, selected: selectedDepts, onChange: setSelectedDepts, icon: BarChart3 },

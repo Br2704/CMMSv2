@@ -28,6 +28,9 @@ export class BackupHistoryEntity {
   @Column({ type: 'bigint', nullable: true })
   sizeBytes!: number | null;
 
+  @Column({ type: 'int', default: 0 })
+  progressPercent!: number;
+
   @Column({ type: 'varchar', length: 255, nullable: true })
   checksum!: string | null;
 

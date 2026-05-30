@@ -34,7 +34,6 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { PageShell } from "@/components/layout/PageShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/store/auth.store";
@@ -53,7 +52,7 @@ export default function Dashboard() {
   const [selectedPlantId, setSelectedPlantId] = useState<string | null>(activePlantId || null);
 
   const { 
-    isLoading, plants, kpis, charts, recentWOs, comparisonRows, 
+    isLoading, plants, kpis, charts, recentWOs, comparisonRows, lockedMachineCards, 
     userIsSuperAdmin, userIsAdmin, userIsIncharge, userIsMaintenance,
     userIsProduction, userIsSafety, userIsHR
   } = useDashboardData(selectedPlantId);
@@ -211,14 +210,16 @@ export default function Dashboard() {
           {/* Work Order Lifecycle */}
           <div className="space-y-6">
             <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
-              <Workflow className="h-4 w-4" /> Work Order Lifecycle
+              <Workflow className="h-4 w-4" /> Current Work Order Lifecycle
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               <KPICard title="Total Raised" value={woKpis.totalWO || 0} icon={FileText} variant="default" className="p-4" />
+              <KPICard title="Open" value={woKpis.openWO || 0} icon={Workflow} variant="primary" className="p-4" />
               <KPICard title="In Progress" value={woKpis.inProgressWO || 0} icon={Activity} variant="primary" className="p-4" />
-              <KPICard title="Pending Appr" value={woKpis.pendingApprovalWO || 0} icon={ShieldAlert} variant="warning" className="p-4" />
+              <KPICard title="Pending Verification" value={woKpis.pendingApprovalWO || 0} icon={ShieldAlert} variant="warning" className="p-4" />
+              <KPICard title="Follow-up" value={woKpis.followUpWO || 0} icon={Timer} variant="info" className="p-4" />
               <KPICard title="Rejected" value={woKpis.rejectedWO || 0} icon={AlertTriangle} variant="destructive" className="p-4" />
-              <KPICard title="Successfully Closed" value={woKpis.closedWO || 0} icon={CheckCircle2} variant="success" className="p-4" />
+              <KPICard title="Closed" value={woKpis.closedWO || 0} icon={CheckCircle2} variant="success" className="p-4" />
             </div>
           </div>
 

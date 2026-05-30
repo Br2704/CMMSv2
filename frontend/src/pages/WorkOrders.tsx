@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { format, subHours } from "date-fns";
 import {
   Plus, Search, Eye, MoreHorizontal, Play, CheckCircle, Loader2, RefreshCw,
@@ -226,6 +227,7 @@ const EMPTY_WHY_WHY = {
 
 const EMPTY_CLOSE_DATA = {
   wo_type: "BREAKDOWN",
+  started_at: "",
   root_cause: "",
   action_taken: "",
   corrective_action: "",
@@ -617,6 +619,7 @@ export default function WorkOrders() {
     if (!user || actorIds.size === 0) return [];
     return allWorkOrders.filter(
       (wo: any) =>
+        isOwnedByCurrentUser(wo.raised_by) ||
         isOwnedByCurrentUser(wo.assigned_to) ||
         isFollowUpOwnedWorkOrder(wo) ||
         (isTeamOwnedWorkOrder(wo) && !isOwnedByCurrentUser(wo.raised_by)) ||
@@ -1038,6 +1041,19 @@ export default function WorkOrders() {
       (prefetchedAsset?.id === formData.asset_id ? prefetchedAsset : null),
     [formData.asset_id, prefetchedAsset, scopedAssets],
   );
+  const selectedAssetOpenWorkOrders = useMemo(
+    () =>
+      selectedAsset
+        ? allWorkOrders.filter(
+            (workOrder: any) =>
+              workOrder.asset_id === selectedAsset.id &&
+              !["CLOSED", "CANCELLED"].includes(String(workOrder.status ?? "").toUpperCase()),
+          )
+        : [],
+    [allWorkOrders, selectedAsset],
+  );
+  const selectedAssetHasOpenWorkOrder = selectedAssetOpenWorkOrders.length > 0;
+  const selectedAssetOpenWorkOrder = selectedAssetOpenWorkOrders[0] || null;
   const raisedByLabel = useMemo(
     () => user?.fullName?.trim() || user?.email || session?.user?.id || "Not available",
     [session?.user?.id, user?.email, user?.fullName],
@@ -1260,6 +1276,19 @@ export default function WorkOrders() {
     if (!closeData.follow_up_team_id && !closeData.follow_up_notes) return;
     setCloseData((prev) => ({ ...prev, follow_up_team_id: "", follow_up_notes: "" }));
   }, [closeData.follow_up_notes, closeData.follow_up_required, closeData.follow_up_team_id, closeFollowUpTeamOptions]);
+
+  useEffect(() => {
+    if (isCloseFormOpen && closeData.started_at && closeData.completion_at) {
+      const start = new Date(closeData.started_at).getTime();
+      const end = new Date(closeData.completion_at).getTime();
+      if (!isNaN(start) && !isNaN(end) && end > start) {
+        const diff = Math.round((end - start) / 60000);
+        if (String(diff) !== closeData.downtime_minutes) {
+          setCloseData((prev) => ({ ...prev, downtime_minutes: String(diff) }));
+        }
+      }
+    }
+  }, [closeData.started_at, closeData.completion_at, isCloseFormOpen, closeData.downtime_minutes]);
 
   const { data: closeAvailableSpares = [] } = useQuery({
     queryKey: ["wo_close_spares", closingWO?.plant_id, closingWO?.asset_id],
@@ -1848,7 +1877,6 @@ export default function WorkOrders() {
       { label: "Machine", value: formData.asset_id },
       { label: "Category", value: formData.category },
       { label: "Problem Details", value: formData.problem_description.trim() },
-      { label: "Priority", value: formData.priority },
     ].filter((field) => !field.value);
 
     if (missingFields.length > 0) {
@@ -1857,6 +1885,12 @@ export default function WorkOrders() {
     }
     if (!raisedByUserId) {
       toast.error("Logged-in user details are missing. Please sign in again.");
+      return;
+    }
+    if (selectedAssetHasOpenWorkOrder) {
+      toast.error(
+        `This machine already has an open work order${selectedAssetOpenWorkOrder?.wo_number ? ` (${selectedAssetOpenWorkOrder.wo_number})` : ""}. Close it before raising another one.`,
+      );
       return;
     }
 
@@ -1979,60 +2013,65 @@ export default function WorkOrders() {
       ? Math.max(0, Number.parseInt(closeData.downtime_minutes, 10) || 0)
       : Math.max(0, Math.floor((new Date().getTime() - baseline.getTime()) / 60000));
 
-    if (!closeData.wo_type || !issueDetails || !workPerformed || !closeData.corrective_action.trim() || !remarks) {
-      toast.error("Work order type, issue details, work performed, corrective action, and remarks are required");
-      return;
-    }
+    const isReroute = closeData.actual_failure_category && closingWO?.category && closeData.actual_failure_category !== closingWO.category;
 
-    if (closeData.spare_used && spareConsumption.length === 0 && !materialsUsed) {
-      toast.error("Add spare usage or materials when spares were used");
-      return;
-    }
-
-    if (!closeData.spare_used && !materialsUsed && spareConsumption.length === 0) {
-      // Explicit no-spare confirmation is acceptable.
-    }
-
-    const whyWhyRequired = downtimeMinutes > 120;
-    const whyWhy = closeData.why_why;
-    if (whyWhyRequired) {
-      const missingWhy = Object.values(whyWhy).some((value) => !String(value || "").trim());
-      if (missingWhy) {
-        toast.error("Complete all Why-Why analysis fields for downtime over 120 minutes");
+    if (!isReroute) {
+      if (!closeData.wo_type || !issueDetails || !workPerformed || !closeData.corrective_action.trim() || !remarks) {
+        toast.error("Work order type, issue details, work performed, corrective action, and remarks are required");
         return;
       }
-    }
 
-    if (closeData.failure_code && !closeFailureCodeOptions.some((option) => option.value === closeData.failure_code)) {
-      toast.error("Select a valid failure code from Work Order Config Master");
-      return;
-    }
-    if (closeData.follow_up_required && !closeData.follow_up_team_id) {
-      toast.error("Follow-up team is required when follow-up is enabled");
-      return;
-    }
-    if (closeData.follow_up_required && !followUpNotes) {
-      toast.error("Follow-up notes are required when follow-up is enabled");
-      return;
+      if (closeData.spare_used && spareConsumption.length === 0 && !materialsUsed) {
+        toast.error("Add spare usage or materials when spares were used");
+        return;
+      }
+
+      if (!closeData.spare_used && !materialsUsed && spareConsumption.length === 0) {
+        // Explicit no-spare confirmation is acceptable.
+      }
+
+      const whyWhyRequired = downtimeMinutes > 120;
+      const whyWhy = closeData.why_why;
+      if (whyWhyRequired) {
+        const missingWhy = Object.values(whyWhy).some((value) => !String(value || "").trim());
+        if (missingWhy) {
+          toast.error("Complete all Why-Why analysis fields for downtime over 120 minutes");
+          return;
+        }
+      }
+
+      if (closeData.failure_code && !closeFailureCodeOptions.some((option) => option.value === closeData.failure_code)) {
+        toast.error("Select a valid failure code from Work Order Config Master");
+        return;
+      }
+      if (closeData.follow_up_required && !closeData.follow_up_team_id) {
+        toast.error("Follow-up team is required when follow-up is enabled");
+        return;
+      }
+      if (closeData.follow_up_required && !followUpNotes) {
+        toast.error("Follow-up notes are required when follow-up is enabled");
+        return;
+      }
     }
 
     try {
       await submitWorkOrderForApproval(closingWOId, {
         wo_type: closeData.wo_type,
-        issue_details: issueDetails,
-        root_cause: issueDetails,
-        work_performed_description: workPerformed,
-        corrective_action: closeData.corrective_action.trim(),
-        materials_used: materialsUsed || (closeData.spare_used ? "Spare usage recorded" : "No spares used"),
-        spare_used: closeData.spare_used,
+        issue_details: isReroute ? "REROUTE" : issueDetails,
+        root_cause: isReroute ? "REROUTE" : issueDetails,
+        work_performed_description: isReroute ? "REROUTE" : workPerformed,
+        corrective_action: isReroute ? "REROUTE" : closeData.corrective_action.trim(),
+        materials_used: isReroute ? "REROUTE" : materialsUsed || (closeData.spare_used ? "Spare usage recorded" : "No spares used"),
+        spare_used: isReroute ? false : closeData.spare_used,
         attachments: closeAttachments.length > 0 ? closeAttachments : undefined,
-        remarks,
+        remarks: isReroute ? "Rerouting category" : remarks,
         failure_code: closeData.failure_code || null,
         actual_failure_category: closeData.actual_failure_category || null,
         why_why_analysis: whyWhyRequired ? whyWhy : null,
         preventive_recommendation: closeData.preventive_recommendation || null,
         manpower_used: closeData.manpower_used || null,
         downtime_minutes: downtimeMinutes,
+        started_at: closeData.started_at || null,
         completion_at: closeData.completion_at || new Date().toISOString(),
         parts_replaced: materialsUsed || null,
         spare_consumption: spareConsumption,
@@ -2061,8 +2100,13 @@ export default function WorkOrders() {
 
   const openCloseForm = (woId: string) => {
     const draft = safeReadCloseDraft(woId);
+    const wo = allWorkOrders.find((w: any) => w.id === woId);
     setClosingWOId(woId);
-    setCloseData(draft?.closeData ? { ...EMPTY_CLOSE_DATA, ...draft.closeData } : { ...EMPTY_CLOSE_DATA });
+    setCloseData(draft?.closeData ? { ...EMPTY_CLOSE_DATA, ...draft.closeData } : { 
+      ...EMPTY_CLOSE_DATA, 
+      actual_failure_category: wo?.category || "",
+      wo_type: wo?.wo_type || "BREAKDOWN"
+    });
     setCloseSpareUsage(draft?.closeSpareUsage || []);
     setCloseAttachments(draft?.closeAttachments || []);
     setIsCloseFormOpen(true);
@@ -2190,8 +2234,8 @@ export default function WorkOrders() {
             <DropdownMenuItem onSelect={() => setTimeout(() => handleView(wo), 0)}><Eye className="mr-2 h-4 w-4" />View Details</DropdownMenuItem>
             {canExecuteWO(wo) && (
               <>
-                {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED", "WAITING_SPARE", "WAITING_SHUTDOWN"].includes(wo.status)) && <DropdownMenuItem onSelect={() => setTimeout(() => openOpenForm(wo.id), 0)}><Play className="mr-2 h-4 w-4" />{["WAITING_SPARE", "WAITING_SHUTDOWN"].includes(wo.status) ? "Resume Work" : "Open & Assess"}</DropdownMenuItem>}
-                {wo.status === "IN_PROGRESS" && <DropdownMenuItem onSelect={() => setTimeout(() => openCloseForm(wo.id), 0)}><Send className="mr-2 h-4 w-4" />{userIsVendor ? "Close AMC Work Order" : "Complete & Send for Verification"}</DropdownMenuItem>}
+                {(["WAITING_SPARE", "WAITING_SHUTDOWN"].includes(wo.status)) && <DropdownMenuItem onSelect={() => setTimeout(() => openOpenForm(wo.id), 0)}><Play className="mr-2 h-4 w-4" />Resume Work</DropdownMenuItem>}
+                {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED", "IN_PROGRESS", "REJECTED"].includes(wo.status)) && <DropdownMenuItem onSelect={() => setTimeout(() => openCloseForm(wo.id), 0)}><Send className="mr-2 h-4 w-4" />{userIsVendor ? (wo.status === "REJECTED" ? "Revise AMC Closure" : "Close AMC Work Order") : (wo.status === "REJECTED" ? "Revise & Resubmit" : "Complete & Send for Verification")}</DropdownMenuItem>}
                 {["ASSIGNED", "OPENED", "IN_PROGRESS"].includes(wo.status) && (
                   <DropdownMenuItem onSelect={() => setTimeout(() => { setHoldTargetWO(wo); setIsHoldOpen(true); }, 0)}>
                     <PauseCircle className="mr-2 h-4 w-4" /> Put on Hold
@@ -2537,8 +2581,8 @@ export default function WorkOrders() {
                   <MobileCard
                     onView={() => handleView(wo)}
                     actions={[
-                      ...(canExecuteWO(wo) && ["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED", "WAITING_SPARE", "WAITING_SHUTDOWN"].includes(wo.status) ? [{ label: ["WAITING_SPARE", "WAITING_SHUTDOWN"].includes(wo.status) ? "Resume Work" : "Open & Assess", icon: <Play className="mr-2 h-4 w-4" />, onClick: () => openOpenForm(wo.id) }] : []),
-                      ...(canExecuteWO(wo) && (wo.status === "IN_PROGRESS" || wo.status === "REJECTED") ? [{ label: userIsVendor ? (wo.status === "REJECTED" ? "Revise AMC Closure" : "Close AMC Work Order") : (wo.status === "REJECTED" ? "Revise & Resubmit" : "Complete & Send"), icon: <Send className="mr-2 h-4 w-4" />, onClick: () => openCloseForm(wo.id) }] : []),
+                      ...(canExecuteWO(wo) && ["WAITING_SPARE", "WAITING_SHUTDOWN"].includes(wo.status) ? [{ label: "Resume Work", icon: <Play className="mr-2 h-4 w-4" />, onClick: () => openOpenForm(wo.id) }] : []),
+                      ...(canExecuteWO(wo) && ["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED", "IN_PROGRESS", "REJECTED"].includes(wo.status) ? [{ label: userIsVendor ? (wo.status === "REJECTED" ? "Revise AMC Closure" : "Close AMC Work Order") : (wo.status === "REJECTED" ? "Revise & Resubmit" : "Complete & Send"), icon: <Send className="mr-2 h-4 w-4" />, onClick: () => openCloseForm(wo.id) }] : []),
                       ...(canExecuteWO(wo) && ["ASSIGNED", "OPENED", "IN_PROGRESS"].includes(wo.status) ? [{ label: "Put on Hold", icon: <PauseCircle className="mr-2 h-4 w-4" />, onClick: () => { setHoldTargetWO(wo); setIsHoldOpen(true); } }] : []),
                       ...(canExecuteWO(wo) && wo.status === "IN_PROGRESS" && userIsProductionTeam && !userIsVendor ? [{ label: "Shift Handover", icon: <Layers3 className="mr-2 h-4 w-4" />, onClick: () => { setHandoverTargetWO(wo); setIsHandoverOpen(true); } }] : []),
                       ...(canExecuteWO(wo) && activeTab === "handover" && wo.status === "IN_PROGRESS" && userIsProductionTeam && !userIsVendor ? [{ label: "Acknowledge Handover", icon: <CheckCircle className="mr-2 h-4 w-4" />, onClick: () => { acknowledgeHandoverWorkOrder(wo.id).then(() => { toast.success("Handover acknowledged"); triggerWorkOrderLiveSync(); }).catch((e) => toast.error(e.message || "Failed to acknowledge")); } }] : []),
@@ -2596,7 +2640,7 @@ export default function WorkOrders() {
       </Card>
 
       {/* ===== RAISE WORK ORDER FORM (Enhanced) ===== */}
-      <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title="Raise Work Order" description="Create a maintenance work order" onSubmit={handleSubmit} submitLabel="Raise Work Order" isLoading={isRaisingWorkOrder} size="xl">
+      <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title="Raise Work Order" description="Create a maintenance work order" onSubmit={handleSubmit} submitLabel="Raise Work Order" isLoading={isRaisingWorkOrder} submitDisabled={selectedAssetHasOpenWorkOrder} size="xl">
         <div className="space-y-6">
           <div className="rounded-2xl border border-border/70 bg-card/80 p-4 sm:p-5 shadow-sm">
             <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground"><Wrench className="h-4 w-4" />Machine Selection</h3>
@@ -2678,6 +2722,36 @@ export default function WorkOrders() {
                 Scan machine QR code to auto-select hierarchy fields.
               </p>
             </div>
+
+            {selectedAsset ? (
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Selected Machine</p>
+                    <p className="text-sm font-bold text-slate-900">{selectedAsset.code} - {selectedAsset.name}</p>
+                  </div>
+                  <Badge variant={selectedAssetHasOpenWorkOrder ? "destructive" : "secondary"} className="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest">
+                    {selectedAssetHasOpenWorkOrder ? `${selectedAssetOpenWorkOrders.length} open` : "Clear"}
+                  </Badge>
+                </div>
+
+                {selectedAssetHasOpenWorkOrder ? (
+                  <Alert variant="destructive" className="border-rose-200 bg-rose-50/80 text-rose-900">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Work order already open</AlertTitle>
+                    <AlertDescription>
+                      {selectedAssetOpenWorkOrder?.wo_number ? (
+                        <>
+                          {selectedAssetOpenWorkOrder.wo_number} is still active on this machine.
+                        </>
+                      ) : (
+                        <>This machine still has an active work order.</>
+                      )} Close the existing record before raising a new one.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-border/70 bg-card/80 p-4 sm:p-5 shadow-sm">
@@ -2706,15 +2780,6 @@ export default function WorkOrders() {
                 onChange={(value) => setFormData((prev) => ({ ...prev, category: value }))}
                 options={routedCategoryOptions}
                 placeholder="Select category (e.g. MECHANICAL, ELECTRICAL)"
-                required
-                className="sm:col-span-2"
-              />
-              <SelectField
-                label="Priority"
-                value={formData.priority}
-                onChange={(value) => setFormData((prev) => ({ ...prev, priority: value }))}
-                options={PRIORITY_OPTIONS}
-                placeholder="Select priority"
                 required
                 className="sm:col-span-2"
               />
@@ -2783,7 +2848,27 @@ export default function WorkOrders() {
             onChange={(v) => setOpenData({ ...openData, assigned_to: v })}
             fetchFn={async (params) => {
               const res = await listUsers({ ...params, role: "MAINTENANCE_USER", plantId: technicianPlantId || undefined } as any);
-              return { data: res.data, total: res.pagination?.total || 0 };
+              
+              if (openData.category) {
+                const targetCategory = String(openData.category).toUpperCase();
+                const validTeams = userMaintenanceTeams.filter((team) => {
+                  if (String(team.discipline ?? "").toUpperCase() === targetCategory) return true;
+                  return workOrderTeamMappings.some(m => m.teamId === team.id && String(m.category ?? "").toUpperCase() === targetCategory);
+                });
+                
+                if (validTeams.length > 0) {
+                  const validUserIds = new Set<string>();
+                  validTeams.forEach(team => {
+                    if (team.teamLeaderId) validUserIds.add(team.teamLeaderId);
+                    (team.teamMemberIds || []).forEach(id => validUserIds.add(id));
+                  });
+                  
+                  const filteredData = (res.data || []).filter(u => validUserIds.has(u.id));
+                  return { data: filteredData, total: filteredData.length };
+                }
+              }
+              
+              return { data: res.data || [], total: res.pagination?.total || 0 };
             }}
             labelExtractor={(user) => `${user.fullName} (${user.email})`}
             valueExtractor={(user) => user.id}
@@ -2809,7 +2894,11 @@ export default function WorkOrders() {
         title="Close Work Order"
         description="Complete closure details and either send to raiser verification or route to a follow-up team."
         onSubmit={handleCloseWithDetails}
-        submitLabel={closeData.follow_up_required ? "Create Follow-up Support Task" : "Send for Requester Approval"}
+        submitLabel={
+          closeData.actual_failure_category && closingWO?.category && closeData.actual_failure_category !== closingWO.category
+            ? `Re-route to ${filterCategoryOptions.find(o => o.value === closeData.actual_failure_category)?.label || closeData.actual_failure_category} Team`
+            : closeData.follow_up_required ? "Create Follow-up Support Task" : "Send for Requester Approval"
+        }
         size="xl"
       >
         <div className="space-y-6">
@@ -2817,29 +2906,46 @@ export default function WorkOrders() {
             Drafts auto-save while this form is open so technicians can resume incomplete closure details.
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Closure Classification</h3>
+            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Work Order Category</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <SelectField label="Work Order Type" value={closeData.wo_type} onChange={(v) => setCloseData({ ...closeData, wo_type: v })} options={getScopedWorkOrderOptions(workOrderMasters, "WO_TYPE", closingWO?.plant_id || null)} required />
-              <SelectField label="Failure Code" value={closeData.failure_code} onChange={(v) => setCloseData({ ...closeData, failure_code: v })} options={closeFailureCodeOptions} placeholder="Select failure code" required />
-              <TextareaField label="Issue Details / Root Cause" value={closeData.root_cause} onChange={(v) => setCloseData({ ...closeData, root_cause: v })} placeholder="Describe the issue found during maintenance..." className="sm:col-span-2" required />
               <SelectField 
                 label="Actual Failure Category" 
                 value={closeData.actual_failure_category} 
                 onChange={(v) => setCloseData({ ...closeData, actual_failure_category: v })} 
                 options={filterCategoryOptions} 
                 placeholder="Correct the category if needed"
-                hint="Determines which discipline (Mechanical/Electrical) this failure belongs to for MTBF reporting."
+                hint="Change the category to immediately re-route this work order to the appropriate maintenance team."
               />
-              <TextareaField label="Work Performed Details" value={closeData.action_taken} onChange={(v) => setCloseData({ ...closeData, action_taken: v })} placeholder="What work was completed?" className="sm:col-span-2" required />
+            </div>
+          </div>
+
+          {closeData.actual_failure_category && closingWO?.category && closeData.actual_failure_category !== closingWO.category ? (
+            <Alert variant="default" className="border-amber-500/50 bg-amber-500/10">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertTitle className="text-amber-800 font-semibold">Category Reassignment</AlertTitle>
+              <AlertDescription className="text-amber-700">
+                You are changing the work order category from <strong>{filterCategoryOptions.find(o => o.value === closingWO.category)?.label || closingWO.category}</strong> to <strong>{filterCategoryOptions.find(o => o.value === closeData.actual_failure_category)?.label || closeData.actual_failure_category}</strong>. Submitting this form will skip closure and immediately re-route the work order to the new team.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <>
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground mb-3">Closure Classification</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <SelectField label="Work Order Type" value={closeData.wo_type} onChange={(v) => setCloseData({ ...closeData, wo_type: v })} options={getScopedWorkOrderOptions(workOrderMasters, "WO_TYPE", closingWO?.plant_id || null)} required />
+                  <SelectField label="Failure Code" value={closeData.failure_code} onChange={(v) => setCloseData({ ...closeData, failure_code: v })} options={closeFailureCodeOptions} placeholder="Select failure code" required />
+                  <TextareaField label="Issue Details / Root Cause" value={closeData.root_cause} onChange={(v) => setCloseData({ ...closeData, root_cause: v })} placeholder="Describe the issue found during maintenance..." className="sm:col-span-2" required />
+                  <TextareaField label="Work Performed Details" value={closeData.action_taken} onChange={(v) => setCloseData({ ...closeData, action_taken: v })} placeholder="What work was completed?" className="sm:col-span-2" required />
               <TextareaField label="Corrective Action" value={closeData.corrective_action} onChange={(v) => setCloseData({ ...closeData, corrective_action: v })} placeholder="Corrective action taken" className="sm:col-span-2" required />
               <InputField label="Downtime (minutes)" value={closeData.downtime_minutes} onChange={(v) => setCloseData({ ...closeData, downtime_minutes: v })} type="number" placeholder="Auto-calculated if empty" />
-              <InputField label="Completion Date/Time" value={closeData.completion_at} onChange={(v) => setCloseData({ ...closeData, completion_at: v })} type="datetime-local" />
+              <InputField label="Work Start Time" value={closeData.started_at} onChange={(v) => setCloseData({ ...closeData, started_at: v })} type="datetime-local" max={new Date().toISOString().slice(0, 16)} />
+              <InputField label="Completion Date/Time" value={closeData.completion_at} onChange={(v) => setCloseData({ ...closeData, completion_at: v })} type="datetime-local" max={new Date().toISOString().slice(0, 16)} />
             </div>
           </div>
 
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground mb-3">Why-Why Analysis (if downtime &gt; 120 min)</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 transition-all duration-500 ${Number(closeData.downtime_minutes || 0) > 120 ? "opacity-100" : "opacity-30 grayscale pointer-events-none"}`}>
               <InputField label="Why 1" value={closeData.why_why.why_1} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_1: v } })} />
               <InputField label="Why 2" value={closeData.why_why.why_2} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_2: v } })} />
               <InputField label="Why 3" value={closeData.why_why.why_3} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_3: v } })} />
@@ -2980,6 +3086,8 @@ export default function WorkOrders() {
               </div>
             )}
           </div>
+          </>
+        )}
         </div>
       </FormDialog>
 
@@ -2988,13 +3096,13 @@ export default function WorkOrders() {
         {selectedWO && (
           <div className="space-y-6">
             <div className="flex flex-wrap justify-end gap-2">
-              {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED"].includes(selectedWO.status)) && canExecuteWO(selectedWO) ? (
+              {(["WAITING_SPARE", "WAITING_SHUTDOWN"].includes(selectedWO.status)) && canExecuteWO(selectedWO) ? (
                 <Button className="gap-2" onClick={() => openOpenForm(selectedWO.id)}>
                   <Play className="h-4 w-4" />
-                  Open & Assess
+                  Resume Work
                 </Button>
               ) : null}
-              {(selectedWO.status === "IN_PROGRESS" || selectedWO.status === "REJECTED") && canExecuteWO(selectedWO) ? (
+              {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED", "IN_PROGRESS", "REJECTED"].includes(selectedWO.status)) && canExecuteWO(selectedWO) ? (
                 <Button className="gap-2" onClick={() => openCloseForm(selectedWO.id)}>
                   <Send className="h-4 w-4" />
                   {userIsVendor
@@ -3095,6 +3203,8 @@ export default function WorkOrders() {
               {selectedWO.failure_code && <DetailRow label="Failure Code" value={resolveWorkOrderLabel("FAILURE_CODE", selectedWO.failure_code, selectedWO.plant_id, workOrderMasters)} />}
               {selectedWO.technician_verification?.initial_assessment && <DetailRow label="Initial Assessment" value={selectedWO.technician_verification.initial_assessment} />}
               {selectedWO.root_cause && <DetailRow label="Issue Details" value={selectedWO.root_cause} />}
+              {selectedWO.started_at && <DetailRow label="Work Started At" value={new Date(selectedWO.started_at).toLocaleString()} />}
+              {selectedWO.downtime_minutes !== undefined && selectedWO.downtime_minutes !== null && <DetailRow label="Downtime" value={`${selectedWO.downtime_minutes} min`} />}
               {selectedWO.action_taken && <DetailRow label="Work Performed" value={
                 <div className="space-y-3">
                   <p className="whitespace-pre-wrap leading-relaxed">{selectedWO.action_taken}</p>

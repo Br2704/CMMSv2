@@ -72,6 +72,11 @@ function AssetOverviewPanel({
 }) {
   const reliability = overview.analytics.reliability;
   const resolverUrl = qrData?.publicResolverUrl || "";
+  const openWorkOrders = useMemo(
+    () => (overview.workOrders || []).filter((workOrder) => !["CLOSED", "CANCELLED"].includes(String(workOrder.status ?? "").toUpperCase())),
+    [overview.workOrders],
+  );
+  const hasOpenWorkOrder = openWorkOrders.length > 0;
 
   const handleCopyResolverUrl = async () => {
     if (!resolverUrl || typeof navigator === "undefined" || !navigator.clipboard) return;
@@ -159,10 +164,15 @@ function AssetOverviewPanel({
              
               <div className="flex gap-4 flex-wrap">
                 <div className="grid grid-cols-1 gap-3 flex-1 min-w-[200px]">
-                  <Button className="h-14 rounded-2xl flex-row gap-2 shadow-glow" onClick={onRaiseWorkOrder}>
+                  <Button className="h-14 rounded-2xl flex-row gap-2 shadow-glow" onClick={onRaiseWorkOrder} disabled={hasOpenWorkOrder}>
                     <Wrench className="h-4 w-4" />
-                    <span className="text-[10px] font-black uppercase">Raise Incident</span>
+                    <span className="text-[10px] font-black uppercase">{hasOpenWorkOrder ? "Work Order Open" : "Raise Incident"}</span>
                   </Button>
+                  {hasOpenWorkOrder ? (
+                    <p className="text-[10px] font-bold text-rose-500 px-1">
+                      Close the active work order before raising a new one.
+                    </p>
+                  ) : null}
                   <Button variant="outline" className="h-14 rounded-2xl flex-row gap-2 border-slate-100" onClick={() => {
                     if (!overview?.asset?.id) return;
                     onOpenLogbook();
@@ -592,7 +602,7 @@ export default function Assets() {
 
   const assetsWithOpenWo = useMemo(
     () =>
-      visibleAssets.filter((asset) => (workOrdersByAsset.get(asset.id) || []).some((workOrder) => workOrder.status && workOrder.status !== "CLOSED")).length,
+      visibleAssets.filter((asset) => (workOrdersByAsset.get(asset.id) || []).some((workOrder) => !["CLOSED", "CANCELLED"].includes(String(workOrder.status ?? "").toUpperCase()))).length,
     [visibleAssets, workOrdersByAsset],
   );
 

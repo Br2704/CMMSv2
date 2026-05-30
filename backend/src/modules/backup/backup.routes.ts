@@ -9,6 +9,7 @@ import { AppDataSource } from '../../database/data-source';
 import { BackupHistoryEntity } from '../../database/entities/BackupHistoryEntity';
 import { createReadStream } from 'fs';
 import multer from 'multer';
+import { backupDeleteQueue } from '../../queues/backupQueue';
 
 const upload = multer({ dest: 'uploads/backups/' });
 
@@ -91,6 +92,24 @@ backupRouter.get(
   }),
 );
 
+backupRouter.get(
+  '/backup/:id/status',
+  requireAuth,
+  requireRootAdmin(),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const repo = AppDataSource.getRepository(BackupHistoryEntity);
+    const backup = await repo.findOne({ where: { id }, relations: ['initiatedBy'] });
+
+    if (!backup) {
+      res.status(404).json(fail('Backup not found'));
+      return;
+    }
+
+    res.status(200).json(ok({ backup }, 'Backup status retrieved'));
+  }),
+);
+
 // We'll also need a restore endpoint, which will be implemented in backup.restore.ts/manager later.
 backupRouter.post(
   '/backup/restore',
@@ -115,5 +134,51 @@ backupRouter.post(
     } catch (err: any) {
       res.status(500).json(fail(err.message || 'Failed to restore backup'));
     }
+  }),
+);
+
+// Delete All Data (scoped) - enqueues a deletion job and records audit logs
+backupRouter.post(
+  '/backup/delete-all',
+  requireAuth,
+  requireRootAdmin(),
+  asyncHandler(async (req, res) => {
+    const { scope, organizationId, plantId } = req.body || {};
+    if (!scope || !['ALL', 'ORGANIZATION', 'PLANT'].includes(scope)) {
+      res.status(400).json(fail('Invalid scope. Expected ALL, ORGANIZATION, or PLANT'));
+      return;
+    }
+
+    try {
+      const result = await backupManager.requestDeleteAll(req.auth!.userId, scope as any, { organizationId, plantId });
+      res.status(202).json(ok(result, 'Deletion job enqueued'));
+    } catch (err: any) {
+      res.status(500).json(fail(err?.message || 'Failed to enqueue deletion'));
+    }
+  }),
+);
+
+backupRouter.get(
+  '/backup/delete-all/:jobId/status',
+  requireAuth,
+  requireRootAdmin(),
+  asyncHandler(async (req, res) => {
+    const { jobId } = req.params;
+    const job = await backupDeleteQueue.getJob(jobId);
+
+    if (!job) {
+      res.status(404).json(fail('Delete job not found'));
+      return;
+    }
+
+    const state = await job.getState();
+    res.status(200).json(ok({
+      jobId: job.id,
+      state,
+      progress: job.progress ?? 0,
+      attemptsMade: job.attemptsMade,
+      failedReason: job.failedReason ?? null,
+      returnValue: job.returnvalue ?? null,
+    }, 'Delete job status retrieved'));
   }),
 );

@@ -40,7 +40,7 @@ export class AdvancedAnalyticsService {
     const safetyIncidents = allWos.filter(w => w.safetyRelated).length;
 
     // Time KPIs (Mean Time calculations)
-    const closedWos = allWos.filter(w => w.status === 'CLOSED' && w.closedAt && w.openedAt);
+    const closedWos = allWos.filter(w => w.status === 'CLOSED' && w.closedAt && (w.startedAt || w.openedAt));
     const totalMttrMinutes = closedWos.reduce((acc, w) => acc + (w.downtimeMinutes || 0), 0);
     const mttr = closedWos.length > 0 ? Math.round(totalMttrMinutes / closedWos.length) : 0;
 

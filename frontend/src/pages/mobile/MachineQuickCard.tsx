@@ -116,7 +116,8 @@ export default function MachineQuickCard() {
     );
   }
 
-  const openWorkOrders = (data.workOrders || []).filter((wo: any) => wo.status !== "CLOSED");
+  const openWorkOrders = (data.workOrders || []).filter((wo: any) => !["CLOSED", "CANCELLED"].includes(String(wo.status ?? "").toUpperCase()));
+  const hasOpenWorkOrder = openWorkOrders.length > 0;
   const reliability = data.analytics.reliability;
 
   return (
@@ -197,16 +198,19 @@ export default function MachineQuickCard() {
         {/* Action Center */}
         <div className="grid gap-4">
           <Button 
-            className="h-20 rounded-[1.5rem] bg-primary hover:bg-primary/90 text-sm font-black uppercase tracking-widest shadow-industrial-lg flex items-center justify-between px-8 transition-transform active:scale-[0.98]"
+            className="h-20 rounded-[1.5rem] bg-primary hover:bg-primary/90 text-sm font-black uppercase tracking-widest shadow-industrial-lg flex items-center justify-between px-8 transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
             onClick={() => navigate(`/work-orders?assetId=${data.asset.id}&mode=create-breakdown`)}
+            disabled={hasOpenWorkOrder}
           >
             <div className="flex items-center gap-4">
               <div className="h-10 w-10 rounded-2xl bg-white/20 flex items-center justify-center">
                 <Wrench className="h-5 w-5" />
               </div>
               <div className="text-left">
-                <span className="block">Raise Incident</span>
-                <span className="text-[9px] opacity-60 font-medium normal-case tracking-normal">Breakdown or Maintenance</span>
+                <span className="block">{hasOpenWorkOrder ? "Work Order Open" : "Raise Incident"}</span>
+                <span className="text-[9px] opacity-60 font-medium normal-case tracking-normal">
+                  {hasOpenWorkOrder ? "Close the existing record first" : "Breakdown or Maintenance"}
+                </span>
               </div>
             </div>
             <ArrowRight className="h-5 w-5" />

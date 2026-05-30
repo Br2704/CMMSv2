@@ -928,6 +928,22 @@ class WorkOrdersService extends CrudService {
     }
     enforcePlantScope(auth, plantId);
 
+    const parentWorkOrderId = normalizeText(normalized.parent_work_order_id);
+    if (!parentWorkOrderId) {
+      const openWorkOrder = await AppDataSource.getRepository(WorkOrderEntity)
+        .createQueryBuilder('wo')
+        .select('wo.id', 'id')
+        .where('wo.asset_id = :assetId', { assetId })
+        .andWhere('UPPER(wo.status) NOT IN (:...terminalStatuses)', {
+          terminalStatuses: [WORKFLOW_STATUSES.CLOSED, WORKFLOW_STATUSES.CANCELLED],
+        })
+        .getRawOne<{ id: string }>();
+
+      if (openWorkOrder) {
+        conflict('A work order is already open for this machine. Close it before raising another one.');
+      }
+    }
+
     // AUTO-MAPPING CATEGORY BASED ON ASSET
     const categoryFromAsset = asset.defaultCategory;
     const providedCategory = normalized.category as string | undefined;
@@ -1670,29 +1686,46 @@ class WorkOrdersService extends CrudService {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
       const status = String(existing.status ?? '').toUpperCase();
-      if (status !== WORKFLOW_STATUSES.IN_PROGRESS && status !== WORKFLOW_STATUSES.REJECTED && status !== WORKFLOW_STATUSES.ASSIGNED) {
-        conflict('Only in-progress or reopened work orders can be completed for user verification');
+      const activeSubmissionStatuses = new Set<string>([
+        WORKFLOW_STATUSES.IN_PROGRESS,
+        WORKFLOW_STATUSES.REJECTED,
+        WORKFLOW_STATUSES.ASSIGNED,
+        WORKFLOW_STATUSES.RAISED,
+        WORKFLOW_STATUSES.TRIAGED,
+        WORKFLOW_STATUSES.OPENED,
+        WORKFLOW_STATUSES.REASSIGNED,
+      ]);
+      if (!activeSubmissionStatuses.has(status)) {
+        conflict('Only active work orders can be completed for user verification');
       }
 
       await this.ensureExecutionAccess(existing, auth, manager);
 
       const normalized = normalizeKeys(input);
+      
+      // CATEGORY REASSIGNMENT LOGIC (Reroute via Close Form)
+      const newCategory = normalizeText(normalized.actual_failure_category) ?? normalizeText(normalized.category);
+      if (newCategory && newCategory !== existing.category) {
+        return this.reassignWorkOrderInternal(manager, id, newCategory, normalized, auth);
+      }
       const issueDetails = normalizeText(normalized.issue_details) ?? normalizeText(normalized.root_cause);
       const workPerformed = normalizeText(normalized.work_performed_description) ?? normalizeText(normalized.action_taken);
       const correctiveAction = normalizeText(normalized.corrective_action) ?? workPerformed;
       const remarks = normalizeText(normalized.remarks);
       const partsReplaced = normalizeText(normalized.parts_replaced) ?? normalizeText(normalized.materials_used);
       const completionAt = parseDateTime(normalized.completion_at) ?? new Date();
+      const startedAtInput = parseDateTime(normalized.started_at);
+      const actualStartedAt = startedAtInput ?? (existing.started_at ? new Date(existing.started_at as string) : null);
       const nowDate = completionAt;
       const now = nowDate.toISOString();
       
       const laborMinutes = Number.isFinite(Number(normalized.time_spent_minutes ?? normalized.labor_minutes))
         ? Math.max(0, Math.round(Number(normalized.time_spent_minutes ?? normalized.labor_minutes)))
-        : elapsedMinutes(existing.started_at, nowDate);
+        : elapsedMinutes(actualStartedAt ? actualStartedAt.toISOString() : existing.started_at, nowDate);
       
       const downtimeMinutes = Number.isFinite(Number(normalized.downtime_minutes))
         ? Math.max(0, Math.round(Number(normalized.downtime_minutes)))
-        : elapsedMinutes(existing.downtime_start_at ?? existing.started_at, nowDate);
+        : elapsedMinutes(existing.downtime_start_at ?? (actualStartedAt ? actualStartedAt.toISOString() : existing.started_at), nowDate);
 
       const whyWhyAnalysis =
         downtimeMinutes > 120 ? validateWhyWhyAnalysis(normalized.why_why_analysis) : parseJsonObject(normalized.why_why_analysis);
@@ -1738,6 +1771,7 @@ class WorkOrdersService extends CrudService {
       const updateData: GenericRecord = {
         status: followUpRequired ? WORKFLOW_STATUSES.IN_PROGRESS : WORKFLOW_STATUSES.APPROVAL_PENDING,
         wo_type: workOrderType,
+        started_at: actualStartedAt ? actualStartedAt.toISOString() : existing.started_at,
         resolved_at: now,
         downtime_end_at: now,
         root_cause: issueDetails,
