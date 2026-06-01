@@ -619,11 +619,12 @@ export default function WorkOrders() {
     if (!user || actorIds.size === 0) return [];
     return allWorkOrders.filter(
       (wo: any) =>
-        isOwnedByCurrentUser(wo.raised_by) ||
-        isOwnedByCurrentUser(wo.assigned_to) ||
-        isFollowUpOwnedWorkOrder(wo) ||
-        (isTeamOwnedWorkOrder(wo) && !isOwnedByCurrentUser(wo.raised_by)) ||
-        (userIsIncharge && inchargeCategories.includes(wo.category) && !isOwnedByCurrentUser(wo.raised_by))
+        !isOwnedByCurrentUser(wo.raised_by) && (
+          isOwnedByCurrentUser(wo.assigned_to) ||
+          isFollowUpOwnedWorkOrder(wo) ||
+          isTeamOwnedWorkOrder(wo) ||
+          (userIsIncharge && inchargeCategories.includes(wo.category))
+        )
     );
   }, [actorIds, allWorkOrders, inchargeCategories, isFollowUpOwnedWorkOrder, isOwnedByCurrentUser, isTeamOwnedWorkOrder, user, userIsIncharge]);
 

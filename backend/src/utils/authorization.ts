@@ -42,6 +42,20 @@ function normalizedRoles(auth: AuthContext): string[] {
   return Array.from(new Set([auth.roleKey, ...auth.roles].filter(Boolean).map((role) => normalizeRoleName(role))));
 }
 
+const INCHARGE_CATEGORY_MAP: Record<string, string> = {
+  MAINTENANCE_MANAGER: 'MECHANICAL',
+  MAINTENANCE_USER: 'MECHANICAL',
+  PRODUCTION_MANAGER: 'PRODUCTION',
+  SCM_MANAGER: 'SUPPLY_CHAIN',
+  HR_MANAGER: 'PEOPLE',
+  CALIBRATION_MANAGER: 'CALIBRATION',
+};
+
+function getInchargeCategories(auth: AuthContext): string[] {
+  const roles = normalizedRoles(auth);
+  return Array.from(new Set(roles.map((role) => INCHARGE_CATEGORY_MAP[role]).filter((value): value is string => Boolean(value))));
+}
+
 function permissionActions(auth: AuthContext, moduleKey: string): string[] {
   return [...(auth.permissions[moduleKey] ?? []), ...(auth.permissions['*'] ?? [])].map((item) => normalizeAction(item));
 }
@@ -216,20 +230,24 @@ export function canAccessWorkOrder(
     raised_by?: unknown;
     assigned_to?: unknown;
     follow_up_team_id?: unknown;
+    category?: unknown;
   },
 ): boolean {
   const roles = normalizedRoles(auth);
-  if (roles.some((role) => ['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER'].includes(role))) {
+  if (roles.some((role) => ['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN'].includes(role))) {
     return true;
   }
 
   const raisedBy = typeof workOrder.raised_by === 'string' ? workOrder.raised_by : null;
   const assignedTo = typeof workOrder.assigned_to === 'string' ? workOrder.assigned_to : null;
   const followUpTeamId = typeof workOrder.follow_up_team_id === 'string' ? workOrder.follow_up_team_id : null;
+  const category = typeof workOrder.category === 'string' ? workOrder.category.toUpperCase() : null;
+  const inchargeCategories = getInchargeCategories(auth);
 
   return (
     auth.userId === raisedBy ||
     auth.userId === assignedTo ||
-    Boolean(followUpTeamId && (auth.teamIds ?? []).includes(followUpTeamId))
+    Boolean(followUpTeamId && (auth.teamIds ?? []).includes(followUpTeamId)) ||
+    Boolean(category && inchargeCategories.includes(category))
   );
 }

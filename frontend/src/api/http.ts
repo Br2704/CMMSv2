@@ -260,19 +260,36 @@ function withCacheBuster(path: string): string {
 function coalescedFetch<T>(url: string, init: RequestInit, requestCacheKey: string): Promise<T> {
   const existing = inflightRequests.get(requestCacheKey);
   if (existing) {
-    return (existing as Promise<Response>).then((res) => res.clone()) as unknown as Promise<T>;
+    return (existing as Promise<{ url: string; status: number; statusText: string; headers: Headers; buffer: ArrayBuffer }>)
+      .then((data) => new Response(data.buffer, {
+        status: data.status,
+        statusText: data.statusText,
+        headers: data.headers,
+      })) as unknown as Promise<T>;
   }
 
   const promise = (async () => {
     try {
-      return await fetch(url, init);
+      const res = await fetch(url, init);
+      const buffer = await res.arrayBuffer();
+      return {
+        url: res.url,
+        status: res.status,
+        statusText: res.statusText,
+        headers: res.headers,
+        buffer,
+      };
     } finally {
       inflightRequests.delete(requestCacheKey);
     }
-  })() as Promise<T>;
+  })();
 
   inflightRequests.set(requestCacheKey, promise);
-  return (promise as Promise<Response>).then((res) => res.clone()) as unknown as Promise<T>;
+  return promise.then((data) => new Response(data.buffer, {
+    status: data.status,
+    statusText: data.statusText,
+    headers: data.headers,
+  })) as unknown as Promise<T>;
 }
 
 // Add jitter to a delay to prevent thundering herd
@@ -634,6 +651,10 @@ export async function httpRequest<T>(
 
     // Handle 403 Forbidden: throw a descriptive error
     if (response.status === 403) {
+      try {
+        const { usePermissionsStore } = await import("@/store/permissions.store");
+        void usePermissionsStore.getState().fetchPermissionsMe(true);
+      } catch { /* ignore */ }
       throw new ApiError(response.status, "Access denied. You do not have permission to view this resource.", payload);
     }
 

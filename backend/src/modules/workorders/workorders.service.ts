@@ -448,6 +448,8 @@ class WorkOrdersService extends CrudService {
       qb.andWhere('t.plant_id IN (:...plantIds)', { plantIds: scopedPlantIds });
     }
 
+    this.applyVisibleWorkOrderScope(qb, 't', auth);
+
     if (effectiveScope === 'assigned') {
       const teamIds = auth.teamIds ?? [];
       if (teamIds.length > 0) {
@@ -455,6 +457,7 @@ class WorkOrdersService extends CrudService {
       } else {
         qb.andWhere('t.assigned_to = :actorUserId', { actorUserId: auth.userId });
       }
+      qb.andWhere('(t.raised_by IS NULL OR t.raised_by <> :actorUserId)', { actorUserId: auth.userId });
     }
 
     if (effectiveScope === 'raised') {
@@ -595,12 +598,14 @@ class WorkOrdersService extends CrudService {
       qb.andWhere('t.plant_id IN (:...plantIds)', { plantIds: scopedPlantIds });
     }
 
+    this.applyVisibleWorkOrderScope(qb, 't', auth);
+
     qb
       .select('COUNT(1)', 'total_count')
       .addSelect(
         teamIds.length > 0
-          ? `SUM(CASE WHEN ${buildAssignedWorkOrderPredicate('t')} THEN 1 ELSE 0 END)`
-          : `SUM(CASE WHEN t.assigned_to = :actorUserId THEN 1 ELSE 0 END)`,
+          ? `SUM(CASE WHEN ${buildAssignedWorkOrderPredicate('t')} AND (t.raised_by IS NULL OR t.raised_by <> :actorUserId) THEN 1 ELSE 0 END)`
+          : `SUM(CASE WHEN t.assigned_to = :actorUserId AND (t.raised_by IS NULL OR t.raised_by <> :actorUserId) THEN 1 ELSE 0 END)`,
         'assigned_count'
       )
       .addSelect('SUM(CASE WHEN t.raised_by = :actorUserId THEN 1 ELSE 0 END)', 'raised_count')
@@ -703,7 +708,39 @@ class WorkOrdersService extends CrudService {
 
   private isAdminActor(auth: AuthContext): boolean {
     const roles = auth.roles.map((role) => String(role).toUpperCase());
-    return roles.some((role) => ['ROOT_ADMIN', 'SUPER_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN', 'PLANT_ADMIN', 'MAINTENANCE_MANAGER'].includes(role));
+    return roles.some((role) => ['ROOT_ADMIN', 'SUPER_ADMIN', 'PLANT_ADMIN'].includes(role));
+  }
+
+  private applyVisibleWorkOrderScope(qb: any, alias: string, auth: AuthContext) {
+    if (this.isAdminActor(auth)) {
+      return;
+    }
+
+    const teamIds = auth.teamIds ?? [];
+    const inchargeCategories = this.getInchargeCategories(auth);
+    const visibilityClauses = [`${alias}.raised_by = :actorUserId`, `${alias}.assigned_to = :actorUserId`];
+    const params: Record<string, unknown> = { actorUserId: auth.userId };
+
+    if (teamIds.length > 0) {
+      visibilityClauses.push(`${alias}.follow_up_team_id IN (:...teamIds)`);
+      visibilityClauses.push(`EXISTS (
+        SELECT 1
+        FROM work_order_team_mappings wm
+        LEFT JOIN assets a ON a.id = ${alias}.asset_id
+        WHERE wm.team_id IN (:...teamIds)
+          AND wm.plant_id = ${alias}.plant_id
+          AND wm.category = ${alias}.category
+          AND (wm.department_id IS NULL OR wm.department_id = a.department_id)
+      )`);
+      params.teamIds = teamIds;
+    }
+
+    if (inchargeCategories.length > 0) {
+      visibilityClauses.push(`${alias}.category IN (:...inchargeCategories)`);
+      params.inchargeCategories = inchargeCategories;
+    }
+
+    qb.andWhere(`(${visibilityClauses.join(' OR ')})`, params);
   }
 
   private async isUserInAssignedTeam(workOrder: GenericRecord, userId: string, manager = AppDataSource.manager): Promise<boolean> {
@@ -749,6 +786,40 @@ class WorkOrdersService extends CrudService {
 
     const teamMemberIds = team.teamMemberIds ?? [];
     return team.teamLeaderId === userId || teamMemberIds.includes(userId);
+  }
+
+  private async getCategoryTeamRecipientIds(
+    plantId: string,
+    category: string,
+    departmentId: string | null,
+    manager = AppDataSource.manager,
+  ): Promise<string[]> {
+    if (!plantId || !category) {
+      return [];
+    }
+
+    const mappingRepo = manager.getRepository(WorkOrderTeamMappingEntity);
+    const teamRepo = manager.getRepository(MaintenanceTeamEntity);
+
+    const mapping = departmentId
+      ? await mappingRepo.findOne({ where: { plantId, departmentId, category }, select: ['teamId'] })
+      : null;
+
+    const fallbackMapping = mapping ?? await mappingRepo.findOne({ where: { plantId, departmentId: IsNull(), category }, select: ['teamId'] });
+    if (!fallbackMapping) {
+      return [];
+    }
+
+    const team = await teamRepo.findOne({
+      where: { id: fallbackMapping.teamId, plantId, isActive: true },
+      select: ['teamLeaderId', 'teamMemberIds'],
+    });
+
+    if (!team) {
+      return [];
+    }
+
+    return uniqueIds([team.teamLeaderId, ...(team.teamMemberIds ?? [])]);
   }
 
   private async canExecuteWorkOrder(existing: GenericRecord, auth: AuthContext, manager = AppDataSource.manager): Promise<boolean> {
@@ -1021,14 +1092,18 @@ class WorkOrdersService extends CrudService {
     const createdWorkOrder = await super.create(payload, auth);
 
     const manuallyAssigned: (string | null)[] = createdWorkOrder.assigned_to ? [String(createdWorkOrder.assigned_to)] : [];
-    const teamAssigned: (string | null)[] = assignedTeam ? [assignedTeam.teamLeaderId, ...(assignedTeam.teamMemberIds ?? [])] : [];
-    const recipientIds = uniqueIds([...manuallyAssigned, ...teamAssigned]);
+    const categoryRecipientIds = await this.getCategoryTeamRecipientIds(
+      String(plantId ?? ''),
+      String(normalizedCategory ?? 'MECHANICAL'),
+      asset.departmentId ?? null,
+    );
+    const recipientIds = uniqueIds([...manuallyAssigned, ...categoryRecipientIds]);
 
     if (recipientIds.length > 0) {
       const machineCode = String(asset.code ?? '').trim();
       const machineName = String(asset.name ?? '').trim();
       const hasAttachments = parseJsonArray(payload.attachments).length > 0;
-      const assignedName = assignedTeam ? assignedTeam.teamName : 'an engineer';
+      const assignedName = assignedTeam ? assignedTeam.teamName : `${String(normalizedCategory ?? 'This')} team`;
 
       const notificationMessage = [
         `${String(createdWorkOrder.wo_number ?? payload.wo_number)} assigned to ${assignedName}.`,
@@ -1095,9 +1170,7 @@ class WorkOrdersService extends CrudService {
 
       sendNewWorkOrderEmails(woData, payload.raised_by as string | null | undefined).catch(() => {});
 
-      if (assignedTeam) {
-        sendWorkOrderAssignedEmails(woData, assignedTeam.id).catch(() => {});
-      }
+      sendWorkOrderAssignedEmails(woData, assignedTeam?.id ?? null).catch(() => {});
     }
 
     return createdWorkOrder;
@@ -1614,7 +1687,7 @@ class WorkOrdersService extends CrudService {
       manager,
     );
 
-    if (assignedTeam) {
+     if (assignedTeam) {
        const recipientIds = uniqueIds([assignedTeam.teamLeaderId, ...(assignedTeam.teamMemberIds ?? [])]);
        await this.createNotifications(
          recipientIds.map(userId => ({

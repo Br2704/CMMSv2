@@ -51,4 +51,9 @@ describe('enterprise authorization engine', () => {
     expect(canAccessWorkOrder(authContext({ teamIds: ['team-a'] }), { follow_up_team_id: 'team-a' })).toBe(true);
     expect(canAccessWorkOrder(authContext(), { assigned_to: 'user-2', raised_by: 'user-3' })).toBe(false);
   });
+
+  it('allows incharge users to access their category work orders only', () => {
+    expect(canAccessWorkOrder(authContext({ roles: ['MAINTENANCE_USER'], roleKey: 'MAINTENANCE_USER' }), { category: 'MECHANICAL' })).toBe(true);
+    expect(canAccessWorkOrder(authContext({ roles: ['MAINTENANCE_USER'], roleKey: 'MAINTENANCE_USER' }), { category: 'PRODUCTION' })).toBe(false);
+  });
 });

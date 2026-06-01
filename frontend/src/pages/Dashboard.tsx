@@ -33,6 +33,7 @@ import { RecentWorkOrdersTable } from "@/components/dashboard/RecentWorkOrdersTa
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PageShell } from "@/components/layout/PageShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { usePermissions } from "@/hooks/usePermissions";
