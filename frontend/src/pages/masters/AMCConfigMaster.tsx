@@ -251,18 +251,6 @@ export default function AMCConfigMaster() {
   const [formData, setFormData] = useState<ContractFormState>({ ...emptyForm, plantId: defaultPlantId });
   const [groupDraft, setGroupDraft] = useState<MachineGroupDraft>({ ...emptyGroupDraft });
 
-  const refreshSelectedContract = useCallback(
-    async (contractId?: string | null) => {
-      if (!contractId) return;
-      const latestContracts = await loadData();
-      const latest = latestContracts.find((contract) => contract.id === contractId) || null;
-      if (latest) {
-        setSelectedContract(latest);
-      }
-    },
-    [loadData],
-  );
-
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -285,6 +273,18 @@ export default function AMCConfigMaster() {
     }
     return [] as AmcContract[];
   }, [canSelectPlant, defaultPlantId]);
+
+  const refreshSelectedContract = useCallback(
+    async (contractId?: string | null) => {
+      if (!contractId) return;
+      const latestContracts = await loadData();
+      const latest = latestContracts.find((contract) => contract.id === contractId) || null;
+      if (latest) {
+        setSelectedContract(latest);
+      }
+    },
+    [loadData],
+  );
 
   useEffect(() => {
     void fetchPlants();

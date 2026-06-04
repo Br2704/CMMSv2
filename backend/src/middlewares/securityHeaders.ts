@@ -33,6 +33,14 @@ const SUSPICIOUS_PATTERNS = [
   ENCODED_PATTERN,
 ];
 
+const SUSPICIOUS_PATH_PATTERNS = [
+  PATH_TRAVERSAL_PATTERN,
+  SCRIPT_INJECTION_PATTERN,
+  CODE_EXECUTION_PATTERN,
+  IFRAME_INJECTION_PATTERN,
+  ENCODED_PATTERN,
+];
+
 interface SecurityConfig {
   enabled: boolean;
   blockSuspiciousUserAgents: boolean;
@@ -162,9 +170,10 @@ export function threatDetectionMiddleware(req: Request, res: Response, next: Nex
   }
 
   if (securityConfig.blockSuspiciousPatterns) {
-    // Only check the URL path (not query string) to avoid false positives from UUIDs or normal params
+    // Only check the URL path (not query string) and avoid SQL-keyword scanning there,
+    // because legitimate routes can contain words like "delete" or "drop".
     const urlPath = req.path || '/';
-    if (containsSuspiciousPattern(urlPath)) {
+    if (SUSPICIOUS_PATH_PATTERNS.some((pattern) => pattern.test(urlPath))) {
       logger.warn(
         { method: req.method, path: urlPath, ip: req.ip },
         'Blocked request with suspicious URL path',

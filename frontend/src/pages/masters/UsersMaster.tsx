@@ -1218,10 +1218,10 @@ export default function UsersMaster() {
       />
 
       <AlertDialog open={isImportConfirmOpen} onOpenChange={setIsImportConfirmOpen}>
-        <AlertDialogContent aria-describedby={undefined} className="sm:max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col">
+        <AlertDialogContent aria-describedby="users-import-dialog-description" className="sm:max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col">
           <AlertDialogHeader>
             <AlertDialogTitle>Bulk Import Review - {importSummary?.fileName}</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription id="users-import-dialog-description">
               We found {importSummary?.rows.length ? importSummary.rows.length - 1 : 0} user record(s) in your file. 
               Please review the data preview below before finalizing the import.
             </AlertDialogDescription>

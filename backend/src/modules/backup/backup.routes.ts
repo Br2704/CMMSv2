@@ -143,14 +143,18 @@ backupRouter.post(
   requireAuth,
   requireRootAdmin(),
   asyncHandler(async (req, res) => {
-    const { scope, organizationId, plantId } = req.body || {};
-    if (!scope || !['ALL', 'ORGANIZATION', 'PLANT'].includes(scope)) {
-      res.status(400).json(fail('Invalid scope. Expected ALL, ORGANIZATION, or PLANT'));
-      return;
-    }
+    const { scope: rawScope, organizationId, plantId } = req.body || {};
+    const normalizedScope = typeof rawScope === 'string' ? rawScope.trim().toUpperCase() : '';
+    const inferredScope = normalizedScope === 'ALL' || normalizedScope === 'ORGANIZATION' || normalizedScope === 'PLANT'
+      ? normalizedScope
+      : plantId
+        ? 'PLANT'
+        : organizationId
+          ? 'ORGANIZATION'
+          : 'ALL';
 
     try {
-      const result = await backupManager.requestDeleteAll(req.auth!.userId, scope as any, { organizationId, plantId });
+      const result = await backupManager.requestDeleteAll(req.auth!.userId, inferredScope as any, { organizationId, plantId });
       res.status(202).json(ok(result, 'Deletion job enqueued'));
     } catch (err: any) {
       res.status(500).json(fail(err?.message || 'Failed to enqueue deletion'));

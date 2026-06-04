@@ -39,6 +39,10 @@ x-backend-env: &backend-env
   DB_NAME: ${DB_NAME:-postgres}
   DB_SSL: "false"
 
+  REDIS_HOST: redis
+  REDIS_URL: redis://redis:6379
+  REDIS_PORT: 6379
+
   APP_NAME: ${APP_NAME:-OptiX Maintenance Pro}
   APP_COMPANY: ${APP_COMPANY:-TamOptiX Technologies}
   APP_TAGLINE: ${APP_TAGLINE:-Powered by TamOptiX Technologies}
@@ -118,6 +122,24 @@ services:
       start_period: 10s
 
     stop_grace_period: 30s
+
+  # ────────────────────────────────────────────────────────────────
+  # Redis Cache & Queue
+  # ────────────────────────────────────────────────────────────────
+
+  redis:
+    image: redis:7-alpine
+    container_name: cmms-redis
+    restart: unless-stopped
+    networks:
+      - app
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ────────────────────────────────────────────────────────────────
   # Backend API

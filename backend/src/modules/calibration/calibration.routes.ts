@@ -27,6 +27,7 @@ import {
 import { isSafeDocumentUpload } from '../../utils/fileValidation';
 import { audit } from '../../utils/audit';
 import { isRootAdminRole, isSuperAdminRole, isAdminRole } from '../../utils/rbac';
+import { approvalEngineService } from '../../services/approval-engine.service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -529,8 +530,7 @@ calibrationRouter.post(
         }
       }
 
-      const repo = AppDataSource.getRepository(CalibrationTemplateEntity);
-      const created = repo.create({
+      const payload = {
         plantId,
         templateName: body.templateName.trim(),
         instrumentType: body.instrumentType.trim(),
@@ -542,10 +542,17 @@ calibrationRouter.post(
         responsibleTeamId: body.responsibleTeamId ?? null,
         checklistTasks: JSON.stringify(body.checklistTasks),
         isActive: body.isActive,
-      });
-      await repo.save(created);
-      const full = await repo.findOne({ where: { id: created.id }, relations: { responsibleTeam: true } });
-      res.status(201).json(ok(full ? mapTemplate(full) : created, 'Calibration template created'));
+      };
+
+      await approvalEngineService.submitChangeRequest(
+        'CALIBRATION_TEMPLATE',
+        'CREATE',
+        payload,
+        null,
+        req.auth!
+      );
+
+      res.status(202).json(ok(null, 'Calibration template change request submitted for approval'));
     } catch (error) {
       next(error);
     }
@@ -580,7 +587,7 @@ calibrationRouter.patch(
         }
       }
 
-      Object.assign(entity, {
+      const payload = {
         plantId,
         templateName: body.templateName?.trim() ?? entity.templateName,
         instrumentType: body.instrumentType?.trim() ?? entity.instrumentType,
@@ -592,10 +599,17 @@ calibrationRouter.patch(
         responsibleTeamId,
         checklistTasks: body.checklistTasks === undefined ? entity.checklistTasks : JSON.stringify(body.checklistTasks),
         isActive: body.isActive ?? entity.isActive,
-      });
-      await repo.save(entity);
-      const full = await repo.findOne({ where: { id: entity.id }, relations: { responsibleTeam: true } });
-      res.json(ok(full ? mapTemplate(full) : entity, 'Calibration template updated'));
+      };
+
+      await approvalEngineService.submitChangeRequest(
+        'CALIBRATION_TEMPLATE',
+        'UPDATE',
+        payload,
+        entity.id,
+        req.auth!
+      );
+
+      res.status(202).json(ok(null, 'Calibration template update submitted for approval'));
     } catch (error) {
       next(error);
     }
@@ -634,19 +648,15 @@ calibrationRouter.delete(
         return;
       }
 
-      entity.isActive = false;
-      await repo.save(entity);
-      await audit('calibration.templates.delete', {
-        module: 'CALIBRATION',
-        actorUserId: req.auth?.userId ?? null,
-        entityName: 'calibration_templates',
-        entityId: entity.id,
-        plantId: entity.plantId,
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'] ?? null,
-        statusCode: 200,
-      });
-      res.json(ok({ id: entity.id, deleted: true }, 'Calibration template deactivated'));
+      await approvalEngineService.submitChangeRequest(
+        'CALIBRATION_TEMPLATE',
+        'DELETE',
+        { isActive: false },
+        entity.id,
+        req.auth!
+      );
+      
+      res.status(202).json(ok(null, 'Calibration template deletion submitted for approval'));
     } catch (error) {
       next(error);
     }

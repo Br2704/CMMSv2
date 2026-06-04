@@ -63,16 +63,21 @@ const worker = new Worker(
           }
           await backupRepo.delete({ id: b.id });
           processed += 1;
-          const progress = Math.floor((processed / Math.max(1, total)) * 100);
-          // update job progress and (optionally) other indicators
+          const progress = Math.floor((processed / Math.max(1, total)) * 50); // first 50% for backups
           await job.updateProgress(progress);
         } catch (inner) {
           logger.error({ err: inner, backupId: b.id }, 'Failed to delete backup record or file');
         }
       }
 
-      await auditRepo.save(auditRepo.create({ action: 'DELETE', status: 'SUCCESS', userId: requestedBy, backupId: null, details: `Deleted ${processed} backup(s) for scope=${scope}` }));
-      return { deleted: processed };
+      // Now wipe actual operational data using our iterative utility
+      const { wipeScopedData } = await import('../utils/dataWipe.js');
+      const dataRowsDeleted = await wipeScopedData(scope, { organizationId, plantId });
+      
+      await job.updateProgress(100);
+
+      await auditRepo.save(auditRepo.create({ action: 'DELETE', status: 'SUCCESS', userId: requestedBy, backupId: null, details: `Deleted ${processed} backup(s) and wiped ${dataRowsDeleted} operational data rows for scope=${scope}` }));
+      return { deletedBackups: processed, deletedDataRows: dataRowsDeleted };
     } catch (err: any) {
       await auditRepo.save(auditRepo.create({ action: 'DELETE', status: 'FAILED', userId: requestedBy, backupId: null, details: String(err?.message ?? err) }));
       logger.error({ err }, 'Backup delete worker failed');

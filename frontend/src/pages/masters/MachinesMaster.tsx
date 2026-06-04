@@ -67,6 +67,7 @@ import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import { PageShell } from "@/components/layout/PageShell";
 import { FormGrid } from "@/components/layout/FormGrid";
 import { DataTableShell } from "@/components/layout/DataTableShell";
+import { Toolbar } from "@/components/layout/Toolbar";
 import {
   downloadEnterpriseExcelTemplate,
   findHeaderRowFromRows,
@@ -2762,10 +2763,10 @@ export default function MachinesMaster() {
       <DeleteConfirmDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} title="Delete Machine" itemName={selectedMachine?.name} onConfirm={confirmDelete} isLoading={saving} />
 
       <AlertDialog open={isImportConfirmOpen} onOpenChange={setIsImportConfirmOpen}>
-        <AlertDialogContent aria-describedby={undefined} className="sm:max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col">
+        <AlertDialogContent aria-describedby="machines-import-dialog-description" className="sm:max-w-[800px] max-h-[90vh] overflow-hidden flex flex-col">
           <AlertDialogHeader>
             <AlertDialogTitle>Bulk Import Review - {importSummary?.fileName}</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription id="machines-import-dialog-description">
               We found {importSummary?.rows.length ? importSummary.rows.length - 1 : 0} machine record(s) in your file. 
               Please review the data preview below before finalizing the import.
             </AlertDialogDescription>

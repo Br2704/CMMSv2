@@ -31,6 +31,9 @@ export class PmTemplateEntity extends TimestampedUuidEntity {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 
+  @Column({ name: 'version_number', type: 'int', default: 1 })
+  versionNumber!: number;
+
   @ManyToOne(() => PlantEntity, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'plant_id' })
   plant!: PlantEntity | null;

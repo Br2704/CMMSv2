@@ -11,6 +11,7 @@ import { ok } from '../../utils/apiResponse';
 import { buildPagination, listQuerySchema, parseListQuery } from '../../utils/pagination';
 import { applyPlantScope, applySearch } from '../../utils/query';
 import { pmschedulesService } from './pmschedules.service';
+import { executionApprovalService } from '../../services/execution-approval.service';
 import { createPMScheduleSchema, updatePMScheduleSchema } from './pmschedules.validators';
 import { generateDuePmTasks } from './pm-scheduling.utils';
 
@@ -173,6 +174,25 @@ async function updateScheduleHandler(req: Request, res: Response, next: NextFunc
   try {
     const params = idParamSchema.parse(req.params);
     const body = updatePMScheduleSchema.parse(req.body);
+
+    if (body.status === 'COMPLETED') {
+      const repo = AppDataSource.getRepository(PmScheduleEntity);
+      const schedule = await repo.findOneBy({ id: params.id });
+      if (schedule) {
+        schedule.status = 'PENDING_APPROVAL';
+        await repo.save(schedule);
+      }
+      
+      const request = await executionApprovalService.submitExecution(
+        schedule?.maintenanceType === 'PD' ? 'PD_EXECUTION' : 'PM_EXECUTION',
+        body,
+        params.id,
+        req.auth!
+      );
+      res.status(202).json(ok({ id: params.id, status: 'PENDING_APPROVAL' }, 'PM schedule completion submitted for approval'));
+      return;
+    }
+
     const updated = await pmschedulesService.update(params.id, body, req.auth!);
     const full = await AppDataSource.getRepository(PmScheduleEntity).findOne({
       where: { id: params.id },

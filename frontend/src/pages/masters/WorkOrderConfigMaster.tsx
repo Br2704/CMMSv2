@@ -24,12 +24,14 @@ import { listMaintenanceTeams, type MaintenanceTeam } from "@/api/maintenanceTea
 import { listPlants, type Plant } from "@/api/plants";
 import { createWorkOrderMaster, deleteWorkOrderMaster, listWorkOrderMasters, type WorkOrderMaster, type WorkOrderMasterOptionType, updateWorkOrderMaster } from "@/api/workOrderMasters";
 import { createWorkOrderTeamMapping, deleteWorkOrderTeamMapping, listWorkOrderTeamMappings, type WorkOrderTeamMapping, updateWorkOrderTeamMapping } from "@/api/workOrderTeamMappings";
+import { listMachineFailureCodes, createMachineFailureCode, approveMachineFailureCode, rejectMachineFailureCode, deleteMachineFailureCode, type MachineFailureCodeMapping } from "@/api/machine-failure-codes";
+import { listAssets, type Asset } from "@/api/assets";
 import { humanizeWorkOrderCode, normalizeWorkOrderCode } from "@/config/work-order-masters";
 import { broadcastWorkOrderSync } from "@/lib/work-order-sync";
 import { useAuthStore } from "@/store/auth.store";
 import { isAdminLevel, isSuperAdmin } from "@/lib/permission-engine";
 
-type ConfigTab = "categories" | "types" | "failure-codes" | "routing";
+type ConfigTab = "categories" | "types" | "failure-codes" | "machine-failure-codes" | "routing";
 
 interface OptionFormState {
   optionType: WorkOrderMasterOptionType;
@@ -47,16 +49,22 @@ interface MappingFormState {
   teamId: string;
 }
 
-const optionTabMap: Record<Exclude<ConfigTab, "routing">, WorkOrderMasterOptionType> = {
+interface MachineFailureFormState {
+  machineId: string;
+  failureCategory: string;
+  failureCode: string;
+}
+
+const optionTabMap: Record<Exclude<ConfigTab, "routing" | "machine-failure-codes">, WorkOrderMasterOptionType> = {
   categories: "CATEGORY",
   types: "WO_TYPE",
   "failure-codes": "FAILURE_CODE",
 };
 
-const optionTabTitle: Record<Exclude<ConfigTab, "routing">, string> = {
+const optionTabTitle: Record<Exclude<ConfigTab, "routing" | "machine-failure-codes">, string> = {
   categories: "Work Order Categories",
   types: "Work Order Types",
-  "failure-codes": "Failure Codes",
+  "failure-codes": "Global Failure Codes",
 };
 
 const emptyOptionForm = (optionType: WorkOrderMasterOptionType): OptionFormState => ({
@@ -69,6 +77,8 @@ const emptyOptionForm = (optionType: WorkOrderMasterOptionType): OptionFormState
 });
 
 const emptyMappingForm = (plantId = ""): MappingFormState => ({ plantId, departmentId: "", category: "", teamId: "" });
+
+const emptyMachineFailureForm = (): MachineFailureFormState => ({ machineId: "", failureCategory: "", failureCode: "" });
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (typeof error === "object" && error !== null && "message" in error && typeof (error as { message: unknown }).message === "string") {
@@ -88,6 +98,8 @@ export default function WorkOrderConfigMaster() {
   const [teams, setTeams] = useState<MaintenanceTeam[]>([]);
   const [masters, setMasters] = useState<WorkOrderMaster[]>([]);
   const [mappings, setMappings] = useState<WorkOrderTeamMapping[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [machineFailureCodes, setMachineFailureCodes] = useState<MachineFailureCodeMapping[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -97,8 +109,10 @@ export default function WorkOrderConfigMaster() {
   const [selectedMapping, setSelectedMapping] = useState<WorkOrderTeamMapping | null>(null);
   const [optionForm, setOptionForm] = useState<OptionFormState>(emptyOptionForm("CATEGORY"));
   const [mappingForm, setMappingForm] = useState<MappingFormState>(emptyMappingForm(defaultPlantId));
+  const [machineFailureForm, setMachineFailureForm] = useState<MachineFailureFormState>(emptyMachineFailureForm());
   const [isOptionFormOpen, setIsOptionFormOpen] = useState(false);
   const [isMappingFormOpen, setIsMappingFormOpen] = useState(false);
+  const [isMachineFailureFormOpen, setIsMachineFailureFormOpen] = useState(false);
   const [isOptionDeleteOpen, setIsOptionDeleteOpen] = useState(false);
   const [isMappingDeleteOpen, setIsMappingDeleteOpen] = useState(false);
   const [isEditingOption, setIsEditingOption] = useState(false);
@@ -129,12 +143,16 @@ export default function WorkOrderConfigMaster() {
       listMaintenanceTeams({ page: 1, limit: 500, plantId: resolvedPlantId || "", includeInactive: true }),
       listWorkOrderMasters({ page: 1, limit: 500, plantId: resolvedPlantId || "", includeInactive: true }),
       listWorkOrderTeamMappings({ page: 1, limit: 500, plantId: resolvedPlantId || "" }),
+      listAssets({ page: 1, limit: 500, plantId: resolvedPlantId || "", includeInactive: true }),
+      listMachineFailureCodes(),
     ])
-      .then(([departmentsResponse, teamsResponse, mastersResponse, mappingsResponse]) => {
+      .then(([departmentsResponse, teamsResponse, mastersResponse, mappingsResponse, assetsResponse, machineFailuresResponse]) => {
         setDepartments(departmentsResponse.data || []);
         setTeams(teamsResponse.data || []);
         setMasters(mastersResponse.data || []);
         setMappings(mappingsResponse.data || []);
+        setAssets(assetsResponse.data || []);
+        setMachineFailureCodes(machineFailuresResponse.data || []);
       })
       .catch((error: unknown) => toast.error(getErrorMessage(error, "Failed to load work order config")))
       .finally(() => setLoading(false));
@@ -155,28 +173,39 @@ export default function WorkOrderConfigMaster() {
   const activeCategoryOptions = useMemo(() => {
     return masters.filter((item) => item.optionType === "CATEGORY" && item.isActive).map((item) => ({ value: item.code, label: item.label }));
   }, [masters]);
+  const activeFailureCodeOptions = useMemo(() => {
+    return masters.filter((item) => item.optionType === "FAILURE_CODE" && item.isActive).map((item) => ({ value: item.code, label: item.label }));
+  }, [masters]);
+  const assetOptions = useMemo(() => {
+    return assets.filter(a => a.isActive).map(a => ({ value: a.id, label: `${a.assetCode} - ${a.name}` }));
+  }, [assets]);
+  const assetNameById = useMemo(() => Object.fromEntries(assets.map(a => [a.id, a.name])), [assets]);
   const optionRows = useMemo(() => {
-    if (activeTab === "routing") return [];
+    if (activeTab === "routing" || activeTab === "machine-failure-codes") return [];
     const optionType = optionTabMap[activeTab];
     return masters.filter((item) => item.optionType === optionType).filter((item) => !searchQuery.trim() || [item.label, item.code, item.description || ""].join(" ").toLowerCase().includes(searchQuery.toLowerCase())).sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
   }, [activeTab, masters, searchQuery]);
   const mappingRows = useMemo(() => mappings.filter((item) => !searchQuery.trim() || [departmentNameById[item.departmentId || ""] || "", teamNameById[item.teamId] || "", labelByCode[item.category] || item.category].join(" ").toLowerCase().includes(searchQuery.toLowerCase())).sort((a, b) => (departmentNameById[a.departmentId || ""] || "").localeCompare(departmentNameById[b.departmentId || ""] || "") || (labelByCode[a.category] || a.category).localeCompare(labelByCode[b.category] || b.category)), [departmentNameById, labelByCode, mappings, searchQuery, teamNameById]);
 
   const reloadPlantData = async (plantId: string) => {
-    const [departmentsResponse, teamsResponse, mastersResponse, mappingsResponse] = await Promise.all([
+    const [departmentsResponse, teamsResponse, mastersResponse, mappingsResponse, assetsResponse, machineFailuresResponse] = await Promise.all([
       listDepartments({ page: 1, limit: 500, plantId, includeInactive: true }),
       listMaintenanceTeams({ page: 1, limit: 500, plantId, includeInactive: true }),
       listWorkOrderMasters({ page: 1, limit: 500, plantId, includeInactive: true }),
       listWorkOrderTeamMappings({ page: 1, limit: 500, plantId }),
+      listAssets({ page: 1, limit: 500, plantId, includeInactive: true }),
+      listMachineFailureCodes(),
     ]);
     setDepartments(departmentsResponse.data || []);
     setTeams(teamsResponse.data || []);
     setMasters(mastersResponse.data || []);
     setMappings(mappingsResponse.data || []);
+    setAssets(assetsResponse.data || []);
+    setMachineFailureCodes(machineFailuresResponse.data || []);
   };
 
   const openAddOption = () => {
-    if (activeTab === "routing") return;
+    if (activeTab === "routing" || activeTab === "machine-failure-codes") return;
     setIsEditingOption(false);
     setSelectedOption(null);
     setOptionForm(emptyOptionForm(optionTabMap[activeTab]));
@@ -242,6 +271,44 @@ export default function WorkOrderConfigMaster() {
       setSaving(false);
     }
   };
+
+  const openAddMachineFailure = () => {
+    setMachineFailureForm(emptyMachineFailureForm());
+    setIsMachineFailureFormOpen(true);
+  };
+
+  const saveMachineFailure = async () => {
+    if (!machineFailureForm.machineId || !machineFailureForm.failureCategory || !machineFailureForm.failureCode) {
+      toast.error("Machine, category, and failure code are required");
+      return;
+    }
+    setSaving(true);
+    try {
+      await createMachineFailureCode({
+        machineId: machineFailureForm.machineId,
+        failureCategory: machineFailureForm.failureCategory,
+        failureCode: machineFailureForm.failureCode,
+      });
+      await reloadPlantData(canSelectPlant ? selectedPlantId : defaultPlantId);
+      setIsMachineFailureFormOpen(false);
+      toast.success("Machine failure code mapping requested");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to map failure code"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleApproveMachineFailure = async (id: string) => {
+    try {
+      await approveMachineFailureCode(id);
+      await reloadPlantData(canSelectPlant ? selectedPlantId : defaultPlantId);
+      toast.success("Mapping approved");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Failed to approve mapping"));
+    }
+  };
+
   const deleteOption = async () => {
     if (!selectedOption) return;
     setSaving(true);
@@ -275,15 +342,29 @@ export default function WorkOrderConfigMaster() {
 
   const optionColumns = [{ key: "label", header: "Label", render: (item: WorkOrderMaster) => <span className="font-semibold text-primary">{item.label}</span> }, { key: "code", header: "Code", render: (item: WorkOrderMaster) => item.code, hideOnMobile: true }, { key: "sortOrder", header: "Order", render: (item: WorkOrderMaster) => item.sortOrder, hideOnMobile: true }, { key: "status", header: "Status", render: (item: WorkOrderMaster) => <StatusBadge variant={item.isActive ? "active" : "inactive"}>{item.isActive ? "Active" : "Inactive"}</StatusBadge> }, { key: "actions", header: "Actions", className: "text-right", render: (item: WorkOrderMaster) => <div className="flex justify-end gap-1">{canManage ? <Button variant="ghost" size="icon" onClick={() => openEditOption(item)}><Edit className="h-4 w-4" /></Button> : null}{canManage ? <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { setSelectedOption(item); setIsOptionDeleteOpen(true); }}><Trash2 className="h-4 w-4" /></Button> : null}</div> }];
   const mappingColumns = [{ key: "department", header: "Department", render: (item: WorkOrderTeamMapping) => departmentNameById[item.departmentId || ""] || "Unassigned" }, { key: "category", header: "Category", render: (item: WorkOrderTeamMapping) => <span className="font-semibold text-primary">{labelByCode[item.category] || humanizeWorkOrderCode(item.category)}</span> }, { key: "team", header: "Assigned Team", render: (item: WorkOrderTeamMapping) => teamNameById[item.teamId] || "-", hideOnMobile: true }, { key: "actions", header: "Actions", className: "text-right", render: (item: WorkOrderTeamMapping) => <div className="flex justify-end gap-1">{canManage ? <Button variant="ghost" size="icon" onClick={() => openEditMapping(item)}><Edit className="h-4 w-4" /></Button> : null}{canManage ? <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { setSelectedMapping(item); setIsMappingDeleteOpen(true); }}><Trash2 className="h-4 w-4" /></Button> : null}</div> }];
-  const renderOptionTab = (tab: Exclude<ConfigTab, "routing">, Icon: typeof Tags, emptyTitle: string, emptyDescription: string) => <DataTableShell title={<span className="flex items-center gap-2"><Icon className="h-5 w-5 text-primary" />{optionTabTitle[tab]} ({optionRows.length})</span>} toolbar={<Toolbar right={<div className="relative w-full sm:w-72"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={`Search ${optionTabTitle[tab].toLowerCase()}...`} className="h-10 pl-9" /></div>} />}>{loading ? <TableSkeleton /> : !resolvedPlantId && canSelectPlant ? <EmptyState title="Select a plant" description={`Choose a plant first to manage ${optionTabTitle[tab].toLowerCase()}.`} /> : optionRows.length === 0 ? <EmptyState title={emptyTitle} description={emptyDescription} actionLabel={canManage ? `Add ${optionTabTitle[tab].slice(0, -1)}` : undefined} onAction={canManage ? openAddOption : undefined} /> : <ResponsiveTable data={optionRows} columns={optionColumns} keyExtractor={(item: WorkOrderMaster) => item.id} mobileCard={(item: WorkOrderMaster) => <MobileCard onEdit={canManage ? () => openEditOption(item) : undefined} onDelete={canManage ? () => { setSelectedOption(item); setIsOptionDeleteOpen(true); } : undefined}><MobileCardHeader title={item.label} subtitle={item.code} badge={<StatusBadge variant={item.isActive ? "active" : "inactive"}>{item.isActive ? "Active" : "Inactive"}</StatusBadge>} /><MobileCardRow label="Order" value={String(item.sortOrder)} /></MobileCard>} />}</DataTableShell>;
+  const machineFailureColumns = [
+    { key: "machine", header: "Machine", render: (item: MachineFailureCodeMapping) => <span className="font-semibold text-primary">{item.machine?.assetName || assetNameById[item.machineId] || "Unknown"}</span> },
+    { key: "category", header: "Category", render: (item: MachineFailureCodeMapping) => labelByCode[item.failureCategory] || item.failureCategory },
+    { key: "code", header: "Failure Code", render: (item: MachineFailureCodeMapping) => labelByCode[item.failureCode] || item.failureCode },
+    { key: "status", header: "Status", render: (item: MachineFailureCodeMapping) => <StatusBadge variant={item.status === 'APPROVED' ? 'active' : item.status === 'REJECTED' ? 'inactive' : 'pending'}>{item.status}</StatusBadge> },
+    { key: "actions", header: "Actions", className: "text-right", render: (item: MachineFailureCodeMapping) => (
+      <div className="flex justify-end gap-1">
+        {item.status === 'PENDING' && canManage && (
+          <Button variant="ghost" size="sm" className="h-8 px-2 text-green-600 bg-green-50 hover:bg-green-100" onClick={() => handleApproveMachineFailure(item.id)}>Approve</Button>
+        )}
+      </div>
+    )}
+  ];
+  const renderOptionTab = (tab: Exclude<ConfigTab, "routing" | "machine-failure-codes">, Icon: typeof Tags, emptyTitle: string, emptyDescription: string) => <DataTableShell title={<span className="flex items-center gap-2"><Icon className="h-5 w-5 text-primary" />{optionTabTitle[tab]} ({optionRows.length})</span>} toolbar={<Toolbar right={<div className="relative w-full sm:w-72"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={`Search ${optionTabTitle[tab].toLowerCase()}...`} className="h-10 pl-9" /></div>} />}>{loading ? <TableSkeleton /> : !resolvedPlantId && canSelectPlant ? <EmptyState title="Select a plant" description={`Choose a plant first to manage ${optionTabTitle[tab].toLowerCase()}.`} /> : optionRows.length === 0 ? <EmptyState title={emptyTitle} description={emptyDescription} actionLabel={canManage ? `Add ${optionTabTitle[tab].slice(0, -1)}` : undefined} onAction={canManage ? openAddOption : undefined} /> : <ResponsiveTable data={optionRows} columns={optionColumns} keyExtractor={(item: WorkOrderMaster) => item.id} mobileCard={(item: WorkOrderMaster) => <MobileCard onEdit={canManage ? () => openEditOption(item) : undefined} onDelete={canManage ? () => { setSelectedOption(item); setIsOptionDeleteOpen(true); } : undefined}><MobileCardHeader title={item.label} subtitle={item.code} badge={<StatusBadge variant={item.isActive ? "active" : "inactive"}>{item.isActive ? "Active" : "Inactive"}</StatusBadge>} /><MobileCardRow label="Order" value={String(item.sortOrder)} /></MobileCard>} />}</DataTableShell>;
 
   return (
     <PageShell>
       <BackButton />
-      <PageHeader title="Work Order Config" subtitle="Manage work order categories, types, failure codes, and department-wise team routing." actions={canManage ? <Button className="w-full gap-2 sm:w-auto" onClick={activeTab === "routing" ? openAddMapping : openAddOption}><Plus className="h-4 w-4" />{activeTab === "routing" ? "Add Routing Rule" : `Add ${activeTab === "categories" ? "Category" : activeTab === "types" ? "Type" : "Failure Code"}`}</Button> : undefined} />
+      <PageHeader title="Work Order Config" subtitle="Manage work order categories, types, failure codes, and department-wise team routing." actions={canManage ? <Button className="w-full gap-2 sm:w-auto" onClick={activeTab === "routing" ? openAddMapping : activeTab === "machine-failure-codes" ? openAddMachineFailure : openAddOption}><Plus className="h-4 w-4" />{activeTab === "routing" ? "Add Routing Rule" : activeTab === "machine-failure-codes" ? "Map Failure Code" : `Add ${activeTab === "categories" ? "Category" : activeTab === "types" ? "Type" : "Failure Code"}`}</Button> : undefined} />
       <Card className="shadow-card"><CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-end sm:justify-between">{canSelectPlant ? <div className="w-full sm:max-w-sm"><SelectField label="Plant" value={selectedPlantId} onChange={setSelectedPlantId} options={plantOptions} placeholder="Select plant" /></div> : <div><p className="text-sm font-medium">Plant</p><p className="text-sm text-muted-foreground">{user?.plantCode || "Plant"} - {user?.plantName || "Assigned Plant"}</p></div>}<div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">These settings drive work order raise, close, and routing flows.</div></CardContent></Card>
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ConfigTab)} className="space-y-4"><TabsList className="flex w-full flex-nowrap overflow-x-auto gap-2 bg-transparent p-0 sm:grid sm:grid-cols-4 sm:overflow-visible"><TabsTrigger value="categories">Categories</TabsTrigger><TabsTrigger value="types">WO Types</TabsTrigger><TabsTrigger value="failure-codes">Failure Codes</TabsTrigger><TabsTrigger value="routing">Dept Team Routing</TabsTrigger></TabsList><TabsContent value="categories" className="mt-0">{renderOptionTab("categories", Tags, "No categories found", "Add work order categories for this plant.")}</TabsContent><TabsContent value="types" className="mt-0">{renderOptionTab("types", ClipboardList, "No work order types found", "Add work order types for this plant.")}</TabsContent><TabsContent value="failure-codes" className="mt-0">{renderOptionTab("failure-codes", AlertTriangle, "No failure codes found", "Add failure codes for this plant.")}</TabsContent><TabsContent value="routing" className="mt-0"><DataTableShell title={<span className="flex items-center gap-2"><Link2 className="h-5 w-5 text-primary" />Department Team Routing ({mappingRows.length})</span>} toolbar={<Toolbar right={<div className="relative w-full sm:w-72"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search routing..." className="h-10 pl-9" /></div>} />}>{loading ? <TableSkeleton /> : !resolvedPlantId && canSelectPlant ? <EmptyState title="Select a plant" description="Choose a plant first to manage routing rules." /> : mappingRows.length === 0 ? <EmptyState title="No routing rules found" description="Map each department category to a maintenance team." actionLabel={canManage ? "Add Routing Rule" : undefined} onAction={canManage ? openAddMapping : undefined} /> : <ResponsiveTable data={mappingRows} columns={mappingColumns} keyExtractor={(item: WorkOrderTeamMapping) => item.id} mobileCard={(item: WorkOrderTeamMapping) => <MobileCard onEdit={canManage ? () => openEditMapping(item) : undefined} onDelete={canManage ? () => { setSelectedMapping(item); setIsMappingDeleteOpen(true); } : undefined}><MobileCardHeader title={labelByCode[item.category] || humanizeWorkOrderCode(item.category)} subtitle={departmentNameById[item.departmentId || ""] || "Unassigned"} /><MobileCardRow label="Assigned Team" value={teamNameById[item.teamId] || "-"} /></MobileCard>} />}</DataTableShell></TabsContent></Tabs>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ConfigTab)} className="space-y-4"><TabsList className="flex w-full flex-nowrap overflow-x-auto gap-2 bg-transparent p-0 sm:grid sm:grid-cols-5 sm:overflow-visible"><TabsTrigger value="categories">Categories</TabsTrigger><TabsTrigger value="types">WO Types</TabsTrigger><TabsTrigger value="failure-codes">Global Failure Codes</TabsTrigger><TabsTrigger value="machine-failure-codes">Machine Failure Codes</TabsTrigger><TabsTrigger value="routing">Dept Team Routing</TabsTrigger></TabsList><TabsContent value="categories" className="mt-0">{renderOptionTab("categories", Tags, "No categories found", "Add work order categories for this plant.")}</TabsContent><TabsContent value="types" className="mt-0">{renderOptionTab("types", ClipboardList, "No work order types found", "Add work order types for this plant.")}</TabsContent><TabsContent value="failure-codes" className="mt-0">{renderOptionTab("failure-codes", AlertTriangle, "No failure codes found", "Add failure codes for this plant.")}</TabsContent><TabsContent value="machine-failure-codes" className="mt-0"><DataTableShell title={<span className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-primary" />Machine Specific Failure Codes ({machineFailureCodes.length})</span>} toolbar={<Toolbar />}>{loading ? <TableSkeleton /> : !resolvedPlantId && canSelectPlant ? <EmptyState title="Select a plant" description="Choose a plant first." /> : machineFailureCodes.length === 0 ? <EmptyState title="No machine failure codes" description="Map failure codes to specific machines." actionLabel="Map Failure Code" onAction={openAddMachineFailure} /> : <ResponsiveTable data={machineFailureCodes} columns={machineFailureColumns} keyExtractor={(item: MachineFailureCodeMapping) => item.id} />}</DataTableShell></TabsContent><TabsContent value="routing" className="mt-0"><DataTableShell title={<span className="flex items-center gap-2"><Link2 className="h-5 w-5 text-primary" />Department Team Routing ({mappingRows.length})</span>} toolbar={<Toolbar right={<div className="relative w-full sm:w-72"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search routing..." className="h-10 pl-9" /></div>} />}>{loading ? <TableSkeleton /> : !resolvedPlantId && canSelectPlant ? <EmptyState title="Select a plant" description="Choose a plant first to manage routing rules." /> : mappingRows.length === 0 ? <EmptyState title="No routing rules found" description="Map each department category to a maintenance team." actionLabel={canManage ? "Add Routing Rule" : undefined} onAction={canManage ? openAddMapping : undefined} /> : <ResponsiveTable data={mappingRows} columns={mappingColumns} keyExtractor={(item: WorkOrderTeamMapping) => item.id} mobileCard={(item: WorkOrderTeamMapping) => <MobileCard onEdit={canManage ? () => openEditMapping(item) : undefined} onDelete={canManage ? () => { setSelectedMapping(item); setIsMappingDeleteOpen(true); } : undefined}><MobileCardHeader title={labelByCode[item.category] || humanizeWorkOrderCode(item.category)} subtitle={departmentNameById[item.departmentId || ""] || "Unassigned"} /><MobileCardRow label="Assigned Team" value={teamNameById[item.teamId] || "-"} /></MobileCard>} />}</DataTableShell></TabsContent></Tabs>
       <FormDialog open={isOptionFormOpen} onOpenChange={setIsOptionFormOpen} title={isEditingOption ? "Edit Work Order Option" : "Add Work Order Option"} description="These values appear in work order forms and filters." onSubmit={saveOption} submitLabel={isEditingOption ? "Update Option" : "Create Option"} isLoading={saving}><FormGrid><InputField label="Option Type" value={humanizeWorkOrderCode(optionForm.optionType)} onChange={() => {}} disabled /><InputField label="Label" value={optionForm.label} onChange={(value) => setOptionForm((current) => ({ ...current, label: value }))} placeholder="Mechanical" required /><InputField label="Code" value={optionForm.code} onChange={(value) => setOptionForm((current) => ({ ...current, code: normalizeWorkOrderCode(value) }))} placeholder="MECHANICAL" hint="Leave blank to auto-create from the label." /><InputField label="Display Order" type="number" value={optionForm.sortOrder} onChange={(value) => setOptionForm((current) => ({ ...current, sortOrder: value }))} placeholder="10" /></FormGrid><TextareaField label="Description" value={optionForm.description} onChange={(value) => setOptionForm((current) => ({ ...current, description: value }))} placeholder="Optional note for admins" rows={3} /><SwitchField label="Active Option" checked={optionForm.isActive} onChange={(checked) => setOptionForm((current) => ({ ...current, isActive: checked }))} description="Inactive options do not appear in new work order forms." /></FormDialog>
+      <FormDialog open={isMachineFailureFormOpen} onOpenChange={setIsMachineFailureFormOpen} title="Map Failure Code to Machine" description="Link a category and failure code to a specific machine. Requires manager approval." onSubmit={saveMachineFailure} submitLabel="Request Mapping" isLoading={saving}><FormGrid><SelectField label="Machine" value={machineFailureForm.machineId} onChange={(value) => setMachineFailureForm((current) => ({ ...current, machineId: value }))} options={assetOptions} placeholder="Select machine" required /><SelectField label="Failure Category" value={machineFailureForm.failureCategory} onChange={(value) => setMachineFailureForm((current) => ({ ...current, failureCategory: value }))} options={activeCategoryOptions} placeholder="Select category" required /><SelectField label="Failure Code" value={machineFailureForm.failureCode} onChange={(value) => setMachineFailureForm((current) => ({ ...current, failureCode: value }))} options={activeFailureCodeOptions} placeholder="Select failure code" required /></FormGrid></FormDialog>
       <FormDialog open={isMappingFormOpen} onOpenChange={setIsMappingFormOpen} title={isEditingMapping ? "Edit Team Routing Rule" : "Add Team Routing Rule"} description="Route each department-wise work order category to the right maintenance team." onSubmit={saveMapping} submitLabel={isEditingMapping ? "Update Routing Rule" : "Create Routing Rule"} isLoading={saving}><FormGrid>{canSelectPlant ? <SelectField label="Plant" value={mappingForm.plantId} onChange={(value) => { setSelectedPlantId(value); setMappingForm((current) => ({ ...current, plantId: value, departmentId: "", teamId: "" })); }} options={plantOptions} placeholder="Select plant" required /> : null}<SelectField label="Department" value={mappingForm.departmentId} onChange={(value) => setMappingForm((current) => ({ ...current, departmentId: value }))} options={departmentOptions} placeholder="Select department" required /><SelectField label="Work Order Category" value={mappingForm.category} onChange={(value) => setMappingForm((current) => ({ ...current, category: value }))} options={activeCategoryOptions} placeholder="Select category" required disabled={activeCategoryOptions.length === 0} /><SelectField label="Assigned Team" value={mappingForm.teamId} onChange={(value) => setMappingForm((current) => ({ ...current, teamId: value }))} options={teamOptions} placeholder="Select team" required disabled={teamOptions.length === 0} /></FormGrid></FormDialog>
       <DeleteConfirmDialog open={isOptionDeleteOpen} onOpenChange={setIsOptionDeleteOpen} title="Delete Work Order Option" itemName={selectedOption?.label} onConfirm={deleteOption} isLoading={saving} />
       <DeleteConfirmDialog open={isMappingDeleteOpen} onOpenChange={setIsMappingDeleteOpen} title="Delete Routing Rule" itemName={selectedMapping ? labelByCode[selectedMapping.category] || humanizeWorkOrderCode(selectedMapping.category) : undefined} onConfirm={deleteMapping} isLoading={saving} />

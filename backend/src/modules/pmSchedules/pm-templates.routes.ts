@@ -11,6 +11,7 @@ import { buildPagination, listQuerySchema, parseListQuery } from '../../utils/pa
 import { resolveScopedPlantId } from '../../utils/plantScope';
 import { applyPlantScope, applySearch } from '../../utils/query';
 import { computeNextDueDate, parseChecklistTasks, validatePmLinkScope } from './pm-scheduling.utils';
+import { approvalEngineService } from '../../services/approval-engine.service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -147,7 +148,7 @@ pmTemplatesRouter.post('/pm-templates', requirePermission('MASTERS', 'CREATE'), 
       }
     }
 
-    const created = repo.create({
+    const payload = {
       plantId,
       templateName: body.templateName,
       maintenanceType: body.maintenanceType,
@@ -157,9 +158,18 @@ pmTemplatesRouter.post('/pm-templates', requirePermission('MASTERS', 'CREATE'), 
       estimatedDuration: body.estimatedDuration,
       checklistTasks: JSON.stringify(body.checklistTasks),
       isActive: body.isActive,
-    });
-    await repo.save(created);
-    res.status(201).json(ok(mapTemplate(created), 'PM template created'));
+    };
+    
+    // Always trigger approval flow for templates
+    await approvalEngineService.submitChangeRequest(
+      body.maintenanceType === 'PM' ? 'PM_TEMPLATE' : 'PD_TEMPLATE',
+      'CREATE',
+      payload,
+      null,
+      req.auth!
+    );
+    
+    res.status(202).json(ok(null, 'PM template change request submitted for approval'));
   } catch (error) {
     next(error);
   }
@@ -190,7 +200,7 @@ pmTemplatesRouter.patch('/pm-templates/:id', requirePermission('MASTERS', 'UPDAT
       entity.templateName = incomingName;
     }
 
-    Object.assign(entity, {
+    const payload = {
       plantId,
       maintenanceType: body.maintenanceType ?? entity.maintenanceType,
       discipline: body.discipline === undefined ? entity.discipline : body.discipline ?? null,
@@ -199,9 +209,17 @@ pmTemplatesRouter.patch('/pm-templates/:id', requirePermission('MASTERS', 'UPDAT
       estimatedDuration: body.estimatedDuration ?? entity.estimatedDuration,
       checklistTasks: body.checklistTasks === undefined ? entity.checklistTasks : JSON.stringify(body.checklistTasks),
       isActive: body.isActive ?? entity.isActive,
-    });
-    await repo.save(entity);
-    res.json(ok(mapTemplate(entity), 'PM template updated'));
+    };
+
+    await approvalEngineService.submitChangeRequest(
+      entity.maintenanceType === 'PM' ? 'PM_TEMPLATE' : 'PD_TEMPLATE',
+      'UPDATE',
+      payload,
+      entity.id,
+      req.auth!
+    );
+
+    res.status(202).json(ok(null, 'PM template update submitted for approval'));
   } catch (error) {
     next(error);
   }
@@ -217,9 +235,16 @@ pmTemplatesRouter.delete('/pm-templates/:id', requirePermission('MASTERS', 'DELE
       return;
     }
     ensurePlantAccess(req, entity.plantId);
-    entity.isActive = false;
-    await repo.save(entity);
-    res.json(ok({ id: entity.id, deleted: true }, 'PM template deactivated'));
+    
+    await approvalEngineService.submitChangeRequest(
+      entity.maintenanceType === 'PM' ? 'PM_TEMPLATE' : 'PD_TEMPLATE',
+      'DELETE',
+      { isActive: false },
+      entity.id,
+      req.auth!
+    );
+
+    res.status(202).json(ok(null, 'PM template deletion submitted for approval'));
   } catch (error) {
     next(error);
   }

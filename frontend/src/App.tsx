@@ -34,8 +34,13 @@ const SecurityGate = lazy(() => import("@/pages/SecurityGate"));
 const VisitorExperience = lazy(() => import("@/pages/VisitorExperience"));
 const Masters = lazy(() => import("@/pages/Masters"));
 const Logs = lazy(() => import("@/pages/Logs"));
+const Approvals = lazy(() => import("@/pages/Approvals"));
+const ShiftHandover = lazy(() => import("@/pages/ShiftHandover"));
+const DigitalPassport = lazy(() => import("@/pages/DigitalPassport"));
+const AuditorDashboard = lazy(() => import("@/pages/AuditorDashboard"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const Forbidden = lazy(() => import("@/pages/Forbidden"));
+const WarrantyAlerts = lazy(() => import("@/pages/WarrantyAlerts"));
 
 // Lazy-loaded Master Pages
 const PlantMaster = lazy(() => import("@/pages/masters/PlantMaster"));
@@ -393,71 +398,76 @@ function App() {
             <AuthProvider>
               <Routes>
                 <Route path="/login" element={<SafeRoute><PublicRoute><SuspenseLoader><Login /></SuspenseLoader></PublicRoute></SafeRoute>} />
-                <Route path="/qr/:token" element={<SafeRoute><SuspenseLoader><PublicQrAssetPage /></SuspenseLoader></SafeRoute>} />
-                <Route path="/assets/:machineCode" element={<SafeRoute><SuspenseLoader><PublicQrAssetPage /></SuspenseLoader></SafeRoute>} />
-                <Route element={<SafeRoute><ProtectedRoute><MainLayout /></ProtectedRoute></SafeRoute>}>
-                  <Route path="/" element={<SafeRoute><HomeRoute /></SafeRoute>} />
-                  <Route path="/root/dashboard" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootDashboard /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
-                  <Route path="/root/plant" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootPlantMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
-                  <Route path="/root/users" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootUsersMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
-                  <Route path="/root/role-access" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootRoleAccessMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
-                  <Route path="/root/role-accesss" element={<SafeRoute><Navigate to="/root/role-access" replace /></SafeRoute>} />
-                  <Route path="/amc" element={<SafeRoute><ModuleGuard moduleId="amc"><SuspenseLoader><AMC /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/work-orders" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><WorkOrders /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/technician" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><TechnicianDashboard /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/scan/live" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><LiveQrScan /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/scan/:token" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><QrScanResolver /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/machine/:machineId" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><MachineQuickCard /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/assets" element={<SafeRoute><ModuleGuard moduleId="assets"><SuspenseLoader><Assets /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/preventive-maintenance" element={<SafeRoute><ModuleGuard moduleId="pmpd"><SuspenseLoader><PreventiveMaintenance /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/calibration" element={<SafeRoute><ModuleGuard moduleId="calibration"><SuspenseLoader><Calibration /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/esg" element={<SafeRoute><ModuleGuard moduleId="esg"><SuspenseLoader><ESG /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/inventory" element={<SafeRoute><ModuleGuard moduleId="inventory"><SuspenseLoader><Inventory /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/reports" element={<SafeRoute><ModuleGuard moduleId="reports"><SuspenseLoader><Reports /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/security-center" element={<SafeRoute><SecurityCenterRoute /></SafeRoute>} />
-                  <Route path="/security-gate" element={<SafeRoute><SecurityGateRoute /></SafeRoute>} />
-                  <Route path="/visitor-experience" element={<SafeRoute><ModuleGuard moduleId="visitor-experience"><SuspenseLoader><VisitorExperience /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/logs" element={<SafeRoute><ModuleGuard moduleId="logs"><SuspenseLoader><Logs /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/403" element={<SafeRoute><SuspenseLoader><Forbidden /></SuspenseLoader></SafeRoute>} />
+                    <Route path="/qr/:token" element={<SafeRoute><SuspenseLoader><PublicQrAssetPage /></SuspenseLoader></SafeRoute>} />
+                    <Route path="/assets/:machineCode" element={<SafeRoute><SuspenseLoader><PublicQrAssetPage /></SuspenseLoader></SafeRoute>} />
+                    <Route element={<SafeRoute><ProtectedRoute><MainLayout /></ProtectedRoute></SafeRoute>}>
+                      <Route path="/" element={<SafeRoute><HomeRoute /></SafeRoute>} />
+                      <Route path="/root/dashboard" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootDashboard /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                      <Route path="/root/plant" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootPlantMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                      <Route path="/root/users" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootUsersMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                      <Route path="/root/role-access" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootRoleAccessMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                      <Route path="/root/role-accesss" element={<SafeRoute><Navigate to="/root/role-access" replace /></SafeRoute>} />
+                      <Route path="/shift-handover" element={<SafeRoute><SuspenseLoader><ShiftHandover /></SuspenseLoader></SafeRoute>} />
+                      <Route path="/amc" element={<SafeRoute><ModuleGuard moduleId="amc"><SuspenseLoader><AMC /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/work-orders" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><WorkOrders /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/technician" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><TechnicianDashboard /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/scan/live" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><LiveQrScan /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/scan/:token" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><QrScanResolver /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/machine/:machineId" element={<SafeRoute><ModuleGuard moduleId="workorders"><SuspenseLoader><MachineQuickCard /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/assets" element={<SafeRoute><ModuleGuard moduleId="assets"><SuspenseLoader><Assets /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/preventive-maintenance" element={<SafeRoute><ModuleGuard moduleId="pmpd"><SuspenseLoader><PreventiveMaintenance /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/auditor-dashboard" element={<SafeRoute><SuspenseLoader><AuditorDashboard /></SuspenseLoader></SafeRoute>} />
+                      <Route path="/calibration" element={<SafeRoute><ModuleGuard moduleId="calibration"><SuspenseLoader><Calibration /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/esg" element={<SafeRoute><ModuleGuard moduleId="esg"><SuspenseLoader><ESG /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/assets/:id/passport" element={<SafeRoute><ModuleGuard moduleId="assets"><SuspenseLoader><DigitalPassport /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/inventory" element={<SafeRoute><ModuleGuard moduleId="inventory"><SuspenseLoader><Inventory /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/reports" element={<SafeRoute><ModuleGuard moduleId="reports"><SuspenseLoader><Reports /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/security-center" element={<SafeRoute><SecurityCenterRoute /></SafeRoute>} />
+                      <Route path="/security-gate" element={<SafeRoute><SecurityGateRoute /></SafeRoute>} />
+                      <Route path="/visitor-experience" element={<SafeRoute><ModuleGuard moduleId="visitor-experience"><SuspenseLoader><VisitorExperience /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/logs" element={<SafeRoute><ModuleGuard moduleId="logs"><SuspenseLoader><Logs /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/approvals" element={<SafeRoute><ModuleGuard moduleId="governance"><SuspenseLoader><Approvals /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/warranty-alerts" element={<SafeRoute><ModuleGuard moduleId="assets"><SuspenseLoader><WarrantyAlerts /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/403" element={<SafeRoute><SuspenseLoader><Forbidden /></SuspenseLoader></SafeRoute>} />
 
-                  <Route path="/masters" element={<SafeRoute><ModuleGuard moduleId="masters"><SuspenseLoader><Masters /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/root/organizations" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootOrganizationMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
-                  <Route path="/root/mail-config" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><MailConfigMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
-                  <Route path="/root/secret-rotation" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><SecretRotationStatus /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
-                  <Route path="/root/backup" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootBackupPage /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
-                  <Route path="/root/sla-config" element={<SafeRoute><Navigate to="/masters/sla-config" replace /></SafeRoute>} />
-                  <Route path="/masters/organizations" element={<SafeRoute><Navigate to="/root/organizations" replace /></SafeRoute>} />
-                  <Route path="/masters/mail-config" element={<SafeRoute><Navigate to="/root/mail-config" replace /></SafeRoute>} />
-                  <Route path="/masters/sla-config" element={<SafeRoute><SLAConfigRoute /></SafeRoute>} />
-                  <Route path="/masters/plant" element={<SafeRoute><PlantMasterRoute /></SafeRoute>} />
-                  <Route path="/masters/departments" element={<SafeRoute><ModuleGuard moduleId="masters.departments"><SuspenseLoader><DepartmentMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/modules" element={<SafeRoute><ModuleGuard moduleId="masters.modules"><SuspenseLoader><ModulesMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/machines" element={<SafeRoute><ModuleGuard moduleId="masters.machines"><SuspenseLoader><MachinesMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/cost-centers" element={<SafeRoute><ModuleGuard moduleId="masters.cost-centers"><SuspenseLoader><CostCentersMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/vendors" element={<SafeRoute><ModuleGuard moduleId="masters.vendors"><SuspenseLoader><VendorsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/users" element={<SafeRoute><UsersMasterRoute /></SafeRoute>} />
-                  <Route path="/masters/role-access" element={<SafeRoute><RoleAccessRoute /></SafeRoute>} />
-                  <Route path="/masters/role-accesss" element={<SafeRoute><RoleAccessRoute /></SafeRoute>} />
-                  <Route path="/masters/pm-config" element={<SafeRoute><ModuleGuard moduleId="masters.pm-config"><SuspenseLoader><PMConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/calibration-config" element={<SafeRoute><ModuleGuard moduleId="masters.calibration-config"><SuspenseLoader><CalibrationConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/amc-config" element={<SafeRoute><ModuleGuard moduleId="masters.amc-config"><SuspenseLoader><AMCConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/esg-config" element={<SafeRoute><ModuleGuard moduleId="masters.esg-config"><SuspenseLoader><ESGConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/gates" element={<SafeRoute><ModuleGuard moduleId="masters.gates"><SuspenseLoader><GateMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/gate-templates" element={<SafeRoute><Navigate to="/masters/gates" replace /></SafeRoute>} />
-                  <Route path="/masters/safety-config" element={<SafeRoute><ModuleGuard moduleId="masters.safety-config"><SuspenseLoader><SafetyConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/email-reports" element={<SafeRoute><ModuleGuard moduleId="masters.email-reports"><SuspenseLoader><EmailReportsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/log-templates" element={<SafeRoute><ModuleGuard moduleId="masters.log-templates"><SuspenseLoader><LogTemplateMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/mail-config" element={<SafeRoute><Navigate to="/root/mail-config" replace /></SafeRoute>} />
-                  <Route path="/masters/sla-config" element={<SafeRoute><SLAConfigRoute /></SafeRoute>} />
-                  <Route path="/masters/machine-instruments" element={<SafeRoute><ModuleGuard moduleId="masters.machine-instruments"><SuspenseLoader><MachineInstrumentsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/shifts" element={<SafeRoute><ModuleGuard moduleId="masters.shifts"><SuspenseLoader><ShiftMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/maintenance-teams" element={<SafeRoute><ModuleGuard moduleId="masters.maintenance-teams"><SuspenseLoader><MaintenanceTeamsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/work-order-config" element={<SafeRoute><ModuleGuard moduleId="masters.workorder-team-mapping"><SuspenseLoader><WorkOrderConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
-                  <Route path="/masters/work-order-team-mapping" element={<SafeRoute><Navigate to="/masters/work-order-config" replace /></SafeRoute>} />
-                </Route>
-                <Route path="*" element={<SafeRoute><CatchAllRoute /></SafeRoute>} />
-              </Routes>
-            </AuthProvider>
+                      <Route path="/masters" element={<SafeRoute><ModuleGuard moduleId="masters"><SuspenseLoader><Masters /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/root/organizations" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootOrganizationMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                      <Route path="/root/mail-config" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><MailConfigMaster /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                      <Route path="/root/secret-rotation" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><SecretRotationStatus /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                      <Route path="/root/backup" element={<SafeRoute><RootOnlyRoute><SuspenseLoader><RootBackupPage /></SuspenseLoader></RootOnlyRoute></SafeRoute>} />
+                      <Route path="/root/sla-config" element={<SafeRoute><Navigate to="/masters/sla-config" replace /></SafeRoute>} />
+                      <Route path="/masters/organizations" element={<SafeRoute><Navigate to="/root/organizations" replace /></SafeRoute>} />
+                      <Route path="/masters/mail-config" element={<SafeRoute><Navigate to="/root/mail-config" replace /></SafeRoute>} />
+                      <Route path="/masters/sla-config" element={<SafeRoute><SLAConfigRoute /></SafeRoute>} />
+                      <Route path="/masters/plant" element={<SafeRoute><PlantMasterRoute /></SafeRoute>} />
+                      <Route path="/masters/departments" element={<SafeRoute><ModuleGuard moduleId="masters.departments"><SuspenseLoader><DepartmentMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/modules" element={<SafeRoute><ModuleGuard moduleId="masters.modules"><SuspenseLoader><ModulesMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/machines" element={<SafeRoute><ModuleGuard moduleId="masters.machines"><SuspenseLoader><MachinesMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/cost-centers" element={<SafeRoute><ModuleGuard moduleId="masters.cost-centers"><SuspenseLoader><CostCentersMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/vendors" element={<SafeRoute><ModuleGuard moduleId="masters.vendors"><SuspenseLoader><VendorsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/users" element={<SafeRoute><UsersMasterRoute /></SafeRoute>} />
+                      <Route path="/masters/role-access" element={<SafeRoute><RoleAccessRoute /></SafeRoute>} />
+                      <Route path="/masters/role-accesss" element={<SafeRoute><RoleAccessRoute /></SafeRoute>} />
+                      <Route path="/masters/pm-config" element={<SafeRoute><ModuleGuard moduleId="masters.pm-config"><SuspenseLoader><PMConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/calibration-config" element={<SafeRoute><ModuleGuard moduleId="masters.calibration-config"><SuspenseLoader><CalibrationConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/amc-config" element={<SafeRoute><ModuleGuard moduleId="masters.amc-config"><SuspenseLoader><AMCConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/esg-config" element={<SafeRoute><ModuleGuard moduleId="masters.esg-config"><SuspenseLoader><ESGConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/gates" element={<SafeRoute><ModuleGuard moduleId="masters.gates"><SuspenseLoader><GateMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/gate-templates" element={<SafeRoute><Navigate to="/masters/gates" replace /></SafeRoute>} />
+                      <Route path="/masters/safety-config" element={<SafeRoute><ModuleGuard moduleId="masters.safety-config"><SuspenseLoader><SafetyConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/email-reports" element={<SafeRoute><ModuleGuard moduleId="masters.email-reports"><SuspenseLoader><EmailReportsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/log-templates" element={<SafeRoute><ModuleGuard moduleId="masters.log-templates"><SuspenseLoader><LogTemplateMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/mail-config" element={<SafeRoute><Navigate to="/root/mail-config" replace /></SafeRoute>} />
+                      <Route path="/masters/sla-config" element={<SafeRoute><SLAConfigRoute /></SafeRoute>} />
+                      <Route path="/masters/machine-instruments" element={<SafeRoute><ModuleGuard moduleId="masters.machine-instruments"><SuspenseLoader><MachineInstrumentsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/shifts" element={<SafeRoute><ModuleGuard moduleId="masters.shifts"><SuspenseLoader><ShiftMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/maintenance-teams" element={<SafeRoute><ModuleGuard moduleId="masters.maintenance-teams"><SuspenseLoader><MaintenanceTeamsMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/work-order-config" element={<SafeRoute><ModuleGuard moduleId="masters.workorder-team-mapping"><SuspenseLoader><WorkOrderConfigMaster /></SuspenseLoader></ModuleGuard></SafeRoute>} />
+                      <Route path="/masters/work-order-team-mapping" element={<SafeRoute><Navigate to="/masters/work-order-config" replace /></SafeRoute>} />
+                    </Route>
+                    <Route path="*" element={<SafeRoute><CatchAllRoute /></SafeRoute>} />
+                  </Routes>
+                </AuthProvider>
           </AppErrorBoundary>
         </BrowserRouter>
       </TooltipProvider>

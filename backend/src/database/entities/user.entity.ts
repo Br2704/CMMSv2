@@ -5,6 +5,11 @@ import { OrganizationEntity } from './organization.entity';
 import { ProfileEntity } from './profile.entity';
 import { RefreshTokenEntity } from './refresh-token.entity';
 import { UserRoleEntity } from './user-role.entity';
+import { UserPlantMappingEntity } from './user-plant-mapping.entity';
+import { UserDepartmentMappingEntity } from './user-department-mapping.entity';
+import { UserModuleMappingEntity } from './user-module-mapping.entity';
+import { UserMachineMappingEntity } from './user-machine-mapping.entity';
+import { UserShiftMappingEntity } from './user-shift-mapping.entity';
 
 @Entity('users')
 export class UserEntity extends TimestampedUuidEntity {
@@ -63,4 +68,19 @@ export class UserEntity extends TimestampedUuidEntity {
   @ManyToOne(() => OrgRoleEntity, (role) => role.users, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'org_role_id' })
   orgRole!: OrgRoleEntity | null;
+
+  @OneToMany(() => UserPlantMappingEntity, mapping => mapping.user)
+  plantMappings!: UserPlantMappingEntity[];
+
+  @OneToMany(() => UserDepartmentMappingEntity, mapping => mapping.user)
+  departmentMappings!: UserDepartmentMappingEntity[];
+
+  @OneToMany(() => UserModuleMappingEntity, mapping => mapping.user)
+  moduleMappings!: UserModuleMappingEntity[];
+
+  @OneToMany(() => UserMachineMappingEntity, mapping => mapping.user)
+  machineMappings!: UserMachineMappingEntity[];
+
+  @OneToMany(() => UserShiftMappingEntity, mapping => mapping.user)
+  shiftMappings!: UserShiftMappingEntity[];
 }

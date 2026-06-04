@@ -50,15 +50,6 @@ interface StatusBadgeProps extends VariantProps<typeof statusBadgeVariants> {
 
 const statusLabels: Record<string, string> = {
   RAISED: "Raised",
-  TRIAGED: "Triaged",
-  ASSIGNED: "Assigned",
-  OPENED: "Opened",
-  IN_PROGRESS: "In Progress",
-  PARTIALLY_CLOSED: "Partially Closed",
-  APPROVAL_PENDING: "Pending Approval",
-  USER_VERIFICATION: "Pending Approval",
-  REASSIGNED: "Reassigned",
-  REJECTED: "Rejected",
   CLOSED: "Completed",
   CRITICAL: "Critical",
   HIGH: "High",

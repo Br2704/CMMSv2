@@ -17,6 +17,7 @@ maintenanceReportsRouter.get('/', requirePermission('REPORTS', 'READ'), async (r
 
     const qb = AppDataSource.getRepository(MaintenanceReportEntity)
       .createQueryBuilder('report')
+      .leftJoinAndSelect('report.workOrder', 'wo')
       .where('1=1');
 
     if (plantIds && plantIds.length > 0) {

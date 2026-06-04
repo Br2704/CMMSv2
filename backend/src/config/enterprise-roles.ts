@@ -114,6 +114,19 @@ export const ENTERPRISE_ROLES: Record<string, RoleDefinition> = {
     isActive: true,
   },
 
+  AUDITOR: {
+    key: 'AUDITOR',
+    name: 'Auditor',
+    description: 'Organization-wide read-only access for compliance audits and governance tracking',
+    precedence: 710,
+    level: 'ADMIN',
+    scope: 'ORGANIZATION',
+    isSystem: true,
+    isSpecial: true,
+    parents: [],
+    isActive: true,
+  },
+
   // --------------------------------------------------------------------------
   // MANAGER LEVEL — Plant-specific functional managers
   // --------------------------------------------------------------------------
@@ -242,6 +255,32 @@ export const ENTERPRISE_ROLES: Record<string, RoleDefinition> = {
     name: 'Production User',
     description: 'Views production dashboards, work orders, and assets; can create basic work requests',
     precedence: 450,
+    level: 'USER',
+    scope: 'PLANT',
+    isSystem: true,
+    isSpecial: false,
+    parents: [],
+    isActive: true,
+  },
+
+  MAINTENANCE_TECHNICIAN: {
+    key: 'MAINTENANCE_TECHNICIAN',
+    name: 'Maintenance Technician',
+    description: 'Execution-level role — accesses only Work Orders, Assets, and Logs. Cannot access masters or reports.',
+    precedence: 470,
+    level: 'USER',
+    scope: 'PLANT',
+    isSystem: true,
+    isSpecial: false,
+    parents: [],
+    isActive: true,
+  },
+
+  PRODUCTION_OPERATOR: {
+    key: 'PRODUCTION_OPERATOR',
+    name: 'Production Operator',
+    description: 'Execution-level role — accesses only Work Orders, Assets, and Logs. Cannot access masters or reports.',
+    precedence: 445,
     level: 'USER',
     scope: 'PLANT',
     isSystem: true,
@@ -382,8 +421,8 @@ export const INHERITANCE_CHAIN: Record<string, string[]> = {
   PLANT_ADMIN: ['MAINTENANCE_MANAGER', 'PRODUCTION_MANAGER', 'SCM_MANAGER', 'HR_MANAGER', 'CALIBRATION_MANAGER', 'ACCOUNTS_MANAGER', 'SAFETY_MANAGER', 'ESG_MANAGER'],
   ESG_ADMIN: ['ESG_MANAGER'],
   HR_ADMIN: ['HR_MANAGER'],
-  MAINTENANCE_MANAGER: ['MAINTENANCE_USER'],
-  PRODUCTION_MANAGER: ['PRODUCTION_USER'],
+  MAINTENANCE_MANAGER: ['MAINTENANCE_USER', 'MAINTENANCE_TECHNICIAN'],
+  PRODUCTION_MANAGER: ['PRODUCTION_USER', 'PRODUCTION_OPERATOR'],
   SCM_MANAGER: ['SCM_USER'],
   HR_MANAGER: ['HR_USER'],
   CALIBRATION_MANAGER: ['CALIBRATION_USER'],
@@ -419,6 +458,7 @@ export const SPECIAL_ROLES: ReadonlySet<string> = new Set([
   'VENDOR',
   'SECURITY',
   'VISITOR',
+  'AUDITOR',
 ]);
 
 /** Role keys that are organization-scoped (not plant-restricted) */
@@ -426,6 +466,7 @@ export const ORGANIZATION_SCOPED_ROLES: ReadonlySet<string> = new Set([
   'SUPER_ADMIN',
   'ESG_ADMIN',
   'HR_ADMIN',
+  'AUDITOR',
 ]);
 
 /** Role keys that are platform-scoped */

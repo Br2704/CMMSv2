@@ -15,6 +15,7 @@ import {
   UserEntity,
 } from './database/entities';
 import { startCalibrationScheduler } from './modules/calibration/calibration.scheduler';
+import { startWarrantyScheduler } from './modules/assets/warranty.scheduler';
 import { publishNotificationChange } from './modules/notifications/notification-stream';
 import { startOrganizationSubscriptionScheduler } from './modules/organizations/organizations.scheduler';
 import { startPmSchedulesScheduler } from './modules/pmSchedules/pmschedules.scheduler';
@@ -214,6 +215,7 @@ async function bootstrap() {
   startReportsScheduler();
   startPmSchedulesScheduler();
   startCalibrationScheduler();
+  startWarrantyScheduler();
   startLogTemplateScheduler();
   startAmcScheduler();
   startOrganizationSubscriptionScheduler();

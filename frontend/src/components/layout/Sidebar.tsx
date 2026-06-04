@@ -29,6 +29,7 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
+  PackageSearch,
   Users,
   X,
   Mail,
@@ -41,12 +42,14 @@ interface NavItem {
   icon: React.ElementType;
   moduleId: string;
   children?: { title: string; href: string; moduleId: string }[];
+  bottom?: boolean;
 }
 
 const navigation: NavItem[] = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard, moduleId: "dashboard" },
   { title: "Work Orders", href: "/work-orders", icon: ClipboardList, moduleId: "workorders" },
   { title: "Assets", href: "/assets", icon: Factory, moduleId: "assets" },
+  { title: "Warranty Alerts", href: "/warranty-alerts", icon: ShieldAlert, moduleId: "assets" },
   { title: "AMC", href: "/amc", icon: ShieldCheck, moduleId: "amc" },
   { title: "PM/PD", href: "/preventive-maintenance", icon: Calendar, moduleId: "pmpd" },
   { title: "Calibration", href: "/calibration", icon: Gauge, moduleId: "calibration" },
@@ -56,6 +59,9 @@ const navigation: NavItem[] = [
   { title: "Gate Entry", href: "/security-gate", icon: DoorOpen, moduleId: "security-gate" },
   { title: "Visitor Experience", href: "/visitor-experience", icon: MapPinned, moduleId: "visitor-experience" },
   { title: "Logs", href: "/logs", icon: ScrollText, moduleId: "logs" },
+  { title: "Shift Handover", href: "/shift-handover", icon: ClipboardList, moduleId: "logs" },
+  { title: "Approvals", href: "/approvals", icon: ShieldCheck, moduleId: "governance" },
+  { title: "Auditor Dashboard", href: "/auditor-dashboard", icon: ShieldAlert, moduleId: "governance" },
   { title: "Security Center", href: "/security-center", icon: ShieldAlert, moduleId: "security-center" },
   {
     title: "Masters",

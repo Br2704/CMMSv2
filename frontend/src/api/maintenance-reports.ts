@@ -38,7 +38,6 @@ export interface MaintenanceReport {
   preventiveRecommendation: string | null;
   followUpRequired: boolean;
   followUpTeamId: string | null;
-  whyWhyAnalysis: Record<string, string> | null;
   technicianRemarks: string | null;
   closureRemarks: string | null;
   startTime: string | null;

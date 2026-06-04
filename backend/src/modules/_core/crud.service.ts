@@ -177,11 +177,18 @@ export class CrudService {
 
           if (children.length > 0) {
             const childIds = children.map((c) => c.id);
-            await AppDataSource.createQueryBuilder()
-              .delete()
-              .from(related.tableName)
-              .where(`${fkColumn} = :id`, { id })
-              .execute();
+            try {
+              await AppDataSource.createQueryBuilder()
+                .delete()
+                .from(related.tableName)
+                .where(`${fkColumn} = :id`, { id })
+                .execute();
+            } catch (error) {
+              if (this.isRelationProtectedDeleteError(error)) {
+                conflict(`${this.config.moduleName} cannot be deleted because related records still exist.`);
+              }
+              throw error;
+            }
 
             await audit(`${this.config.moduleName}.cascade-delete`, {
               module: this.config.moduleName.toUpperCase(),

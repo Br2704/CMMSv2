@@ -21,6 +21,7 @@ import { ViewDialog, DetailRow, DetailSection } from "@/components/shared/ViewDi
 import { FormDialog } from "@/components/shared/FormDialog";
 import { InputField, SelectField, TextareaField } from "@/components/shared/FormField";
 import { AsyncSelect } from "@/components/ui/async-select";
+import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { ResponsiveTable } from "@/components/shared/ResponsiveTable";
 import { MobileCard, MobileCardHeader, MobileCardRow } from "@/components/shared/MobileCard";
 import { MaterialsUsageEditor, type MaterialDraft } from "@/components/spares/MaterialsUsageEditor";
@@ -61,6 +62,9 @@ import {
   verifyWorkOrder,
   holdWorkOrder,
 } from "@/api/workorders";
+import { submitRca } from "@/api/rca";
+import { getFailureCodes } from "@/api/failure-codes";
+import { listMachineFailureCodes } from "@/api/machine-failure-codes";
 import { humanizeWorkOrderCode, normalizeWorkOrderCode, resolveWorkOrderLabel } from "@/config/work-order-masters";
 import { MobileQrScannerDialog } from "@/components/qr/MobileQrScannerDialog";
 import { parseQrContent } from "@/mobile/qr";
@@ -122,27 +126,38 @@ function getInchargeCategories(roles: string[]): string[] {
     .map((role) => INCHARGE_CATEGORY_MAP.get(role)!);
 }
 
-const WorkflowTimeline = ({ status, createdAt, openedAt, startedAt, submittedForApprovalAt, rejectedAt, closedAt }: {
-  status: string, createdAt: string, openedAt?: string | null, startedAt?: string | null,
-  submittedForApprovalAt?: string | null, rejectedAt?: string | null, closedAt?: string | null
+const WorkflowTimeline = ({ 
+  status, createdAt, openedAt, startedAt, submittedForApprovalAt, rejectedAt, closedAt 
+}: {
+  status: string;
+  createdAt: string;
+  openedAt?: string | null;
+  startedAt?: string | null;
+  submittedForApprovalAt?: string | null;
+  rejectedAt?: string | null;
+  closedAt?: string | null;
 }) => {
   const isActive = (stages: string[]) => stages.includes(status);
-  const label = status === "REJECTED" ? "Rejected" : "Verified";
-  const icon = status === "REJECTED" ? AlertTriangle : CheckCircle;
-  const color = status === "REJECTED" ? "bg-amber-500 text-white shadow-glow" : "bg-primary text-white shadow-glow";
-  const Icon = icon;
+  const color = "bg-primary text-white shadow-glow";
+  const errorColor = "bg-destructive text-white shadow-glow";
+  const Icon = CheckCircle;
+
+  const hasStarted = !!startedAt || isActive(["IN_PROGRESS", "APPROVAL_PENDING", "USER_VERIFICATION", "CLOSED"]);
+  const hasApproval = !!submittedForApprovalAt || isActive(["APPROVAL_PENDING", "USER_VERIFICATION", "CLOSED", "REJECTED"]);
 
   const steps = [
-    { label: "Raised", date: createdAt, active: true, color: "bg-primary text-white shadow-glow" },
-    { label: "Opened", date: openedAt, active: !!openedAt || isActive(["OPENED", "ACCEPTED", "IN_PROGRESS", "USER_VERIFICATION", "APPROVAL_PENDING", "REJECTED", "CLOSED"]), color: "bg-primary text-white shadow-glow" },
-    { label: "In Progress", date: startedAt || openedAt, active: isActive(["IN_PROGRESS", "USER_VERIFICATION", "APPROVAL_PENDING", "REJECTED", "CLOSED"]), color: "bg-primary text-white shadow-glow" },
-    { label: "Submitted", date: submittedForApprovalAt, active: isActive(["USER_VERIFICATION", "APPROVAL_PENDING", "REJECTED", "CLOSED"]), color: "bg-primary text-white shadow-glow" },
-    { label, date: status === "REJECTED" ? rejectedAt : closedAt, active: isActive(["REJECTED", "CLOSED"]), color, Icon },
+    { label: "Raised", date: createdAt, active: true, color },
+    { label: "Assigned", date: openedAt, active: !!openedAt || hasStarted, color },
+    { label: "In Progress", date: startedAt, active: hasStarted, color },
+    { label: "Review", date: submittedForApprovalAt, active: hasApproval, color },
+    { 
+      label: status === "REJECTED" ? "Rejected" : "Closed", 
+      date: status === "REJECTED" ? rejectedAt : closedAt, 
+      active: isActive(["CLOSED", "REJECTED"]), 
+      color: status === "REJECTED" ? errorColor : color, 
+      Icon 
+    },
   ];
-
-  if (status === "CANCELLED") {
-    steps.push({ label: "Cancelled", date: null, active: true, color: "bg-slate-400 text-white", Icon: XCircle });
-  }
 
   return (
     <div className="flex items-center justify-between w-full gap-0.5 sm:gap-0 px-1 sm:px-4 py-6 sm:py-8">
@@ -155,13 +170,13 @@ const WorkflowTimeline = ({ status, createdAt, openedAt, startedAt, submittedFor
             }`}>
               {StepIcon ? <StepIcon className="h-4 w-4 sm:h-5 sm:w-5" /> : <div className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-current" />}
             </div>
-            <span className={`mt-2 sm:mt-3 text-[8px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest ${step.active ? "text-primary" : "text-slate-400"}`}>
+            <span className={`mt-2 sm:mt-3 text-[8px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest ${step.active ? (step.color.includes("destructive") ? "text-destructive" : "text-primary") : "text-slate-400"}`}>
               {step.label}
             </span>
             {step.date && <span className="mt-0.5 sm:mt-1 text-[7px] sm:text-[9px] font-bold text-slate-400 truncate max-w-[60px] sm:max-w-none">{format(new Date(step.date), "dd MMM, HH:mm")}</span>}
             {idx < steps.length - 1 && (
               <div className={`absolute top-4 sm:top-5 left-1/2 w-full h-[2px] -z-0 ${
-                steps[idx+1].active ? "bg-primary" : "bg-slate-100"
+                steps[idx+1].active ? (steps[idx+1].color.includes("destructive") ? "bg-destructive" : "bg-primary") : "bg-slate-100"
               }`} />
             )}
           </div>
@@ -214,17 +229,6 @@ const EMPTY_OPEN_DATA = {
   assigned_to_notes: "",
 };
 
-const EMPTY_WHY_WHY = {
-  why_1: "",
-  why_2: "",
-  why_3: "",
-  why_4: "",
-  why_5: "",
-  root_reason: "",
-  corrective_prevention: "",
-  recurrence_prevention: "",
-};
-
 const EMPTY_CLOSE_DATA = {
   wo_type: "BREAKDOWN",
   started_at: "",
@@ -233,7 +237,6 @@ const EMPTY_CLOSE_DATA = {
   corrective_action: "",
   failure_code: "",
   actual_failure_category: "",
-  why_why: { ...EMPTY_WHY_WHY },
   preventive_recommendation: "",
   manpower_used: "",
   parts_replaced: "",
@@ -262,19 +265,6 @@ function getCloseDraftStorageKey(workOrderId: string) {
 
 function getStatusVariant(status: string) {
   if (status === "CLOSED") return "completed" as const;
-  if (status === "CANCELLED") return "error" as const;
-  if (status === "IN_PROGRESS") return "in_progress" as const;
-  if (status === "USER_VERIFICATION") return "approval_pending" as const;
-  if (status === "APPROVAL_PENDING") return "approval_pending" as const;
-  if (status === "VERIFICATION_REQUIRED") return "warning" as const;
-  if (status === "SUPERVISOR_VERIFIED") return "info" as const;
-  if (status === "WAITING_SPARE") return "warning" as const;
-  if (status === "WAITING_SHUTDOWN") return "warning" as const;
-  if (status === "REASSIGNED") return "warning" as const;
-  if (status === "ASSIGNED") return "primary" as const;
-  if (status === "TRIAGED") return "info" as const;
-  if (status === "REJECTED") return "error" as const;
-  if (status === "OPENED") return "opened" as const;
   if (status === "RAISED") return "warning" as const;
   return "default" as const;
 }
@@ -443,7 +433,7 @@ export default function WorkOrders() {
     },
   });
 
-  const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "incharge" | "team" | "all" | "handover" | "approval">("assigned");
+  const [activeTab, setActiveTab] = useState<"assigned" | "raised" | "team" | "all" | "handover" | "approval">("assigned");
 
   const { data: allWorkOrders = [], isLoading, isFetching, refetch, dataUpdatedAt, error: workOrdersError } = useQuery({
     queryKey: ["work_orders", ...activePlantIds, user?.id || "anonymous"],
@@ -669,21 +659,17 @@ export default function WorkOrders() {
 
   useEffect(() => {
     if (!authEnabled || activeTabInitializedRef.current || !isTeamDataLoaded) return;
-    setActiveTab((userIsIncharge && inchargeCategories.length > 0) ? "incharge" : userIsPartOfTeam ? "team" : "assigned");
+    setActiveTab(userIsPartOfTeam ? "team" : "assigned");
     activeTabInitializedRef.current = true;
   }, [authEnabled, isTeamDataLoaded, userIsIncharge, inchargeCategories.length, userIsPartOfTeam]);
 
   useEffect(() => {
     if (activeTab === "handover" && !userIsProductionTeam) {
-      setActiveTab((userIsIncharge && inchargeCategories.length > 0) ? "incharge" : "assigned");
-      return;
+      setActiveTab("assigned");
     }
-    if (activeTab === "incharge" && !(userIsIncharge && inchargeCategories.length > 0)) {
-      setActiveTab(userIsPartOfTeam ? "team" : "assigned");
-      return;
-    }
+
     if (activeTab === "team" && !userIsPartOfTeam) {
-      setActiveTab((userIsIncharge && inchargeCategories.length > 0) ? "incharge" : "assigned");
+      setActiveTab("assigned");
     }
   }, [activeTab, userIsIncharge, inchargeCategories.length, userIsPartOfTeam, userIsProductionTeam]);
 
@@ -724,7 +710,7 @@ export default function WorkOrders() {
   const now24h = subHours(new Date(), 24);
   const openWOs = kpiSource.filter((wo: any) => !["CLOSED"].includes(wo.status)).length;
   const closedLast24h = kpiSource.filter((wo: any) => wo.status === "CLOSED" && wo.closed_at && new Date(wo.closed_at) > now24h).length;
-  const pendingApproval = kpiSource.filter((wo: any) => ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status)).length;
+  const pendingApproval = 0;
   const totalWOs = kpiSource.length;
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -741,7 +727,6 @@ export default function WorkOrders() {
     { id: "assigned", label: "Assigned to Me", count: assignedWorkOrders.length },
     { id: "raised", label: "Raised by Me", count: raisedWorkOrders.length },
     ...(userIsPartOfTeam ? [{ id: "team", label: "My Team", count: teamWorkOrders.length }] : []),
-    ...(userIsIncharge && inchargeCategories.length > 0 ? [{ id: "incharge", label: inchargeCategories.join(", "), count: inchargeWorkOrders.length }] : []),
     ...(userIsProductionTeam ? [{ id: "handover", label: "Shift Handover", count: handoverWorkOrders.length }] : []),
     ...(userIsAdmin || userIsSuperAdmin ? [{ id: "all", label: "All Work Orders", count: allWorkOrders.length }] : []),
   ]), [
@@ -772,10 +757,7 @@ export default function WorkOrders() {
         .some((value) => value.toLowerCase().includes(normalizedSearch));
     const effectiveStatusFilter = activeTab === "approval" ? "APPROVAL_PENDING" : statusFilter;
     const matchesStatus =
-      effectiveStatusFilter === "all" ||
-      (effectiveStatusFilter === "USER_VERIFICATION"
-        ? ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status)
-        : wo.status === effectiveStatusFilter);
+      effectiveStatusFilter === "all" || wo.status === effectiveStatusFilter;
     const matchesCat = categoryFilter === "all" || wo.category === categoryFilter;
     const matchesType = typeFilter === "all" || wo.wo_type === typeFilter;
     const matchesDateFrom = !dateFrom || new Date(wo.created_at) >= new Date(dateFrom);
@@ -856,6 +838,21 @@ export default function WorkOrders() {
   const closeFileInputRef = useRef<HTMLInputElement | null>(null);
   const [isCameraDialogOpen, setIsCameraDialogOpen] = useState(false);
   const [cameraTarget, setCameraTarget] = useState<"RAISE" | "CLOSE" | null>(null);
+
+  // RCA States
+  const [isRcaOpen, setIsRcaOpen] = useState(false);
+  const [rcaData, setRcaData] = useState({
+    problemStatement: "",
+    why1: "",
+    why2: "",
+    why3: "",
+    why4: "",
+    why5: "",
+    rootCause: "",
+    correctiveAction: "",
+    preventiveAction: ""
+  });
+  const [isRcaSubmitting, setIsRcaSubmitting] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const reviewRequiresComments = useMemo(
     () => selectedWO !== null && isAdminLevel(user?.roles ?? []) && !isOwnedByCurrentUser(selectedWO.raised_by),
@@ -1210,9 +1207,38 @@ export default function WorkOrders() {
     () => allWorkOrders.find((workOrder: any) => workOrder.id === closingWOId) ?? null,
     [allWorkOrders, closingWOId],
   );
+  const { data: failureCodesResponse } = useQuery({
+    queryKey: ["failure_codes", closingWO?.plant_id, closingWO?.asset_id, closeData.actual_failure_category],
+    enabled: Boolean(closingWO?.plant_id),
+    queryFn: async () => {
+      // First try to get machine specific codes
+      if (closingWO?.asset_id) {
+        const response = await listMachineFailureCodes({ 
+          machineId: closingWO.asset_id,
+          category: closeData.actual_failure_category || undefined,
+          status: 'APPROVED'
+        });
+        if (response.data && response.data.length > 0) {
+          return response.data.map((m: any) => ({
+            code: m.failureCode,
+            description: "Machine Specific"
+          }));
+        }
+      }
+      
+      // Fallback to global failure codes
+      const response = await getFailureCodes({ 
+        plantId: closingWO?.plant_id || undefined, 
+        assetId: closingWO?.asset_id || undefined,
+        category: closeData.actual_failure_category || undefined 
+      });
+      return response.data || [];
+    },
+  });
+
   const closeFailureCodeOptions = useMemo(
-    () => getScopedWorkOrderOptions(workOrderMasters, "FAILURE_CODE", closingWO?.plant_id || null),
-    [closingWO?.plant_id, workOrderMasters],
+    () => (failureCodesResponse || []).map((fc: any) => ({ value: fc.code, label: `${fc.code} - ${fc.description || fc.category || 'Failure Code'}` })),
+    [failureCodesResponse],
   );
 
   const { data: closeFollowUpTeams = [] } = useQuery({
@@ -1588,73 +1614,6 @@ export default function WorkOrders() {
     setSafetyChecklist({ ppe_worn: false, machine_isolated: false, safety_lock_applied: false, notes: "" });
     setIsQrVerifyOpen(true);
   };
-
-  const openManualVerification = () => {
-    setIsQrVerifyOpen(false);
-    setQrMismatchMessage("");
-    setVerificationMethod("MANUAL_ENTRY");
-    setVerifiedAssetId(null);
-    setManualMachineCode("");
-    setManualMachineAssetId("");
-    setIsManualVerifyOpen(true);
-  };
-
-  const confirmManualVerification = () => {
-    if (!verifyTargetWO) return;
-    const selectedAsset = manualVerifyAssets.find((asset) => asset.id === manualMachineAssetId) || null;
-    const manualCode = (selectedAsset?.code || manualMachineCode || "").trim();
-    if (!manualCode) {
-      toast.error("Select the assigned machine to continue");
-      return;
-    }
-
-    const assignedCode = String(verifyTargetWO.assets?.code || "").trim();
-    if (assignedCode && assignedCode.toLowerCase() !== manualCode.toLowerCase()) {
-      setIsManualVerifyOpen(false);
-      setQrMismatchMessage(`Machine code does not match ${assignedCode}.`);
-      return;
-    }
-
-    setIsManualVerifyOpen(false);
-    setIsOpenFormOpen(true);
-  };
-
-  const handleQrDecodedForVerification = async (rawValue: string) => {
-    if (!verifyTargetWO) return;
-    const parsed = parseQrContent(rawValue);
-    let scannedMachineId = parsed.machineId || "";
-
-    if (!scannedMachineId && parsed.machineCode) {
-      try {
-        const resolvedByCode = await resolveQrMachineCode(parsed.machineCode, parsed.token);
-        scannedMachineId = resolvedByCode.data.asset?.id || "";
-      } catch {
-        setQrMismatchMessage("QR could not be resolved. Rescan machine QR.");
-        return;
-      }
-    }
-
-    if (!scannedMachineId && parsed.token) {
-      try {
-        const resolved = await resolveQrToken(parsed.token);
-        scannedMachineId = resolved.data.asset.id;
-      } catch {
-        setQrMismatchMessage("QR could not be resolved. Rescan machine QR.");
-        return;
-      }
-    }
-
-    if (!scannedMachineId || scannedMachineId !== verifyTargetWO.asset_id) {
-      setQrMismatchMessage("This work order is not assigned for this machine.");
-      return;
-    }
-
-    setVerificationMethod("QR_SCAN");
-    setVerifiedAssetId(scannedMachineId);
-    setIsQrVerifyOpen(false);
-    setIsOpenFormOpen(true);
-  };
-
   const applyRaiseMachineSelectionFromQr = (resolved: QrResolveData) => {
     const resolvedPlantId = resolved.hierarchy?.plant?.id || "";
     const resolvedDepartmentId = resolved.hierarchy?.department?.id || "";
@@ -1765,53 +1724,6 @@ export default function WorkOrders() {
     }
   };
 
-  const confirmSafetyAndStartWork = async () => {
-    if (!verifyTargetWO || isStartingWorkOrder) return;
-    if (!safetyChecklist.ppe_worn || !safetyChecklist.machine_isolated || !safetyChecklist.safety_lock_applied) {
-      toast.error("Confirm all safety checks before starting work");
-      return;
-    }
-    if (verificationMethod === "QR_SCAN" && !verifiedAssetId) {
-      toast.error("Scan the assigned machine QR before starting work");
-      return;
-    }
-    if (verificationMethod === "MANUAL_ENTRY" && !(manualMachineCode || "").trim()) {
-      toast.error("Enter the assigned machine code before starting work");
-      return;
-    }
-
-    setIsStartingWorkOrder(true);
-    try {
-      await startWorkOrder(verifyTargetWO.id, {
-        verification_method: verificationMethod,
-        scanned_asset_id: verificationMethod === "QR_SCAN" ? verifiedAssetId : null,
-        manual_machine_code: verificationMethod === "MANUAL_ENTRY" ? manualMachineCode.trim() : null,
-        initial_assessment: (openData.initial_assessment || "").trim() || null,
-        assigned_to_notes: (openData.assigned_to_notes || "").trim() || null,
-        estimated_time_minutes: Math.max(0, Number.parseInt(openData.estimated_minutes, 10) || 0),
-        safety_checklist: {
-          ...safetyChecklist,
-          confirmed_at: new Date().toISOString(),
-        },
-      });
-      toast.success("Machine verified and work started");
-      setIsSafetyOpen(false);
-      setIsManualVerifyOpen(false);
-      setIsQrVerifyOpen(false);
-      setVerifyTargetWO(null);
-      setVerificationMethod("QR_SCAN");
-      setVerifiedAssetId(null);
-      setManualMachineCode("");
-      setManualMachineAssetId("");
-      setOpeningWOId(null);
-      setOpenData({ ...EMPTY_OPEN_DATA });
-      triggerWorkOrderLiveSync();
-    } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to start work");
-    } finally {
-      setIsStartingWorkOrder(false);
-    }
-  };
 
   const handleHandoverSubmit = async ({ toShiftId, handoverNotes }: { toShiftId: string; handoverNotes: string }) => {
     if (!handoverWorkOrderTarget || isHandoverSubmitting) return;
@@ -1890,7 +1802,7 @@ export default function WorkOrders() {
     }
     if (selectedAssetHasOpenWorkOrder) {
       toast.error(
-        `This machine already has an open work order${selectedAssetOpenWorkOrder?.wo_number ? ` (${selectedAssetOpenWorkOrder.wo_number})` : ""}. Close it before raising another one.`,
+        `This machine already has an active work order${selectedAssetOpenWorkOrder?.wo_number ? ` (${selectedAssetOpenWorkOrder.wo_number})` : ""}. Close it before raising another one.`,
       );
       return;
     }
@@ -1919,86 +1831,6 @@ export default function WorkOrders() {
     }
   };
 
-  const openOpenForm = (woId: string) => {
-    const wo = allWorkOrders.find((w: any) => w.id === woId);
-    if (!wo) {
-      toast.error("Unable to load the selected work order");
-      return;
-    }
-    setOpeningWOId(woId);
-    setVerifyTargetWO(wo);
-    setOpenData({
-      ...EMPTY_OPEN_DATA,
-      category: wo.category || "",
-      assigned_to: wo.assigned_to || user?.authId || "",
-    });
-    setVerificationMethod("QR_SCAN");
-    setVerifiedAssetId(null);
-    setManualMachineCode("");
-    setManualMachineAssetId("");
-    setSafetyChecklist({ ppe_worn: false, machine_isolated: false, safety_lock_applied: false, notes: "" });
-    setIsOpenFormOpen(false);
-    setIsQrVerifyOpen(true);
-  };
-
-  const handleOpenWO = async () => {
-    if (!openingWOId || !verifyTargetWO || isStartingWorkOrder) return;
-    if (verificationMethod === "QR_SCAN" && !verifiedAssetId) {
-      toast.error("Complete machine QR identification before assessment");
-      return;
-    }
-    if (verificationMethod === "MANUAL_ENTRY" && !manualMachineCode.trim()) {
-      toast.error("Enter the machine code before assessment");
-      return;
-    }
-    if (!openData.category) {
-      toast.error("Work order category is required");
-      return;
-    }
-    if (!openData.assigned_to) {
-      toast.error("Assigned technician is required");
-      return;
-    }
-    if (!safetyChecklist.ppe_worn || !safetyChecklist.machine_isolated || !safetyChecklist.safety_lock_applied) {
-      toast.error("Confirm all safety checks before starting work");
-      return;
-    }
-
-    setIsStartingWorkOrder(true);
-    try {
-      const response = await startWorkOrder(verifyTargetWO.id, {
-        verification_method: verificationMethod,
-        scanned_asset_id: verificationMethod === "QR_SCAN" ? verifiedAssetId : null,
-        manual_machine_code: verificationMethod === "MANUAL_ENTRY" ? manualMachineCode.trim() : null,
-        initial_assessment: openData.initial_assessment.trim() || null,
-        category: openData.category,
-        assigned_to: openData.assigned_to,
-        estimated_time_minutes: Math.max(0, Number.parseInt(openData.estimated_minutes, 10) || 0),
-        expected_downtime_minutes: Math.max(0, Number.parseInt(openData.expected_downtime_minutes, 10) || 0),
-        assessment_remarks: openData.assessment_remarks.trim() || null,
-        safety_checklist: {
-          ...safetyChecklist,
-          confirmed_at: new Date().toISOString(),
-        },
-      });
-      const updated = response?.data;
-      if (updated?.status === "REASSIGNED") {
-        toast.success("Work order reassigned to the correct maintenance team");
-      } else {
-        toast.success("Work order opened and work started");
-      }
-      setIsOpenFormOpen(false);
-      setIsQrVerifyOpen(false);
-      setVerifyTargetWO(null);
-      setOpeningWOId(null);
-      setOpenData({ ...EMPTY_OPEN_DATA });
-      triggerWorkOrderLiveSync();
-    } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to open work order");
-    } finally {
-      setIsStartingWorkOrder(false);
-    }
-  };
 
   const handleCloseWithDetails = async () => {
     if (!closingWOId || !closingWO) return;
@@ -2031,16 +1863,6 @@ export default function WorkOrders() {
         // Explicit no-spare confirmation is acceptable.
       }
 
-      const whyWhyRequired = downtimeMinutes > 120;
-      const whyWhy = closeData.why_why;
-      if (whyWhyRequired) {
-        const missingWhy = Object.values(whyWhy).some((value) => !String(value || "").trim());
-        if (missingWhy) {
-          toast.error("Complete all Why-Why analysis fields for downtime over 120 minutes");
-          return;
-        }
-      }
-
       if (closeData.failure_code && !closeFailureCodeOptions.some((option) => option.value === closeData.failure_code)) {
         toast.error("Select a valid failure code from Work Order Config Master");
         return;
@@ -2068,7 +1890,6 @@ export default function WorkOrders() {
         remarks: isReroute ? "Rerouting category" : remarks,
         failure_code: closeData.failure_code || null,
         actual_failure_category: closeData.actual_failure_category || null,
-        why_why_analysis: whyWhyRequired ? whyWhy : null,
         preventive_recommendation: closeData.preventive_recommendation || null,
         manpower_used: closeData.manpower_used || null,
         downtime_minutes: downtimeMinutes,
@@ -2087,12 +1908,13 @@ export default function WorkOrders() {
       toast.error(error?.message || "Failed to complete work order");
       return;
     }
-    toast.success(closeData.follow_up_required ? "Follow-up support work order created" : "Work order sent for requester approval");
+    toast.success(closeData.follow_up_required ? "Follow-up support work order created" : "Work order closed successfully");
     triggerWorkOrderLiveSync();
     void queryClient.invalidateQueries({ queryKey: ["dashboard_metrics"] });
     void queryClient.invalidateQueries({ queryKey: ["spare-maintenance-items"] });
     clearCloseDraft(closingWOId);
     setIsCloseFormOpen(false);
+    setActiveTab("assigned");
     setClosingWOId(null);
     setCloseData({ ...EMPTY_CLOSE_DATA });
     setCloseSpareUsage([]);
@@ -2118,6 +1940,29 @@ export default function WorkOrders() {
     setReviewMode(mode);
     setReviewData({ ...EMPTY_REVIEW_DATA });
     setIsReviewOpen(true);
+  };
+
+  const handleRcaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedWO?.id || !selectedWO?.asset_id) return;
+    setIsRcaSubmitting(true);
+    try {
+      await submitRca({
+        woId: selectedWO.id,
+        assetId: selectedWO.asset_id,
+        ...rcaData
+      });
+      toast.success("RCA submitted for approval");
+      setIsRcaOpen(false);
+      setRcaData({
+        problemStatement: "", why1: "", why2: "", why3: "", why4: "", why5: "",
+        rootCause: "", correctiveAction: "", preventiveAction: ""
+      });
+    } catch (error: any) {
+      toast.error(error.message || "Failed to submit RCA");
+    } finally {
+      setIsRcaSubmitting(false);
+    }
   };
 
   const handleReviewWorkOrder = async () => {
@@ -2201,7 +2046,7 @@ export default function WorkOrders() {
   }, [kpiSource, openWOs, pendingApproval, totalWOs]);
 
   const kpiCards = [
-    { label: "Open", value: enterpriseKpis.openWOs, icon: Clock, color: "text-blue-600" },
+    { label: "Active WO", value: enterpriseKpis.openWOs, icon: Clock, color: "text-blue-600" },
     { label: "In Progress", value: enterpriseKpis.inProgress, icon: Loader2, color: "text-indigo-600" },
     { label: "Pending Verification", value: enterpriseKpis.pendingApproval, icon: CheckCircle, color: "text-amber-600" },
     { label: "Completed", value: enterpriseKpis.completed, icon: CheckSquare, color: "text-emerald-600" },
@@ -2218,7 +2063,7 @@ export default function WorkOrders() {
     },
     { key: "asset", header: "Asset", render: (wo: any) => (<div><p className="font-medium">{wo.assets?.name || "-"}</p><p className="text-xs text-muted-foreground">{wo.assets?.code}</p></div>) },
     { key: "category", header: "Category", render: (wo: any) => resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id, workOrderMasters), hideOnMobile: true },
-    { key: "priority", header: "Priority", render: (wo: any) => <StatusBadge variant={wo.priority === "CRITICAL" ? "critical" : "default"}>{formatPriorityLabel(wo.priority)}</StatusBadge> },
+    { key: "criticality", header: "Criticality", render: (wo: any) => <StatusBadge variant={String(wo.assets?.criticality || "").includes("High") || String(wo.assets?.criticality || "").includes("Critical") ? "critical" : "default"}>{wo.assets?.criticality || "Unknown"}</StatusBadge> },
     { key: "status", header: "Status", render: (wo: any) => <StatusBadge status={wo.status} variant={getStatusVariant(wo.status)} /> },
     { key: "escalation", header: "Alert", hideOnMobile: true, render: (wo: any) => (
       <div className="flex items-center gap-1">
@@ -2235,8 +2080,8 @@ export default function WorkOrders() {
             <DropdownMenuItem onSelect={() => setTimeout(() => handleView(wo), 0)}><Eye className="mr-2 h-4 w-4" />View Details</DropdownMenuItem>
             {canExecuteWO(wo) && (
               <>
-                {(["WAITING_SPARE", "WAITING_SHUTDOWN"].includes(wo.status)) && <DropdownMenuItem onSelect={() => setTimeout(() => openOpenForm(wo.id), 0)}><Play className="mr-2 h-4 w-4" />Resume Work</DropdownMenuItem>}
-                {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED", "IN_PROGRESS", "REJECTED"].includes(wo.status)) && <DropdownMenuItem onSelect={() => setTimeout(() => openCloseForm(wo.id), 0)}><Send className="mr-2 h-4 w-4" />{userIsVendor ? (wo.status === "REJECTED" ? "Revise AMC Closure" : "Close AMC Work Order") : (wo.status === "REJECTED" ? "Revise & Resubmit" : "Complete & Send for Verification")}</DropdownMenuItem>}
+
+                {(["RAISED"].includes(wo.status)) && <DropdownMenuItem onSelect={() => setTimeout(() => openCloseForm(wo.id), 0)}><CheckCircle className="mr-2 h-4 w-4" />Close Work Order</DropdownMenuItem>}
                 {["ASSIGNED", "OPENED", "IN_PROGRESS"].includes(wo.status) && (
                   <DropdownMenuItem onSelect={() => setTimeout(() => { setHoldTargetWO(wo); setIsHoldOpen(true); }, 0)}>
                     <PauseCircle className="mr-2 h-4 w-4" /> Put on Hold
@@ -2265,11 +2110,15 @@ export default function WorkOrders() {
                 {wo.status === "REJECTED" && <DropdownMenuItem onSelect={() => setTimeout(() => openCloseForm(wo.id), 0)}><Send className="mr-2 h-4 w-4" />{userIsVendor ? "Revise AMC Closure" : "Revise & Resubmit"}</DropdownMenuItem>}
               </>
             )}
-            {canReviewWO(wo) && (
+            {canReviewWO(wo) && ["RAISED"].includes(wo.status) && (
               <>
-                <DropdownMenuItem onSelect={() => setTimeout(() => openReviewDialog(wo, "approve"), 0)}><CheckCircle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Force Close" : "Accept & Close"}</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setTimeout(() => openReviewDialog(wo, "reject"), 0)}><AlertTriangle className="mr-2 h-4 w-4" />{userIsAdmin && !isOwnedByCurrentUser(wo.raised_by) ? "Admin Reopen" : "Reject & Reopen"}</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setTimeout(() => openReviewDialog(wo, "approve"), 0)}><CheckCircle className="mr-2 h-4 w-4" />Close Work Order</DropdownMenuItem>
               </>
+            )}
+            {wo.status === "CLOSED" && String(wo.assets?.criticality || "").match(/High|Critical/i) && (
+              <DropdownMenuItem onSelect={() => setTimeout(() => { setSelectedWO(wo); setIsRcaOpen(true); }, 0)}>
+                <FileText className="mr-2 h-4 w-4" /> Fill Why-Why Analysis
+              </DropdownMenuItem>
             )}
             {!canReviewWO(wo) && ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status) && (
               <DropdownMenuItem disabled className="text-muted-foreground">Awaiting raiser verification</DropdownMenuItem>
@@ -2432,10 +2281,8 @@ export default function WorkOrders() {
                 <div className="flex flex-wrap items-center gap-2">
                   <SelectField label="" value={statusFilter} onChange={setStatusFilter} options={[
                     { value: "all", label: "All Status" },
-                    { value: "RAISED", label: "Raised" }, { value: "TRIAGED", label: "Triaged" }, { value: "ASSIGNED", label: "Assigned" }, { value: "OPENED", label: "Opened" },
-                    { value: "IN_PROGRESS", label: "In Progress" }, { value: "REASSIGNED", label: "Reassigned" },
-                    { value: "APPROVAL_PENDING", label: "Pending Approval" }, { value: "USER_VERIFICATION", label: "Pending Verification" },
-                    { value: "REJECTED", label: "Rejected" }, { value: "CLOSED", label: "Completed" },
+                    { value: "RAISED", label: "Raised" }, 
+                    { value: "CLOSED", label: "Closed" },
                   ]} className="min-w-[130px] h-11" />
                   <SelectField label="" value={categoryFilter} onChange={setCategoryFilter} options={[
                     { value: "all", label: "All Categories" }, ...filterCategoryOptions
@@ -2475,10 +2322,8 @@ export default function WorkOrders() {
           <div className="space-y-3">
             <SelectField label="Status" value={statusFilter} onChange={setStatusFilter} options={[
               { value: "all", label: "All Status" },
-              { value: "RAISED", label: "Raised" }, { value: "TRIAGED", label: "Triaged" }, { value: "ASSIGNED", label: "Assigned" }, { value: "OPENED", label: "Opened" },
-              { value: "IN_PROGRESS", label: "In Progress" }, { value: "REASSIGNED", label: "Reassigned" },
-              { value: "APPROVAL_PENDING", label: "Pending Approval" }, { value: "USER_VERIFICATION", label: "Pending Verification" },
-              { value: "REJECTED", label: "Rejected" }, { value: "CLOSED", label: "Completed" },
+              { value: "RAISED", label: "Raised" },
+              { value: "CLOSED", label: "Closed" },
             ]} className="h-11" />
             <SelectField label="Category" value={categoryFilter} onChange={setCategoryFilter} options={[{ value: "all", label: "All Categories" }, ...filterCategoryOptions]} className="h-11" />
             <div className="space-y-1">
@@ -2582,19 +2427,19 @@ export default function WorkOrders() {
                   <MobileCard
                     onView={() => handleView(wo)}
                     actions={[
-                      ...(canExecuteWO(wo) && ["WAITING_SPARE", "WAITING_SHUTDOWN"].includes(wo.status) ? [{ label: "Resume Work", icon: <Play className="mr-2 h-4 w-4" />, onClick: () => openOpenForm(wo.id) }] : []),
-                      ...(canExecuteWO(wo) && ["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED", "IN_PROGRESS", "REJECTED"].includes(wo.status) ? [{ label: userIsVendor ? (wo.status === "REJECTED" ? "Revise AMC Closure" : "Close AMC Work Order") : (wo.status === "REJECTED" ? "Revise & Resubmit" : "Complete & Send"), icon: <Send className="mr-2 h-4 w-4" />, onClick: () => openCloseForm(wo.id) }] : []),
+
+                      ...(canExecuteWO(wo) && ["RAISED"].includes(wo.status) ? [{ label: "Close Work Order", icon: <CheckCircle className="mr-2 h-4 w-4" />, onClick: () => openCloseForm(wo.id) }] : []),
                       ...(canExecuteWO(wo) && ["ASSIGNED", "OPENED", "IN_PROGRESS"].includes(wo.status) ? [{ label: "Put on Hold", icon: <PauseCircle className="mr-2 h-4 w-4" />, onClick: () => { setHoldTargetWO(wo); setIsHoldOpen(true); } }] : []),
                       ...(canExecuteWO(wo) && wo.status === "IN_PROGRESS" && userIsProductionTeam && !userIsVendor ? [{ label: "Shift Handover", icon: <Layers3 className="mr-2 h-4 w-4" />, onClick: () => { setHandoverTargetWO(wo); setIsHandoverOpen(true); } }] : []),
                       ...(canExecuteWO(wo) && activeTab === "handover" && wo.status === "IN_PROGRESS" && userIsProductionTeam && !userIsVendor ? [{ label: "Acknowledge Handover", icon: <CheckCircle className="mr-2 h-4 w-4" />, onClick: () => { acknowledgeHandoverWorkOrder(wo.id).then(() => { toast.success("Handover acknowledged"); triggerWorkOrderLiveSync(); }).catch((e) => toast.error(e.message || "Failed to acknowledge")); } }] : []),
                       ...(canExecuteWO(wo) && wo.status === "VERIFICATION_REQUIRED" ? [{ label: "Verify Machine", icon: <CheckSquare className="mr-2 h-4 w-4" />, onClick: () => { setMachineVerificationTargetWO(wo); setIsMachineVerificationOpen(true); } }] : []),
-                      ...(canReviewWO(wo) ? [{ label: "Accept & Close", icon: <CheckCircle className="mr-2 h-4 w-4" />, onClick: () => openReviewDialog(wo, "approve") }] : []),
+                      ...(canReviewWO(wo) && ["RAISED"].includes(wo.status) ? [{ label: "Close Work Order", icon: <CheckCircle className="mr-2 h-4 w-4" />, onClick: () => openReviewDialog(wo, "approve") }] : []),
                     ]}
                   >
                   <MobileCardHeader title={wo.wo_number} subtitle={wo.assets?.name} badge={<StatusBadge status={wo.status} variant={getStatusVariant(wo.status)} />} />
                   <MobileCardRow label="Type" value={resolveWorkOrderLabel("WO_TYPE", wo.wo_type, wo.plant_id, workOrderMasters)} />
                   <MobileCardRow label="Category" value={resolveWorkOrderLabel("CATEGORY", wo.category, wo.plant_id, workOrderMasters)} />
-                  <MobileCardRow label="Priority" value={formatPriorityLabel(wo.priority)} />
+                  <MobileCardRow label="Criticality" value={wo.assets?.criticality || "Unknown"} />
                     <MobileCardRow label="SLA" value={wo.sla_due_at ? format(new Date(wo.sla_due_at), "dd MMM HH:mm") : "Not set"} />
                     <MobileCardRow label="Escalation" value={Number(wo.escalation_level || 0) > 0 ? `Level ${wo.escalation_level}` : "None"} />
                   <MobileCardRow label="Raised" value={<TimeAgo date={wo.created_at} />} />
@@ -2644,9 +2489,12 @@ export default function WorkOrders() {
       <FormDialog open={isFormOpen} onOpenChange={setIsFormOpen} title="Raise Work Order" description="Create a maintenance work order" onSubmit={handleSubmit} submitLabel="Raise Work Order" isLoading={isRaisingWorkOrder} submitDisabled={selectedAssetHasOpenWorkOrder} size="xl">
         <div className="space-y-6">
           <div className="rounded-2xl border border-border/70 bg-card/80 p-4 sm:p-5 shadow-sm">
-            <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground"><Wrench className="h-4 w-4" />Machine Selection</h3>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground"><Wrench className="h-4 w-4" />Work Order Location & Machine Details</h3>
+            </div>
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <AsyncSelect
+              <SearchableCombobox<Plant>
                 label="Plant"
                 value={formData.plant_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, plant_id: value, department_id: "", module_id: "", asset_id: "" }))}
@@ -2656,11 +2504,11 @@ export default function WorkOrders() {
                 }}
                 labelExtractor={(plant) => `${plant.plantCode || "-"} - ${plant.plantName}`}
                 valueExtractor={(plant) => plant.id}
-                placeholder={userIsSuperAdmin ? "Select plant" : "Assigned plant"}
+                placeholder={userIsSuperAdmin ? "Search Plant" : "Assigned Plant"}
                 disabled={!userIsSuperAdmin}
                 required
               />
-              <AsyncSelect
+              <SearchableCombobox<Department>
                 label="Department"
                 value={formData.department_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, department_id: value, module_id: "", asset_id: "" }))}
@@ -2671,11 +2519,11 @@ export default function WorkOrders() {
                 }}
                 labelExtractor={(dep) => `${dep.code} - ${dep.name}`}
                 valueExtractor={(dep) => dep.id}
-                placeholder={formData.plant_id ? "Select department" : "Select plant first"}
+                placeholder={formData.plant_id ? "Search Department" : "Select plant first"}
                 disabled={!formData.plant_id}
                 required
               />
-              <AsyncSelect
+              <SearchableCombobox<MachineModule>
                 label="Module"
                 value={formData.module_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, module_id: value, asset_id: "" }))}
@@ -2686,11 +2534,11 @@ export default function WorkOrders() {
                 }}
                 labelExtractor={(module) => `${module.code ? `${module.code} - ` : ""}${module.name}`}
                 valueExtractor={(module) => module.id}
-                placeholder={formData.department_id ? "Select module" : "Select department first"}
+                placeholder={formData.department_id ? "Search Module" : "Select department first"}
                 disabled={!formData.department_id}
                 required
               />
-              <AsyncSelect
+              <SearchableCombobox<Asset>
                 label="Machine"
                 value={formData.asset_id}
                 onChange={(value) => setFormData((prev) => ({ ...prev, asset_id: value }))}
@@ -2702,7 +2550,7 @@ export default function WorkOrders() {
                 }}
                 labelExtractor={(asset) => `${asset.code} - ${asset.name}`}
                 valueExtractor={(asset) => asset.id}
-                placeholder={formData.module_id ? "Select machine" : "Select module first"}
+                placeholder={formData.module_id ? "Search Machine" : "Select module first"}
                 disabled={!formData.module_id}
                 required
               />
@@ -2838,55 +2686,6 @@ export default function WorkOrders() {
         </div>
       </FormDialog>
 
-      {/* ===== OPEN WORK ORDER FORM ===== */}
-      <FormDialog open={isOpenFormOpen} onOpenChange={setIsOpenFormOpen} title="Initial Assessment" description="Complete assessment after machine identification. Change category if the issue belongs to another discipline." onSubmit={handleOpenWO} submitLabel={isStartingWorkOrder ? "Starting..." : "Start Work"} isLoading={isStartingWorkOrder} size="lg">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <TextareaField label="Initial Assessment Details" value={openData.initial_assessment} onChange={(v) => setOpenData({ ...openData, initial_assessment: v })} placeholder="What do you observe on the machine?" className="sm:col-span-2" />
-          <SelectField label="Work Order Category" value={openData.category} onChange={(v) => setOpenData({ ...openData, category: v })} options={filterCategoryOptions} placeholder="Select category" required />
-          <AsyncSelect
-            label="Technician Assigned"
-            value={openData.assigned_to}
-            onChange={(v) => setOpenData({ ...openData, assigned_to: v })}
-            fetchFn={async (params) => {
-              const res = await listUsers({ ...params, role: "MAINTENANCE_USER", plantId: technicianPlantId || undefined } as any);
-              
-              if (openData.category) {
-                const targetCategory = String(openData.category).toUpperCase();
-                const validTeams = userMaintenanceTeams.filter((team) => {
-                  if (String(team.discipline ?? "").toUpperCase() === targetCategory) return true;
-                  return workOrderTeamMappings.some(m => m.teamId === team.id && String(m.category ?? "").toUpperCase() === targetCategory);
-                });
-                
-                if (validTeams.length > 0) {
-                  const validUserIds = new Set<string>();
-                  validTeams.forEach(team => {
-                    if (team.teamLeaderId) validUserIds.add(team.teamLeaderId);
-                    (team.teamMemberIds || []).forEach(id => validUserIds.add(id));
-                  });
-                  
-                  const filteredData = (res.data || []).filter(u => validUserIds.has(u.id));
-                  return { data: filteredData, total: filteredData.length };
-                }
-              }
-              
-              return { data: res.data || [], total: res.pagination?.total || 0 };
-            }}
-            labelExtractor={(user) => `${user.fullName} (${user.email})`}
-            valueExtractor={(user) => user.id}
-            placeholder="Select technician"
-            required
-          />
-          <InputField label="Expected Downtime (minutes)" value={openData.expected_downtime_minutes} onChange={(v) => setOpenData({ ...openData, expected_downtime_minutes: v })} type="number" placeholder="e.g., 90" required />
-          <InputField label="Estimated Repair Time (minutes)" value={openData.estimated_minutes} onChange={(v) => setOpenData({ ...openData, estimated_minutes: v })} type="number" placeholder="e.g., 120" />
-          <TextareaField label="Assessment Remarks" value={openData.assessment_remarks} onChange={(v) => setOpenData({ ...openData, assessment_remarks: v })} placeholder="Safety notes, tools required, isolation steps..." className="sm:col-span-2" />
-          <div className="sm:col-span-2 space-y-3 rounded-xl border border-dashed border-amber-300/40 bg-amber-50/40 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Safety Confirmation (required)</p>
-            <div className="flex items-center space-x-2"><Checkbox id="open-ppe" checked={safetyChecklist.ppe_worn} onCheckedChange={(c) => setSafetyChecklist((p) => ({ ...p, ppe_worn: !!c }))} /><Label htmlFor="open-ppe">PPE worn</Label></div>
-            <div className="flex items-center space-x-2"><Checkbox id="open-isolated" checked={safetyChecklist.machine_isolated} onCheckedChange={(c) => setSafetyChecklist((p) => ({ ...p, machine_isolated: !!c }))} /><Label htmlFor="open-isolated">Machine isolated</Label></div>
-            <div className="flex items-center space-x-2"><Checkbox id="open-lock" checked={safetyChecklist.safety_lock_applied} onCheckedChange={(c) => setSafetyChecklist((p) => ({ ...p, safety_lock_applied: !!c }))} /><Label htmlFor="open-lock">Safety lock applied</Label></div>
-          </div>
-        </div>
-      </FormDialog>
 
       {/* ===== CLOSE WORK ORDER FORM (Enhanced) ===== */}
       <FormDialog
@@ -2930,6 +2729,7 @@ export default function WorkOrders() {
             </Alert>
           ) : (
             <>
+
               <div>
                 <h3 className="text-sm font-semibold text-muted-foreground mb-3">Closure Classification</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2945,16 +2745,8 @@ export default function WorkOrders() {
           </div>
 
           <div>
-            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Why-Why Analysis (if downtime &gt; 120 min)</h3>
-            <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 transition-all duration-500 ${Number(closeData.downtime_minutes || 0) > 120 ? "opacity-100" : "opacity-30 grayscale pointer-events-none"}`}>
-              <InputField label="Why 1" value={closeData.why_why.why_1} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_1: v } })} />
-              <InputField label="Why 2" value={closeData.why_why.why_2} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_2: v } })} />
-              <InputField label="Why 3" value={closeData.why_why.why_3} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_3: v } })} />
-              <InputField label="Why 4" value={closeData.why_why.why_4} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_4: v } })} />
-              <InputField label="Why 5" value={closeData.why_why.why_5} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, why_5: v } })} />
-              <InputField label="Root Reason" value={closeData.why_why.root_reason} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, root_reason: v } })} className="sm:col-span-2" />
-              <TextareaField label="Corrective Prevention" value={closeData.why_why.corrective_prevention} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, corrective_prevention: v } })} className="sm:col-span-2" />
-              <TextareaField label="Recurrence Prevention" value={closeData.why_why.recurrence_prevention} onChange={(v) => setCloseData({ ...closeData, why_why: { ...closeData.why_why, recurrence_prevention: v } })} className="sm:col-span-2" />
+            <h3 className="text-sm font-semibold text-muted-foreground mb-3">Closure Follow-up</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <TextareaField 
                 label="Preventive Recommendation" 
                 value={closeData.preventive_recommendation} 
@@ -3097,12 +2889,7 @@ export default function WorkOrders() {
         {selectedWO && (
           <div className="space-y-6">
             <div className="flex flex-wrap justify-end gap-2">
-              {(["WAITING_SPARE", "WAITING_SHUTDOWN"].includes(selectedWO.status)) && canExecuteWO(selectedWO) ? (
-                <Button className="gap-2" onClick={() => openOpenForm(selectedWO.id)}>
-                  <Play className="h-4 w-4" />
-                  Resume Work
-                </Button>
-              ) : null}
+
               {(["RAISED", "TRIAGED", "ASSIGNED", "OPENED", "REASSIGNED", "IN_PROGRESS", "REJECTED"].includes(selectedWO.status)) && canExecuteWO(selectedWO) ? (
                 <Button className="gap-2" onClick={() => openCloseForm(selectedWO.id)}>
                   <Send className="h-4 w-4" />
@@ -3112,7 +2899,7 @@ export default function WorkOrders() {
                       : "Close AMC Work Order"
                     : selectedWO.status === "REJECTED"
                       ? "Revise & Resubmit"
-                      : "Complete & Send for Verification"}
+                      : "Send for Verification"}
                 </Button>
               ) : null}
               {(["USER_VERIFICATION", "APPROVAL_PENDING"].includes(selectedWO.status)) && canReviewWO(selectedWO) ? (
@@ -3144,7 +2931,7 @@ export default function WorkOrders() {
             <DetailSection title="Work Order">
               <DetailRow label="WO Number" value={selectedWO.wo_number} />
               <DetailRow label="Type" value={resolveWorkOrderLabel("WO_TYPE", selectedWO.wo_type, selectedWO.plant_id, workOrderMasters)} />
-              <DetailRow label="Priority" value={<StatusBadge variant={selectedWO.priority === "CRITICAL" ? "critical" : "default"}>{formatPriorityLabel(selectedWO.priority)}</StatusBadge>} />
+              <DetailRow label="Criticality" value={<StatusBadge variant={String(selectedWO.assets?.criticality || "").includes("High") || String(selectedWO.assets?.criticality || "").includes("Critical") ? "critical" : "default"}>{selectedWO.assets?.criticality || "Unknown"}</StatusBadge>} />
               <DetailRow label="Category" value={resolveWorkOrderLabel("CATEGORY", selectedWO.category, selectedWO.plant_id, workOrderMasters)} />
               {selectedWO.sub_category && <DetailRow label="Sub-Category" value={selectedWO.sub_category} />}
               {selectedWO.safety_related && <DetailRow label="Safety Related" value={<StatusBadge variant="critical">Yes</StatusBadge>} />}
@@ -3297,17 +3084,6 @@ export default function WorkOrders() {
         }}
       />
 
-      <MobileQrScannerDialog
-        open={isQrVerifyOpen}
-        onOpenChange={setIsQrVerifyOpen}
-        title="Scan Machine QR to Start Work"
-        description="Scan the assigned machine QR before maintenance starts. If camera access is unavailable, switch to manual machine-code entry."
-        onDecoded={(value) => {
-          void handleQrDecodedForVerification(value);
-        }}
-        secondaryActionLabel="Enter Machine Code"
-        onSecondaryAction={openManualVerification}
-      />
 
       <Dialog
         open={isCameraDialogOpen}
@@ -3370,114 +3146,7 @@ export default function WorkOrders() {
         </DialogContent>
       </Dialog>
 
-      <FormDialog
-        open={isManualVerifyOpen}
-        onOpenChange={setIsManualVerifyOpen}
-        title="Manual Machine Verification"
-        description="Search and select the assigned machine by code, name, module, or department."
-        onSubmit={confirmManualVerification}
-        submitLabel="Confirm Machine"
-        size="lg"
-      >
-        <div className="space-y-3">
-          <SearchableSelect
-            label="Machine"
-            required
-            value={manualMachineAssetId}
-            onChange={setManualMachineAssetId}
-            options={manualVerifyMachineOptions}
-            placeholder="Search by machine code, machine name, module, or department"
-            emptyMessage="No machines found in this plant"
-          />
-          <InputField
-            label="Selected Machine Code"
-            value={manualMachineCode}
-            onChange={setManualMachineCode}
-            placeholder={verifyTargetWO?.assets?.code || "Machine code"}
-            required
-          />
-        </div>
-      </FormDialog>
 
-      {qrMismatchMessage ? (
-        <FormDialog
-          open={Boolean(qrMismatchMessage)}
-          onOpenChange={(open) => {
-            if (!open) setQrMismatchMessage("");
-          }}
-          title="Machine Verification Failed"
-          description={qrMismatchMessage}
-          onSubmit={() => {
-            setQrMismatchMessage("");
-            setIsQrVerifyOpen(true);
-            setIsManualVerifyOpen(false);
-          }}
-          submitLabel="Rescan QR"
-        >
-          <div className="space-y-3 text-sm">
-            <p>This work order is not assigned for this machine.</p>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                if (!verifyTargetWO?.asset_id) return;
-                navigate(`/machine/${verifyTargetWO.asset_id}`);
-                setQrMismatchMessage("");
-              }}
-            >
-              View assigned machine details
-            </Button>
-          </div>
-        </FormDialog>
-      ) : null}
-
-      <FormDialog
-        open={isSafetyOpen}
-        onOpenChange={setIsSafetyOpen}
-        title="Safety Confirmation"
-        description="Confirm mandatory safety checks before starting maintenance"
-        onSubmit={() => void confirmSafetyAndStartWork()}
-        submitLabel="Confirm and Start Work"
-        isLoading={isStartingWorkOrder}
-      >
-        <div className="space-y-4">
-          {verificationMethod === "MANUAL_ENTRY" ? (
-            <div className="rounded-2xl border border-dashed border-amber-400/40 bg-amber-500/5 px-4 py-3 text-sm text-muted-foreground">
-              QR scanning was unavailable, so this work order is being verified through manual machine-code entry.
-            </div>
-          ) : null}
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="safety-ppe"
-              checked={safetyChecklist.ppe_worn}
-              onCheckedChange={(checked) => setSafetyChecklist((prev) => ({ ...prev, ppe_worn: Boolean(checked) }))}
-            />
-            <Label htmlFor="safety-ppe">PPE worn</Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="safety-isolated"
-              checked={safetyChecklist.machine_isolated}
-              onCheckedChange={(checked) => setSafetyChecklist((prev) => ({ ...prev, machine_isolated: Boolean(checked) }))}
-            />
-            <Label htmlFor="safety-isolated">Machine isolated</Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="safety-lock"
-              checked={safetyChecklist.safety_lock_applied}
-              onCheckedChange={(checked) => setSafetyChecklist((prev) => ({ ...prev, safety_lock_applied: Boolean(checked) }))}
-            />
-            <Label htmlFor="safety-lock">Safety lock applied</Label>
-          </div>
-          <TextareaField
-            label="Safety Notes"
-            value={safetyChecklist.notes}
-            onChange={(value) => setSafetyChecklist((prev) => ({ ...prev, notes: value }))}
-            placeholder="Optional safety notes"
-          />
-        </div>
-      </FormDialog>
 
       <FormDialog
         open={isReviewOpen}
@@ -3539,6 +3208,33 @@ export default function WorkOrders() {
           isLoading={isHoldSubmitting}
         />
       )}
+      <FormDialog
+        isOpen={isRcaOpen}
+        onClose={() => setIsRcaOpen(false)}
+        title={`Why-Why Analysis: ${selectedWO?.wo_number}`}
+        onSubmit={handleRcaSubmit}
+        submitLabel="Submit RCA"
+        isSubmitting={isRcaSubmitting}
+      >
+        <div className="space-y-4">
+          <TextareaField
+            label="Problem Statement"
+            value={rcaData.problemStatement}
+            onChange={(v) => setRcaData({ ...rcaData, problemStatement: v })}
+            placeholder="Describe the problem..."
+            required
+          />
+          <InputField label="Why 1" value={rcaData.why1} onChange={(v) => setRcaData({ ...rcaData, why1: v })} required />
+          <InputField label="Why 2" value={rcaData.why2} onChange={(v) => setRcaData({ ...rcaData, why2: v })} />
+          <InputField label="Why 3" value={rcaData.why3} onChange={(v) => setRcaData({ ...rcaData, why3: v })} />
+          <InputField label="Why 4" value={rcaData.why4} onChange={(v) => setRcaData({ ...rcaData, why4: v })} />
+          <InputField label="Why 5" value={rcaData.why5} onChange={(v) => setRcaData({ ...rcaData, why5: v })} />
+          <TextareaField label="Root Cause" value={rcaData.rootCause} onChange={(v) => setRcaData({ ...rcaData, rootCause: v })} required />
+          <TextareaField label="Corrective Action" value={rcaData.correctiveAction} onChange={(v) => setRcaData({ ...rcaData, correctiveAction: v })} required />
+          <TextareaField label="Preventive Action" value={rcaData.preventiveAction} onChange={(v) => setRcaData({ ...rcaData, preventiveAction: v })} required />
+        </div>
+      </FormDialog>
+
     </PageShell>
   );
 }

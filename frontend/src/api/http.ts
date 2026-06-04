@@ -124,6 +124,13 @@ export class ApiError extends Error {
   }
 }
 
+export class ApiTimeoutError extends ApiError {
+  constructor(message = "Request timed out") {
+    super(0, message, null);
+    this.name = "ApiTimeoutError";
+  }
+}
+
 export {
   getStoredAccessToken,
   setStoredAccessToken,
@@ -474,7 +481,7 @@ function getDeviceId(): string {
 
 export async function httpRequest<T>(
   path: string,
-  init: RequestInit = {},
+  init: RequestInit & { timeoutMs?: number } = {},
   retry = true,
   limitRetry = true,
   cacheRetry = true,
@@ -544,16 +551,26 @@ export async function httpRequest<T>(
 
   // Coalesce identical GET requests; always use coalescing for GET
   let response: Response;
+  const abortController = typeof AbortController !== "undefined" && typeof init.timeoutMs === "number" && init.timeoutMs > 0
+    ? new AbortController()
+    : null;
+  const timeoutHandle = abortController ? setTimeout(() => abortController.abort(), init.timeoutMs) : null;
   try {
+    const requestInit: RequestInit = {
+      ...init,
+      headers,
+      credentials: "include",
+      cache: "no-store",
+      signal: abortController?.signal ?? init.signal,
+    };
     response = method === "GET"
-      ? await coalescedFetch<Response>(url, { ...init, headers, credentials: "include", cache: "no-store" }, requestCacheKey)
-      : await fetch(url, {
-          ...init,
-          headers,
-          credentials: "include",
-          cache: "no-store",
-        });
+      ? await coalescedFetch<Response>(url, requestInit, requestCacheKey)
+      : await fetch(url, requestInit);
   } catch (fetchError) {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    if (fetchError instanceof DOMException && fetchError.name === "AbortError") {
+      throw new ApiTimeoutError("Request timed out. Please try again.");
+    }
     // Network error: backend unreachable, connection dropped, DNS failure, etc.
     const message = fetchError instanceof TypeError
       ? "Unable to reach the server. Please check your connection or try again later."
@@ -578,6 +595,7 @@ export async function httpRequest<T>(
 
     throw new ApiError(0, message, null);
   }
+  if (timeoutHandle) clearTimeout(timeoutHandle);
   debugLog("response", { url, status: response.status });
 
   if (shouldAttemptRefresh(path, response.status, retry)) {

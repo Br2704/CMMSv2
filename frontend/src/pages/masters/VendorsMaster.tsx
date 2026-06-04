@@ -17,6 +17,7 @@ import { Toolbar } from "@/components/layout/Toolbar";
 import { EmptyState } from "@/components/app-shell/EmptyState";
 import { TableSkeleton } from "@/components/app-shell/TableSkeleton";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { PageShell } from "@/components/layout/PageShell";
 import { createVendor, deleteVendor, listVendors, type Vendor, type VendorPayload, updateVendor } from "@/api/vendors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

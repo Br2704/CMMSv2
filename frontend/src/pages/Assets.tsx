@@ -45,7 +45,26 @@ function workOrderStatusVariant(status?: string) {
   if (status === "RAISED") return "warning" as const;
   if (status === "OPENED" || status === "IN_PROGRESS") return "info" as const;
   if (status === "CLOSED" || status === "COMPLETED") return "active" as const;
+  if (status === "CLOSED" || status === "COMPLETED") return "active" as const;
   return "default" as const;
+}
+
+function criticalityVariant(crit?: string) {
+  if (!crit) return "default" as const;
+  if (crit.includes("A+")) return "critical" as const;
+  if (crit.includes("A High")) return "destructive" as const;
+  if (crit.includes("B Medium")) return "warning" as const;
+  if (crit.includes("C Standard")) return "info" as const;
+  return "default" as const;
+}
+
+function criticalityColor(crit?: string) {
+  if (!crit) return "bg-slate-300";
+  if (crit.includes("A+")) return "bg-purple-500";
+  if (crit.includes("A High")) return "bg-rose-500";
+  if (crit.includes("B Medium")) return "bg-amber-500";
+  if (crit.includes("C Standard")) return "bg-blue-500";
+  return "bg-slate-300";
 }
 
 function formatMinutes(value: string | number | null | undefined) {
@@ -119,7 +138,7 @@ function AssetOverviewPanel({
                </div>
                <div className="rounded-2xl bg-white p-3 shadow-sm border border-slate-100">
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Criticality</p>
-                  <StatusBadge variant={overview.asset.criticality === "HIGH" ? "critical" : "default"} className="h-5 px-2 text-[9px]">{overview.asset.criticality || "STABLE"}</StatusBadge>
+                  <StatusBadge variant={criticalityVariant(overview.asset.criticality)} className="h-5 px-2 text-[9px]">{overview.asset.criticality || "C Standard"}</StatusBadge>
                </div>
              </div>
 
@@ -707,8 +726,8 @@ export default function Assets() {
         <div className="flex flex-col gap-1.5">
           <StatusBadge variant={assetStatusVariant(asset.status)} className="h-5 px-2 text-[10px]">{asset.status.replace(/_/g, " ")}</StatusBadge>
           <div className="flex items-center gap-1 opacity-60">
-            <div className={cn("h-1.5 w-1.5 rounded-full", asset.criticality === "HIGH" ? "bg-rose-500" : "bg-slate-300")} />
-            <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">{asset.criticality || "STABLE"}</span>
+            <div className={cn("h-1.5 w-1.5 rounded-full", criticalityColor(asset.criticality))} />
+            <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">{asset.criticality || "C Standard"}</span>
           </div>
         </div>
       ),

@@ -47,6 +47,8 @@ const USER_ROLES = new Set([
   'ACCOUNTS_USER',
   'SAFETY_USER',
   'ESG_USER',
+  'MAINTENANCE_TECHNICIAN',
+  'PRODUCTION_OPERATOR',
 ]);
 
 const OPERATIONAL_ROLES = new Set([...ADMIN_ROLES, ...MANAGER_ROLES, ...USER_ROLES]);
@@ -98,6 +100,10 @@ export function isPathAccessible(path: string, context: AccessibleRouteContext):
     return path === "/visitor-experience" || path === "/work-orders";
   }
 
+  if (path === "/approvals") {
+    return context.canAccessModule("governance", "view") || hasAnyRole(roles, ["MAINTENANCE_MANAGER", "PRODUCTION_MANAGER", "CALIBRATION_MANAGER"]);
+  }
+
   if (path === "/") {
     return isSuper || isPlantAdmin;
   }
@@ -106,7 +112,7 @@ export function isPathAccessible(path: string, context: AccessibleRouteContext):
     return isOperationalRole(roles) || isVendor;
   }
 
-  if (path === "/assets") {
+  if (path.startsWith("/assets")) {
     return isOperationalRole(roles);
   }
 
@@ -134,6 +140,10 @@ export function isPathAccessible(path: string, context: AccessibleRouteContext):
     return context.canAccessModule("reports", "view") || hasAnyRole(roles, ["MAINTENANCE_MANAGER", "MAINTENANCE_USER", "SCM_MANAGER", "SCM_USER", "PLANT_ADMIN", "SUPER_ADMIN"]);
   }
 
+  if (path === "/auditor-dashboard") {
+    return hasAnyRole(roles, ["PLANT_ADMIN", "SUPER_ADMIN", "QUALITY_MANAGER", "AUDITOR"]);
+  }
+
   if (path === "/security-gate") {
     return isSecurity || isSuper || isPlantAdmin || isHrAdmin || hasAnyRole(roles, ["HR_MANAGER", "HR_USER"]);
   }
@@ -143,6 +153,10 @@ export function isPathAccessible(path: string, context: AccessibleRouteContext):
   }
 
   if (path === "/logs") {
+    return isOperationalRole(roles) && !isVendor && !isVisitor && !isSecurity;
+  }
+
+  if (path === "/shift-handover") {
     return isOperationalRole(roles) && !isVendor && !isVisitor && !isSecurity;
   }
 
@@ -183,11 +197,11 @@ export function isPathAccessible(path: string, context: AccessibleRouteContext):
   }
 
   if (path === "/masters/esg-config") {
-    return isSuper || isPlantAdmin || hasAnyRole(roles, ["ESG_ADMIN", "ESG_MANAGER"]);
+    return isSuper || isPlantAdmin || hasAnyRole(roles, ["ESG_MANAGER"]);
   }
 
   if (path === "/masters/gates") {
-    return isSuper || isPlantAdmin || isHrAdmin || hasAnyRole(roles, ["HR_MANAGER"]);
+    return isSuper || isPlantAdmin || isHrAdmin;
   }
 
   if (path === "/masters/safety-config") {
@@ -195,61 +209,88 @@ export function isPathAccessible(path: string, context: AccessibleRouteContext):
   }
 
   if (path === "/masters/email-reports") {
-    return isSuper || isPlantAdmin;
-  }
-
-  if (path === "/masters/log-templates") {
     return isSuper || isPlantAdmin || isManager;
   }
 
+  if (path === "/masters/log-templates") {
+    return isSuper || isPlantAdmin || hasAnyRole(roles, ["MAINTENANCE_MANAGER", "PRODUCTION_MANAGER"]);
+  }
+
   if (path === "/masters/shifts") {
-    return isSuper || isPlantAdmin || hasAnyRole(roles, ["HR_MANAGER"]);
+    return isSuper || isPlantAdmin || isManager;
   }
 
   if (path === "/masters/maintenance-teams") {
     return isSuper || isPlantAdmin || hasAnyRole(roles, ["MAINTENANCE_MANAGER"]);
   }
 
-  return context.canAccessModule(pathToModuleId(path), "view");
+  return false;
 }
 
-function pathToModuleId(path: string): string {
-  const page = NON_ROOT_APP_PAGES.find((item) => item.path === path);
-  return page?.moduleId ?? path.replace(/^\//, "");
-}
+export const adminRoutes = [
+  "/",
+  "/masters",
+  "/masters/plant",
+  "/masters/departments",
+  "/masters/modules",
+  "/masters/machines",
+  "/masters/cost-centers",
+  "/masters/vendors",
+  "/masters/users",
+  "/masters/pm-config",
+  "/masters/calibration-config",
+  "/masters/amc-config",
+  "/masters/esg-config",
+  "/masters/gates",
+  "/masters/safety-config",
+  "/masters/email-reports",
+  "/masters/log-templates",
+  "/masters/machine-instruments",
+  "/masters/shifts",
+  "/masters/maintenance-teams",
+  "/masters/work-order-config",
+  "/masters/sla-config",
+  "/security-center",
+] as const;
+
+const operationsRoutes = [
+  "/work-orders",
+  "/technician",
+  "/preventive-maintenance",
+  "/calibration",
+  "/amc",
+  "/assets",
+  "/inventory",
+  "/security-gate",
+  "/visitor-experience",
+  "/logs",
+  "/shift-handover",
+  "/approvals",
+] as const;
+
+export const routesWithSidebar = [
+  ...adminRoutes,
+  ...operationsRoutes,
+  ...ROOT_APP_PATHS,
+] as const;
 
 export function getAccessibleAppPages(context: AccessibleRouteContext): AppPageDefinition[] {
   return NON_ROOT_APP_PAGES.filter((page) => isPathAccessible(page.path, context));
 }
 
-export function resolveAccessibleLandingPath(context: AccessibleRouteContext): string {
+export function getDefaultRedirectPath(context: AccessibleRouteContext): string {
   const roles = normalizedRoleSet([context.roleKey ?? "", ...context.roles]);
-
+  
   if (roles.has("ROOT_ADMIN")) return "/root/dashboard";
-  if (roles.has("SECURITY")) return "/security-gate";
-  if (roles.has("VENDOR")) return isPathAccessible("/work-orders", context) ? "/work-orders" : "/visitor-experience";
-  if (roles.has("VISITOR")) return "/visitor-experience";
   if (roles.has("SUPER_ADMIN") || roles.has("PLANT_ADMIN")) return "/";
-  if (isAdminOrManagerRole(roles) && isPathAccessible("/masters", context)) return "/masters";
-
-  const preferred = [
-    "/work-orders",
-    "/masters",
-    "/visitor-experience",
-    "/security-gate",
-    "/logs",
-    "/reports",
-    "/inventory",
-    "/amc",
-    "/preventive-maintenance",
-    "/calibration",
-    "/esg",
-  ];
-
-  for (const path of preferred) {
-    if (isPathAccessible(path, context)) return path;
-  }
+  if (roles.has("SECURITY")) return "/security-gate";
+  if (roles.has("VENDOR")) return "/work-orders";
+  if (roles.has("VISITOR")) return "/visitor-experience";
+  if (roles.has("MAINTENANCE_TECHNICIAN") || roles.has("PRODUCTION_OPERATOR")) return "/work-orders";
+  if (hasAnyRole(roles, ["MAINTENANCE_MANAGER", "PRODUCTION_MANAGER"])) return "/approvals";
 
   const first = getAccessibleAppPages(context)[0];
   return first?.path ?? "/visitor-experience";
 }
+
+export const resolveAccessibleLandingPath = getDefaultRedirectPath;

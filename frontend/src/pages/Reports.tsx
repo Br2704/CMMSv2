@@ -697,7 +697,7 @@ export default function Reports() {
     if (dateRange === "custom") return customStartDate;
     return format(subDays(new Date(), parseInt(dateRange, 10)), "yyyy-MM-dd");
   }, [dateRange, customStartDate]);
-  
+
   const endDate = useMemo(() => {
     if (dateRange === "custom") return customEndDate;
     return format(new Date(), "yyyy-MM-dd");
@@ -714,26 +714,7 @@ export default function Reports() {
   const categoryOptions = useMemo(() => getMasterCodes(workOrderMasters, "CATEGORY"), [workOrderMasters]);
   const statusOptions = [
     "RAISED",
-    "TRIAGED",
-    "ASSIGNED",
-    "ACCEPTED",
-    "OPENED",
-    "IN_PROGRESS",
-    "REASSIGNED",
-    "FOLLOW_UP_ACTIVE",
-    "WAITING_SPARE",
-    "WAITING_SHUTDOWN",
-    "PENDING_VERIFICATION",
-    "VERIFICATION_REQUIRED",
-    "USER_VERIFICATION",
-    "APPROVAL_PENDING",
-    "SUPERVISOR_VERIFIED",
-    "REJECTED",
     "CLOSED",
-    "CANCELLED",
-    "COMPLETED",
-    "ARCHIVED",
-    "ESCALATED",
   ];
   const typeOptions = useMemo(() => getMasterCodes(workOrderMasters, "WO_TYPE"), [workOrderMasters]);
   const categoryLabelMap = useMemo(() => {
@@ -836,8 +817,8 @@ export default function Reports() {
         const isReorder = s.current_stock <= s.reorder_level && s.current_stock > s.min_level;
         const isAdequate = s.current_stock > s.reorder_level;
         return (invStockStatus.includes("Below Min") && isBelowMin) ||
-               (invStockStatus.includes("Reorder Needed") && isReorder) ||
-               (invStockStatus.includes("Adequate") && isAdequate);
+          (invStockStatus.includes("Reorder Needed") && isReorder) ||
+          (invStockStatus.includes("Adequate") && isAdequate);
       });
     }
     return f;
@@ -862,9 +843,9 @@ export default function Reports() {
         const startTime = wo.started_at ? wo.started_at : wo.opened_at;
         if (!startTime) return;
         const mins = differenceInMinutes(parseISO(wo.closed_at), parseISO(startTime));
-        const key = mttrGroupKey === "dept" ? (wo.assets?.departments?.name || "Unknown") 
-                  : mttrGroupKey === "category" ? (wo.category || "Unknown")
-                  : (wo.assets?.name || "Unknown");
+        const key = mttrGroupKey === "dept" ? (wo.assets?.departments?.name || "Unknown")
+          : mttrGroupKey === "category" ? (wo.category || "Unknown")
+            : (wo.assets?.name || "Unknown");
         if (!groups[key]) groups[key] = [];
         groups[key].push(mins);
       }
@@ -882,8 +863,8 @@ export default function Reports() {
     filteredWOs.forEach((wo: any) => {
       if (!assetWOs[wo.asset_id]) {
         const key = mttrGroupKey === "dept" ? (wo.assets?.departments?.name || "Unknown")
-                  : mttrGroupKey === "category" ? (wo.category || "Unknown")
-                  : (wo.assets?.name || "Unknown");
+          : mttrGroupKey === "category" ? (wo.category || "Unknown")
+            : (wo.assets?.name || "Unknown");
         assetWOs[wo.asset_id] = { dates: [], key };
       }
       assetWOs[wo.asset_id].dates.push(parseISO(wo.created_at));
@@ -1268,7 +1249,7 @@ export default function Reports() {
                         <KPICard title="MTBF" value={`${hoursToMinutes(advancedReliability.summary.mtbfHours)} min`} subtitle="between failures" icon={TrendingUp} variant="success" />
                         <KPICard title="Availability" value={`${advancedReliability.summary.availabilityPercent}%`} subtitle="operational" icon={Gauge} variant="primary" />
                       </div>
-                      
+
                       <div className="grid gap-4 md:grid-cols-2">
                         <Card className="shadow-card">
                           <CardHeader className="pb-2">
@@ -1294,7 +1275,7 @@ export default function Reports() {
                             </div>
                           </CardContent>
                         </Card>
-                        
+
                         <Card className="shadow-card">
                           <CardHeader className="pb-2">
                             <CardTitle className="text-sm">Root Cause Trends</CardTitle>
@@ -1306,7 +1287,7 @@ export default function Reports() {
                                   const rc = r.subRootCause || "OTHER";
                                   acc[rc] = (acc[rc] || 0) + 1;
                                   return acc;
-                                }, {})).map(([name, value]) => ({ name, value: Number(value) })).sort((a,b) => b.value - a.value).slice(0, 5)}>
+                                }, {})).map(([name, value]) => ({ name, value: Number(value) })).sort((a, b) => b.value - a.value).slice(0, 5)}>
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis dataKey="name" className="text-[10px]" />
                                   <YAxis className="text-[10px]" />
@@ -1407,7 +1388,7 @@ export default function Reports() {
                 )}
               </div>
             </TabsContent>
-            
+
             {/* Maintenance Reports Tab */}
             <TabsContent value="maintenance_reports">
               <div className="space-y-4">
@@ -1428,6 +1409,7 @@ export default function Reports() {
                             <th className="px-4 py-3">Closure Date</th>
                             <th className="px-4 py-3">Failure Category</th>
                             <th className="px-4 py-3">Root Cause</th>
+                            <th className="px-4 py-3">Parts Replaced (Warranty)</th>
                             <th className="px-4 py-3">Downtime (m)</th>
                             <th className="px-4 py-3">Action</th>
                           </tr>
@@ -1446,6 +1428,7 @@ export default function Reports() {
                                 </Badge>
                               </td>
                               <td className="px-4 py-4 text-xs max-w-[200px] truncate">{report.rootCause || "-"}</td>
+                              <td className="px-4 py-4 text-xs max-w-[200px] truncate">{report.workOrder?.warrantyClaim ? (report.workOrder?.partsReplaced || "Warranty claim - no parts specified") : "-"}</td>
                               <td className="px-4 py-4 font-medium">{report.totalDowntime}</td>
                               <td className="px-4 py-4">
                                 <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="View Detail">
@@ -1456,7 +1439,7 @@ export default function Reports() {
                           ))}
                           {mReports.length === 0 && (
                             <tr>
-                              <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground italic">
+                              <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground italic">
                                 No maintenance reports generated yet. Reports are created automatically upon work order closure.
                               </td>
                             </tr>
@@ -1768,9 +1751,9 @@ export default function Reports() {
                   <KPICard title="Avg per WO" value={`${Math.round(dtFiltered.filter((w: any) => w.downtime_minutes > 0).reduce((s: number, w: any) => s + w.downtime_minutes, 0) / Math.max(dtFiltered.filter((w: any) => w.downtime_minutes > 0).length, 1))}m`} subtitle="downtime" icon={Timer} variant="warning" />
                   <KPICard title="Assets Affected" value={new Set(dtFiltered.filter((w: any) => w.downtime_minutes > 0).map((w: any) => w.asset_id)).size} subtitle="with downtime" icon={Gauge} variant="info" />
                 </div>
-                <ParetoChart 
-                  data={downtimeByAsset.map(d => ({ name: d.name, value: d.downtime }))} 
-                  title="Pareto Analysis: Downtime Distribution" 
+                <ParetoChart
+                  data={downtimeByAsset.map(d => ({ name: d.name, value: d.downtime }))}
+                  title="Pareto Analysis: Downtime Distribution"
                   subtitle="Critical Few vs Trivial Many (80/20 Rule)"
                 />
                 <Card className="shadow-card">

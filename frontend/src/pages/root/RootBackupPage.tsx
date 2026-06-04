@@ -210,11 +210,23 @@ export default function RootBackupPage() {
         if (confirmInput !== "DELETE") return;
         setIsDeleting(true);
         try {
-          const scope = selectedPlant ? "PLANT" : selectedOrg ? "ORGANIZATION" : "ALL";
-          const res = await deleteAllData(scope as any, { organizationId: selectedOrg || undefined, plantId: selectedPlant || undefined });
+          const scope = selectedPlant !== "ALL" ? "PLANT" : selectedOrg !== "ALL" ? "ORGANIZATION" : "ALL";
+          const scopeParams =
+            scope === "PLANT"
+              ? { plantId: selectedPlant }
+              : scope === "ORGANIZATION"
+                ? { organizationId: selectedOrg }
+                : {};
+          const res = await deleteAllData(scope as any, scopeParams);
           if (res && (res.success ?? true)) {
-            setDeleteJobId(res.data?.jobId ?? null);
-            toast.success("Deletion request accepted. Data removal will be processed.");
+            if (res.data?.queued === false) {
+              const rowCount = res.data?.deletedDataRows || 0;
+              toast.success(`Data wipe complete. Successfully removed ${rowCount} operational data rows.`);
+              setDeleteJobId(null);
+            } else {
+              setDeleteJobId(res.data?.jobId ?? null);
+              toast.success("Deletion request accepted. Data removal will be processed in background.");
+            }
             setIsDeleteOpen(false);
           } else {
             toast.error("Failed to request deletion.");

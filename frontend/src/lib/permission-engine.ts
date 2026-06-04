@@ -141,6 +141,8 @@ export type CanonicalRole =
   | 'ESG_MANAGER'
   | 'MAINTENANCE_USER'
   | 'PRODUCTION_USER'
+  | 'MAINTENANCE_TECHNICIAN'
+  | 'PRODUCTION_OPERATOR'
   | 'SCM_USER'
   | 'HR_USER'
   | 'CALIBRATION_USER'
@@ -168,6 +170,8 @@ export const ROLE_PRECEDENCE: Record<string, number> = {
   ESG_MANAGER: 210,
   MAINTENANCE_USER: 200,
   PRODUCTION_USER: 195,
+  MAINTENANCE_TECHNICIAN: 194,
+  PRODUCTION_OPERATOR: 193,
   SCM_USER: 190,
   HR_USER: 185,
   CALIBRATION_USER: 180,
@@ -198,8 +202,10 @@ export const INHERITANCE_CHAIN: Record<string, string[]> = {
   ACCOUNTS_MANAGER: ['ACCOUNTS_USER'],
   SAFETY_MANAGER: ['SAFETY_USER'],
   ESG_MANAGER: ['ESG_USER'],
-  MAINTENANCE_USER: [],
-  PRODUCTION_USER: [],
+  MAINTENANCE_USER: ['MAINTENANCE_TECHNICIAN'],
+  PRODUCTION_USER: ['PRODUCTION_OPERATOR'],
+  MAINTENANCE_TECHNICIAN: [],
+  PRODUCTION_OPERATOR: [],
   SCM_USER: [],
   HR_USER: [],
   CALIBRATION_USER: [],
@@ -527,8 +533,13 @@ function defineRolePermissions(): Record<string, Record<string, string[]>> {
     USERS: ['READ'],
     VENDORS: ['READ'],
     MASTERS: ['READ'],
-    LOG_TEMPLATE_CONFIG: ['READ'],
+    LOG_TEMPLATE_CONFIG: ['READ', 'CREATE', 'UPDATE'],
     WORK_ORDER_MASTERS: ['READ'],
+    PM_CONFIG: ['READ', 'CREATE', 'UPDATE'],
+    CALIBRATION_CONFIG: ['READ', 'CREATE', 'UPDATE'],
+    CALIBRATION_TEMPLATES: ['READ', 'CREATE', 'UPDATE'],
+    CALIBRATION_SCHEDULES: ['READ', 'CREATE', 'UPDATE'],
+    CALIBRATION_INSTRUMENTS: ['READ', 'CREATE', 'UPDATE'],
   };
 
   // ============================
@@ -564,6 +575,18 @@ function defineRolePermissions(): Record<string, Record<string, string[]>> {
     PLANTS: ['READ'],
     DEPARTMENTS: ['READ'],
     USERS: ['READ'],
+  };
+
+  permissions.MAINTENANCE_TECHNICIAN = {
+    WORK_ORDERS: ['READ', 'UPDATE', 'CLOSE'],
+    ASSETS: ['READ'],
+    LOGS: ['READ', 'UPDATE'],
+  };
+
+  permissions.PRODUCTION_OPERATOR = {
+    WORK_ORDERS: ['READ', 'CREATE'],
+    ASSETS: ['READ'],
+    LOGS: ['READ', 'UPDATE'],
   };
 
   // ============================

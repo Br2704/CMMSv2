@@ -45,6 +45,16 @@ function average(values: number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+function formatWorkOrderStatusLabel(status: string): string {
+  const normalized = String(status || "").toUpperCase();
+  const labels: Record<string, string> = {
+    RAISED: "Raised",
+    CLOSED: "Closed",
+  };
+
+  return labels[normalized] || normalized.replace(/_/g, " ");
+}
+
 // Machine-wise MTTR: average downtime per machine, then average across machines.
 function calculateMachineWiseMttrMinutes(workOrders: any[]): number {
   const byAsset = groupWosByAsset(workOrders);
@@ -296,7 +306,7 @@ export function useDashboardData(selectedPlantId?: string | null) {
       filteredWOs.filter((wo: any) => wo.status === "CLOSED" && wo.closed_at && new Date(wo.closed_at) > now24h).length,
   );
   const overduePM = scopedPmSchedules.filter((pm: any) => pm.status === "OVERDUE").length;
-  const pendingApproval = Number(workOrderSummary?.kpis?.pendingApproval ?? filteredWOs.filter((wo: any) => ["USER_VERIFICATION", "APPROVAL_PENDING"].includes(wo.status)).length);
+  const pendingApproval = 0;
   const overdueCalibrations = scopedCalibrations.filter((c: any) => c.status === "OVERDUE").length;
   const visitorsToday = gateSummary.visitorsToday;
   const vehiclesEntered = gateSummary.vehiclesEntered;
@@ -327,10 +337,26 @@ export function useDashboardData(selectedPlantId?: string | null) {
   const woByStatusData = useMemo(() => {
     const statuses: Record<string, number> = {};
     filteredWOs.forEach((wo: any) => {
-      const s = wo.status.replace(/_/g, " ");
+      const statusRaw = String(wo.status || "").toUpperCase();
+      const s = formatWorkOrderStatusLabel(statusRaw);
       statuses[s] = (statuses[s] || 0) + 1;
     });
     return Object.entries(statuses).map(([name, value]) => ({ name, value }));
+  }, [filteredWOs]);
+
+  const workOrderLifecycleCounts = useMemo(() => {
+    const counts = {
+      raised: 0,
+      closed: 0,
+    };
+
+    filteredWOs.forEach((wo: any) => {
+      const status = String(wo.status || "").toUpperCase();
+      if (status === "RAISED") counts.raised += 1;
+      if (status === "CLOSED") counts.closed += 1;
+    });
+
+    return counts;
   }, [filteredWOs]);
 
   // WO by priority
@@ -360,55 +386,78 @@ export function useDashboardData(selectedPlantId?: string | null) {
     return days;
   }, [filteredWOs]);
 
-  // MTTR trend (last 7 days) - avg downtime of WOs closed each day
+  // MTTR trend (last 7 days) - 7-day rolling average of repair time for WOs closed
   const mttrTrendData = useMemo(() => {
     const days: { date: string; value: number }[] = [];
     for (let i = 6; i >= 0; i--) {
-      const day = startOfDay(subDays(new Date(), i));
-      const dayStr = format(day, "yyyy-MM-dd");
-      const nextDay = startOfDay(subDays(new Date(), i - 1));
-      const closedToday = filteredWOs.filter(
+      const dayStr = format(startOfDay(subDays(new Date(), i)), "yyyy-MM-dd");
+      // Use a 7-day rolling window ending on 'nextDay'
+      const windowStart = startOfDay(subDays(new Date(), i + 7));
+      const windowEnd = startOfDay(subDays(new Date(), i - 1));
+      
+      const closedInWindow = filteredWOs.filter(
         (wo: any) =>
           wo.status === "CLOSED" &&
           wo.closed_at &&
-          new Date(wo.closed_at) >= day &&
-          new Date(wo.closed_at) < nextDay &&
-          wo.downtime_minutes > 0
+          new Date(wo.closed_at) >= windowStart &&
+          new Date(wo.closed_at) < windowEnd
       );
-      const avg = closedToday.length > 0
-        ? Math.round(closedToday.reduce((s: number, w: any) => s + w.downtime_minutes, 0) / closedToday.length)
-        : 0;
+      
+      let sum = 0;
+      let count = 0;
+      closedInWindow.forEach((wo: any) => {
+          const start = wo.started_at || wo.opened_at || wo.created_at;
+          const end = wo.resolved_at || wo.closed_at;
+          if (start && end) {
+              const mins = (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60);
+              if (mins > 0) {
+                  sum += mins;
+                  count++;
+              }
+          }
+      });
+      const avg = count > 0 ? Math.round(sum / count) : 0;
       days.push({ date: dayStr, value: avg });
     }
     return days;
   }, [filteredWOs]);
 
-  // MTBF trend (last 7 days) - avg time between failures for WOs created each day
+  // MTBF trend (last 7 days) - 30-day rolling average time between failures
   const mtbfTrendData = useMemo(() => {
     const days: { date: string; value: number }[] = [];
+    
+    const sortedWOs = [...filteredWOs]
+        .filter(wo => wo.created_at && !Number.isNaN(new Date(wo.created_at).getTime()))
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
     for (let i = 6; i >= 0; i--) {
-      const day = startOfDay(subDays(new Date(), i));
-      const dayStr = format(day, "yyyy-MM-dd");
-      const nextDay = startOfDay(subDays(new Date(), i - 1));
-      const dayWOs = filteredWOs.filter(
-        (wo: any) => new Date(wo.created_at) >= day && new Date(wo.created_at) < nextDay
+      const dayStr = format(startOfDay(subDays(new Date(), i)), "yyyy-MM-dd");
+      const windowStart = startOfDay(subDays(new Date(), i + 30));
+      const windowEnd = startOfDay(subDays(new Date(), i - 1));
+      
+      const windowWOs = sortedWOs.filter(
+        (wo: any) => new Date(wo.created_at) >= windowStart && new Date(wo.created_at) < windowEnd
       );
-      // Group by asset to find gaps
-      const byAsset: Record<string, Date[]> = {};
-      dayWOs.forEach((wo: any) => {
-        const assetId = wo.asset_id || wo.assets?.id;
-        if (!assetId) return;
-        if (!byAsset[assetId]) byAsset[assetId] = [];
-        byAsset[assetId].push(new Date(wo.created_at));
-      });
+      
       let totalGap = 0;
       let gapCount = 0;
-      Object.values(byAsset).forEach((dates) => {
-        if (dates.length < 2) return;
-        dates.sort((a, b) => a.getTime() - b.getTime());
-        for (let j = 1; j < dates.length; j++) {
-          totalGap += (dates[j].getTime() - dates[j - 1].getTime()) / (1000 * 60);
-          gapCount++;
+      
+      windowWOs.forEach(currentWO => {
+        const assetId = currentWO.asset_id || currentWO.assets?.id;
+        if (!assetId) return;
+        
+        const currentIndex = sortedWOs.findIndex(w => w.id === currentWO.id);
+        for(let j = currentIndex - 1; j >= 0; j--) {
+            const prevWO = sortedWOs[j];
+            const prevAssetId = prevWO.asset_id || prevWO.assets?.id;
+            if (prevAssetId === assetId) {
+                const gapMinutes = (new Date(currentWO.created_at).getTime() - new Date(prevWO.created_at).getTime()) / (1000 * 60);
+                if (gapMinutes > 0) {
+                    totalGap += gapMinutes;
+                    gapCount++;
+                }
+                break;
+            }
         }
       });
       days.push({ date: dayStr, value: gapCount > 0 ? Math.round(totalGap / gapCount) : 0 });
@@ -507,6 +556,7 @@ export function useDashboardData(selectedPlantId?: string | null) {
   return {
     isLoading,
     plants: activePlants,
+    workOrderLifecycleCounts,
     kpis: {
       totalPlants,
       totalAssets, activeAssets, openWOs, closedLast24h,

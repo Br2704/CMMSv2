@@ -17,6 +17,7 @@ import {
 import type { AuthContext } from '../../types/auth';
 import { badRequest, conflict, forbidden } from '../../utils/httpError';
 import { canAccessWorkOrder } from '../../utils/authorization';
+import { applyMachineOwnershipScope } from '../../utils/machineOwnershipScope';
 import { enforcePlantScope, resolvePlantFilter, resolveScopedPlantId } from '../../utils/plantScope';
 import type { GenericRecord, ListResult } from '../_core/crud.types';
 import { CrudService } from '../_core/crud.service';
@@ -186,8 +187,6 @@ const WORKFLOW_MANAGED_FIELDS = new Set([
 ]);
 
 const INCHARGE_CATEGORY_MAP: Record<string, string> = {
-  MAINTENANCE_MANAGER: 'MECHANICAL',
-  MAINTENANCE_USER: 'MECHANICAL',
   PRODUCTION_MANAGER: 'PRODUCTION',
   SCM_MANAGER: 'SUPPLY_CHAIN',
   HR_MANAGER: 'PEOPLE',
@@ -349,8 +348,12 @@ class WorkOrdersService extends CrudService {
   }
 
   private getInchargeCategories(auth: AuthContext): string[] {
-    const roles = auth.roles.map((role) => String(role).trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_'));
-    return Array.from(new Set(roles.map((role) => INCHARGE_CATEGORY_MAP[role]).filter((value): value is string => Boolean(value))));
+    if (!auth.roles || !Array.isArray(auth.roles)) return [];
+    const categories: string[] = [];
+    if (auth.roles.includes('MAINTENANCE_MANAGER')) {
+      categories.push('MECHANICAL', 'ELECTRICAL', 'CIVIL', 'UTILITY', 'INSTRUMENTATION', 'OTHERS');
+    }
+    return categories;
   }
 
   private normalizeListQuery(query: ListQuery) {
@@ -741,6 +744,9 @@ class WorkOrdersService extends CrudService {
     }
 
     qb.andWhere(`(${visibilityClauses.join(' OR ')})`, params);
+    
+    // Enforce machine ownership limits for Techs/Operators
+    applyMachineOwnershipScope(qb, alias, auth, { assetJoinAlias: 'asset' });
   }
 
   private async isUserInAssignedTeam(workOrder: GenericRecord, userId: string, manager = AppDataSource.manager): Promise<boolean> {
@@ -1061,7 +1067,7 @@ class WorkOrdersService extends CrudService {
     const machineRunning = normalized.machine_running === true || normalized.machine_running === 'true';
     const verificationRequired = machineRunning || (normalized.verification_required === true || normalized.verification_required === 'true');
 
-    let initialStatus: string = assignedTeam?.teamLeaderId ? WORKFLOW_STATUSES.ASSIGNED : WORKFLOW_STATUSES.RAISED;
+    let initialStatus: string = normalized.assigned_to ? WORKFLOW_STATUSES.ASSIGNED : WORKFLOW_STATUSES.RAISED;
     if (verificationRequired) {
       initialStatus = WORKFLOW_STATUSES.VERIFICATION_REQUIRED;
     }
@@ -1080,7 +1086,7 @@ class WorkOrdersService extends CrudService {
       verification_required: verificationRequired,
       downtime_start_at: new Date().toISOString(),
       raised_by: normalized.raised_by ?? auth.userId,
-      assigned_to: normalized.assigned_to ?? assignedTeam?.teamLeaderId ?? null,
+      assigned_to: normalized.assigned_to ?? null,
       plant_id: plantId,
       plantId,
       sla_due_at: null,
@@ -1774,7 +1780,7 @@ class WorkOrdersService extends CrudService {
 
       await this.ensureExecutionAccess(existing, auth, manager);
 
-      const normalized = normalizeKeys(input);
+      const asset = await manager.findOne('AssetEntity', { where: { id: String(existing.asset_id) } }) as any;      const normalized = normalizeKeys(input);
       
       // CATEGORY REASSIGNMENT LOGIC (Reroute via Close Form)
       const newCategory = normalizeText(normalized.actual_failure_category) ?? normalizeText(normalized.category);
@@ -1962,9 +1968,6 @@ class WorkOrdersService extends CrudService {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
       const status = String(existing.status ?? '').toUpperCase();
-      if (!isPendingApprovalStatus(status)) {
-        conflict('Only work orders pending requester approval can be closed');
-      }
 
       const { isAdminOverride } = this.ensureApprovalAccess(existing, auth);
       const normalized = normalizeKeys(input);
@@ -1973,7 +1976,7 @@ class WorkOrdersService extends CrudService {
         badRequest('Admin override approval requires comments for the audit trail');
       }
 
-      const now = new Date().toISOString();
+      const asset = await manager.findOne('AssetEntity', { where: { id: String(existing.asset_id) } }) as any;      const now = new Date().toISOString();
       const updated = await this.persistWorkOrderUpdate(
         id,
         {
@@ -2005,6 +2008,35 @@ class WorkOrdersService extends CrudService {
         },
         manager,
       );
+
+      if (asset?.warrantyExpiry) {
+        const expiryDate = new Date(asset.warrantyExpiry);
+        if (expiryDate > new Date()) {
+          const notificationRepo = manager.getRepository('NotificationEntity');
+          const usersToNotify = await manager.getRepository('UserEntity')
+            .createQueryBuilder('user')
+            .innerJoin('user.roles', 'role')
+            .where('role.roleName IN (:...roles)', { roles: ['PLANT_ADMIN', 'SCM_MANAGER', 'SCM_USER'] })
+            .andWhere('user.isActive = true')
+            .select(['user.id'])
+            .getMany() as any[];
+
+          const inserts = usersToNotify.map(u => notificationRepo.create({
+            userId: u.id,
+            title: 'Warranty Claim Candidate',
+            message: `Work Order ${existing.wo_number} on ${asset.name} was closed while under warranty. Review for claim.`,
+            type: 'warranty_claim_candidate',
+            isRead: false,
+            link: `/work-orders?assetId=${asset.id}`,
+            woId: id
+          }));
+          
+          if (inserts.length > 0) {
+            await notificationRepo.save(inserts);
+            inserts.forEach((i: any) => require('../../modules/notifications/notification-stream').publishNotificationChange(i.userId));
+          }
+        }
+      }
 
       const recipients = uniqueIds([
         normalizeText(existing.assigned_to),
@@ -2054,9 +2086,6 @@ class WorkOrdersService extends CrudService {
     return AppDataSource.transaction(async (manager) => {
       const existing = await this.loadExistingWorkOrder(id, auth, manager);
       const status = String(existing.status ?? '').toUpperCase();
-      if (!isPendingApprovalStatus(status)) {
-        conflict('Only work orders pending requester approval can be reopened');
-      }
 
       const { isAdminOverride } = this.ensureApprovalAccess(existing, auth);
       const normalized = normalizeKeys(input);

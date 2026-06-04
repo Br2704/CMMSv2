@@ -22,6 +22,7 @@ export interface AsyncSelectProps<T> {
   label?: string
   value?: string
   onChange: (value: string) => void
+  onSelectObject?: (item: T | null) => void
   fetchFn: (params: { page: number; limit: number; search?: string }) => Promise<{ data: T[]; total: number }>
   labelExtractor: (item: T) => string
   valueExtractor: (item: T) => string
@@ -38,6 +39,7 @@ export function AsyncSelect<T>({
   label,
   value,
   onChange,
+  onSelectObject,
   fetchFn,
   labelExtractor,
   valueExtractor,
@@ -162,7 +164,11 @@ export function AsyncSelect<T>({
                       key={option.value}
                       value={option.value}
                       onSelect={(currentValue) => {
-                        onChange(currentValue === value ? "" : option.value)
+                        const isDeselecting = currentValue === value
+                        onChange(isDeselecting ? "" : option.value)
+                        if (onSelectObject) {
+                          onSelectObject(isDeselecting ? null : option.data)
+                        }
                         setOpen(false)
                       }}
                     >

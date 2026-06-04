@@ -19,7 +19,11 @@ import { ok } from '../../utils/apiResponse';
 import { badRequest, conflict, forbidden, notFound } from '../../utils/httpError';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { resolveScopedPlantId } from '../../utils/plantScope';
+import { isRootAdminRole } from '../../utils/rbac';
+import { approvalEngineService } from '../../services/approval-engine.service';
+import { executionApprovalService } from '../../services/execution-approval.service';
 import { applyPlantScope } from '../../utils/query';
+import { applyMachineOwnershipScope } from '../../utils/machineOwnershipScope';
 
 const listTemplatesQuerySchema = z.object({
   plantId: z.string().uuid().optional(),
@@ -189,6 +193,10 @@ dataLoggingRouter.get('/log-templates', requirePermission('LOGS', 'READ'), async
     const templateRepo = AppDataSource.getRepository(LogTemplateEntity);
     const qb = templateRepo.createQueryBuilder('template');
     applyPlantScope(qb, 'template', 'plant_id', req.auth!, query.plantId);
+    applyMachineOwnershipScope(qb, 'template', req.auth!, {
+      assetField: 'template.machine_id',
+      departmentField: 'template.department_id',
+    });
     if (query.search) {
       qb.andWhere('(LOWER(template.template_name) LIKE :search OR LOWER(template.category) LIKE :search)', {
         search: `%${query.search.toLowerCase()}%`,
@@ -223,14 +231,21 @@ dataLoggingRouter.post('/log-templates', requirePermission('LOGS', 'CREATE'), as
     const body = createTemplateSchema.parse(req.body);
     const resolvedPlantId = resolveScopedPlantId(req.auth!, body.plantId ?? null);
     ensurePlantAccess(req, resolvedPlantId);
-    const templateRepo = AppDataSource.getRepository(LogTemplateEntity);
-    const created = templateRepo.create({
+    const payload = {
       ...body,
       plantId: resolvedPlantId,
       createdBy: body.createdBy ?? req.auth!.userId,
-    });
-    await templateRepo.save(created);
-    res.status(201).json(ok(created, 'Log template created'));
+    };
+
+    await approvalEngineService.submitChangeRequest(
+      'LOG_TEMPLATE',
+      'CREATE',
+      payload,
+      null,
+      req.auth!
+    );
+
+    res.status(202).json(ok(null, 'Log template change request submitted for approval'));
   } catch (error) {
     next(error);
   }
@@ -248,9 +263,18 @@ dataLoggingRouter.patch('/log-templates/:id', requirePermission('LOGS', 'UPDATE'
     }
     const nextPlantId = resolveScopedPlantId(req.auth!, body.plantId === undefined ? entity.plantId : (body.plantId ?? null));
     ensurePlantAccess(req, nextPlantId);
-    Object.assign(entity, { ...body, plantId: nextPlantId });
-    await templateRepo.save(entity);
-    res.json(ok(entity, 'Log template updated'));
+
+    const payload = { ...body, plantId: nextPlantId };
+
+    await approvalEngineService.submitChangeRequest(
+      'LOG_TEMPLATE',
+      'UPDATE',
+      payload,
+      entity.id,
+      req.auth!
+    );
+
+    res.status(202).json(ok(null, 'Log template update submitted for approval'));
   } catch (error) {
     next(error);
   }
@@ -266,9 +290,16 @@ dataLoggingRouter.delete('/log-templates/:id', requirePermission('LOGS', 'DELETE
       return;
     }
     ensurePlantAccess(req, entity.plantId);
-    entity.isActive = false;
-    await templateRepo.save(entity);
-    res.json(ok({ id: entity.id }, 'Log template deleted'));
+    
+    await approvalEngineService.submitChangeRequest(
+      'LOG_TEMPLATE',
+      'DELETE',
+      { isActive: false },
+      entity.id,
+      req.auth!
+    );
+
+    res.status(202).json(ok(null, 'Log template deletion submitted for approval'));
   } catch (error) {
     next(error);
   }
@@ -477,6 +508,10 @@ dataLoggingRouter.get('/log-entries', requirePermission('LOGS', 'READ'), async (
     const entryRepo = AppDataSource.getRepository(LogEntryEntity);
     const qb = entryRepo.createQueryBuilder('entry');
     applyPlantScope(qb, 'entry', 'plant_id', req.auth!, query.plantId);
+    applyMachineOwnershipScope(qb, 'entry', req.auth!, {
+      assetField: 'entry.machine_id',
+      departmentField: 'entry.department_id',
+    });
     if (query.search) {
       qb.andWhere('(LOWER(entry.status) LIKE :search OR LOWER(entry.remarks) LIKE :search)', {
         search: `%${query.search.toLowerCase()}%`,
@@ -532,9 +567,15 @@ dataLoggingRouter.patch('/log-entries/:id', requirePermission('LOGS', 'UPDATE'),
       return;
     }
     ensurePlantAccess(req, entity.plantId);
-    Object.assign(entity, body);
-    await entryRepo.save(entity);
-    res.json(ok(entity, 'Log entry updated'));
+    
+    const request = await executionApprovalService.submitExecution(
+      'LOG_ENTRY',
+      body,
+      entity.id,
+      req.auth!
+    );
+
+    res.status(202).json(ok({ id: entity.id, status: 'PENDING_APPROVAL' }, 'Log entry update submitted for execution approval'));
   } catch (error) {
     next(error);
   }
@@ -671,6 +712,10 @@ dataLoggingRouter.get('/data-logging/templates', requirePermission('LOGS', 'READ
 
     const templateQb = templateRepo.createQueryBuilder('template').where('template.is_active = :active', { active: true });
     applyPlantScope(templateQb, 'template', 'plant_id', req.auth!, query.plantId);
+    applyMachineOwnershipScope(templateQb, 'template', req.auth!, {
+      assetField: 'template.machine_id',
+      departmentField: 'template.department_id',
+    });
 
     if (query.assignedOnly) {
       templateQb.andWhere(
@@ -794,7 +839,7 @@ dataLoggingRouter.post('/data-logging/entries', requirePermission('LOGS', 'CREAT
       logDate,
     });
 
-    const entry = entryRepo.create({
+    const payload = {
       templateId: body.templateId,
       shiftId: body.shiftId ?? null,
       plantId: resolvedPlantId,
@@ -806,34 +851,26 @@ dataLoggingRouter.post('/data-logging/entries', requirePermission('LOGS', 'CREAT
       status: body.status,
       submittedAt: new Date(),
       remarks: body.remarks ?? null,
-    });
-    await entryRepo.save(entry);
+      values: body.values.length > 0 ? body.values : undefined
+    };
 
-    if (body.values.length > 0) {
-      const rows = body.values.map((value) =>
-        valueRepo.create({
-          entryId: entry.id,
-          fieldId: value.fieldId,
-          value: value.value ?? null,
-        }),
-      );
-      await valueRepo.save(rows);
-    }
+    const request = await executionApprovalService.submitExecution(
+      'LOG_ENTRY',
+      payload,
+      null,
+      req.auth!
+    );
 
-    const values = await valueRepo.find({ where: { entryId: entry.id } });
-    res.status(201).json(
+    res.status(202).json(
       ok(
         {
-          ...entry,
+          id: request.id,
+          status: 'PENDING_APPROVAL',
           templateName: template.templateName,
-          values: values.map((value) => ({
-            ...value,
-            fieldLabel: fieldMap.get(value.fieldId)?.fieldLabel ?? null,
-            unit: fieldMap.get(value.fieldId)?.unit ?? null,
-          })),
+          values: []
         },
-        'Data log entry created',
-      ),
+        'Data log entry submitted for execution approval'
+      )
     );
   } catch (error) {
     next(error);

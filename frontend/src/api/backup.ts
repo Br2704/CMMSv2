@@ -72,6 +72,7 @@ export async function deleteAllData(scope: "ALL" | "ORGANIZATION" | "PLANT", par
   return httpRequest<ApiResponse<any>>("/backup/delete-all", {
     method: "POST",
     body,
+    timeoutMs: 30000,
   });
 }
 

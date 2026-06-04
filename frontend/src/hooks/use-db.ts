@@ -183,11 +183,23 @@ export function useDashboardMetrics() {
       const closedToday = workOrders.filter(wo => wo.status === "CLOSED" && wo.closed_at && new Date(wo.closed_at) > yesterday).length;
       const overduePM = pmSchedules.filter(pm => pm.status === "OVERDUE").length;
 
-      // Calculate MTTR from closed work orders with downtime
-      const closedWithDowntime = workOrders.filter(wo => wo.status === "CLOSED" && wo.downtime_minutes && wo.downtime_minutes > 0);
-      const mttrAvg = closedWithDowntime.length > 0
-        ? Math.round(closedWithDowntime.reduce((sum, wo) => sum + (wo.downtime_minutes || 0), 0) / closedWithDowntime.length)
-        : 0;
+      // Calculate MTTR from closed work orders
+      const closedWOs = workOrders.filter(wo => wo.status === "CLOSED" && wo.closed_at);
+      
+      let sumMttr = 0;
+      let countMttr = 0;
+      closedWOs.forEach(wo => {
+          const start = wo.started_at || wo.opened_at || wo.created_at;
+          const end = wo.resolved_at || wo.closed_at;
+          if (start && end) {
+              const mins = (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60);
+              if (mins > 0) {
+                  sumMttr += mins;
+                  countMttr++;
+              }
+          }
+      });
+      const mttrAvg = countMttr > 0 ? Math.round(sumMttr / countMttr) : 0;
 
       const scheduledPM = pmSchedules.filter(pm => pm.status === "SCHEDULED" || pm.status === "COMPLETED").length;
       const totalPM = pmSchedules.length;

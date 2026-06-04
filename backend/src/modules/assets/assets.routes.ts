@@ -29,6 +29,7 @@ import { validateMasterHierarchy } from '../../utils/hierarchy';
 import { isRootAdminRole, isSuperAdminRole, isAdminRole } from '../../utils/rbac';
 import { buildPagination, parseListQuery } from '../../utils/pagination';
 import { resolveScopedPlantId } from '../../utils/plantScope';
+import { applyMachineOwnershipScope } from '../../utils/machineOwnershipScope';
 import { applyPlantScope, applySearch } from '../../utils/query';
 import { generateQrCodeId } from '../../utils/qr';
 import { isSafeImageValue } from '../../utils/fileValidation';
@@ -150,6 +151,7 @@ assetsRouter.get('/assets', requirePermission('ASSETS', 'READ'), async (req, res
     const qb = repo.createQueryBuilder('asset');
     applySearch(qb, 'asset', query.search, ['code', 'name', 'location', 'serialNumber']);
     applyPlantScope(qb, 'asset', 'plantId', req.auth!, query.plantId);
+    applyMachineOwnershipScope(qb, 'asset', req.auth!);
     if (!query.includeInactive) {
       qb.andWhere('asset.is_active = :active', { active: true });
     }
@@ -183,9 +185,14 @@ assetsRouter.get('/assets/:id', requirePermission('ASSETS', 'READ'), async (req,
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const repo = AppDataSource.getRepository(AssetEntity);
-    const entity = await repo.findOneBy({ id: params.id });
+    const entity = await repo.createQueryBuilder('asset')
+      .where('asset.id = :id', { id: params.id })
+      .andWhere((qb) => {
+        applyMachineOwnershipScope(qb, 'asset', req.auth!);
+      })
+      .getOne();
     if (!entity) {
-      res.status(404).json(fail('Asset not found'));
+      res.status(404).json(fail('Asset not found or you do not have permission to view it'));
       return;
     }
     ensurePlantAccess(req, entity.plantId);
@@ -420,12 +427,18 @@ assetsRouter.get('/assets/:id/overview', requirePermission('ASSETS', 'READ'), as
   try {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const assetRepo = AppDataSource.getRepository(AssetEntity);
-    const asset = await assetRepo.findOne({
-      where: { id: params.id },
-      relations: { department: true, module: true, plant: true, vendor: true },
-    });
+    const asset = await assetRepo.createQueryBuilder('asset')
+      .leftJoinAndSelect('asset.department', 'department')
+      .leftJoinAndSelect('asset.module', 'module')
+      .leftJoinAndSelect('asset.plant', 'plant')
+      .leftJoinAndSelect('asset.vendor', 'vendor')
+      .where('asset.id = :id', { id: params.id })
+      .andWhere((qb) => {
+        applyMachineOwnershipScope(qb, 'asset', req.auth!);
+      })
+      .getOne();
     if (!asset) {
-      res.status(404).json(fail('Asset not found'));
+      res.status(404).json(fail('Asset not found or you do not have permission to view it'));
       return;
     }
     ensurePlantAccess(req, asset.plantId);

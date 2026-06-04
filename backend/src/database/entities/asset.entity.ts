@@ -32,7 +32,7 @@ export class AssetEntity extends TimestampedUuidEntity {
   @Column({ name: 'default_category', type: 'varchar', nullable: true })
   defaultCategory!: string | null;
 
-  @Column({ type: 'varchar', default: 'MEDIUM' })
+  @Column({ type: 'varchar', default: 'B Medium' })
   criticality!: string;
 
   @Column({ name: 'commission_date', type: 'date', nullable: true })

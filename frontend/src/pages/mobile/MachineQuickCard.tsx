@@ -207,7 +207,7 @@ export default function MachineQuickCard() {
                 <Wrench className="h-5 w-5" />
               </div>
               <div className="text-left">
-                <span className="block">{hasOpenWorkOrder ? "Work Order Open" : "Raise Incident"}</span>
+                <span className="block">{hasOpenWorkOrder ? "Work Order Active" : "Raise Incident"}</span>
                 <span className="text-[9px] opacity-60 font-medium normal-case tracking-normal">
                   {hasOpenWorkOrder ? "Close the existing record first" : "Breakdown or Maintenance"}
                 </span>

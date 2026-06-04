@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { listMasters } from "@/api/masters";
+import { listShifts } from "@/api/shifts";
 import { useAuthStore } from "@/store/auth.store";
 
 interface ShiftHandoverDialogProps {
@@ -43,7 +43,7 @@ export function ShiftHandoverDialog({
   const { data: shifts = [], isLoading: shiftsLoading } = useQuery({
     queryKey: ["shifts", user?.plantId],
     queryFn: async () => {
-      const response = await listMasters("shifts", { plantId: user?.plantId, isActive: true });
+      const response = await listShifts({ plantId: user?.plantId, isActive: true });
       return response.data || [];
     },
     enabled: open && Boolean(user?.plantId),

@@ -31,14 +31,67 @@ export class BackupManager {
 
   public async requestDeleteAll(userId: string, scope: 'ALL' | 'ORGANIZATION' | 'PLANT', opts?: { organizationId?: string; plantId?: string }) {
     await this.createAuditLog('DELETE', 'DENIED', userId, null, `Deletion requested for scope=${scope} org=${opts?.organizationId ?? 'N/A'} plant=${opts?.plantId ?? 'N/A'}`);
-    const jobId = await enqueueDeleteJob({
-      scope,
-      organizationId: opts?.organizationId,
-      plantId: opts?.plantId,
-      requestedBy: userId,
-    });
-    logger.info({ userId, scope, opts, jobId }, 'Queued backup delete job');
-    return { queued: true, jobId };
+    
+    const { isRedisConnected } = await import('../../services/redis.js');
+    if (!isRedisConnected()) {
+      logger.info('Redis not connected. Running backup deletion inline.');
+      return await this.executeDeleteInline(userId, scope, opts);
+    }
+
+    try {
+      const jobId = await enqueueDeleteJob({
+        scope,
+        organizationId: opts?.organizationId,
+        plantId: opts?.plantId,
+        requestedBy: userId,
+      });
+      logger.info({ userId, scope, opts, jobId }, 'Queued backup delete job');
+      return { queued: true, jobId };
+    } catch (err) {
+      logger.error({ err }, 'Failed to enqueue delete job. Falling back to inline.');
+      return await this.executeDeleteInline(userId, scope, opts);
+    }
+  }
+
+  private async executeDeleteInline(userId: string, scope: 'ALL' | 'ORGANIZATION' | 'PLANT', opts?: { organizationId?: string; plantId?: string }) {
+    const backupRepo = AppDataSource.getRepository(BackupHistoryEntity);
+    const auditRepo = AppDataSource.getRepository(BackupAuditLogEntity);
+    let backupsToDelete: BackupHistoryEntity[] = [];
+    
+    if (scope === 'ALL') {
+      backupsToDelete = await backupRepo.find();
+    } else if (scope === 'ORGANIZATION') {
+      backupsToDelete = await backupRepo.find({ where: { organizationId: opts?.organizationId } });
+    } else if (scope === 'PLANT') {
+      backupsToDelete = await backupRepo.find({ where: { plantId: opts?.plantId } });
+    }
+
+    let processed = 0;
+    const { unlink } = await import('node:fs/promises');
+    const { resolve, sep } = await import('node:path');
+    
+    function isSafeBackupPath(filePath: string): boolean {
+      const resolved = resolve(filePath);
+      return resolved.startsWith(BACKUPS_DIR + sep) || resolved === BACKUPS_DIR;
+    }
+
+    for (const b of backupsToDelete) {
+      try {
+        if (b.storagePath && isSafeBackupPath(b.storagePath)) {
+          try { await unlink(b.storagePath); } catch (e) { logger.warn({ err: e, path: b.storagePath }, 'Failed to unlink backup file'); }
+        }
+        await backupRepo.delete({ id: b.id });
+        processed += 1;
+      } catch (inner) {
+        logger.error({ err: inner, backupId: b.id }, 'Failed to delete backup record or file');
+      }
+    }
+
+    const { wipeScopedData } = await import('../../utils/dataWipe.js');
+    const dataRowsDeleted = await wipeScopedData(scope, opts);
+
+    await auditRepo.save(auditRepo.create({ action: 'DELETE', status: 'SUCCESS', userId, backupId: null, details: `Deleted ${processed} backup(s) and wiped ${dataRowsDeleted} operational data rows for scope=${scope}` }));
+    return { queued: false, deletedBackups: processed, deletedDataRows: dataRowsDeleted, state: 'completed' };
   }
 
   public async startBackupJob(userId: string, options: {

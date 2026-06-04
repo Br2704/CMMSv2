@@ -100,6 +100,7 @@ export const GOVERNANCE_MODULES = [
   'SYSTEM_CONFIG',
   'MAIL_CONFIG',
   'REPORT_FORMAT',
+  'FULL_SYSTEM_CONTROL',
 ] as const;
 
 // ============================================================================

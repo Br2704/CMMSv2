@@ -44,7 +44,6 @@ function normalizedRoles(auth: AuthContext): string[] {
 
 const INCHARGE_CATEGORY_MAP: Record<string, string> = {
   MAINTENANCE_MANAGER: 'MECHANICAL',
-  MAINTENANCE_USER: 'MECHANICAL',
   PRODUCTION_MANAGER: 'PRODUCTION',
   SCM_MANAGER: 'SUPPLY_CHAIN',
   HR_MANAGER: 'PEOPLE',
@@ -53,7 +52,11 @@ const INCHARGE_CATEGORY_MAP: Record<string, string> = {
 
 function getInchargeCategories(auth: AuthContext): string[] {
   const roles = normalizedRoles(auth);
-  return Array.from(new Set(roles.map((role) => INCHARGE_CATEGORY_MAP[role]).filter((value): value is string => Boolean(value))));
+  const categories = Array.from(new Set(roles.map((role) => INCHARGE_CATEGORY_MAP[role]).filter((value): value is string => Boolean(value))));
+  if (roles.includes('MAINTENANCE_MANAGER')) {
+    categories.push('MECHANICAL', 'ELECTRICAL', 'CIVIL', 'UTILITY', 'INSTRUMENTATION', 'OTHERS');
+  }
+  return categories;
 }
 
 function permissionActions(auth: AuthContext, moduleKey: string): string[] {

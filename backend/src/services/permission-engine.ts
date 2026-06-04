@@ -237,8 +237,13 @@ function defineRolePermissions(): Record<string, PermissionMap> {
     USERS: ['READ'],
     VENDORS: ['READ'],
     MASTERS: ['READ'],
-    LOG_TEMPLATE_CONFIG: ['READ'],
+    LOG_TEMPLATE_CONFIG: ['READ', 'CREATE', 'UPDATE'],
     WORK_ORDER_MASTERS: ['READ'],
+    PM_CONFIG: ['READ', 'CREATE', 'UPDATE'],
+    CALIBRATION_CONFIG: ['READ', 'CREATE', 'UPDATE'],
+    CALIBRATION_TEMPLATES: ['READ', 'CREATE', 'UPDATE'],
+    CALIBRATION_SCHEDULES: ['READ', 'CREATE', 'UPDATE'],
+    CALIBRATION_INSTRUMENTS: ['READ', 'CREATE', 'UPDATE'],
   };
 
   // ============================
@@ -278,6 +283,26 @@ function defineRolePermissions(): Record<string, PermissionMap> {
     PLANTS: ['READ'],
     DEPARTMENTS: ['READ'],
     USERS: ['READ'],
+  };
+
+  // ============================
+  // MAINTENANCE TECHNICIAN — Execution only
+  // ============================
+  permissions.MAINTENANCE_TECHNICIAN = {
+    WORK_ORDERS: ['READ', 'UPDATE', 'CLOSE'],
+    ASSETS: ['READ'],
+    LOGS: ['READ', 'CREATE', 'UPDATE'],
+    NOTIFICATIONS: ['READ', 'UPDATE'],
+  };
+
+  // ============================
+  // PRODUCTION OPERATOR — Execution only
+  // ============================
+  permissions.PRODUCTION_OPERATOR = {
+    WORK_ORDERS: ['READ', 'CREATE', 'UPDATE'],
+    ASSETS: ['READ'],
+    LOGS: ['READ', 'CREATE', 'UPDATE'],
+    NOTIFICATIONS: ['READ', 'UPDATE'],
   };
 
   // ============================
