@@ -33,7 +33,6 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
-    "firebase-admin": "^10.3.0",
     "helmet": "^8.0.0",
     "ioredis": "^5.11.0",
     "jsonwebtoken": "^9.0.2",
@@ -76,9 +75,7 @@
     "typescript": "^5.6.2"
   },
   "overrides": {
-    "glob": "^10.4.5",
-    "rimraf": "^5.0.7",
-    "uuid": "^11.0.3",
-    "protobufjs": "^7.4.0"
+    "uuid": "^11.1.1"
   }
 }
+
